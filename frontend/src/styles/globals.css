@@ -809,6 +809,18 @@ tr:hover td { background: rgba(59,185,144,0.02); }
   transition: all 0.2s var(--ease);
 }
 .period-nav-btn:hover { background: var(--sand-50); border-color: var(--sand-300); color: var(--ink-800); }
+.period-month-select {
+  border: 1.5px solid var(--sand-200);
+  border-radius: var(--radius-sm);
+  padding: 5px 10px;
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--ink-800);
+  background: var(--white);
+  outline: none;
+  cursor: pointer;
+}
+.period-month-select:focus { border-color: var(--teal-400); }
 .period-label {
   font-size: 15px;
   font-weight: 700;

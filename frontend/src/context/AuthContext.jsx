@@ -22,8 +22,9 @@ export function AuthProvider({ children }) {
     if (token && savedUser) {
       setUser(JSON.parse(savedUser));
       setRole(savedRole);
-      setTenantId(savedTenant);
-      setTenantName(savedTenantName);
+      // Guard against the string "null" being stored
+      setTenantId(savedTenant && savedTenant !== 'null' ? savedTenant : null);
+      setTenantName(savedTenantName && savedTenantName !== 'null' ? savedTenantName : null);
     }
     setLoading(false);
   }, []);
@@ -43,6 +44,10 @@ export function AuthProvider({ children }) {
     if (data.tenant_id) {
       localStorage.setItem('tenant_id', data.tenant_id);
       localStorage.setItem('tenant_name', data.tenant_name);
+    } else {
+      // Clear any tenant from a previous session (e.g. superadmin has no tenant)
+      localStorage.removeItem('tenant_id');
+      localStorage.removeItem('tenant_name');
     }
 
     setUser(data.user);

@@ -299,6 +299,8 @@ class UnrecognizedIncomeSerializer(serializers.ModelSerializer):
 class DashboardSerializer(serializers.Serializer):
     """Read-only serializer for dashboard data."""
     total_units = serializers.IntegerField()
+    units_planned = serializers.IntegerField()
+    rented_count = serializers.IntegerField()
     total_collected = serializers.FloatField()
     total_expected = serializers.FloatField()
     collection_rate = serializers.FloatField()

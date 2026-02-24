@@ -162,7 +162,12 @@ class SuperAdminViewSet(viewsets.ModelViewSet):
 class ExtraFieldViewSet(viewsets.ModelViewSet):
     """CRUD /api/tenants/{tenant_id}/extra-fields/"""
     serializer_class = ExtraFieldSerializer
-    permission_classes = [IsTenantAdmin]
+
+    def get_permissions(self):
+        # All tenant members can read fields; only admins can write
+        if self.request.method in permissions.SAFE_METHODS:
+            return [IsTenantMember()]
+        return [IsTenantAdmin()]
 
     def get_queryset(self):
         return ExtraField.objects.filter(tenant_id=self.kwargs['tenant_id'])
@@ -482,8 +487,12 @@ class DashboardView(APIView):
             tenant_id=tenant_id, period=period
         ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
 
+        rented_count = units.filter(occupancy='rentada').count()
+
         data = {
             'total_units': total_units,
+            'units_planned': tenant.units_count,
+            'rented_count': rented_count,
             'total_collected': float(total_collected),
             'total_expected': float(total_expected),
             'collection_rate': round(collection_rate, 1),
