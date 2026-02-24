@@ -1,0 +1,74 @@
+version: '3.9'
+
+services:
+  # ─── PostgreSQL ──────────────────────────────────
+  db:
+    image: postgres:16-alpine
+    container_name: homly_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: homly_db
+      POSTGRES_USER: homly_user
+      POSTGRES_PASSWORD: homly_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U homly_user -d homly_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ─── Django Backend ──────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: homly_backend
+    restart: unless-stopped
+    command: >
+      sh -c "python manage.py migrate &&
+             python manage.py seed_data &&
+             python manage.py runserver 0.0.0.0:8000"
+    environment:
+      - DEBUG=True
+      - SECRET_KEY=dev-secret-change-in-production-!@#$%
+      - DB_NAME=homly_db
+      - DB_USER=homly_user
+      - DB_PASSWORD=homly_pass
+      - DB_HOST=db
+      - DB_PORT=5432
+      - ALLOWED_HOSTS=localhost,127.0.0.1,backend
+      - CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - backend_media:/app/media
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # ─── React Frontend ─────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: homly_frontend
+    restart: unless-stopped
+    command: npm start
+    environment:
+      - REACT_APP_API_URL=http://localhost:8000/api
+      - WATCHPACK_POLLING=true
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/public:/app/public
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
+  backend_media:
