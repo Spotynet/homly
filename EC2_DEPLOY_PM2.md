@@ -136,6 +136,7 @@ source venv/bin/activate
 #   python manage.py makemigrations core
 python manage.py migrate
 python manage.py seed_data
+python manage.py collectstatic --noinput
 deactivate
 cd ~/homly
 ```
@@ -265,15 +266,158 @@ Reinicia los procesos de PM2 para que el frontend sirva el build actualizado:
 pm2 restart homly-frontend
 ```
 
-### 4.6 Abrir en el navegador
+### 4.6 Si el front no se ve
+
+Comprueba que exista el build y que Nginx pueda leerlo:
+
+```bash
+ls -la ~/homly/frontend/build/index.html
+```
+
+Si no existe, genera el build en el EC2:
+
+```bash
+cd ~/homly/frontend
+echo "REACT_APP_API_URL=/api" > .env
+npm install && npm run build
+```
+
+Da permisos de lectura a Nginx (usuario `www-data`) sobre la carpeta del build:
+
+```bash
+chmod 755 /home/ubuntu
+chmod -R 755 ~/homly/frontend/build
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+### 4.7 Abrir en el navegador
 
 - **Todo en uno:** `http://TU_IP_PUBLICA_EC2`
 
 La app (React) se sirve en `/` y el API (Django) en `/api/`. El admin de Django queda en `http://TU_IP_PUBLICA_EC2/admin/`.
 
-### 4.7 Security group
+### 4.8 Security group
 
 En AWS → EC2 → Security groups → Inbound rules: permite **HTTP (80)** desde `0.0.0.0/0` (o tu IP). No hace falta abrir 3000 ni 8000 si usas Nginx.
+
+---
+
+## Part 4B — Usar tu dominio (homly.com.mx con Route 53 + GoDaddy)
+
+Ya tienes la hosted zone en Route 53 y los NS en GoDaddy. Sigue esto para que la app responda en **homly.com.mx**.
+
+### 4B.1 Route 53 — Registros A
+
+En AWS → Route 53 → tu hosted zone **homly.com.mx**:
+
+- Crea (o edita) un registro **A**:
+  - Name: *(dejar vacío para la raíz)* → responde `homly.com.mx`
+  - Type: A
+  - Value: **IP pública de tu instancia EC2** (ej. 98.81.122.194)
+  - TTL: 300
+
+- Opcional, para **www**:
+  - Otro registro **A**: Name = `www`, Value = misma IP.
+  - O un CNAME: Name = `www`, Value = `homly.com.mx`.
+
+Guarda. La propagación puede tardar unos minutos.
+
+### 4B.2 Backend — ALLOWED_HOSTS y CORS
+
+En el EC2, edita el `.env` del backend:
+
+```bash
+nano ~/homly/backend/.env
+```
+
+Incluye el dominio (y www si lo usas):
+
+```env
+ALLOWED_HOSTS=localhost,127.0.0.1,98.81.122.194,homly.com.mx,www.homly.com.mx
+CORS_ORIGINS=http://localhost:3000,http://98.81.122.194,http://homly.com.mx,http://www.homly.com.mx
+```
+
+Guarda y reinicia el backend:
+
+```bash
+pm2 restart homly-backend
+```
+
+### 4B.3 Nginx — server_name con el dominio
+
+En el EC2, edita el sitio de Nginx:
+
+```bash
+sudo nano /etc/nginx/sites-available/homly
+```
+
+Cambia la línea `server_name _;` por (así sigue aceptando la IP y el dominio):
+
+```nginx
+server_name _ homly.com.mx www.homly.com.mx;
+```
+
+Guarda, comprueba y recarga:
+
+```bash
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+### 4B.4 Frontend
+
+Si ya tienes `REACT_APP_API_URL=/api` y el build se sirve por Nginx en el mismo dominio, **no hace falta cambiar nada**: las peticiones irán a `https://homly.com.mx/api` cuando pongas SSL. Si en algún momento construiste el front con la IP fija, vuelve a generar el build con `/api`:
+
+```bash
+cd ~/homly/frontend
+echo "REACT_APP_API_URL=/api" > .env
+npm run build
+chmod -R 755 ~/homly/frontend/build
+sudo systemctl reload nginx
+```
+
+### 4B.5 Probar
+
+Abre en el navegador:
+
+- **http://homly.com.mx** (y **http://www.homly.com.mx** si configuraste www).
+
+Deberías ver la misma app que con la IP.
+
+### 4B.6 (Opcional) HTTPS con Let's Encrypt
+
+Para usar **https://homly.com.mx**:
+
+```bash
+sudo apt install -y certbot python3-certbot-nginx
+sudo certbot --nginx -d homly.com.mx -d www.homly.com.mx
+```
+
+Sigue las preguntas (email, términos). Certbot configurará SSL y Nginx. Luego actualiza el backend:
+
+```bash
+nano ~/homly/backend/.env
+```
+
+Añade o actualiza estas líneas (reemplaza con tu dominio/IP real):
+
+```env
+DEBUG=False
+CORS_ORIGINS=http://localhost:3000,http://98.81.122.194,http://homly.com.mx,https://homly.com.mx
+CSRF_TRUSTED_ORIGINS=https://homly.com.mx,http://98.81.122.194
+```
+
+Crea el directorio de logs y reinicia:
+
+```bash
+mkdir -p ~/homly/backend/logs
+pm2 restart homly-backend
+```
+
+Renovación automática:
+
+```bash
+sudo certbot renew --dry-run
+```
 
 ---
 
@@ -285,6 +429,77 @@ Si no usas Nginx, puedes acceder directo a los puertos:
 - **Backend API:** `http://YOUR_EC2_PUBLIC_IP:8000/api`
 
 En el security group abre **3000** y **8000**. En el frontend usa `REACT_APP_API_URL=http://YOUR_EC2_PUBLIC_IP:8000/api` y en el backend `.env` pon esa misma URL en `CORS_ORIGINS`.
+
+---
+
+## Troubleshooting — Error 500
+
+Un 500 suele venir del backend (Django). Sigue estos pasos en el EC2.
+
+### 1. Ver el error real en los logs de PM2
+
+```bash
+pm2 logs homly-backend --lines 100
+```
+
+Ahí sale el traceback de Python. Busca la última excepción antes del 500.
+
+### 2. Comprobar ALLOWED_HOSTS
+
+Si en los logs aparece `Invalid HTTP_HOST header` o `DisallowedHost`, añade la IP (o dominio) que usas en el navegador al `.env` del backend:
+
+```bash
+nano ~/homly/backend/.env
+```
+
+Asegúrate de tener (con tu IP real):
+
+```env
+ALLOWED_HOSTS=localhost,127.0.0.1,TU_IP_PUBLICA_EC2
+```
+
+Luego reinicia el backend:
+
+```bash
+pm2 restart homly-backend
+```
+
+### 3. Ejecutar collectstatic (admin y estáticos de Django)
+
+Si el 500 ocurre al entrar a `/admin/` o al cargar estáticos:
+
+```bash
+cd ~/homly/backend
+source venv/bin/activate
+python manage.py collectstatic --noinput
+deactivate
+pm2 restart homly-backend
+```
+
+### 4. Probar la base de datos
+
+```bash
+cd ~/homly/backend && source venv/bin/activate
+python manage.py check
+python manage.py migrate --check
+deactivate
+```
+
+Si algo falla, revisa `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST` en `.env`.
+
+### 5. Ver el error en el navegador (solo para depurar)
+
+En `~/homly/backend/.env` pon temporalmente:
+
+```env
+DEBUG=True
+```
+
+Reinicia, reproduce el 500 y en la página verás el traceback. **Vuelve a poner `DEBUG=False`** después.
+
+```bash
+pm2 restart homly-backend
+```
 
 ---
 

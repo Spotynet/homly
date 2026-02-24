@@ -12,7 +12,7 @@ module.exports = {
       name: 'homly-backend',
       cwd: './backend',
       script: './venv/bin/gunicorn',
-      args: 'homly_project.wsgi:application --bind 0.0.0.0:8000 --workers 2',
+      args: 'homly_project.wsgi:application --bind 0.0.0.0:8000 --workers 2 --timeout 120',
       interpreter: 'none',
       env: { DJANGO_SETTINGS_MODULE: 'homly_project.settings' },
       autorestart: true,

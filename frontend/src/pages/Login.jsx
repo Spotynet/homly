@@ -28,7 +28,9 @@ export default function Login() {
       if (data.must_change_password) {
         navigate('/change-password');
       } else {
-        navigate('/app');
+        const savedPath = sessionStorage.getItem('redirect_after_login');
+        sessionStorage.removeItem('redirect_after_login');
+        navigate(savedPath && savedPath.startsWith('/app') ? savedPath : '/app');
       }
     } catch (err) {
       setError(err.response?.data?.non_field_errors?.[0] || err.response?.data?.detail || 'Credenciales inválidas.');
