@@ -89,7 +89,7 @@ function todayStr() {
 
 // ─── Main ──────────────────────────────────────────────────────────────────
 export default function Dashboard() {
-  const { user, tenantId, tenantName } = useAuth();
+  const { user, tenantId, tenantName, isSuperAdmin } = useAuth();
   const navigate = useNavigate();
 
   const [activeTab, setActiveTab] = useState('general');
@@ -100,8 +100,6 @@ export default function Dashboard() {
   const [tenants, setTenants] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-
-  const isSuperAdmin = user?.role === 'super_admin' || user?.role === 'superadmin';
 
   const load = useCallback(async () => {
     if (!tenantId) return;
@@ -138,11 +136,8 @@ export default function Dashboard() {
   // ── Super admin without tenant ──────────────────────────────────────────
   if (isSuperAdmin && !tenantId) {
     return (
-      <div style={{ padding: '28px 32px', maxWidth: 900, margin: '0 auto' }}>
+      <div className="content-fade">
         <div style={{ marginBottom: 32 }}>
-          <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 32, fontWeight: 500, marginBottom: 6 }}>
-            Panel de Control<span className="brand-dot">.</span>
-          </h1>
           <p style={{ color: 'var(--ink-400)', fontSize: 15 }}>Selecciona un condominio para continuar.</p>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px,1fr))', gap: 16 }}>
@@ -240,17 +235,7 @@ export default function Dashboard() {
   ];
 
   return (
-    <div style={{ padding: '28px 32px', maxWidth: 1300, margin: '0 auto' }} className="content-fade">
-      {/* Header */}
-      <div style={{ marginBottom: 24 }}>
-        <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 30, fontWeight: 500, marginBottom: 4 }}>
-          Dashboard<span className="brand-dot">.</span>
-        </h1>
-        <p style={{ color: 'var(--ink-400)', fontSize: 14 }}>
-          {tenantName} · {monthLabel(s.period || period)}
-        </p>
-      </div>
-
+    <div className="content-fade">
       {/* Tabs */}
       <div className="tabs" style={{ marginBottom: 20 }}>
         <button className={`tab ${activeTab === 'general'  ? 'active' : ''}`} onClick={() => setActiveTab('general')}>

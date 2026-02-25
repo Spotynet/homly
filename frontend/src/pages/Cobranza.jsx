@@ -132,15 +132,7 @@ export default function Cobranza() {
   };
 
   return (
-    <div style={{ padding: '28px 32px', maxWidth: 1300, margin: '0 auto' }} className="content-fade">
-      {/* ── Header ── */}
-      <div style={{ marginBottom: 24 }}>
-        <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 28, fontWeight: 500, marginBottom: 4 }}>
-          Cobranza<span className="brand-dot">.</span>
-        </h1>
-        <p style={{ color: 'var(--ink-400)', fontSize: 14 }}>{periodLabel(period)}</p>
-      </div>
-
+    <div className="content-fade">
       {/* ── Period + Search ── */}
       <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12, marginBottom: 20 }}>
         <div className="period-nav">
@@ -310,18 +302,16 @@ export default function Cobranza() {
 
       {/* ── Capture Modal ── */}
       {showCapture && (
-        <div className="modal-overlay" onClick={() => setShowCapture(null)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
+        <div className="modal-bg open" onClick={() => setShowCapture(null)}>
+          <div className="modal lg" onClick={e => e.stopPropagation()}>
+            <div className="modal-head">
               <div>
-                <h3 style={{ fontWeight: 700, fontSize: 17 }}>
-                  Capturar Pago
-                </h3>
+                <h3>Capturar Pago</h3>
                 <p style={{ fontSize: 12, color: 'var(--ink-400)', marginTop: 2 }}>
                   {showCapture.unit_id_code} · {showCapture.unit_name} · {periodLabel(period)}
                 </p>
               </div>
-              <button className="btn-icon" onClick={() => setShowCapture(null)}><X size={18} /></button>
+              <button className="modal-close" onClick={() => setShowCapture(null)}><X size={16} /></button>
             </div>
             <div className="modal-body">
               {/* Payment meta */}
@@ -416,7 +406,7 @@ export default function Cobranza() {
                 </div>
               </div>
             </div>
-            <div className="modal-footer">
+            <div className="modal-foot">
               <button className="btn btn-outline" onClick={() => setShowCapture(null)}>Cancelar</button>
               <button className="btn btn-primary" onClick={handleCapture} disabled={saving}>
                 {saving ? 'Guardando…' : 'Guardar Pago'}

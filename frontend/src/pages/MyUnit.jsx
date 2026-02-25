@@ -50,7 +50,7 @@ export default function MyUnit() {
 
   if (!data?.unit) {
     return (
-      <div style={{ padding: '28px 32px' }} className="content-fade">
+      <div className="content-fade">
         <div className="empty">
           <div className="empty-icon">🏠</div>
           <h4>Sin unidad asignada</h4>
@@ -66,7 +66,7 @@ export default function MyUnit() {
   const adminType = tenantData?.admin_type === 'professional' ? 'Administración Profesional' : 'Autogestión';
 
   return (
-    <div style={{ padding: '28px 32px', maxWidth: 1100, margin: '0 auto' }} className="content-fade">
+    <div className="content-fade">
       {/* ── Welcome card ── */}
       <div className="welcome-card">
         <h2>Hola, {user?.name || unit.owner_first_name} 👋</h2>

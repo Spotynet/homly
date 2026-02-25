@@ -9,7 +9,7 @@ export default function Units() {
   const [units, setUnits] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [modal, setModal] = useState(null); // 'add' | 'edit'
+  const [modal, setModal] = useState(null);
   const [form, setForm] = useState({});
 
   const load = async () => {
@@ -66,15 +66,13 @@ export default function Units() {
 
   const setField = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
-  if (loading) return <div className="p-8 text-center text-ink-400">Cargando unidades...</div>;
+  if (loading) return <div style={{ padding: 32, textAlign: 'center', color: 'var(--ink-400)' }}>Cargando unidades...</div>;
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
+    <div className="content-fade">
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 16, marginBottom: 20 }}>
         <div>
-          <h2 className="text-xl font-bold text-ink-800">Unidades</h2>
-          <p className="text-sm text-ink-400">{units.length} unidades registradas</p>
+          <p style={{ fontSize: 14, color: 'var(--ink-400)' }}>{units.length} unidades registradas</p>
         </div>
         {isAdmin && (
           <button onClick={openAdd} className="btn btn-primary">
@@ -83,14 +81,13 @@ export default function Units() {
         )}
       </div>
 
-      {/* Search */}
-      <div className="flex items-center gap-2 max-w-md">
-        <Search size={16} className="text-ink-400" />
-        <input className="field-input" placeholder="Buscar unidad, ID o propietario..."
+      <div style={{ position: 'relative', marginBottom: 20, maxWidth: 360 }}>
+        <Search size={14} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--ink-400)' }} />
+        <input className="field-input" style={{ paddingLeft: 36 }}
+          placeholder="Buscar unidad, ID o propietario..."
           value={search} onChange={e => setSearch(e.target.value)} />
       </div>
 
-      {/* Table */}
       <div className="card">
         <div className="table-wrap">
           <table>
@@ -110,29 +107,29 @@ export default function Units() {
               {filtered.map(u => (
                 <tr key={u.id}>
                   <td>
-                    <span className="font-mono font-bold text-teal-600 bg-teal-50 px-2 py-1 rounded-md text-xs">
+                    <span style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--teal-600)', background: 'var(--teal-50)', padding: '3px 10px', borderRadius: 6, fontSize: 12 }}>
                       {u.unit_id_code}
                     </span>
                   </td>
-                  <td className="font-semibold">{u.unit_name}</td>
+                  <td style={{ fontWeight: 600 }}>{u.unit_name}</td>
                   <td>{u.owner_first_name} {u.owner_last_name}</td>
-                  <td className="text-xs text-ink-500">{u.owner_email || '—'}</td>
-                  <td className="text-xs text-ink-500">{u.owner_phone || '—'}</td>
+                  <td style={{ fontSize: 12, color: 'var(--ink-500)' }}>{u.owner_email || '—'}</td>
+                  <td style={{ fontSize: 12, color: 'var(--ink-500)' }}>{u.owner_phone || '—'}</td>
                   <td>
                     <span className={`badge ${u.occupancy === 'propietario' ? 'badge-teal' : u.occupancy === 'rentado' ? 'badge-amber' : 'badge-gray'}`}>
                       {u.occupancy === 'propietario' ? 'Propietario' : u.occupancy === 'rentado' ? 'Rentado' : 'Vacío'}
                     </span>
                   </td>
-                  <td className="text-xs">
+                  <td style={{ fontSize: 12 }}>
                     {u.occupancy === 'rentado' ? `${u.tenant_first_name} ${u.tenant_last_name}` : '—'}
                   </td>
                   {isAdmin && (
                     <td>
-                      <div className="flex gap-1">
+                      <div style={{ display: 'flex', gap: 4 }}>
                         <button onClick={() => openEdit(u)} className="btn-icon" title="Editar">
                           <Edit2 size={15} />
                         </button>
-                        <button onClick={() => handleDelete(u.id)} className="btn-icon text-coral-500" title="Eliminar">
+                        <button onClick={() => handleDelete(u.id)} className="btn-icon" style={{ color: 'var(--coral-500)' }} title="Eliminar">
                           <Trash2 size={15} />
                         </button>
                       </div>
@@ -141,7 +138,7 @@ export default function Units() {
                 </tr>
               ))}
               {filtered.length === 0 && (
-                <tr><td colSpan={8} className="text-center py-8 text-ink-400">
+                <tr><td colSpan={8} style={{ textAlign: 'center', padding: '32px 20px', color: 'var(--ink-400)' }}>
                   {search ? 'Sin resultados' : 'No hay unidades registradas'}
                 </td></tr>
               )}
@@ -152,97 +149,93 @@ export default function Units() {
 
       {/* Modal */}
       {modal && (
-        <div className="modal-overlay" onClick={() => setModal(null)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3 className="text-lg font-bold flex items-center gap-2">
-                <Home size={20} className="text-teal-600" />
-                {modal === 'add' ? 'Nueva Unidad' : 'Editar Unidad'}
-              </h3>
-              <button onClick={() => setModal(null)} className="btn-icon"><X size={20} /></button>
+        <div className="modal-bg open" onClick={() => setModal(null)}>
+          <div className="modal lg" onClick={e => e.stopPropagation()}>
+            <div className="modal-head">
+              <h3>{modal === 'add' ? 'Nueva Unidad' : 'Editar Unidad'}</h3>
+              <button onClick={() => setModal(null)} className="modal-close"><X size={16} /></button>
             </div>
-            <div className="modal-body space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
+            <div className="modal-body">
+              <div className="form-section-label">Datos de la Unidad</div>
+              <div className="form-grid" style={{ marginBottom: 24 }}>
+                <div className="field">
                   <label className="field-label">Nombre de Unidad *</label>
                   <input className="field-input" value={form.unit_name || ''} placeholder="Casa 1"
                     onChange={e => setField('unit_name', e.target.value)} />
                 </div>
-                <div>
+                <div className="field">
                   <label className="field-label">ID de Unidad *</label>
                   <input className="field-input" value={form.unit_id_code || ''} placeholder="C-001"
                     onChange={e => setField('unit_id_code', e.target.value)} />
                 </div>
+                <div className="field">
+                  <label className="field-label">Tipo de Ocupación</label>
+                  <select className="field-select" value={form.occupancy || 'propietario'}
+                    onChange={e => setField('occupancy', e.target.value)}>
+                    <option value="propietario">Propietario</option>
+                    <option value="rentado">Rentado</option>
+                    <option value="vacío">Vacío</option>
+                  </select>
+                </div>
               </div>
 
-              <h4 className="font-bold text-sm text-ink-600 pt-2">Propietario</h4>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
+              <div className="form-section-label">Propietario</div>
+              <div className="form-grid" style={{ marginBottom: 24 }}>
+                <div className="field">
                   <label className="field-label">Nombre</label>
                   <input className="field-input" value={form.owner_first_name || ''}
                     onChange={e => setField('owner_first_name', e.target.value)} />
                 </div>
-                <div>
+                <div className="field">
                   <label className="field-label">Apellido</label>
                   <input className="field-input" value={form.owner_last_name || ''}
                     onChange={e => setField('owner_last_name', e.target.value)} />
                 </div>
-                <div>
+                <div className="field">
                   <label className="field-label">Email</label>
                   <input type="email" className="field-input" value={form.owner_email || ''}
                     onChange={e => setField('owner_email', e.target.value)} />
                 </div>
-                <div>
+                <div className="field">
                   <label className="field-label">Teléfono</label>
                   <input className="field-input" value={form.owner_phone || ''}
                     onChange={e => setField('owner_phone', e.target.value)} />
                 </div>
               </div>
 
-              <div>
-                <label className="field-label">Tipo de Ocupación</label>
-                <select className="field-select" value={form.occupancy || 'propietario'}
-                  onChange={e => setField('occupancy', e.target.value)}>
-                  <option value="propietario">Propietario</option>
-                  <option value="rentado">Rentado</option>
-                  <option value="vacío">Vacío</option>
-                </select>
-              </div>
-
               {form.occupancy === 'rentado' && (
-                <>
-                  <h4 className="font-bold text-sm text-ink-600 pt-2">Inquilino</h4>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
+                <div className="tenant-panel">
+                  <div className="form-section-label" style={{ color: 'var(--amber-500)', borderColor: 'var(--teal-100)', marginTop: 0 }}>Inquilino</div>
+                  <div className="form-grid">
+                    <div className="field">
                       <label className="field-label">Nombre</label>
                       <input className="field-input" value={form.tenant_first_name || ''}
                         onChange={e => setField('tenant_first_name', e.target.value)} />
                     </div>
-                    <div>
+                    <div className="field">
                       <label className="field-label">Apellido</label>
                       <input className="field-input" value={form.tenant_last_name || ''}
                         onChange={e => setField('tenant_last_name', e.target.value)} />
                     </div>
-                    <div>
+                    <div className="field">
                       <label className="field-label">Email</label>
                       <input type="email" className="field-input" value={form.tenant_email || ''}
                         onChange={e => setField('tenant_email', e.target.value)} />
                     </div>
-                    <div>
+                    <div className="field">
                       <label className="field-label">Teléfono</label>
                       <input className="field-input" value={form.tenant_phone || ''}
                         onChange={e => setField('tenant_phone', e.target.value)} />
                     </div>
                   </div>
-                </>
+                </div>
               )}
-
-              <div className="flex justify-end gap-3 pt-4">
-                <button onClick={() => setModal(null)} className="btn btn-outline">Cancelar</button>
-                <button onClick={handleSave} className="btn btn-primary">
-                  {modal === 'add' ? 'Crear Unidad' : 'Guardar Cambios'}
-                </button>
-              </div>
+            </div>
+            <div className="modal-foot">
+              <button onClick={() => setModal(null)} className="btn btn-outline">Cancelar</button>
+              <button onClick={handleSave} className="btn btn-primary">
+                {modal === 'add' ? 'Crear Unidad' : 'Guardar Cambios'}
+              </button>
             </div>
           </div>
         </div>

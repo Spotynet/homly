@@ -15,7 +15,14 @@ export default function Login() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    authAPI.getTenants().then(r => setTenants(r.data)).catch(() => {});
+    authAPI.getTenants().then(r => {
+      const list = r.data || [];
+      setTenants(list);
+      // Pre-select the tenant automatically when there is only one
+      if (list.length === 1) {
+        setSelectedTenant(list[0].id);
+      }
+    }).catch(() => {});
   }, []);
 
   const handleSubmit = async (e) => {
