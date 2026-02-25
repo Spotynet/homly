@@ -271,9 +271,14 @@ class ReopenRequestSerializer(serializers.ModelSerializer):
 
 
 class AssemblyPositionSerializer(serializers.ModelSerializer):
+    committee_id = serializers.PrimaryKeyRelatedField(
+        queryset=Committee.objects.all(), source='committee', allow_null=True, required=False
+    )
+
     class Meta:
         model = AssemblyPosition
-        fields = ['id', 'tenant', 'title', 'holder_name', 'holder_unit',
+        fields = ['id', 'tenant', 'title', 'holder_name', 'holder_unit', 'committee_id',
+                  'email', 'phone', 'start_date', 'end_date', 'notes',
                   'active', 'sort_order', 'created_at']
         read_only_fields = ['id', 'created_at']
 
