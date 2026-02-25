@@ -126,7 +126,7 @@ export default function Tenants() {
                 </div>
                 <div className="field">
                   <label className="field-label">Cuota Mantenimiento</label>
-                  <input type="number" className="field-input" value={form.maintenance_fee || ''} onChange={e => setForm({...form, maintenance_fee: e.target.value})} />
+                  <input type="number" className="field-input" step="0.01" min="0" value={form.maintenance_fee || ''} onChange={e => setForm({...form, maintenance_fee: e.target.value})} />
                 </div>
                 <div className="field">
                   <label className="field-label">Moneda</label>

@@ -307,6 +307,8 @@ class Payment(models.Model):
     # JSONB for flexible adeudo payments across periods
     adeudo_payments = models.JSONField(default=dict, blank=True,
                                        help_text='Debt payments: {period: {fieldId: amount}}')
+    additional_payments = models.JSONField(default=list, blank=True,
+                                           help_text='Extra payment events per unit/period')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -571,6 +573,9 @@ class UnrecognizedIncome(models.Model):
     amount = models.DecimalField(max_digits=12, decimal_places=2)
     description = models.CharField(max_length=500, blank=True, default='')
     date = models.DateField(null=True, blank=True)
+    payment_type = models.CharField(max_length=32, blank=True, default='')
+    notes = models.CharField(max_length=500, blank=True, default='')
+    bank_reconciled = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

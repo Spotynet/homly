@@ -2,6 +2,7 @@
 Homly — API Views
 All endpoints for the property management system.
 """
+import uuid
 from decimal import Decimal
 from django.db.models import Sum, Count, Q, F  # noqa: F401 - Q used in estado cuenta
 from django.utils import timezone
@@ -21,7 +22,7 @@ from .serializers import (
     LoginSerializer, ChangePasswordSerializer, UserSerializer, UserCreateSerializer,
     TenantListSerializer, TenantDetailSerializer, TenantUserSerializer,
     UnitSerializer, ExtraFieldSerializer,
-    PaymentSerializer, PaymentCaptureSerializer, FieldPaymentSerializer,
+    PaymentSerializer, PaymentCaptureSerializer, AddAdditionalPaymentSerializer, FieldPaymentSerializer,
     GastoEntrySerializer, CajaChicaEntrySerializer,
     BankStatementSerializer, ClosedPeriodSerializer, ReopenRequestSerializer,
     AssemblyPositionSerializer, CommitteeSerializer, UnrecognizedIncomeSerializer,
@@ -180,6 +181,34 @@ class ExtraFieldViewSet(viewsets.ModelViewSet):
 #  PAYMENTS (Cobranza)
 # ═══════════════════════════════════════════════════════════
 
+def _compute_payment_status(payment, tenant, extra_fields):
+    """Compute status from main field_payments + additional_payments."""
+    all_fp = {}
+    for fp in payment.field_payments.all():
+        all_fp[fp.field_key] = float(fp.received or 0)
+    for ap in payment.additional_payments or []:
+        for fk, data in (ap.get('field_payments') or {}).items():
+            rec = float(data.get('received', 0) or 0)
+            if rec > 0:
+                all_fp[fk] = all_fp.get(fk, 0) + rec
+
+    maint_charge = float(tenant.maintenance_fee or 0)
+    maint_rec = min(all_fp.get('maintenance', 0), maint_charge)
+    total_req_charge = maint_charge
+    total_req_received = maint_rec
+    for ef in extra_fields:
+        ch = float(ef.default_amount or 0)
+        rc = min(all_fp.get(str(ef.id), 0), ch)
+        total_req_charge += ch
+        total_req_received += rc
+
+    if total_req_received <= 0:
+        return 'pendiente'
+    if total_req_received >= total_req_charge:
+        return 'pagado'
+    return 'parcial'
+
+
 class PaymentViewSet(viewsets.ModelViewSet):
     """CRUD /api/tenants/{tenant_id}/payments/"""
     serializer_class = PaymentSerializer
@@ -243,37 +272,67 @@ class PaymentViewSet(viewsets.ModelViewSet):
                 }
             )
 
-        # Auto-compute status
-        maint_charge = tenant.maintenance_fee
-        maint_fp = field_payments_data.get('maintenance', {})
-        maint_received = min(Decimal(str(maint_fp.get('received', 0))), maint_charge)
-
-        total_req_charge = maint_charge
-        total_req_received = maint_received
-
+        # Auto-compute status (main + additional_payments)
         extra_fields = ExtraField.objects.filter(
             tenant_id=tenant_id, enabled=True, required=True
         )
-        for ef in extra_fields:
-            charge = ef.default_amount
-            fp = field_payments_data.get(str(ef.id), {})
-            received = min(Decimal(str(fp.get('received', 0))), charge)
-            total_req_charge += charge
-            total_req_received += received
-
-        if total_req_received <= 0:
-            payment.status = 'pendiente'
-        elif total_req_received >= total_req_charge:
-            payment.status = 'pagado'
-        else:
-            payment.status = 'parcial'
-
+        payment.refresh_from_db()
+        payment.status = _compute_payment_status(payment, tenant, list(extra_fields))
         payment.save()
 
         return Response(
             PaymentSerializer(payment).data,
             status=status.HTTP_200_OK if not created else status.HTTP_201_CREATED
         )
+
+    @action(detail=True, methods=['post'], url_path='add-additional')
+    def add_additional(self, request, tenant_id=None, pk=None):
+        """POST /api/tenants/{tenant_id}/payments/{id}/add-additional/"""
+        payment = self.get_object()
+        if payment.tenant_id != tenant_id:
+            return Response({'detail': 'No encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+
+        if ClosedPeriod.objects.filter(tenant_id=tenant_id, period=payment.period).exists():
+            return Response({'detail': 'El periodo está cerrado.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        serializer = AddAdditionalPaymentSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        total = sum(
+            float((v or {}).get('received', 0) or 0)
+            for v in (data.get('field_payments') or {}).values()
+        )
+        if total <= 0:
+            return Response(
+                {'detail': 'Ingresa al menos un monto mayor a cero.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        new_fp = {}
+        for fk, fp_data in (data.get('field_payments') or {}).items():
+            rec = float((fp_data or {}).get('received', 0) or 0)
+            if rec > 0:
+                new_fp[fk] = {'received': rec}
+
+        entry = {
+            'id': str(uuid.uuid4()),
+            'field_payments': new_fp,
+            'payment_type': data['payment_type'],
+            'payment_date': (data.get('payment_date') or '').isoformat() if hasattr(data.get('payment_date'), 'isoformat') else str(data.get('payment_date') or ''),
+            'notes': data.get('notes', ''),
+            'bank_reconciled': data.get('bank_reconciled', False),
+            'created_at': timezone.now().isoformat(),
+        }
+        payment.additional_payments = (payment.additional_payments or []) + [entry]
+        tenant = Tenant.objects.get(id=tenant_id)
+        extra_fields = ExtraField.objects.filter(
+            tenant_id=tenant_id, enabled=True, required=True
+        )
+        payment.status = _compute_payment_status(payment, tenant, list(extra_fields))
+        payment.save()
+
+        return Response(PaymentSerializer(payment).data, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=['delete'], url_path='clear')
     def clear_payment(self, request, tenant_id=None, pk=None):
@@ -430,7 +489,11 @@ class UnrecognizedIncomeViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAdminOrTesorero]
 
     def get_queryset(self):
-        return UnrecognizedIncome.objects.filter(tenant_id=self.kwargs['tenant_id'])
+        qs = UnrecognizedIncome.objects.filter(tenant_id=self.kwargs['tenant_id'])
+        period = self.request.query_params.get('period')
+        if period:
+            qs = qs.filter(period=period)
+        return qs
 
     def perform_create(self, serializer):
         serializer.save(tenant_id=self.kwargs['tenant_id'])

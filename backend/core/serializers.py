@@ -187,6 +187,7 @@ class FieldPaymentSerializer(serializers.ModelSerializer):
 
 class PaymentSerializer(serializers.ModelSerializer):
     field_payments = FieldPaymentSerializer(many=True, read_only=True)
+    additional_payments = serializers.JSONField(read_only=True)
     unit_code = serializers.CharField(source='unit.unit_id_code', read_only=True)
     unit_name = serializers.CharField(source='unit.unit_name', read_only=True)
     responsible = serializers.CharField(source='unit.responsible_name', read_only=True)
@@ -195,7 +196,7 @@ class PaymentSerializer(serializers.ModelSerializer):
         model = Payment
         fields = ['id', 'tenant', 'unit', 'unit_code', 'unit_name', 'responsible',
                   'period', 'status', 'payment_type', 'payment_date', 'notes',
-                  'evidence', 'adeudo_payments', 'field_payments',
+                  'evidence', 'adeudo_payments', 'field_payments', 'additional_payments',
                   'created_at', 'updated_at']
         read_only_fields = ['id', 'created_at', 'updated_at']
 
@@ -210,6 +211,15 @@ class PaymentCaptureSerializer(serializers.Serializer):
     evidence = serializers.CharField(required=False, allow_blank=True, default='')
     field_payments = serializers.DictField(child=serializers.DictField(), required=False)
     adeudo_payments = serializers.DictField(required=False, default=dict)
+
+
+class AddAdditionalPaymentSerializer(serializers.Serializer):
+    """Serializer for adding an extra payment event to an existing payment."""
+    field_payments = serializers.DictField(child=serializers.DictField(), required=True)
+    payment_type = serializers.ChoiceField(choices=Payment.PAYMENT_TYPE_CHOICES)
+    payment_date = serializers.DateField(required=False, allow_null=True)
+    notes = serializers.CharField(required=False, allow_blank=True, default='')
+    bank_reconciled = serializers.BooleanField(required=False, default=False)
 
 
 # ═══════════════════════════════════════════════════════════
@@ -294,7 +304,7 @@ class CommitteeSerializer(serializers.ModelSerializer):
 class UnrecognizedIncomeSerializer(serializers.ModelSerializer):
     class Meta:
         model = UnrecognizedIncome
-        fields = ['id', 'tenant', 'period', 'amount', 'description', 'date', 'created_at']
+        fields = ['id', 'tenant', 'period', 'amount', 'description', 'date', 'payment_type', 'notes', 'bank_reconciled', 'created_at']
         read_only_fields = ['id', 'created_at']
 
 

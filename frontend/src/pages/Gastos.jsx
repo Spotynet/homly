@@ -363,7 +363,7 @@ export default function Gastos() {
                 </div>
                 <div className="field">
                   <label className="field-label">Monto</label>
-                  <input type="number" className="field-input" value={form.amount || ''} onChange={e => setForm({ ...form, amount: e.target.value })} />
+                  <input type="number" className="field-input" step="0.01" min="0" value={form.amount || ''} onChange={e => setForm({ ...form, amount: e.target.value })} />
                 </div>
                 <div className="field">
                   <label className="field-label">Forma de Pago</label>

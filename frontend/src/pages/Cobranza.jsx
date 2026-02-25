@@ -1,12 +1,17 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { paymentsAPI, unitsAPI, extraFieldsAPI, tenantsAPI } from '../api/client';
+import { paymentsAPI, unitsAPI, extraFieldsAPI, tenantsAPI, unrecognizedIncomeAPI } from '../api/client';
 import { todayPeriod, periodLabel, prevPeriod, nextPeriod, tenantStartPeriod, fmtCurrency, statusClass, statusLabel, PAYMENT_TYPES, fmtDate, ROLES, CURRENCIES, APP_VERSION } from '../utils/helpers';
-import { ChevronLeft, ChevronRight, Search, Receipt, X, Users, CheckCircle, Clock, AlertCircle, DollarSign, Calendar, Building2, Upload, FileText, Check, Printer } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Search, Receipt, X, Users, CheckCircle, Clock, AlertCircle, DollarSign, Calendar, Building2, Upload, FileText, Check, Printer, Plus, Edit2, Trash2, Banknote } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 function fmt(n) {
   return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 0 }).format(n ?? 0);
+}
+
+// Format with cents (2 decimal places) for payment inputs
+function fmtDec(n) {
+  return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(parseFloat(n) || 0);
 }
 
 // Receipt format: symbol + toLocaleString (matches HTML exactly)
@@ -52,6 +57,22 @@ function periodsBetween(startPeriod, endPeriod) {
   return out;
 }
 
+// Effective received per field (main + additional_payments)
+function getEffectiveFieldTotals(pay) {
+  const tot = {};
+  (pay?.field_payments || []).forEach(f => {
+    tot[f.field_key] = (tot[f.field_key] || 0) + parseFloat(f.received || 0);
+  });
+  (pay?.additional_payments || []).forEach(ap => {
+    const fp = ap.field_payments || ap.fieldPayments || {};
+    Object.entries(fp).forEach(([fk, fd]) => {
+      const v = typeof fd === 'object' ? (fd.received ?? fd) : fd;
+      tot[fk] = (tot[fk] || 0) + parseFloat(v || 0);
+    });
+  });
+  return tot;
+}
+
 export default function Cobranza() {
   const { tenantId, isReadOnly, user } = useAuth();
   const [period, setPeriod] = useState(todayPeriod());
@@ -65,21 +86,28 @@ export default function Cobranza() {
   const [captureForm, setCaptureForm] = useState({});
   const [saving, setSaving] = useState(false);
   const [showReceipt, setShowReceipt] = useState(null); // { unit, pay }
+  const [unrecognizedIncome, setUnrecognizedIncome] = useState([]);
+  const [showUnidentModal, setShowUnidentModal] = useState(null); // { editId } or true for new
+  const [unidentForm, setUnidentForm] = useState({ concept: '', amount: '', payment_type: '', payment_date: '', notes: '', bank_reconciled: false });
+  const [showAddPaymentModal, setShowAddPaymentModal] = useState(null); // { unit, pay }
+  const [addPaymentForm, setAddPaymentForm] = useState({ extraFieldPayments: {}, payment_type: '', payment_date: '', notes: '', bank_reconciled: false });
   const perPage = 25;
 
   const load = async () => {
     if (!tenantId) return;
     try {
-      const [uRes, pRes, efRes, tRes] = await Promise.all([
+      const [uRes, pRes, efRes, tRes, uiRes] = await Promise.all([
         unitsAPI.list(tenantId),
         paymentsAPI.list(tenantId, { period }),
         extraFieldsAPI.list(tenantId),
         tenantsAPI.get(tenantId).catch(() => ({ data: null })),
+        unrecognizedIncomeAPI.list(tenantId, { period }).catch(() => ({ data: [] })),
       ]);
       setUnits(uRes.data.results || uRes.data);
       setPayments(pRes.data.results || pRes.data);
       setExtraFields((efRes.data.results || efRes.data).filter(f => f.enabled && (!f.field_type || f.field_type === 'normal')));
       setTenantData(tRes.data);
+      setUnrecognizedIncome(Array.isArray(uiRes.data) ? uiRes.data : (uiRes.data?.results || []));
     } catch (err) { console.error(err); }
   };
 
@@ -101,9 +129,8 @@ export default function Cobranza() {
       if (st === 'pagado') paid++;
       else if (st === 'parcial') partial++;
       else pending++;
-      if (p?.field_payments) {
-        recaudo += p.field_payments.reduce((s, f) => s + parseFloat(f.received || 0), 0);
-      }
+      const eff = getEffectiveFieldTotals(p);
+      recaudo += Object.values(eff).reduce((s, v) => s + v, 0);
     });
     const paidPct = total > 0 ? (paid / total) * 100 : 0;
     return { total, paid, partial, pending, recaudo, paidPct };
@@ -406,7 +433,8 @@ export default function Cobranza() {
               {paged.map(u => {
                 const pay = paymentMap[u.id];
                 const st = pay?.status || 'pendiente';
-                const totalRec = pay?.field_payments?.reduce((s, f) => s + parseFloat(f.received || 0), 0) || 0;
+                const effTotals = getEffectiveFieldTotals(pay);
+                const totalRec = Object.values(effTotals).reduce((s, v) => s + v, 0);
                 return (
                   <tr key={u.id}>
                     <td>
@@ -417,11 +445,11 @@ export default function Cobranza() {
                     </td>
                     <td style={{ fontSize: 13, color: 'var(--ink-500)' }}>{u.responsible_name || '—'}</td>
                     <td style={{ textAlign: 'right', fontWeight: 600, fontSize: 13 }}>
-                      {pay?.field_payments ? fmt(pay.field_payments.find(f => f.field_key === 'maintenance')?.received || 0) : '—'}
+                      {pay ? fmt(effTotals.maintenance || 0) : '—'}
                     </td>
                     {extraFields.filter(f => f.required).map(ef => {
-                      const fp = pay?.field_payments?.find(f => f.field_key === ef.id);
-                      return <td key={ef.id} style={{ textAlign: 'right', fontSize: 13 }}>{fp ? fmt(fp.received) : '—'}</td>;
+                      const amt = effTotals[ef.id] || 0;
+                      return <td key={ef.id} style={{ textAlign: 'right', fontSize: 13 }}>{pay ? fmt(amt) : '—'}</td>;
                     })}
                     <td style={{ textAlign: 'right', fontWeight: 700, fontSize: 13, color: 'var(--teal-700)' }}>
                       {pay ? fmt(totalRec) : '—'}
@@ -439,6 +467,21 @@ export default function Cobranza() {
                         {pay && (
                           <button className="btn btn-secondary btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }} onClick={() => setShowReceipt({ unit: u, pay })}>
                             <FileText size={12} /> Ver Recibo
+                          </button>
+                        )}
+                        {!isReadOnly && pay && (
+                          <button className="btn btn-secondary btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }} onClick={() => {
+                            const existingCount = 1 + (pay.additional_payments || []).length;
+                            setAddPaymentForm({
+                              extraFieldPayments: { maintenance: '', ...Object.fromEntries(extraFields.map(ef => [ef.id, ''])) },
+                              payment_type: '',
+                              payment_date: new Date().toISOString().slice(0, 10),
+                              notes: '',
+                              bank_reconciled: false,
+                            });
+                            setShowAddPaymentModal({ unit: u, pay });
+                          }}>
+                            <Plus size={12} /> Agregar pago
                           </button>
                         )}
                         {!isReadOnly && (
@@ -473,6 +516,255 @@ export default function Cobranza() {
           </div>
         )}
       </div>
+
+      {/* ── Ingresos No Identificados ── */}
+      <div className="card" style={{ marginTop: 24, border: '1.5px solid var(--amber-200)' }}>
+        <div className="card-head" style={{ background: 'var(--amber-50)' }}>
+          <h3 style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--amber-800)' }}>
+            <DollarSign size={18} /> Ingresos No Identificados — {periodLabel(period)}
+          </h3>
+          {!isReadOnly && (
+            <button className="btn btn-primary btn-sm" style={{ background: 'var(--amber-500)' }} onClick={() => { setUnidentForm({ concept: '', amount: '', payment_type: '', payment_date: new Date().toISOString().slice(0, 10), notes: '', bank_reconciled: false }); setShowUnidentModal(true); }}>
+              <Plus size={12} /> Agregar Ingreso
+            </button>
+          )}
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr style={{ background: 'var(--sand-50)' }}>
+                <th>Concepto</th>
+                <th>Forma de Pago</th>
+                <th>Fecha</th>
+                <th style={{ textAlign: 'right' }}>Monto</th>
+                <th>Notas</th>
+                <th>Conciliado</th>
+                {!isReadOnly && <th style={{ width: 90 }}>Acciones</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {unrecognizedIncome.length === 0 ? (
+                <tr><td colSpan={isReadOnly ? 6 : 7} style={{ textAlign: 'center', padding: 32, color: 'var(--ink-400)', fontSize: 13 }}>Sin ingresos no identificados en este período</td></tr>
+              ) : (
+                unrecognizedIncome.map(row => (
+                  <tr key={row.id} style={{ borderBottom: '1px solid var(--sand-100)' }}>
+                    <td style={{ fontWeight: 600, color: 'var(--ink-700)' }}>{row.description || '—'}</td>
+                    <td style={{ fontSize: 12 }}>
+                      {row.payment_type ? (PAYMENT_TYPES[row.payment_type]?.label || row.payment_type) : '—'}
+                      {row.payment_type === 'transferencia' && <Banknote size={12} style={{ marginLeft: 4, verticalAlign: -2, color: 'var(--teal-500)' }} />}
+                    </td>
+                    <td style={{ fontSize: 12 }}>{fmtDate(row.date)}</td>
+                    <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--teal-700)', fontSize: 13 }}>{fmtDec(row.amount)}</td>
+                    <td style={{ fontSize: 12, color: 'var(--ink-500)', maxWidth: 140 }}>{row.notes ? (row.notes.length > 30 ? row.notes.slice(0, 30) + '…' : row.notes) : '—'}</td>
+                    <td><span style={{ color: row.bank_reconciled ? 'var(--teal-600)' : 'var(--ink-300)', fontSize: 12 }}>{row.bank_reconciled ? <><Check size={12} style={{ verticalAlign: -2 }} /> Sí</> : '—'}</span></td>
+                    {!isReadOnly && (
+                      <td>
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          <button className="btn-icon" title="Editar" onClick={() => { setUnidentForm({ editId: row.id, concept: row.description || '', amount: row.amount ?? '', payment_type: row.payment_type || '', payment_date: row.date || new Date().toISOString().slice(0, 10), notes: row.notes || '', bank_reconciled: !!row.bank_reconciled }); setShowUnidentModal({ edit: true }); }}>
+                            <Edit2 size={13} />
+                          </button>
+                          <button className="btn-icon" style={{ color: 'var(--coral-500)' }} title="Eliminar" onClick={() => { if (window.confirm('¿Eliminar este ingreso no identificado?')) unrecognizedIncomeAPI.delete(tenantId, row.id).then(() => load()).catch(e => toast.error(e.response?.data?.detail || 'Error')); }}>
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      </td>
+                    )}
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+        {unrecognizedIncome.length > 0 && (
+          <div style={{ padding: '12px 16px', background: 'var(--amber-50)', borderTop: '2px solid var(--amber-200)', fontWeight: 800, color: 'var(--amber-800)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>TOTAL NO IDENTIFICADO</span>
+            <span style={{ fontSize: 15 }}>{fmtDec(unrecognizedIncome.reduce((s, r) => s + parseFloat(r.amount || 0), 0))}</span>
+          </div>
+        )}
+      </div>
+
+      {/* ── Modal: Ingreso No Identificado ── */}
+      {showUnidentModal && (
+        <div className="modal-bg open" onClick={() => setShowUnidentModal(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 480 }}>
+            <div className="modal-head">
+              <h3>{unidentForm.editId ? 'Editar' : 'Nuevo'} Ingreso No Identificado</h3>
+              <button className="modal-close" onClick={() => setShowUnidentModal(null)}><X size={16} /></button>
+            </div>
+            <div className="modal-body">
+              <div className="form-grid" style={{ gridTemplateColumns: '1fr', gap: 12 }}>
+                <div className="field">
+                  <label className="field-label">Concepto / Descripción <span style={{ color: 'var(--coral-500)' }}>*</span></label>
+                  <input className="field-input" placeholder="Ej: Mantenimiento, Donativo, Evento" value={unidentForm.concept || ''} onChange={e => setUnidentForm(f => ({ ...f, concept: e.target.value }))} />
+                </div>
+                <div className="field">
+                  <label className="field-label">Monto <span style={{ color: 'var(--coral-500)' }}>*</span></label>
+                  <input className="field-input" type="number" min={0} step={0.01} placeholder="0.00" value={unidentForm.amount ?? ''} onChange={e => setUnidentForm(f => ({ ...f, amount: e.target.value }))} />
+                </div>
+                <div className="field">
+                  <label className="field-label">Forma de Pago</label>
+                  <select className="field-select" value={unidentForm.payment_type || ''} onChange={e => setUnidentForm(f => ({ ...f, payment_type: e.target.value }))}>
+                    <option value="">— Sin especificar —</option>
+                    <option value="transferencia">🏦 Transferencia</option>
+                    <option value="deposito">💵 Depósito en efectivo</option>
+                    <option value="efectivo">💰 Efectivo directo</option>
+                  </select>
+                </div>
+                <div className="field">
+                  <label className="field-label">Fecha</label>
+                  <input className="field-input" type="date" value={unidentForm.payment_date || ''} onChange={e => setUnidentForm(f => ({ ...f, payment_date: e.target.value }))} />
+                </div>
+                <div className="field">
+                  <label className="field-label">Notas</label>
+                  <input className="field-input" placeholder="Observaciones adicionales" value={unidentForm.notes || ''} onChange={e => setUnidentForm(f => ({ ...f, notes: e.target.value }))} />
+                </div>
+                <div style={{ padding: 14, border: `1.5px solid ${unidentForm.bank_reconciled ? 'var(--teal-200)' : 'var(--sand-200)'}`, background: unidentForm.bank_reconciled ? 'var(--teal-50)' : 'var(--sand-50)', borderRadius: 'var(--radius-md)', cursor: 'pointer' }} onClick={() => setUnidentForm(f => ({ ...f, bank_reconciled: !f.bank_reconciled }))}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div style={{ width: 22, height: 22, borderRadius: 6, border: `2px solid ${unidentForm.bank_reconciled ? 'var(--teal-500)' : 'var(--sand-300)'}`, background: unidentForm.bank_reconciled ? 'var(--teal-500)' : 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      {unidentForm.bank_reconciled && <Check size={14} style={{ color: 'white' }} />}
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: unidentForm.bank_reconciled ? 'var(--teal-700)' : 'var(--ink-600)' }}>🏦 Conciliación Bancaria</div>
+                      <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 2 }}>Marca si este ingreso ya está confirmado en el banco</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="modal-foot">
+              <button className="btn btn-secondary" onClick={() => setShowUnidentModal(null)}>Cancelar</button>
+              <button className="btn btn-primary" style={{ background: 'var(--amber-500)' }} onClick={async () => {
+                if (!(unidentForm.concept || '').trim()) { toast.error('El concepto es obligatorio.'); return; }
+                const amt = parseFloat(unidentForm.amount);
+                if (!amt || amt <= 0) { toast.error('Ingresa un monto mayor a cero.'); return; }
+                setSaving(true);
+                try {
+                  const payload = { period, amount: amt, description: unidentForm.concept.trim(), date: unidentForm.payment_date || null, payment_type: unidentForm.payment_type || '', notes: unidentForm.notes || '', bank_reconciled: !!unidentForm.bank_reconciled };
+                  if (unidentForm.editId) {
+                    await unrecognizedIncomeAPI.update(tenantId, unidentForm.editId, payload);
+                  } else {
+                    await unrecognizedIncomeAPI.create(tenantId, payload);
+                  }
+                  toast.success('Ingreso guardado');
+                  setShowUnidentModal(null);
+                  load();
+                } catch (err) { toast.error(err.response?.data?.detail || 'Error al guardar'); }
+                finally { setSaving(false); }
+              }} disabled={saving}>{saving ? 'Guardando…' : 'Guardar Ingreso'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal: Agregar Pago Adicional ── */}
+      {showAddPaymentModal && (
+        <div className="modal-bg open" onClick={() => setShowAddPaymentModal(null)}>
+          <div className="modal lg" onClick={e => e.stopPropagation()} style={{ maxWidth: 520 }}>
+            <div className="modal-head">
+              <h3>Agregar Pago Adicional — {periodLabel(period)}</h3>
+              <button className="modal-close" onClick={() => setShowAddPaymentModal(null)}><X size={16} /></button>
+            </div>
+            <div className="modal-body">
+              {(() => {
+                const { unit, pay } = showAddPaymentModal;
+                const resp = unit.responsible_name || (unit.occupancy === 'rentado' ? `${unit.tenant_first_name || ''} ${unit.tenant_last_name || ''}`.trim() : `${unit.owner_first_name || ''} ${unit.owner_last_name || ''}`.trim());
+                const existingCount = 1 + (pay?.additional_payments || []).length;
+                const pagoNum = existingCount + 1;
+                const reqEFs = extraFields.filter(f => f.required);
+                const optEFs = extraFields.filter(f => !f.required);
+                return (
+                  <>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', background: 'var(--sand-50)', border: '1px solid var(--sand-100)', borderRadius: 'var(--radius-md)', marginBottom: 16 }}>
+                      <span style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--teal-600)', background: 'var(--teal-50)', padding: '4px 10px', borderRadius: 6, fontSize: 12 }}>{unit.unit_id_code}</span>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontWeight: 700, fontSize: 14 }}>{unit.unit_name}</div>
+                        <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>{resp || '—'}</div>
+                      </div>
+                      <span style={{ fontSize: 12, padding: '4px 10px', background: 'var(--blue-50)', color: 'var(--blue-700)', borderRadius: 99, fontWeight: 700 }}>Pago #{pagoNum}</span>
+                    </div>
+                    <div style={{ marginBottom: 14, padding: 12, background: 'var(--blue-50)', border: '1.5px solid var(--blue-100)', borderRadius: 'var(--radius-md)', fontSize: 12, color: 'var(--blue-700)', display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                      <AlertCircle size={14} style={{ flexShrink: 0, marginTop: 1 }} />
+                      Ingreso adicional para la unidad en el mismo período. Se suman al estado de cuenta.
+                    </div>
+                    <div style={{ background: 'var(--white)', border: '1.5px solid var(--teal-100)', borderRadius: 'var(--radius-md)', overflow: 'hidden', marginBottom: 16 }}>
+                      <div style={{ padding: '8px 16px', background: 'var(--teal-50)', borderBottom: '1px solid var(--teal-100)', fontSize: 10, fontWeight: 800, color: 'var(--teal-700)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Conceptos a Abonar</div>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 16px', borderBottom: '1px solid var(--sand-50)' }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-800)' }}>Mantenimiento <span style={{ fontSize: 10, color: 'var(--ink-400)', background: 'var(--sand-100)', padding: '2px 6px', borderRadius: 4 }}>{fmt(maintenanceFee)}</span></div>
+                        <input type="number" className="field-input" min={0} step={0.01} style={{ width: 100, textAlign: 'right' }} placeholder="0.00" value={addPaymentForm.extraFieldPayments?.maintenance ?? ''} onChange={e => setAddPaymentForm(f => ({ ...f, extraFieldPayments: { ...(f.extraFieldPayments || {}), maintenance: e.target.value } }))} />
+                      </div>
+                      {[...reqEFs, ...optEFs].filter((ef, i, arr) => arr.findIndex(x => x.id === ef.id) === i).map(ef => (
+                        <div key={ef.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 16px', borderBottom: '1px solid var(--sand-50)' }}>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-800)' }}>{ef.label} <span style={{ marginLeft: 6, fontSize: 10, color: ef.required ? 'var(--coral-400)' : 'var(--ink-400)', background: 'var(--sand-100)', padding: '2px 6px', borderRadius: 4 }}>{ef.required ? 'Oblig.' : 'Opcional'}</span></div>
+                          <input type="number" className="field-input" min={0} step={0.01} style={{ width: 100, textAlign: 'right' }} placeholder="0.00" value={addPaymentForm.extraFieldPayments?.[ef.id] ?? ''} onChange={e => setAddPaymentForm(f => ({ ...f, extraFieldPayments: { ...(f.extraFieldPayments || {}), [ef.id]: e.target.value } }))} />
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-500)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>Información del Pago</div>
+                    <div className="grid-2" style={{ gap: 12, marginBottom: 12 }}>
+                      <div className="field">
+                        <label className="field-label">Forma de Pago <span style={{ color: 'var(--coral-500)' }}>*</span></label>
+                        <select className="field-select" value={addPaymentForm.payment_type} onChange={e => setAddPaymentForm(f => ({ ...f, payment_type: e.target.value }))} style={!addPaymentForm.payment_type ? { borderColor: 'var(--coral-400)' } : {}}>
+                          <option value="">— Seleccionar —</option>
+                          <option value="transferencia">🏦 Transferencia</option>
+                          <option value="deposito">💵 Depósito en efectivo</option>
+                          <option value="efectivo">💰 Efectivo directo</option>
+                        </select>
+                      </div>
+                      <div className="field">
+                        <label className="field-label">Fecha de Pago</label>
+                        <input type="date" className="field-input" value={addPaymentForm.payment_date || ''} onChange={e => setAddPaymentForm(f => ({ ...f, payment_date: e.target.value }))} />
+                      </div>
+                      <div className="field" style={{ gridColumn: '1 / -1' }}>
+                        <label className="field-label">Notas (opcional)</label>
+                        <input className="field-input" placeholder="Referencia, observaciones..." value={addPaymentForm.notes || ''} onChange={e => setAddPaymentForm(f => ({ ...f, notes: e.target.value }))} />
+                      </div>
+                    </div>
+                    <div style={{ padding: 14, border: `1.5px solid ${addPaymentForm.bank_reconciled ? 'var(--teal-200)' : 'var(--sand-200)'}`, background: addPaymentForm.bank_reconciled ? 'var(--teal-50)' : 'var(--sand-50)', borderRadius: 'var(--radius-md)', cursor: 'pointer' }} onClick={() => setAddPaymentForm(f => ({ ...f, bank_reconciled: !f.bank_reconciled }))}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <div style={{ width: 22, height: 22, borderRadius: 6, border: `2px solid ${addPaymentForm.bank_reconciled ? 'var(--teal-500)' : 'var(--sand-300)'}`, background: addPaymentForm.bank_reconciled ? 'var(--teal-500)' : 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          {addPaymentForm.bank_reconciled && <Check size={14} style={{ color: 'white' }} />}
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: addPaymentForm.bank_reconciled ? 'var(--teal-700)' : 'var(--ink-600)' }}>🏦 Conciliación Bancaria</div>
+                          <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 2 }}>Marca si está verificado en banco</div>
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+            <div className="modal-foot">
+              <button className="btn btn-secondary" onClick={() => setShowAddPaymentModal(null)}>Cancelar</button>
+              <button className="btn btn-primary" onClick={async () => {
+                if (!addPaymentForm.payment_type) { toast.error('La Forma de Pago es obligatoria.'); return; }
+                const fpx = addPaymentForm.extraFieldPayments || {};
+                const totalAmount = Object.values(fpx).reduce((a, v) => a + (parseFloat(v) || 0), 0);
+                if (totalAmount <= 0) { toast.error('Ingresa al menos un monto mayor a cero.'); return; }
+                setSaving(true);
+                try {
+                  const fp = {};
+                  Object.entries(fpx).forEach(([k, v]) => {
+                    const amt = parseFloat(v) || 0;
+                    if (amt > 0) fp[k] = { received: amt };
+                  });
+                  await paymentsAPI.addAdditional(tenantId, showAddPaymentModal.pay.id, {
+                    field_payments: fp,
+                    payment_type: addPaymentForm.payment_type,
+                    payment_date: addPaymentForm.payment_date || null,
+                    notes: addPaymentForm.notes || '',
+                    bank_reconciled: !!addPaymentForm.bank_reconciled,
+                  });
+                  toast.success('Pago adicional registrado');
+                  setShowAddPaymentModal(null);
+                  load();
+                } catch (err) { toast.error(err.response?.data?.detail || 'Error al registrar'); }
+                finally { setSaving(false); }
+              }} disabled={saving}>{saving ? 'Guardando…' : 'Guardar Pago Adicional'}</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Capture Modal ── */}
       {showCapture && (() => {
@@ -835,17 +1127,18 @@ export default function Cobranza() {
         const maintCharge = parseFloat(tc?.maintenance_fee) || 0;
         const reqEFs = extraFields.filter(ef => ef.required);
         const optEFs = extraFields.filter(ef => !ef.required);
+        const effTotals = getEffectiveFieldTotals(pay);
         const fp = {};
         (pay?.field_payments || []).forEach(f => { fp[f.field_key] = f; });
-        const maintAbono = Math.min(parseFloat(fp.maintenance?.received || 0), maintCharge);
+        const maintAbono = Math.min(effTotals.maintenance || 0, maintCharge);
         let totReqCharge = maintCharge, totReqAbono = maintAbono;
         reqEFs.forEach(ef => {
           const ch = parseFloat(ef.default_amount) || 0;
-          const ab = fp[ef.id] ? Math.min(parseFloat(fp[ef.id].received || 0), ch) : 0;
+          const ab = Math.min(effTotals[ef.id] || 0, ch);
           totReqCharge += ch; totReqAbono += ab;
         });
         let totOptAbono = 0;
-        optEFs.forEach(ef => { totOptAbono += parseFloat(fp[ef.id]?.received || 0) || 0; });
+        optEFs.forEach(ef => { totOptAbono += effTotals[ef.id] || 0; });
         const totSaldo = Math.max(0, totReqCharge - totReqAbono);
         let totalAdelanto = 0;
         const adelantoRows = [];
@@ -922,7 +1215,7 @@ export default function Cobranza() {
                       </tr>
                       {reqEFs.map(ef => {
                         const ch = parseFloat(ef.default_amount) || 0;
-                        const ab = fp[ef.id] ? Math.min(parseFloat(fp[ef.id].received || 0), ch) : 0;
+                        const ab = Math.min(effTotals[ef.id] || 0, ch);
                         const sd = ch - ab;
                         return (
                           <tr key={ef.id}>
@@ -933,14 +1226,14 @@ export default function Cobranza() {
                           </tr>
                         );
                       })}
-                      {optEFs.filter(ef => fp[ef.id] && parseFloat(fp[ef.id].received || 0) > 0).length > 0 && (
+                      {optEFs.filter(ef => (effTotals[ef.id] || 0) > 0).length > 0 && (
                         <>
                           <tr className="receipt-section-header"><td colSpan={4}>○ CAMPOS OPCIONALES</td></tr>
-                          {optEFs.filter(ef => fp[ef.id] && parseFloat(fp[ef.id].received || 0) > 0).map(ef => (
+                          {optEFs.filter(ef => (effTotals[ef.id] || 0) > 0).map(ef => (
                             <tr key={ef.id}>
                               <td>{ef.label}<br /><small>Opcional</small></td>
                               <td style={{ textAlign: 'right', color: 'var(--ink-300)' }}>—</td>
-                              <td style={{ textAlign: 'right', color: 'var(--teal-600)', fontWeight: 700 }}>{rfmt(parseFloat(fp[ef.id].received || 0))}</td>
+                              <td style={{ textAlign: 'right', color: 'var(--teal-600)', fontWeight: 700 }}>{rfmt(effTotals[ef.id] || 0)}</td>
                               <td style={{ textAlign: 'right', color: 'var(--ink-300)' }}>—</td>
                             </tr>
                           ))}

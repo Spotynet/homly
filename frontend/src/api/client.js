@@ -77,6 +77,7 @@ export const usersAPI = {
 export const paymentsAPI = {
   list: (tenantId, params) => api.get(`/tenants/${tenantId}/payments/`, { params }),
   capture: (tenantId, data) => api.post(`/tenants/${tenantId}/payments/capture/`, data),
+  addAdditional: (tenantId, paymentId, data) => api.post(`/tenants/${tenantId}/payments/${paymentId}/add-additional/`, data),
   clear: (tenantId, id) => api.delete(`/tenants/${tenantId}/payments/${id}/clear/`),
 };
 
@@ -94,6 +95,14 @@ export const gastosAPI = {
   create: (tenantId, data) => api.post(`/tenants/${tenantId}/gasto-entries/`, data),
   update: (tenantId, id, data) => api.patch(`/tenants/${tenantId}/gasto-entries/${id}/`, data),
   delete: (tenantId, id) => api.delete(`/tenants/${tenantId}/gasto-entries/${id}/`),
+};
+
+// ─── Unrecognized Income ────────────────────────
+export const unrecognizedIncomeAPI = {
+  list: (tenantId, params) => api.get(`/tenants/${tenantId}/unrecognized-income/`, { params }),
+  create: (tenantId, data) => api.post(`/tenants/${tenantId}/unrecognized-income/`, data),
+  update: (tenantId, id, data) => api.patch(`/tenants/${tenantId}/unrecognized-income/${id}/`, data),
+  delete: (tenantId, id) => api.delete(`/tenants/${tenantId}/unrecognized-income/${id}/`),
 };
 
 // ─── Caja Chica ─────────────────────────────────

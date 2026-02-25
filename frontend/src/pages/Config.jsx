@@ -6,7 +6,7 @@ import {
   Settings, Plus, Trash2, Check, X, Upload, Users,
   Building2, RefreshCw, Edit2, Search, Home, Lock,
   Calendar, DollarSign, ShieldCheck, Receipt, ShoppingBag,
-  AlertCircle, Shield, FileText, Globe,
+  AlertCircle, Shield, FileText, Globe, ChevronRight,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -778,7 +778,7 @@ export default function Config() {
                     <span style={{ fontSize:12, color:'var(--teal-700)', fontWeight:600 }}>Monto mensual</span>
                     <span style={{ fontSize:12, color:'var(--teal-600)' }}>$</span>
                     <input style={{ width:110, padding:'5px 8px', border:'1.5px solid var(--teal-200)', borderRadius:6, fontSize:13, fontWeight:700, color:'var(--teal-700)', background:'white', outline:'none', textAlign:'right', fontFamily:'var(--font-body)' }}
-                      type="number" min="0" defaultValue={f.default_amount||0}
+                      type="number" min="0" step="0.01" defaultValue={f.default_amount||0}
                       onBlur={e => toggleField(f.id, { default_amount: e.target.value })} />
                   </div>
                 )}
@@ -1295,7 +1295,7 @@ export default function Config() {
             </div>
             <div className="field">
               <label className="field-label">Cuota de Mantenimiento</label>
-              <input type="number" className="field-input" value={editGenForm.maintenance_fee||''} onChange={e=>setEditGenForm(f=>({...f,maintenance_fee:e.target.value}))} />
+              <input type="number" className="field-input" step="0.01" min="0" value={editGenForm.maintenance_fee||''} onChange={e=>setEditGenForm(f=>({...f,maintenance_fee:e.target.value}))} />
             </div>
             <div className="field">
               <label className="field-label">Moneda</label>
