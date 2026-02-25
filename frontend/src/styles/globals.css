@@ -1216,7 +1216,7 @@ tr:hover td { background: rgba(59,185,144,0.02); }
 .logo-box img { width: 100%; height: 100%; object-fit: cover; }
 .logo-box span { font-size: 11px; color: var(--ink-400); font-weight: 500; }
 
-/* ─── Pagination ─── */
+/* ─── Pagination (HTML original) ─── */
 .pag-bar {
   display: flex;
   align-items: center;
@@ -1225,19 +1225,39 @@ tr:hover td { background: rgba(59,185,144,0.02); }
   border-top: 1px solid var(--sand-100);
   font-size: 12px;
   color: var(--ink-400);
+  flex-wrap: wrap;
+  gap: 12px;
 }
-.pag-btns { display: flex; gap: 4px; }
-.pag-btn {
-  padding: 4px 10px;
-  font-size: 12px;
+.pag-bar .pag-left { font-size: 12px; color: var(--ink-500); }
+.pag-bar .pag-right { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.pag-per-page { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-500); }
+.pag-per-page select {
   border: 1px solid var(--sand-200);
   border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  font-size: 12px;
+  font-family: var(--font-body);
+  color: var(--ink-700);
+  background: var(--white);
+  cursor: pointer;
+}
+.pag-btns { display: flex; align-items: center; gap: 4px; }
+.pag-btn {
+  min-width: 32px;
+  height: 32px;
+  padding: 0 8px;
+  font-size: 12px;
+  border: 1px solid var(--sand-200);
+  border-radius: 50%;
   background: var(--white);
   cursor: pointer;
   color: var(--ink-600);
   transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
-.pag-btn:hover { background: var(--teal-50); border-color: var(--teal-200); }
+.pag-btn:hover:not(:disabled) { background: var(--teal-50); border-color: var(--teal-200); color: var(--ink-800); }
 .pag-btn.active { background: var(--teal-500); color: white; border-color: var(--teal-500); }
 .pag-btn:disabled { opacity: 0.4; cursor: default; }
 

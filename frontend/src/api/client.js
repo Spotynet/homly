@@ -60,7 +60,7 @@ export const tenantsAPI = {
 
 // ─── Units ──────────────────────────────────────
 export const unitsAPI = {
-  list: (tenantId) => api.get(`/tenants/${tenantId}/units/`),
+  list: (tenantId, params) => api.get(`/tenants/${tenantId}/units/`, { params }),
   create: (tenantId, data) => api.post(`/tenants/${tenantId}/units/`, data),
   update: (tenantId, id, data) => api.patch(`/tenants/${tenantId}/units/${id}/`, data),
   delete: (tenantId, id) => api.delete(`/tenants/${tenantId}/units/${id}/`),

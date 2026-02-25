@@ -1,8 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { unitsAPI } from '../api/client';
-import { Plus, Edit2, Trash2, Search, X, Home } from 'lucide-react';
+import { Plus, Edit2, Trash2, Search, X } from 'lucide-react';
 import toast from 'react-hot-toast';
+
+const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 
 export default function Units() {
   const { tenantId, isAdmin, isReadOnly } = useAuth();
@@ -11,16 +13,23 @@ export default function Units() {
   const [search, setSearch] = useState('');
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState({});
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [totalCount, setTotalCount] = useState(0);
 
-  const load = async () => {
+  const load = useCallback(async (pageNum = 1, size = pageSize) => {
+    if (!tenantId) return;
+    setLoading(true);
     try {
-      const { data } = await unitsAPI.list(tenantId);
-      setUnits(data.results || data);
+      const { data } = await unitsAPI.list(tenantId, { page: pageNum, page_size: size });
+      const items = data.results ?? data;
+      setUnits(Array.isArray(items) ? items : []);
+      setTotalCount(typeof data.count === 'number' ? data.count : items.length);
     } catch { toast.error('Error cargando unidades'); }
     setLoading(false);
-  };
+  }, [tenantId, pageSize]);
 
-  useEffect(() => { if (tenantId) load(); }, [tenantId]);
+  useEffect(() => { load(page, pageSize); }, [load, page, pageSize]);
 
   const filtered = units.filter(u =>
     `${u.unit_name} ${u.unit_id_code} ${u.owner_first_name} ${u.owner_last_name}`.toLowerCase().includes(search.toLowerCase())
@@ -49,7 +58,8 @@ export default function Units() {
         toast.success('Unidad actualizada');
       }
       setModal(null);
-      load();
+      if (modal === 'add') setPage(1);
+      else load(page, pageSize);
     } catch (e) {
       toast.error(e.response?.data?.unit_id_code?.[0] || 'Error guardando unidad');
     }
@@ -60,7 +70,7 @@ export default function Units() {
     try {
       await unitsAPI.delete(tenantId, id);
       toast.success('Unidad eliminada');
-      load();
+      load(page, pageSize);
     } catch { toast.error('Error eliminando unidad'); }
   };
 
@@ -72,7 +82,11 @@ export default function Units() {
     <div className="content-fade">
       <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 16, marginBottom: 20 }}>
         <div>
-          <p style={{ fontSize: 14, color: 'var(--ink-400)' }}>{units.length} unidades registradas</p>
+          <p style={{ fontSize: 14, color: 'var(--ink-400)' }}>
+            {totalCount > 0
+              ? `${(page - 1) * pageSize + 1}-${Math.min(page * pageSize, totalCount)} de ${totalCount} unidades`
+              : '0 unidades registradas'}
+          </p>
         </div>
         {isAdmin && (
           <button onClick={openAdd} className="btn btn-primary">
@@ -145,6 +159,36 @@ export default function Units() {
             </tbody>
           </table>
         </div>
+
+        {/* Paginación (HTML original) */}
+        {totalCount > 0 && (() => {
+          const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+          const start = (page - 1) * pageSize + 1;
+          const end = Math.min(page * pageSize, totalCount);
+          return (
+            <div className="pag-bar">
+              <span className="pag-left">Mostrando {start}-{end} de {totalCount}</span>
+              <div className="pag-right">
+                <div className="pag-per-page">
+                  Mostrar
+                  <select value={pageSize} onChange={e => { setPageSize(Number(e.target.value)); setPage(1); }}>
+                    {PAGE_SIZE_OPTIONS.map(n => <option key={n} value={n}>{n}</option>)}
+                  </select>
+                  por página
+                </div>
+                <div className="pag-btns">
+                  <button className="pag-btn" disabled={page <= 1} onClick={() => setPage(1)} title="Primera página">«</button>
+                  <button className="pag-btn" disabled={page <= 1} onClick={() => setPage(p => p - 1)} title="Anterior">‹</button>
+                  {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => i + 1).map(p => (
+                    <button key={p} className={`pag-btn ${p === page ? 'active' : ''}`} onClick={() => setPage(p)}>{p}</button>
+                  ))}
+                  <button className="pag-btn" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)} title="Siguiente">›</button>
+                  <button className="pag-btn" disabled={page >= totalPages} onClick={() => setPage(totalPages)} title="Última página">»</button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
       {/* Modal */}
