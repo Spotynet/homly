@@ -138,8 +138,8 @@ export default function Config() {
       .finally(() => setLoading(false));
   }, [tenantId]);
 
-  const loadFields   = useCallback(() => { if (!tenantId) return; extraFieldsAPI.list(tenantId).then(r => setFields(r.data.results || r.data)).catch(() => {}); }, [tenantId]);
-  const loadUsers    = useCallback(() => { if (!tenantId) return; usersAPI.list(tenantId).then(r => setTenantUsers(r.data.results || r.data)).catch(() => {}); }, [tenantId]);
+  const loadFields   = useCallback(() => { if (!tenantId) return; extraFieldsAPI.list(tenantId, { page_size: 9999 }).then(r => setFields(r.data.results || r.data)).catch(() => {}); }, [tenantId]);
+  const loadUsers    = useCallback(() => { if (!tenantId) return; usersAPI.list(tenantId, { page_size: 9999 }).then(r => setTenantUsers(r.data.results || r.data)).catch(() => {}); }, [tenantId]);
   const loadUnits    = useCallback((pageNum = 1, size) => {
     if (!tenantId) return;
     const sz = size ?? unitsPageSize;

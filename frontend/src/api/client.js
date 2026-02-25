@@ -68,7 +68,7 @@ export const unitsAPI = {
 
 // ─── Users ──────────────────────────────────────
 export const usersAPI = {
-  list: (tenantId) => api.get(`/tenants/${tenantId}/users/`),
+  list: (tenantId, params) => api.get(`/tenants/${tenantId}/users/`, { params: params || {} }),
   create: (data) => api.post('/users/', data),
   delete: (tenantId, id) => api.delete(`/tenants/${tenantId}/users/${id}/`),
 };
@@ -83,7 +83,7 @@ export const paymentsAPI = {
 
 // ─── Extra Fields ───────────────────────────────
 export const extraFieldsAPI = {
-  list: (tenantId) => api.get(`/tenants/${tenantId}/extra-fields/`),
+  list: (tenantId, params) => api.get(`/tenants/${tenantId}/extra-fields/`, { params: params || {} }),
   create: (tenantId, data) => api.post(`/tenants/${tenantId}/extra-fields/`, data),
   update: (tenantId, id, data) => api.patch(`/tenants/${tenantId}/extra-fields/${id}/`, data),
   delete: (tenantId, id) => api.delete(`/tenants/${tenantId}/extra-fields/${id}/`),

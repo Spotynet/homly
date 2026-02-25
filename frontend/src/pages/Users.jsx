@@ -16,8 +16,8 @@ export default function Users() {
   const load = async () => {
     try {
       const [uRes, unitRes] = await Promise.all([
-        usersAPI.list(tenantId),
-        unitsAPI.list(tenantId),
+        usersAPI.list(tenantId, { page_size: 9999 }),
+        unitsAPI.list(tenantId, { page_size: 9999 }),
       ]);
       setUsers(uRes.data.results || uRes.data);
       setUnits(unitRes.data.results || unitRes.data);

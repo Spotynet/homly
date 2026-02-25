@@ -30,9 +30,9 @@ export default function Gastos() {
   const load = async () => {
     if (!tenantId) return;
     const [g, cc, ef] = await Promise.all([
-      gastosAPI.list(tenantId, { period }),
-      cajaChicaAPI.list(tenantId, { period }),
-      extraFieldsAPI.list(tenantId),
+      gastosAPI.list(tenantId, { period, page_size: 9999 }),
+      cajaChicaAPI.list(tenantId, { period, page_size: 9999 }),
+      extraFieldsAPI.list(tenantId, { page_size: 9999 }),
     ]);
     setGastos(g.data.results || g.data);
     setCajaChica(cc.data.results || cc.data);

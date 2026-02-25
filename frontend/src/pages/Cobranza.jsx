@@ -101,9 +101,9 @@ export default function Cobranza() {
       const [uRes, pRes, efRes, tRes, uiRes] = await Promise.all([
         unitsAPI.list(tenantId, { page_size: 9999 }),
         paymentsAPI.list(tenantId, { period, page_size: 9999 }),
-        extraFieldsAPI.list(tenantId),
+        extraFieldsAPI.list(tenantId, { page_size: 9999 }),
         tenantsAPI.get(tenantId).catch(() => ({ data: null })),
-        unrecognizedIncomeAPI.list(tenantId, { period }).catch(() => ({ data: [] })),
+        unrecognizedIncomeAPI.list(tenantId, { period, page_size: 9999 }).catch(() => ({ data: [] })),
       ]);
       setUnits(uRes.data.results || uRes.data);
       setPayments(pRes.data.results || pRes.data);

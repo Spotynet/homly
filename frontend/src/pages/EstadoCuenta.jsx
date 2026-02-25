@@ -33,7 +33,7 @@ export default function EstadoCuenta() {
   // Load units + tenant info
   useEffect(() => {
     if (!tenantId) return;
-    unitsAPI.list(tenantId).then(r => {
+    unitsAPI.list(tenantId, { page_size: 9999 }).then(r => {
       const list = r.data.results || r.data;
       setUnits(list);
       if (isVecino && user?.unit_id) {
@@ -603,10 +603,10 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
     if (!tenantId) return;
     setEcLoading(true);
     Promise.all([
-      paymentsAPI.list(tenantId, {}).catch(() => ({ data: [] })),
-      gastosAPI.list(tenantId).catch(() => ({ data: [] })),
-      cajaChicaAPI.list(tenantId).catch(() => ({ data: [] })),
-      unrecognizedIncomeAPI.list(tenantId).catch(() => ({ data: [] })),
+      paymentsAPI.list(tenantId, { page_size: 9999 }).catch(() => ({ data: [] })),
+      gastosAPI.list(tenantId, { page_size: 9999 }).catch(() => ({ data: [] })),
+      cajaChicaAPI.list(tenantId, { page_size: 9999 }).catch(() => ({ data: [] })),
+      unrecognizedIncomeAPI.list(tenantId, { page_size: 9999 }).catch(() => ({ data: [] })),
     ]).then(([pRes, gRes, cRes, uiRes]) => {
       setPayments(pRes.data?.results || pRes.data || []);
       setGastos(gRes.data?.results || gRes.data || []);
