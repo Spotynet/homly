@@ -59,6 +59,7 @@ export function tenantStartPeriod(tenantData) {
 // Role labels and colors (matches roles object from original)
 export const ROLES = {
   superadmin: { label: 'Super Administrador', color: '#6D28D9', bg: '#F5F3FF' },
+  super_admin: { label: 'Super Administrador', color: '#6D28D9', bg: '#F5F3FF' },
   admin: { label: 'Administrador', color: '#1F7D5B', bg: '#EDFDF7' },
   tesorero: { label: 'Tesorero', color: '#D97706', bg: '#FFFBEB' },
   contador: { label: 'Contador', color: '#2563EB', bg: '#EFF6FF' },

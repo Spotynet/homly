@@ -781,8 +781,176 @@ class EstadoCuentaView(APIView):
 
 
 # ═══════════════════════════════════════════════════════════
-#  REPORTE GENERAL
+#  REPORTE GENERAL — Replicates HTML computePeriodBankData + computeBankBalanceForPeriod
 # ═══════════════════════════════════════════════════════════
+
+def _compute_report_data(tenant, period):
+    """Compute bank reconciliation data for a period (HTML computePeriodBankData)."""
+    units = Unit.objects.filter(tenant_id=tenant.id).order_by('unit_id_code')
+    cob_fields = list(ExtraField.objects.filter(
+        tenant_id=tenant.id, enabled=True
+    ).exclude(field_type='gastos'))
+    cf_map = {str(f.id): f for f in cob_fields}
+
+    payments = {
+        p.unit_id: p for p in
+        Payment.objects.filter(tenant_id=tenant.id, period=period).prefetch_related('field_payments')
+    }
+
+    ingreso_mantenimiento = Decimal('0')
+    ingresos_referenciados = Decimal('0')
+    ingresos_conceptos = {}
+    ingreso_units_count = 0
+
+    for unit in units:
+        pay = payments.get(unit.id)
+        if not pay:
+            continue
+        ingreso_units_count += 1
+        fp_map = {fp.field_key: fp for fp in pay.field_payments.all()}
+
+        # Maintenance
+        maint = fp_map.get('maintenance')
+        if maint:
+            rec = Decimal(str(maint.received or 0))
+            if rec > 0:
+                from decimal import ROUND_FLOOR
+                int_rec = rec.quantize(Decimal('1'), rounding=ROUND_FLOOR)
+                cents = rec - int_rec
+                if cents > Decimal('0.001'):
+                    ingreso_mantenimiento += int_rec
+                    ingresos_referenciados += cents
+                else:
+                    ingreso_mantenimiento += rec
+
+        # Adelanto targets (maintenance)
+        if maint and maint.adelanto_targets:
+            for amt in (maint.adelanto_targets or {}).values():
+                a = Decimal(str(amt or 0))
+                if a > 0:
+                    from decimal import ROUND_FLOOR
+                    int_a = a.quantize(Decimal('1'), rounding=ROUND_FLOOR)
+                    cents_a = a - int_a
+                    if cents_a > Decimal('0.001'):
+                        ingreso_mantenimiento += int_a
+                        ingresos_referenciados += cents_a
+                    else:
+                        ingreso_mantenimiento += a
+
+        # Extra cobranza fields
+        for fk, fp in fp_map.items():
+            if fk == 'maintenance':
+                continue
+            rec = Decimal(str((fp and fp.received) or 0))
+            if rec > 0:
+                if fk not in ingresos_conceptos:
+                    cf = cf_map.get(fk)
+                    ingresos_conceptos[fk] = {'total': Decimal('0'), 'label': getattr(cf, 'label', fk) if cf else fk}
+                from decimal import ROUND_FLOOR
+                int_rec = rec.quantize(Decimal('1'), rounding=ROUND_FLOOR)
+                cents_rec = rec - int_rec
+                if cents_rec > Decimal('0.001'):
+                    ingresos_conceptos[fk]['total'] += int_rec
+                    ingresos_referenciados += cents_rec
+                else:
+                    ingresos_conceptos[fk]['total'] += rec
+            if fp and fp.adelanto_targets:
+                for amt in fp.adelanto_targets.values():
+                    a2 = Decimal(str(amt or 0))
+                    if a2 > 0:
+                        if fk not in ingresos_conceptos:
+                            cf2 = cf_map.get(fk)
+                            ingresos_conceptos[fk] = {'total': Decimal('0'), 'label': getattr(cf2, 'label', fk) if cf2 else fk}
+                        ingresos_conceptos[fk]['total'] += a2
+
+        # Adeudo payments
+        ap = pay.adeudo_payments or {}
+        for _tp, field_map in ap.items():
+            for f_id, amt in (field_map or {}).items():
+                a3 = Decimal(str(amt or 0))
+                if a3 > 0:
+                    if f_id == 'maintenance':
+                        from decimal import ROUND_FLOOR
+                        int_a3 = a3.quantize(Decimal('1'), rounding=ROUND_FLOOR)
+                        cm = a3 - int_a3
+                        if cm > Decimal('0.001'):
+                            ingreso_mantenimiento += int_a3
+                            ingresos_referenciados += cm
+                        else:
+                            ingreso_mantenimiento += a3
+                    else:
+                        if f_id not in ingresos_conceptos:
+                            cf3 = cf_map.get(f_id)
+                            ingresos_conceptos[f_id] = {'total': Decimal('0'), 'label': getattr(cf3, 'label', f_id) if cf3 else f_id}
+                        ingresos_conceptos[f_id]['total'] += a3
+
+    for cf in cob_fields:
+        fid = str(cf.id)
+        if fid in ingresos_conceptos:
+            ingresos_conceptos[fid]['label'] = cf.label
+
+    # Egresos: gastos conciliados vs cheques en tránsito
+    egresos_reconciled = []
+    cheques_transito = []
+    total_egresos = Decimal('0')
+    total_cheques = Decimal('0')
+
+    gastos = GastoEntry.objects.filter(tenant_id=tenant.id, period=period).select_related('field')
+    for g in gastos:
+        amt = Decimal(str(g.amount or 0))
+        if amt <= 0:
+            continue
+        label = g.field.label if g.field else str(g.field_id_legacy or 'Gasto')
+        entry = {'label': label, 'amount': float(amt), 'provider': g.provider_name or ''}
+        if g.bank_reconciled:
+            egresos_reconciled.append(entry)
+            total_egresos += amt
+        else:
+            cheques_transito.append(entry)
+            total_cheques += amt
+
+    # Caja chica (treated as reconciled expense)
+    caja = CajaChicaEntry.objects.filter(tenant_id=tenant.id, period=period)
+    for c in caja:
+        amt = Decimal(str(c.amount or 0))
+        if amt > 0:
+            egresos_reconciled.append({'label': 'Caja Chica', 'amount': float(amt), 'provider': c.description or ''})
+            total_egresos += amt
+
+    total_ingresos = ingreso_mantenimiento + ingresos_referenciados + sum(
+        x['total'] for x in ingresos_conceptos.values()
+    )
+
+    return {
+        'ingreso_mantenimiento': float(ingreso_mantenimiento),
+        'ingresos_referenciados': float(ingresos_referenciados),
+        'ingresos_conceptos': {k: {'total': float(v['total']), 'label': v['label']} for k, v in ingresos_conceptos.items()},
+        'total_ingresos_reconciled': float(total_ingresos),
+        'ingreso_units_count': ingreso_units_count,
+        'egresos_reconciled': egresos_reconciled,
+        'cheques_transito': cheques_transito,
+        'total_egresos_reconciled': float(total_egresos),
+        'total_cheques_transito': float(total_cheques),
+        'ingresos_no_reconciled': 0,  # Payment has no bank_reconciled in backend
+        'ingreso_no_recon_count': 0,
+        'ingresos_no_recon_details': [],
+    }
+
+
+def _compute_saldo_inicial(tenant, target_period):
+    """Saldo inicial = bank_initial_balance + sum(ingresos-egresos) of all periods before target."""
+    start = getattr(tenant, 'operation_start_date', None) or '2024-01'
+    periods = _periods_between(start, target_period)
+    if not periods or target_period not in periods:
+        return float(tenant.bank_initial_balance or 0)
+    idx = periods.index(target_period) if target_period in periods else len(periods)
+    prev_periods = periods[:idx]
+    running = Decimal(str(tenant.bank_initial_balance or 0))
+    for p in prev_periods:
+        data = _compute_report_data(tenant, p)
+        running += Decimal(str(data['total_ingresos_reconciled'])) - Decimal(str(data['total_egresos_reconciled']))
+    return float(running)
+
 
 class ReporteGeneralView(APIView):
     """GET /api/tenants/{tenant_id}/reporte-general/?period=YYYY-MM"""
@@ -797,52 +965,17 @@ class ReporteGeneralView(APIView):
         tenant = Tenant.objects.get(id=tenant_id)
         units = Unit.objects.filter(tenant_id=tenant_id).order_by('unit_id_code')
 
-        # Payments for period
-        payments = {
-            p.unit_id: p for p in
-            Payment.objects.filter(
-                tenant_id=tenant_id, period=period
-            ).prefetch_related('field_payments')
-        }
-
-        # Extra fields
-        extra_fields = list(ExtraField.objects.filter(
-            tenant_id=tenant_id, enabled=True
-        ))
-
-        # Gastos
-        gastos = GastoEntry.objects.filter(
-            tenant_id=tenant_id, period=period
-        ).select_related('field')
-
-        caja_chica = CajaChicaEntry.objects.filter(
-            tenant_id=tenant_id, period=period
-        )
-
-        unit_data = []
-        for unit in units:
-            payment = payments.get(unit.id)
-            fp_data = {}
-            if payment:
-                for fp in payment.field_payments.all():
-                    fp_data[fp.field_key] = {
-                        'received': str(fp.received),
-                        'target_unit_id': str(fp.target_unit_id) if fp.target_unit_id else None,
-                    }
-
-            unit_data.append({
-                'unit': UnitSerializer(unit).data,
-                'payment': PaymentSerializer(payment).data if payment else None,
-                'field_payments': fp_data,
-            })
+        report_data = _compute_report_data(tenant, period)
+        saldo_inicial = _compute_saldo_inicial(tenant, period)
+        saldo_final = saldo_inicial + report_data['total_ingresos_reconciled'] - report_data['total_egresos_reconciled']
 
         return Response({
             'tenant': TenantDetailSerializer(tenant).data,
             'period': period,
-            'units': unit_data,
-            'extra_fields': ExtraFieldSerializer(extra_fields, many=True).data,
-            'gastos': GastoEntrySerializer(gastos, many=True).data,
-            'caja_chica': CajaChicaEntrySerializer(caja_chica, many=True).data,
+            'units_count': units.count(),
+            'saldo_inicial': saldo_inicial,
+            'saldo_final': saldo_final,
+            'report_data': report_data,
             'is_closed': ClosedPeriod.objects.filter(
                 tenant_id=tenant_id, period=period
             ).exists(),

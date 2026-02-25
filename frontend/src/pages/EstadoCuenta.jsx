@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { unitsAPI, reportsAPI, tenantsAPI, paymentsAPI, gastosAPI, cajaChicaAPI } from '../api/client';
-import { statusClass, statusLabel, fmtDate, periodLabel, todayPeriod, prevPeriod, nextPeriod } from '../utils/helpers';
+import { statusClass, statusLabel, fmtDate, periodLabel, todayPeriod, prevPeriod, nextPeriod, ROLES } from '../utils/helpers';
 import { Search, ChevronLeft, ChevronRight, Building, Globe, DollarSign, ArrowDown, TrendingDown, AlertCircle, Calendar, Printer, ShoppingBag } from 'lucide-react';
 
 function fmt(n) {
@@ -10,7 +10,7 @@ function fmt(n) {
 }
 
 export default function EstadoCuenta() {
-  const { tenantId, isVecino, user } = useAuth();
+  const { tenantId, isVecino, user, role } = useAuth();
   const location = useLocation();
   const [units, setUnits] = useState([]);
   const [unitSummaries, setUnitSummaries] = useState([]);
@@ -518,13 +518,13 @@ export default function EstadoCuenta() {
           {/* ════════════════════════ REPORTE GENERAL ════════════════════════ */}
           {view === 'reporte' && (
             <ReporteGeneralView
-              tenantId={tenantId}
               tenantData={tenantData}
               generalData={generalData}
               genLoading={genLoading}
               cutoff={cutoff}
               setCutoff={setCutoff}
               startPeriod={startPeriod}
+              user={user} role={role}
             />
           )}
 
@@ -806,47 +806,14 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
 }
 
 /* ═══════════════════════════════════════════════════════════
-   REPORTE GENERAL (bank-style income/expense report)
+   REPORTE GENERAL (HTML original — conciliación bancaria)
    ═══════════════════════════════════════════════════════════ */
-function ReporteGeneralView({ tenantId, tenantData, generalData, genLoading, cutoff, setCutoff, startPeriod }) {
-  const tenantUnits = generalData?.units || [];
-
-  // Compute income/expense totals (payment income = received + adelantos + adeudos)
-  const reportData = useMemo(() => {
-    let totalIngresos = 0, totalEgresos = 0;
-    let maintIncome = 0;
-    const fieldIncome = {};
-
-    tenantUnits.forEach(item => {
-      const payment = item.payment;
-      totalIngresos += payTotalIncome(payment);
-
-      if (payment) {
-        const fps = item.field_payments || {};
-        const fpList = payment.field_payments || [];
-        const fpMap = { ...fps };
-        fpList.forEach(fp => { fpMap[fp.field_key] = fp; });
-        const mr = parseFloat((fpMap.maintenance || {}).received || 0);
-        maintIncome += mr;
-        Object.entries(fpMap).forEach(([fid, fp]) => {
-          const rec = parseFloat((fp && fp.received) || 0);
-          if (rec > 0) {
-            if (!fieldIncome[fid]) fieldIncome[fid] = 0;
-            fieldIncome[fid] += rec;
-          }
-        });
-      }
-    });
-
-    (generalData?.gastos || []).forEach(g => { totalEgresos += parseFloat(g.amount || 0); });
-    (generalData?.caja_chica || []).forEach(c => { totalEgresos += parseFloat(c.amount || 0); });
-
-    const saldoFinal = totalIngresos - totalEgresos;
-    const gastosTotal = (generalData?.gastos || []).reduce((a, g) => a + parseFloat(g.amount || 0), 0);
-    const cajaTotal = (generalData?.caja_chica || []).reduce((a, c) => a + parseFloat(c.amount || 0), 0);
-
-    return { totalIngresos, totalEgresos, saldoFinal, maintIncome, fieldIncome, gastosTotal, cajaTotal };
-  }, [tenantUnits, generalData]);
+function ReporteGeneralView({ tenantData, generalData, genLoading, cutoff, setCutoff, startPeriod, user, role }) {
+  const fmt2 = (n) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n ?? 0);
+  const rd = generalData?.report_data || {};
+  const saldoInicial = generalData?.saldo_inicial ?? 0;
+  const saldoFinal = generalData?.saldo_final ?? 0;
+  const unitsCount = generalData?.units_count ?? 0;
 
   const handlePrev = () => setCutoff(prevPeriod(cutoff));
   const handleNext = () => {
@@ -884,36 +851,36 @@ function ReporteGeneralView({ tenantId, tenantData, generalData, genLoading, cut
         </div>
       </div>
 
-      {/* KPI Strip */}
+      {/* KPI Strip (HTML) */}
       <div className="cob-stats" style={{ marginBottom: 20, gridTemplateColumns: 'repeat(4, 1fr)' }}>
         <div className="cob-stat">
           <div className="cob-stat-icon" style={{ background: 'var(--blue-50)', color: 'var(--blue-500)' }}><DollarSign size={18} /></div>
           <div>
             <div className="cob-stat-label">Saldo Inicial</div>
-            <div className="cob-stat-value">{fmt(0)}</div>
+            <div className="cob-stat-value">{fmt2(saldoInicial)}</div>
           </div>
         </div>
         <div className="cob-stat">
           <div className="cob-stat-icon" style={{ background: 'var(--teal-50)', color: 'var(--teal-500)' }}><ArrowDown size={18} /></div>
           <div>
             <div className="cob-stat-label">Ingresos Conciliados</div>
-            <div className="cob-stat-value" style={{ color: 'var(--teal-600)' }}>{fmt(reportData.totalIngresos)}</div>
+            <div className="cob-stat-value" style={{ color: 'var(--teal-600)' }}>{fmt2(rd.total_ingresos_reconciled)}</div>
           </div>
         </div>
         <div className="cob-stat">
           <div className="cob-stat-icon" style={{ background: 'var(--coral-50)', color: 'var(--coral-400)' }}><ShoppingBag size={18} /></div>
           <div>
             <div className="cob-stat-label">Egresos Conciliados</div>
-            <div className="cob-stat-value" style={{ color: 'var(--coral-500)' }}>{fmt(reportData.totalEgresos)}</div>
+            <div className="cob-stat-value" style={{ color: 'var(--coral-500)' }}>{fmt2(rd.total_egresos_reconciled)}</div>
           </div>
         </div>
         <div className="cob-stat">
-          <div className="cob-stat-icon" style={{ background: reportData.saldoFinal >= 0 ? 'var(--teal-50)' : 'var(--coral-50)', color: reportData.saldoFinal >= 0 ? 'var(--teal-500)' : 'var(--coral-400)' }}>
+          <div className="cob-stat-icon" style={{ background: saldoFinal >= 0 ? 'var(--teal-50)' : 'var(--coral-50)', color: saldoFinal >= 0 ? 'var(--teal-500)' : 'var(--coral-400)' }}>
             <DollarSign size={18} />
           </div>
           <div>
             <div className="cob-stat-label">Saldo Final Banco</div>
-            <div className="cob-stat-value" style={{ color: reportData.saldoFinal >= 0 ? 'var(--teal-600)' : 'var(--coral-500)' }}>{fmt(reportData.saldoFinal)}</div>
+            <div className="cob-stat-value" style={{ color: saldoFinal >= 0 ? 'var(--teal-600)' : 'var(--coral-500)' }}>{fmt2(saldoFinal)}</div>
           </div>
         </div>
       </div>
@@ -924,12 +891,26 @@ function ReporteGeneralView({ tenantId, tenantData, generalData, genLoading, cut
         <div className="card">
           <div className="card-head">
             <h3 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <DollarSign size={16} /> Reporte General de {tenantData?.name || ''} — {periodLabel(cutoff)}
+              {tenantData?.logo ? <img src={tenantData.logo} alt="" style={{ height: 22, borderRadius: 4 }} /> : <DollarSign size={16} />}
+              Reporte General de {tenantData?.name || ''} — {periodLabel(cutoff)}
             </h3>
-            <span style={{ fontSize: 12, color: 'var(--ink-400)' }}>{tenantUnits.length} unidades</span>
+            <span style={{ fontSize: 12, color: 'var(--ink-400)' }}>{unitsCount} unidades</span>
           </div>
           <div className="card-body" style={{ padding: 0 }}>
-            {/* Ingresos Section */}
+
+            {/* SALDO INICIAL (HTML) */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 24px', background: 'var(--blue-50)', borderBottom: '2px solid var(--blue-100)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ fontSize: 20 }}>🏦</span>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--blue-700)' }}>Saldo Inicial de Banco</div>
+                  <div style={{ fontSize: 11, color: 'var(--blue-600)' }}>Acumulado al cierre del período anterior</div>
+                </div>
+              </div>
+              <div style={{ fontFamily: 'var(--font-display)', fontSize: 22, fontWeight: 600, color: 'var(--blue-700)' }}>{fmt2(saldoInicial)}</div>
+            </div>
+
+            {/* INGRESOS CONCILIADOS (HTML) */}
             <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--sand-100)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
                 <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--teal-500)', flexShrink: 0 }} />
@@ -937,87 +918,157 @@ function ReporteGeneralView({ tenantId, tenantData, generalData, genLoading, cut
                   Ingresos Conciliados
                 </span>
                 <span style={{ fontSize: 11, color: 'var(--ink-400)', marginLeft: 'auto' }}>
-                  {tenantUnits.filter(i => i.payment).length} de {tenantUnits.length} unidades
+                  {rd.ingreso_units_count} de {unitsCount} unidades conciliadas
                 </span>
               </div>
 
-              {reportData.maintIncome > 0 && (
+              {rd.ingreso_mantenimiento > 0 && (
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--sand-50)' }}>
                   <span style={{ fontSize: 13, color: 'var(--ink-600)' }}>Mantenimiento</span>
-                  <span style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 600, color: 'var(--teal-600)' }}>{fmt(reportData.maintIncome)}</span>
+                  <span style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 600, color: 'var(--teal-600)' }}>{fmt2(rd.ingreso_mantenimiento)}</span>
                 </div>
               )}
 
-              {(generalData.extra_fields || []).map(f => {
-                const val = reportData.fieldIncome[f.id] || 0;
-                if (val <= 0) return null;
-                return (
-                  <div key={f.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--sand-50)' }}>
-                    <span style={{ fontSize: 13, color: 'var(--ink-600)' }}>{f.label}</span>
-                    <span style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 600, color: 'var(--teal-600)' }}>{fmt(val)}</span>
-                  </div>
-                );
-              })}
+              {Object.entries(rd.ingresos_conceptos || {}).filter(([, obj]) => obj.total > 0).map(([fid, obj]) => (
+                <div key={fid} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--sand-50)' }}>
+                  <span style={{ fontSize: 13, color: 'var(--ink-600)' }}>{obj.label || fid}</span>
+                  <span style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 600, color: 'var(--teal-600)' }}>{fmt2(obj.total)}</span>
+                </div>
+              ))}
+
+              {rd.ingresos_referenciados > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--sand-50)' }}>
+                  <span style={{ fontSize: 13, color: 'var(--purple-500)', fontWeight: 600 }}>
+                    Ingresos Referenciados <span style={{ fontWeight: 400, fontSize: 11, color: 'var(--ink-400)' }}>(centavos de identificación)</span>
+                  </span>
+                  <span style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 600, color: 'var(--purple-500)' }}>{fmt2(rd.ingresos_referenciados)}</span>
+                </div>
+              )}
 
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', marginTop: 4 }}>
                 <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--teal-700)' }}>TOTAL INGRESOS</span>
-                <span style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 700, color: 'var(--teal-700)' }}>{fmt(reportData.totalIngresos)}</span>
+                <span style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 700, color: 'var(--teal-700)' }}>{fmt2(rd.total_ingresos_reconciled)}</span>
               </div>
             </div>
 
-            {/* Egresos Section */}
+            {/* INGRESOS NO CONCILIADOS (HTML) */}
+            {rd.ingresos_no_reconciled > 0 && (
+              <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--sand-100)', background: 'var(--purple-50)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--purple-500)', flexShrink: 0 }} />
+                  <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--purple-500)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                    Ingresos No Conciliados
+                  </span>
+                  <span style={{ fontSize: 11, color: 'var(--ink-400)', marginLeft: 'auto' }}>{rd.ingreso_no_recon_count} unidad(es) sin conciliar</span>
+                </div>
+                {(rd.ingresos_no_recon_details || []).map((nr, i) => (
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid rgba(124,58,237,0.08)' }}>
+                    <div>
+                      <span style={{ fontSize: 13, color: 'var(--purple-700)', fontWeight: 600 }}>{nr.unit_id} · {nr.unit_name}</span>
+                      {nr.payment_type && <span style={{ fontSize: 10, color: 'var(--purple-400)', marginLeft: 8 }}>{nr.payment_type}</span>}
+                      {nr.payment_date && <span style={{ fontSize: 10, color: 'var(--purple-400)', marginLeft: 6 }}>{nr.payment_date}</span>}
+                    </div>
+                    <span style={{ fontFamily: 'var(--font-display)', fontSize: 14, fontWeight: 600, color: 'var(--purple-500)' }}>{fmt2(nr.amount)}</span>
+                  </div>
+                ))}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', marginTop: 6, borderTop: '1.5px solid rgba(124,58,237,0.15)' }}>
+                  <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--purple-500)' }}>TOTAL INGRESOS NO CONCILIADOS</span>
+                  <span style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 700, color: 'var(--purple-500)' }}>{fmt2(rd.ingresos_no_reconciled)}</span>
+                </div>
+              </div>
+            )}
+
+            {/* EGRESOS CONCILIADOS (HTML) */}
             <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--sand-100)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
                 <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--coral-400)', flexShrink: 0 }} />
-                <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--coral-500)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                  Egresos
+                <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--coral-600)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                  Egresos Conciliados
                 </span>
+                <span style={{ fontSize: 11, color: 'var(--ink-400)', marginLeft: 'auto' }}>{rd.egresos_reconciled?.length || 0} concepto(s)</span>
               </div>
 
-              {reportData.gastosTotal > 0 && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--sand-50)' }}>
-                  <span style={{ fontSize: 13, color: 'var(--ink-600)' }}>Gastos del Período</span>
-                  <span style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 600, color: 'var(--coral-500)' }}>{fmt(reportData.gastosTotal)}</span>
-                </div>
-              )}
-
-              {reportData.cajaTotal > 0 && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--sand-50)' }}>
-                  <span style={{ fontSize: 13, color: 'var(--ink-600)' }}>Caja Chica</span>
-                  <span style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 600, color: 'var(--coral-500)' }}>{fmt(reportData.cajaTotal)}</span>
-                </div>
+              {(rd.egresos_reconciled || []).length === 0 ? (
+                <div style={{ padding: '12px 0', color: 'var(--ink-300)', fontSize: 13, textAlign: 'center' }}>Sin egresos conciliados en este período</div>
+              ) : (
+                (rd.egresos_reconciled || []).map((eg, i) => (
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--sand-50)' }}>
+                    <div>
+                      <span style={{ fontSize: 13, color: 'var(--ink-600)' }}>{eg.label}</span>
+                      {eg.provider && <span style={{ fontSize: 11, color: 'var(--ink-400)', marginLeft: 8 }}>· {eg.provider}</span>}
+                    </div>
+                    <span style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 600, color: 'var(--coral-500)' }}>-{fmt2(eg.amount)}</span>
+                  </div>
+                ))
               )}
 
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', marginTop: 4 }}>
-                <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--coral-500)' }}>TOTAL EGRESOS</span>
-                <span style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 700, color: 'var(--coral-500)' }}>{fmt(reportData.totalEgresos)}</span>
+                <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--coral-600)' }}>TOTAL EGRESOS</span>
+                <span style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 700, color: 'var(--coral-500)' }}>-{fmt2(rd.total_egresos_reconciled)}</span>
               </div>
             </div>
 
-            {/* Saldo Final */}
+            {/* CHEQUES EN TRÁNSITO (HTML) */}
+            {((rd.cheques_transito || []).length > 0 || rd.total_cheques_transito > 0) && (
+              <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--sand-100)', background: 'var(--amber-50)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--amber-500)', flexShrink: 0 }} />
+                  <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--amber-700)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                    Cheques en Tránsito
+                  </span>
+                  <span style={{ fontSize: 11, color: 'var(--amber-600)', marginLeft: 'auto' }}>Gastos no conciliados en banco</span>
+                </div>
+                {(rd.cheques_transito || []).map((ch, i) => (
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--amber-100)' }}>
+                    <div>
+                      <span style={{ fontSize: 13, color: 'var(--amber-800)' }}>{ch.label}</span>
+                      {ch.provider && <span style={{ fontSize: 11, color: 'var(--amber-600)', marginLeft: 8 }}>· {ch.provider}</span>}
+                    </div>
+                    <span style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 600, color: 'var(--amber-700)' }}>{fmt2(ch.amount)}</span>
+                  </div>
+                ))}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', marginTop: 4 }}>
+                  <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--amber-700)' }}>TOTAL CHEQUES EN TRÁNSITO</span>
+                  <span style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 700, color: 'var(--amber-700)' }}>{fmt2(rd.total_cheques_transito)}</span>
+                </div>
+              </div>
+            )}
+
+            {/* SALDO FINAL (HTML) */}
             <div style={{
               display: 'flex', justifyContent: 'space-between', alignItems: 'center',
               padding: '20px 24px',
-              background: reportData.saldoFinal >= 0 ? 'var(--teal-50)' : 'var(--coral-50)',
-              borderTop: `2px solid ${reportData.saldoFinal >= 0 ? 'var(--teal-200)' : 'var(--coral-200)'}`
+              background: saldoFinal >= 0 ? 'linear-gradient(135deg, var(--teal-50), var(--blue-50))' : 'var(--coral-50)'
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span style={{ fontSize: 20 }}>💰</span>
+                <span style={{ fontSize: 22 }}>🏦</span>
                 <div>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: reportData.saldoFinal >= 0 ? 'var(--teal-700)' : 'var(--coral-600)' }}>
-                    Saldo Final
-                  </div>
-                  <div style={{ fontSize: 11, color: 'var(--ink-400)' }}>
-                    Ingresos - Egresos del período
-                  </div>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: saldoFinal >= 0 ? 'var(--teal-700)' : 'var(--coral-600)' }}>Saldo Final del Banco</div>
+                  <div style={{ fontSize: 11, color: 'var(--ink-400)' }}>Este saldo es el inicial para {periodLabel(nextPeriod(cutoff))}</div>
                 </div>
               </div>
-              <div style={{
-                fontFamily: 'var(--font-display)', fontSize: 26, fontWeight: 700,
-                color: reportData.saldoFinal >= 0 ? 'var(--teal-700)' : 'var(--coral-600)'
-              }}>
-                {fmt(reportData.saldoFinal)}
-              </div>
+              <div style={{ fontFamily: 'var(--font-display)', fontSize: 28, fontWeight: 700, color: saldoFinal >= 0 ? 'var(--teal-700)' : 'var(--coral-600)' }}>{fmt2(saldoFinal)}</div>
+            </div>
+
+            {/* FÓRMULA (HTML) */}
+            <div style={{ padding: '14px 24px', background: 'var(--sand-50)', fontSize: 12, color: 'var(--ink-400)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <AlertCircle size={13} />
+              <span><strong>Fórmula:</strong> Saldo Inicial ({fmt2(saldoInicial)}) + Ingresos Conciliados ({fmt2(rd.total_ingresos_reconciled)}) − Egresos Conciliados ({fmt2(rd.total_egresos_reconciled)}) = <strong>{fmt2(saldoFinal)}</strong></span>
+              {rd.ingresos_no_reconciled > 0 && (
+                <div style={{ marginTop: 6, color: 'var(--purple-500)', fontSize: 11 }}>
+                  <AlertCircle size={11} style={{ display: 'inline', verticalAlign: -1, marginRight: 4 }} />
+                  Existen ingresos no conciliados por {fmt2(rd.ingresos_no_reconciled)} pendientes de verificación bancaria.
+                </div>
+              )}
+              {rd.total_cheques_transito > 0 && (
+                <span style={{ color: 'var(--amber-600)' }}> · Cheques en tránsito: {fmt2(rd.total_cheques_transito)} (pendientes de conciliar)</span>
+              )}
+            </div>
+
+            {/* Footer (HTML) */}
+            <div style={{ padding: '12px 24px', display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--ink-400)' }}>
+              <span>Generado por: {user?.name || ''} {role && ROLES[role] ? ` (${ROLES[role].label})` : ''} · Homly · Powered by Spotynet</span>
+              <span>{tenantData?.name || ''} — Reporte General — {periodLabel(cutoff)}</span>
             </div>
           </div>
         </div>
