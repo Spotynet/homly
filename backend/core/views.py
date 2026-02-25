@@ -778,6 +778,9 @@ class EstadoCuentaView(APIView):
             total_abono = Decimal('0')
             total_deuda = Decimal('0')
             con_adeudo = 0
+            total_ingresos_no_identificados = Decimal('0')
+            for ui in UnrecognizedIncome.objects.filter(tenant_id=tenant_id, period__lte=cutoff, period__gte=start_period):
+                total_ingresos_no_identificados += Decimal(str(ui.amount or 0))
 
             for unit in units:
                 rows, tc, tp, bal = _compute_statement(tenant, str(unit.id), start_period, cutoff)
@@ -801,7 +804,8 @@ class EstadoCuentaView(APIView):
                 'period': cutoff,
                 'units': unit_data,
                 'total_cargo': str(total_cargo),
-                'total_abono': str(total_abono),
+                'total_abono': str(total_abono + total_ingresos_no_identificados),
+                'total_ingresos_no_identificados': str(total_ingresos_no_identificados),
                 'total_deuda': str(total_deuda),
                 'con_adeudo': con_adeudo,
                 'start_period': start_period,
@@ -980,14 +984,29 @@ def _compute_report_data(tenant, period):
             egresos_reconciled.append({'label': 'Caja Chica', 'amount': float(amt), 'provider': c.description or ''})
             total_egresos += amt
 
+    # Ingresos no identificados (UnrecognizedIncome)
+    ingresos_no_identificados = Decimal('0')
+    ingresos_no_identificados_list = []
+    for ui in UnrecognizedIncome.objects.filter(tenant_id=tenant.id, period=period):
+        amt = Decimal(str(ui.amount or 0))
+        if amt > 0:
+            ingresos_no_identificados += amt
+            ingresos_no_identificados_list.append({
+                'concept': ui.description or '',
+                'amount': float(amt),
+                'bank_reconciled': ui.bank_reconciled,
+            })
+
     total_ingresos = ingreso_mantenimiento + ingresos_referenciados + sum(
         x['total'] for x in ingresos_conceptos.values()
-    )
+    ) + ingresos_no_identificados
 
     return {
         'ingreso_mantenimiento': float(ingreso_mantenimiento),
         'ingresos_referenciados': float(ingresos_referenciados),
         'ingresos_conceptos': {k: {'total': float(v['total']), 'label': v['label']} for k, v in ingresos_conceptos.items()},
+        'ingresos_no_identificados': float(ingresos_no_identificados),
+        'ingresos_no_identificados_list': ingresos_no_identificados_list,
         'total_ingresos_reconciled': float(total_ingresos),
         'ingreso_units_count': ingreso_units_count,
         'egresos_reconciled': egresos_reconciled,

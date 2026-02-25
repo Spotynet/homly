@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { unitsAPI, reportsAPI, tenantsAPI, paymentsAPI, gastosAPI, cajaChicaAPI } from '../api/client';
+import { unitsAPI, reportsAPI, tenantsAPI, paymentsAPI, gastosAPI, cajaChicaAPI, unrecognizedIncomeAPI } from '../api/client';
 import { statusClass, statusLabel, fmtDate, periodLabel, todayPeriod, prevPeriod, nextPeriod, ROLES } from '../utils/helpers';
 import { Search, ChevronLeft, ChevronRight, Building, Globe, DollarSign, ArrowDown, TrendingDown, AlertCircle, Calendar, Printer, ShoppingBag } from 'lucide-react';
 
@@ -54,14 +54,18 @@ export default function EstadoCuenta() {
   }, [startPeriod, cutoff]);
 
   // Load unit summaries via estado-cuenta (without unit_id) for list view
+  const [listMeta, setListMeta] = useState(null);
   useEffect(() => {
     if (!tenantId || selectedUnit) return;
     reportsAPI.estadoCuenta(tenantId, { cutoff })
       .then(r => {
         const unitsList = r.data?.units || [];
         setUnitSummaries(unitsList);
+        setListMeta({
+          total_ingresos_no_identificados: parseFloat(r.data?.total_ingresos_no_identificados || 0),
+        });
       })
-      .catch(() => setUnitSummaries([]));
+      .catch(() => { setUnitSummaries([]); setListMeta(null); });
   }, [tenantId, cutoff, selectedUnit]);
 
   // Load unit detail with from/to params
@@ -100,7 +104,7 @@ export default function EstadoCuenta() {
     };
   }, [location.pathname]);
 
-  // Compute totals from unit summaries — handle { unit, total_charge, total_paid, balance } from estado-cuenta API
+  // Compute totals from unit summaries — total_abono from API already includes ingresos no identificados
   const summaryData = useMemo(() => {
     const raw = unitSummaries.length > 0 ? unitSummaries : [];
     const items = raw.map(item => {
@@ -401,6 +405,9 @@ export default function EstadoCuenta() {
                   <div>
                     <div className="cob-stat-label">Total Abonos</div>
                     <div className="cob-stat-value">{fmt(summaryData.totalAbonos)}</div>
+                    {listMeta?.total_ingresos_no_identificados > 0 && (
+                      <div style={{ fontSize: 10, color: 'var(--amber-600)', marginTop: 2 }}>incl. {fmt(listMeta.total_ingresos_no_identificados)} no identificados</div>
+                    )}
                   </div>
                 </div>
                 <div className="cob-stat">
@@ -565,6 +572,7 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
   const [payments, setPayments] = useState([]);
   const [gastos, setGastos] = useState([]);
   const [cajaChica, setCajaChica] = useState([]);
+  const [unrecognizedIncome, setUnrecognizedIncome] = useState([]);
   const [ecLoading, setEcLoading] = useState(false);
   const numUnits = generalData?.units?.length || 0;
 
@@ -576,10 +584,12 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
       paymentsAPI.list(tenantId, {}).catch(() => ({ data: [] })),
       gastosAPI.list(tenantId).catch(() => ({ data: [] })),
       cajaChicaAPI.list(tenantId).catch(() => ({ data: [] })),
-    ]).then(([pRes, gRes, cRes]) => {
+      unrecognizedIncomeAPI.list(tenantId).catch(() => ({ data: [] })),
+    ]).then(([pRes, gRes, cRes, uiRes]) => {
       setPayments(pRes.data?.results || pRes.data || []);
       setGastos(gRes.data?.results || gRes.data || []);
       setCajaChica(cRes.data?.results || cRes.data || []);
+      setUnrecognizedIncome(Array.isArray(uiRes.data) ? uiRes.data : (uiRes.data?.results || []));
     }).finally(() => setEcLoading(false));
   }, [tenantId]);
 
@@ -625,6 +635,12 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
       if (!gastoByPeriod[per]) gastoByPeriod[per] = 0;
       gastoByPeriod[per] += parseFloat(c.amount || 0);
     });
+    const uiByPeriod = {};
+    unrecognizedIncome.forEach(ui => {
+      const per = ui.period;
+      if (!uiByPeriod[per]) uiByPeriod[per] = 0;
+      uiByPeriod[per] += parseFloat(ui.amount || 0);
+    });
 
     return allPeriods.map(period => {
       const periodPayments = payByPeriod[period] || [];
@@ -639,6 +655,7 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
         else if (pay.status === 'parcial') parciales++;
         else pendientesCount++;
       });
+      recaudo += uiByPeriod[period] || 0;
 
       pendientesCount = numUnits - pagados - parciales;
       if (pendientesCount < 0) pendientesCount = 0;
@@ -647,7 +664,7 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
       const balance = recaudo - pGastos;
       return { period, totalCargo, cargoOblig: totalCargo, recaudo, pagados, parciales, pendientes: pendientesCount, pGastos, balance };
     });
-  }, [allPeriods, payments, gastos, cajaChica, chargePerUnit, numUnits]);
+  }, [allPeriods, payments, gastos, cajaChica, unrecognizedIncome, chargePerUnit, numUnits]);
 
   // Grand totals
   const totals = useMemo(() => {
@@ -942,6 +959,21 @@ function ReporteGeneralView({ tenantData, generalData, genLoading, cutoff, setCu
                     Ingresos Referenciados <span style={{ fontWeight: 400, fontSize: 11, color: 'var(--ink-400)' }}>(centavos de identificación)</span>
                   </span>
                   <span style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 600, color: 'var(--purple-500)' }}>{fmt2(rd.ingresos_referenciados)}</span>
+                </div>
+              )}
+
+              {rd.ingresos_no_identificados > 0 && (
+                <div style={{ padding: '8px 0', borderBottom: '1px solid var(--sand-50)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: 13, color: 'var(--amber-700)', fontWeight: 600 }}>Ingresos No Identificados</span>
+                    <span style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 600, color: 'var(--amber-700)' }}>{fmt2(rd.ingresos_no_identificados)}</span>
+                  </div>
+                  {(rd.ingresos_no_identificados_list || []).map((ui, i) => (
+                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '3px 12px', marginTop: 2 }}>
+                      <span style={{ fontSize: 12, color: 'var(--amber-600)' }}>▸ {ui.concept}{ui.bank_reconciled ? ' 🏦' : ''}</span>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--amber-600)' }}>{fmt2(ui.amount)}</span>
+                    </div>
+                  ))}
                 </div>
               )}
 
