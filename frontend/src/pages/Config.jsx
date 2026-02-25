@@ -195,8 +195,16 @@ export default function Config() {
 
   const savePosition = async () => {
     try {
-      if (posForm.id) await assemblyAPI.updatePosition(tenantId, posForm.id, posForm);
-      else await assemblyAPI.createPosition(tenantId, posForm);
+      const payload = {
+        title: posForm.title || posForm.name,
+        holder_name: posForm.holder_name || posForm.member_name || '',
+        holder_unit: posForm.holder_unit || null,
+      };
+      if (posForm.id) {
+        await assemblyAPI.updatePosition(tenantId, posForm.id, payload);
+      } else {
+        await assemblyAPI.createPosition(tenantId, { ...payload, tenant: tenantId });
+      }
       toast.success('Cargo guardado'); setPosForm(null); loadAssembly();
     } catch { toast.error('Error'); }
   };
