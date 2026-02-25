@@ -199,6 +199,12 @@ export default function Config() {
         title: posForm.title || posForm.name,
         holder_name: posForm.holder_name || posForm.member_name || '',
         holder_unit: posForm.holder_unit || null,
+        committee_id: posForm.committee_id || null,
+        email: posForm.email || '',
+        phone: posForm.phone || '',
+        start_date: posForm.start_date || '',
+        end_date: posForm.end_date || '',
+        notes: posForm.notes || '',
       };
       if (posForm.id) {
         await assemblyAPI.updatePosition(tenantId, posForm.id, payload);
