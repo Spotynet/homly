@@ -1285,6 +1285,42 @@ export default function Cobranza() {
                           ))}
                         </>
                       )}
+                      {(() => {
+                        const addlPays = pay?.additional_payments || [];
+                        if (addlPays.length === 0) return null;
+                        const rows = [];
+                        addlPays.forEach((ap, apIdx) => {
+                          const fpAP = ap.field_payments || ap.fieldPayments || {};
+                          const ptLabel = ap.payment_type ? (PAYMENT_TYPES[ap.payment_type]?.label || ap.payment_type) : '';
+                          const pdLabel = ap.payment_date ? new Date(ap.payment_date + 'T12:00:00').toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }) : '';
+                          Object.entries(fpAP).forEach(([fid, fd2]) => {
+                            const aAmt = parseFloat((fd2 && fd2.received) ?? fd2 ?? 0) || 0;
+                            if (aAmt <= 0) return;
+                            const fLabel = fid === 'maintenance' ? 'Mantenimiento' : (extraFields.find(e => e.id === fid) || {}).label || fid;
+                            const sublabel = ['Pago #' + (apIdx + 2), ptLabel, pdLabel].filter(Boolean).join(' · ') + (ap.bank_reconciled ? ' 🏦' : '');
+                            rows.push({ fLabel, sublabel, amount: aAmt });
+                          });
+                          if (ap.notes) rows.push({ isNote: true, notes: ap.notes });
+                        });
+                        if (rows.filter(r => !r.isNote).length === 0) return null;
+                        return (
+                          <>
+                            <tr className="receipt-section-header"><td colSpan={4} style={{ color: 'var(--blue-700)', background: 'var(--blue-50)' }}>+ PAGOS ADICIONALES ({addlPays.length})</td></tr>
+                            {rows.map((r, i) => (
+                              r.isNote ? (
+                                <tr key={i}><td colSpan={4} style={{ fontSize: 11, color: 'var(--ink-400)', padding: '2px 12px 8px' }}><AlertCircle size={11} style={{ display: 'inline', verticalAlign: -2, marginRight: 4 }} />{r.notes}</td></tr>
+                              ) : (
+                                <tr key={i}>
+                                  <td>{r.fLabel}<br /><small style={{ color: 'var(--blue-600)' }}>{r.sublabel}</small></td>
+                                  <td style={{ textAlign: 'right', color: 'var(--ink-300)' }}>—</td>
+                                  <td style={{ textAlign: 'right', color: 'var(--blue-600)', fontWeight: 700 }}>{rfmt(r.amount)}</td>
+                                  <td style={{ textAlign: 'right', color: 'var(--ink-300)' }}>—</td>
+                                </tr>
+                              )
+                            ))}
+                          </>
+                        );
+                      })()}
                     </tbody>
                     <tfoot>
                       <tr className="receipt-total">
@@ -1295,6 +1331,14 @@ export default function Cobranza() {
                       </tr>
                       {totalAdelanto > 0 && <tr><td colSpan={4} style={{ textAlign: 'right', fontSize: 11, color: 'var(--blue-600)', padding: '4px 12px' }}>Incluye {rfmt(totalAdelanto)} en pagos adelantados</td></tr>}
                       {totalAdeudo > 0 && <tr><td colSpan={4} style={{ textAlign: 'right', fontSize: 11, color: 'var(--coral-500)', padding: '4px 12px' }}>Incluye {rfmt(totalAdeudo)} en abonos a adeudo</td></tr>}
+                      {(pay?.additional_payments || []).length > 0 && (() => {
+                        let t = 0;
+                        (pay.additional_payments || []).forEach(ap => {
+                          const fp = ap.field_payments || ap.fieldPayments || {};
+                          Object.values(fp).forEach(fd => { t += parseFloat((fd && fd.received) ?? fd ?? 0) || 0; });
+                        });
+                        return t > 0 ? <tr><td colSpan={4} style={{ textAlign: 'right', fontSize: 11, color: 'var(--blue-600)', padding: '4px 12px' }}>Incluye {rfmt(t)} en pagos adicionales</td></tr> : null;
+                      })()}
                     </tfoot>
                   </table>
                   {pay?.notes && <div className="receipt-notes"><AlertCircle size={13} /> <strong>Notas:</strong> {pay.notes}</div>}
