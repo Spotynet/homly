@@ -670,6 +670,30 @@ tr:hover td { background: rgba(59,185,144,0.02); }
   border-radius: var(--radius-full);
 }
 
+/* ─── Receipt (recibo de pago) ─── */
+.receipt-container { background: var(--white); border: 1px solid var(--sand-200); border-radius: var(--radius-lg); padding: 24px; max-width: 640px; margin: 0 auto; font-family: var(--font-body); }
+.receipt-header { display: flex; align-items: flex-start; gap: 20px; margin-bottom: 16px; }
+.receipt-logo { width: 56px; height: 56px; object-fit: cover; border-radius: 10px; flex-shrink: 0; border: 1px solid var(--sand-100); }
+.receipt-header-info { flex: 1; }
+.receipt-condominio { font-family: var(--font-display); font-size: 18px; font-weight: 700; color: var(--ink-900); line-height: 1.2; }
+.receipt-sub { font-size: 12px; color: var(--ink-400); margin-top: 2px; }
+.receipt-folio-block { text-align: right; flex-shrink: 0; }
+.receipt-folio-label { font-size: 9px; font-weight: 800; letter-spacing: 0.1em; color: var(--teal-600); text-transform: uppercase; }
+.receipt-folio-num { font-family: monospace; font-size: 15px; font-weight: 700; color: var(--teal-700); margin-top: 2px; }
+.receipt-folio-date { font-size: 11px; color: var(--ink-400); margin-top: 2px; }
+.receipt-info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; margin-bottom: 16px; padding: 12px; background: var(--sand-50); border-radius: var(--radius-md); }
+.receipt-info-row { display: flex; flex-direction: column; gap: 2px; }
+.receipt-info-label { font-size: 10px; font-weight: 700; color: var(--ink-400); text-transform: uppercase; letter-spacing: 0.05em; }
+.receipt-info-val { font-size: 13px; font-weight: 600; color: var(--ink-800); }
+.receipt-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 12px; }
+.receipt-table th { padding: 8px 10px; text-align: left; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-400); background: var(--sand-50); border-bottom: 2px solid var(--sand-200); }
+.receipt-table td { padding: 9px 10px; border-bottom: 1px solid var(--sand-50); color: var(--ink-700); vertical-align: middle; }
+.receipt-table td small { color: var(--ink-400); font-size: 11px; }
+.receipt-section-header td { font-size: 10px; font-weight: 800; color: var(--teal-700); background: var(--teal-50); text-transform: uppercase; letter-spacing: 0.07em; padding: 6px 10px; }
+.receipt-total td { font-size: 14px; font-weight: 800; color: var(--ink-900); background: var(--sand-50); border-top: 2px solid var(--sand-200); padding: 11px 10px; }
+.receipt-notes { margin-top: 12px; padding: 10px 12px; background: var(--amber-50); border: 1px solid var(--amber-100); border-radius: var(--radius-sm); font-size: 12px; color: var(--ink-700); display: flex; align-items: flex-start; gap: 6px; }
+@media print { .modal-bg { display: none !important; } .modal .modal-head, .modal .modal-foot { display: none !important; } .modal { box-shadow: none; max-width: none; } .receipt-container { border: none; padding: 0; } }
+
 /* ─── Status ─── */
 .status-indicator { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
 .si-pagado    { background: var(--teal-500); }

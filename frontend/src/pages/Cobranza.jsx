@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { paymentsAPI, unitsAPI, extraFieldsAPI, tenantsAPI } from '../api/client';
-import { todayPeriod, periodLabel, prevPeriod, nextPeriod, fmtCurrency, statusClass, statusLabel, PAYMENT_TYPES, fmtDate } from '../utils/helpers';
-import { ChevronLeft, ChevronRight, Search, Receipt, X, Users, CheckCircle, Clock, AlertCircle, DollarSign, Calendar, Building2, Upload, FileText, Check } from 'lucide-react';
+import { todayPeriod, periodLabel, prevPeriod, nextPeriod, fmtCurrency, statusClass, statusLabel, PAYMENT_TYPES, fmtDate, ROLES } from '../utils/helpers';
+import { ChevronLeft, ChevronRight, Search, Receipt, X, Users, CheckCircle, Clock, AlertCircle, DollarSign, Calendar, Building2, Upload, FileText, Check, Printer } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 function fmt(n) {
@@ -32,7 +32,7 @@ function periodsBetween(startPeriod, endPeriod) {
 }
 
 export default function Cobranza() {
-  const { tenantId, isReadOnly } = useAuth();
+  const { tenantId, isReadOnly, user } = useAuth();
   const [period, setPeriod] = useState(todayPeriod());
   const [units, setUnits] = useState([]);
   const [payments, setPayments] = useState([]);
@@ -43,6 +43,7 @@ export default function Cobranza() {
   const [showCapture, setShowCapture] = useState(null);
   const [captureForm, setCaptureForm] = useState({});
   const [saving, setSaving] = useState(false);
+  const [showReceipt, setShowReceipt] = useState(null); // { unit, pay }
   const perPage = 25;
 
   const load = async () => {
@@ -401,11 +402,18 @@ export default function Cobranza() {
                       {pay?.notes && <span title={pay.notes}>{pay.notes.length > 30 ? pay.notes.slice(0, 30) + '…' : pay.notes}</span>}
                     </td>
                     <td>
-                      {!isReadOnly && (
-                        <button className="btn btn-primary btn-sm" onClick={() => openCapture(u)}>
-                          <Receipt size={12} /> {pay ? 'Editar' : 'Capturar'}
-                        </button>
-                      )}
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                        {pay && (
+                          <button className="btn btn-secondary btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }} onClick={() => setShowReceipt({ unit: u, pay })}>
+                            <FileText size={12} /> Ver Recibo
+                          </button>
+                        )}
+                        {!isReadOnly && (
+                          <button className="btn btn-primary btn-sm" onClick={() => openCapture(u)}>
+                            <Receipt size={12} /> {pay ? 'Editar' : 'Capturar'}
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );
@@ -780,6 +788,184 @@ export default function Cobranza() {
                 <button className="btn btn-secondary" onClick={() => setShowCapture(null)}>Cancelar</button>
                 <button className="btn btn-primary" onClick={handleCapture} disabled={saving}>
                   {saving ? 'Guardando…' : 'Guardar Pago'}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── Receipt Modal (Ver Recibo / Imprimir) ── */}
+      {showReceipt && (() => {
+        const { unit, pay } = showReceipt;
+        const tc = tenantData;
+        const maintCharge = parseFloat(tc?.maintenance_fee) || 0;
+        const reqEFs = extraFields.filter(ef => ef.required);
+        const optEFs = extraFields.filter(ef => !ef.required);
+        const fp = {};
+        (pay?.field_payments || []).forEach(f => { fp[f.field_key] = f; });
+        const maintAbono = Math.min(parseFloat(fp.maintenance?.received || 0), maintCharge);
+        let totReqCharge = maintCharge, totReqAbono = maintAbono;
+        reqEFs.forEach(ef => {
+          const ch = parseFloat(ef.default_amount) || 0;
+          const ab = fp[ef.id] ? Math.min(parseFloat(fp[ef.id].received || 0), ch) : 0;
+          totReqCharge += ch; totReqAbono += ab;
+        });
+        let totOptAbono = 0;
+        optEFs.forEach(ef => { totOptAbono += parseFloat(fp[ef.id]?.received || 0) || 0; });
+        const totSaldo = Math.max(0, totReqCharge - totReqAbono);
+        let totalAdelanto = 0;
+        const adelantoRows = [];
+        Object.entries(fp).forEach(([fieldId, fd]) => {
+          if (fd?.adelanto_targets && typeof fd.adelanto_targets === 'object') {
+            Object.entries(fd.adelanto_targets).forEach(([tp, amt]) => {
+              const a = parseFloat(amt) || 0;
+              if (a > 0) {
+                const fLabel = fieldId === 'maintenance' ? 'Mantenimiento' : (extraFields.find(e => e.id === fieldId) || {}).label || fieldId;
+                adelantoRows.push({ fieldLabel: fLabel, targetPeriod: tp, amount: a });
+                totalAdelanto += a;
+              }
+            });
+          }
+        });
+        let totalAdeudo = 0;
+        const adeudoRows = [];
+        const adeudoOut = pay?.adeudo_payments || {};
+        Object.entries(adeudoOut).forEach(([targetPeriod, fieldMap]) => {
+          Object.entries(fieldMap || {}).forEach(([fieldId, amt]) => {
+            const a = parseFloat(amt) || 0;
+            if (a > 0) {
+              const fLabel = fieldId === 'maintenance' ? 'Mantenimiento' : (extraFields.find(e => e.id === fieldId) || {}).label || fieldId;
+              adeudoRows.push({ fieldLabel: fLabel, targetPeriod, amount: a });
+              totalAdeudo += a;
+            }
+          });
+        });
+        const grandTotal = totReqAbono + totOptAbono + totalAdelanto + totalAdeudo;
+        const ptLabel = pay?.payment_type ? (PAYMENT_TYPES[pay.payment_type]?.label || pay.payment_type) : 'No especificado';
+        const pdLabel = pay?.payment_date ? new Date(pay.payment_date + 'T12:00:00').toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric' }) : 'No registrada';
+        const condominioName = tc?.razon_social || tc?.name || '';
+        const roleLabel = user ? (ROLES[user.role]?.label || user.role) : '';
+
+        return (
+          <div className="modal-bg open" onClick={() => setShowReceipt(null)}>
+            <div className="modal lg" onClick={e => e.stopPropagation()} style={{ maxWidth: 680 }}>
+              <div className="modal-head">
+                <h3><FileText size={18} style={{ display: 'inline', verticalAlign: -4, marginRight: 8 }} />Recibo de Pago — {periodLabel(pay.period)}</h3>
+                <button className="modal-close" onClick={() => setShowReceipt(null)}><X size={16} /></button>
+              </div>
+              <div className="modal-body">
+                <div className="receipt-container" id="receipt-print-area">
+                  <div className="receipt-header">
+                    {tc?.logo && <img src={tc.logo.startsWith('data:') ? tc.logo : `data:image/png;base64,${tc.logo}`} className="receipt-logo" alt="" />}
+                    <div className="receipt-header-info">
+                      <div className="receipt-condominio">{condominioName}</div>
+                      {tc?.rfc && <div className="receipt-sub">RFC: {tc.rfc}</div>}
+                      {(tc?.info_calle || tc?.info_ciudad) && <div className="receipt-sub">{[tc.info_calle, tc.info_ciudad].filter(Boolean).join(', ')}</div>}
+                    </div>
+                    <div className="receipt-folio-block">
+                      <div className="receipt-folio-label">RECIBO DE PAGO</div>
+                      <div className="receipt-folio-date">{pdLabel}</div>
+                    </div>
+                  </div>
+                  <div style={{ height: 2, background: 'linear-gradient(to right, var(--teal-400), var(--teal-100))', margin: '0 0 16px' }} />
+                  <div className="receipt-info-grid">
+                    <div className="receipt-info-row"><span className="receipt-info-label">Unidad</span><span className="receipt-info-val">{unit?.unit_id_code} — {unit?.unit_name}</span></div>
+                    <div className="receipt-info-row"><span className="receipt-info-label">Responsable</span><span className="receipt-info-val">{pay?.responsible || unit?.responsible_name || '—'}</span></div>
+                    <div className="receipt-info-row"><span className="receipt-info-label">Período</span><span className="receipt-info-val">{periodLabel(pay.period)}</span></div>
+                    <div className="receipt-info-row"><span className="receipt-info-label">Forma de Pago</span><span className="receipt-info-val">{ptLabel}</span></div>
+                  </div>
+                  <table className="receipt-table">
+                    <thead><tr><th>Concepto</th><th style={{ textAlign: 'right' }}>Cargo</th><th style={{ textAlign: 'right' }}>Abono</th><th style={{ textAlign: 'right' }}>Saldo</th></tr></thead>
+                    <tbody>
+                      <tr className="receipt-section-header"><td colSpan={4}>● CAMPOS OBLIGATORIOS</td></tr>
+                      <tr>
+                        <td>Mantenimiento<br /><small>Cuota base del condominio</small></td>
+                        <td style={{ textAlign: 'right' }}>{fmt(maintCharge)}</td>
+                        <td style={{ textAlign: 'right', color: 'var(--teal-600)', fontWeight: 700 }}>{fmt(maintAbono)}</td>
+                        <td style={{ textAlign: 'right', color: (maintCharge - maintAbono) > 0 ? 'var(--coral-500)' : 'var(--teal-600)' }}>{fmt(maintCharge - maintAbono)}</td>
+                      </tr>
+                      {reqEFs.map(ef => {
+                        const ch = parseFloat(ef.default_amount) || 0;
+                        const ab = fp[ef.id] ? Math.min(parseFloat(fp[ef.id].received || 0), ch) : 0;
+                        const sd = ch - ab;
+                        return (
+                          <tr key={ef.id}>
+                            <td>{ef.label}<br /><small>Obligatorio</small></td>
+                            <td style={{ textAlign: 'right' }}>{fmt(ch)}</td>
+                            <td style={{ textAlign: 'right', color: 'var(--teal-600)', fontWeight: 700 }}>{fmt(ab)}</td>
+                            <td style={{ textAlign: 'right', color: sd > 0 ? 'var(--coral-500)' : 'var(--teal-600)' }}>{fmt(sd)}</td>
+                          </tr>
+                        );
+                      })}
+                      {optEFs.filter(ef => fp[ef.id] && parseFloat(fp[ef.id].received || 0) > 0).length > 0 && (
+                        <>
+                          <tr className="receipt-section-header"><td colSpan={4}>○ CAMPOS OPCIONALES</td></tr>
+                          {optEFs.filter(ef => fp[ef.id] && parseFloat(fp[ef.id].received || 0) > 0).map(ef => (
+                            <tr key={ef.id}>
+                              <td>{ef.label}<br /><small>Opcional</small></td>
+                              <td style={{ textAlign: 'right', color: 'var(--ink-300)' }}>—</td>
+                              <td style={{ textAlign: 'right', color: 'var(--teal-600)', fontWeight: 700 }}>{fmt(parseFloat(fp[ef.id].received || 0))}</td>
+                              <td style={{ textAlign: 'right', color: 'var(--ink-300)' }}>—</td>
+                            </tr>
+                          ))}
+                        </>
+                      )}
+                      {adelantoRows.length > 0 && (
+                        <>
+                          <tr className="receipt-section-header"><td colSpan={4} style={{ color: 'var(--blue-700)', background: 'var(--blue-50)' }}>▸ PAGOS ADELANTADOS</td></tr>
+                          {adelantoRows.map((ar, i) => (
+                            <tr key={i}>
+                              <td>{ar.fieldLabel}<br /><small style={{ color: 'var(--blue-600)' }}>Adelanto → {periodLabel(ar.targetPeriod)}</small></td>
+                              <td style={{ textAlign: 'right', color: 'var(--ink-300)' }}>—</td>
+                              <td style={{ textAlign: 'right', color: 'var(--blue-600)', fontWeight: 700 }}>{fmt(ar.amount)}</td>
+                              <td style={{ textAlign: 'right', color: 'var(--ink-300)' }}>—</td>
+                            </tr>
+                          ))}
+                        </>
+                      )}
+                      {adeudoRows.length > 0 && (
+                        <>
+                          <tr className="receipt-section-header"><td colSpan={4} style={{ color: 'var(--coral-500)', background: 'var(--coral-50)' }}>◂ ABONOS A ADEUDO</td></tr>
+                          {adeudoRows.map((ar, i) => (
+                            <tr key={i}>
+                              <td>{ar.fieldLabel}<br /><small style={{ color: 'var(--coral-500)' }}>{ar.targetPeriod === '__prevDebt' ? 'Adeudo Anterior al Inicio' : `Abono a Adeudo → ${periodLabel(ar.targetPeriod)}`}</small></td>
+                              <td style={{ textAlign: 'right', color: 'var(--ink-300)' }}>—</td>
+                              <td style={{ textAlign: 'right', color: 'var(--coral-500)', fontWeight: 700 }}>{fmt(ar.amount)}</td>
+                              <td style={{ textAlign: 'right', color: 'var(--ink-300)' }}>—</td>
+                            </tr>
+                          ))}
+                        </>
+                      )}
+                    </tbody>
+                    <tfoot>
+                      <tr className="receipt-total">
+                        <td>TOTAL</td>
+                        <td style={{ textAlign: 'right' }}>{fmt(totReqCharge)}</td>
+                        <td style={{ textAlign: 'right', color: 'var(--teal-600)' }}>{fmt(grandTotal)}</td>
+                        <td style={{ textAlign: 'right', color: totSaldo > 0 ? 'var(--coral-500)' : 'var(--teal-600)' }}>{fmt(totSaldo)}</td>
+                      </tr>
+                      {totalAdelanto > 0 && <tr><td colSpan={4} style={{ textAlign: 'right', fontSize: 11, color: 'var(--blue-600)', padding: '4px 12px' }}>Incluye {fmt(totalAdelanto)} en pagos adelantados</td></tr>}
+                      {totalAdeudo > 0 && <tr><td colSpan={4} style={{ textAlign: 'right', fontSize: 11, color: 'var(--coral-500)', padding: '4px 12px' }}>Incluye {fmt(totalAdeudo)} en abonos a adeudo</td></tr>}
+                    </tfoot>
+                  </table>
+                  {pay?.notes && <div className="receipt-notes"><AlertCircle size={13} /> <strong>Notas:</strong> {pay.notes}</div>}
+                  <div style={{ display: 'flex', justifyContent: 'center', marginTop: 16 }}><span className={`badge ${statusClass(pay?.status)}`}>{statusLabel(pay?.status)}</span></div>
+                  <div style={{ marginTop: 20, paddingTop: 14, borderTop: '1.5px solid var(--sand-100)', display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--ink-400)' }}>
+                    <div><Calendar size={11} style={{ display: 'inline', verticalAlign: -2, marginRight: 4 }} /> <strong>Fecha de pago:</strong> {pdLabel}</div>
+                    <div><FileText size={11} style={{ display: 'inline', verticalAlign: -2, marginRight: 4 }} /> <strong>Recibo creado:</strong> {new Date().toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric' })}</div>
+                  </div>
+                  <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--sand-100)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 10, color: 'var(--ink-300)' }}>
+                    <span>Generado por: {user?.name || ''} ({roleLabel})</span>
+                    <span>Homly · Powered by Spotynet</span>
+                    <span>{tc?.name || ''} — Recibo — {periodLabel(pay.period)}</span>
+                  </div>
+                </div>
+              </div>
+              <div className="modal-foot">
+                <button className="btn btn-secondary" onClick={() => setShowReceipt(null)}>Cerrar</button>
+                <button className="btn btn-primary" onClick={() => window.print()}>
+                  <Printer size={14} /> Imprimir
                 </button>
               </div>
             </div>

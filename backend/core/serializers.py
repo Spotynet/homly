@@ -225,7 +225,7 @@ class GastoEntrySerializer(serializers.ModelSerializer):
                   'payment_type', 'doc_number', 'gasto_date', 'provider_name',
                   'provider_rfc', 'provider_invoice', 'bank_reconciled', 'evidence',
                   'created_at', 'updated_at']
-        read_only_fields = ['id', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'tenant', 'created_at', 'updated_at']
 
 
 # ═══════════════════════════════════════════════════════════
@@ -237,7 +237,7 @@ class CajaChicaEntrySerializer(serializers.ModelSerializer):
         model = CajaChicaEntry
         fields = ['id', 'tenant', 'period', 'amount', 'description',
                   'date', 'payment_type', 'created_at']
-        read_only_fields = ['id', 'created_at']
+        read_only_fields = ['id', 'tenant', 'created_at']
 
 
 # ═══════════════════════════════════════════════════════════

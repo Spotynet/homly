@@ -2,7 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { gastosAPI, cajaChicaAPI, extraFieldsAPI } from '../api/client';
 import { todayPeriod, periodLabel, prevPeriod, nextPeriod, fmtCurrency, fmtDate, PAYMENT_TYPES } from '../utils/helpers';
-import { ChevronLeft, ChevronRight, Plus, Edit, Trash2, X, ShoppingBag, DollarSign, Printer } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Edit, Trash2, X, ShoppingBag, DollarSign, Printer, Check } from 'lucide-react';
+
+const GASTO_PAYMENT_TYPES = [
+  { value: 'transferencia', label: '🏦 Transferencia', short: 'Transferencia' },
+  { value: 'cheque', label: '📝 Cheque', short: 'Cheque' },
+  { value: 'efectivo', label: '💰 Efectivo', short: 'Efectivo' },
+];
+const gastoPaymentLabel = (v) => GASTO_PAYMENT_TYPES.find(p => p.value === v)?.short || v || '—';
 import toast from 'react-hot-toast';
 
 function fmt(n) {
@@ -39,12 +46,35 @@ export default function Gastos() {
   const totalEgresos = totalGastos + totalCaja;
 
   const saveGasto = async () => {
+    const amount = parseFloat(form.amount);
+    if (isNaN(amount) || amount < 0) {
+      toast.error('El monto debe ser un número válido mayor o igual a 0');
+      return;
+    }
+    if (!form.field) {
+      toast.error('Selecciona un concepto');
+      return;
+    }
+    const payload = {
+      field: form.field,
+      amount,
+      period,
+      payment_type: form.payment_type || 'transferencia',
+      doc_number: form.doc_number || form.invoice_folio || '',
+      gasto_date: form.gasto_date || null,
+      provider_name: form.provider_name || '',
+      provider_rfc: form.provider_rfc || '',
+      provider_invoice: form.provider_invoice || '',
+      bank_reconciled: !!form.bank_reconciled,
+    };
     try {
-      if (form.id) await gastosAPI.update(tenantId, form.id, { ...form, period });
-      else await gastosAPI.create(tenantId, { ...form, period });
+      if (form.id) await gastosAPI.update(tenantId, form.id, payload);
+      else await gastosAPI.create(tenantId, payload);
       toast.success('Gasto guardado');
       setModal(null); load();
-    } catch { toast.error('Error al guardar'); }
+    } catch (e) {
+      toast.error(e.response?.data?.amount?.[0] || e.response?.data?.field?.[0] || 'Error al guardar');
+    }
   };
 
   const saveCaja = async () => {
@@ -73,7 +103,7 @@ export default function Gastos() {
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           {!isReadOnly && (
-            <button className="btn btn-primary btn-sm" onClick={() => { setForm({ amount: '', field: '', payment_type: 'transferencia' }); setModal('gasto'); }}>
+            <button className="btn btn-primary btn-sm" onClick={() => { setForm({ amount: '', field: '', payment_type: 'transferencia', doc_number: '', gasto_date: '', provider_name: '', provider_rfc: '', provider_invoice: '', bank_reconciled: false }); setModal('gasto'); }}>
               <Plus size={14} /> Nuevo Gasto
             </button>
           )}
@@ -132,8 +162,8 @@ export default function Gastos() {
                       <tr key={g.id}>
                         <td style={{ fontWeight: 600, fontSize: 13, color: 'var(--ink-700)' }}>{g.field_label || '—'}</td>
                         <td style={{ textAlign: 'right', fontWeight: 700, fontSize: 13, color: 'var(--amber-700)' }}>{fmt(g.amount)}</td>
-                        <td style={{ fontSize: 11 }}>{PAYMENT_TYPES[g.payment_type]?.short || g.payment_type || '—'}</td>
-                        <td style={{ fontSize: 11, color: 'var(--ink-500)' }}>{g.invoice_folio || '—'}</td>
+                        <td style={{ fontSize: 11 }}>{gastoPaymentLabel(g.payment_type)}</td>
+                        <td style={{ fontSize: 11, color: 'var(--ink-500)' }}>{g.doc_number || '—'}</td>
                         <td style={{ fontSize: 11, color: 'var(--ink-500)' }}>{fmtDate(g.gasto_date)}</td>
                         <td style={{ fontSize: 11 }}>{g.provider_name || '—'}</td>
                         {!isReadOnly && (
@@ -250,58 +280,68 @@ export default function Gastos() {
         </span>
       </div>
 
-      {/* ── Gasto Modal ── */}
+      {/* ── Gasto Modal (igual al HTML addGastoEntry) ── */}
       {modal === 'gasto' && (
         <div className="modal-bg open" onClick={() => setModal(null)}>
           <div className="modal lg" onClick={e => e.stopPropagation()}>
             <div className="modal-head">
-              <h3>{form.id ? 'Editar' : 'Nuevo'} Gasto</h3>
+              <h3><ShoppingBag size={16} style={{ display: 'inline', verticalAlign: -3, marginRight: 8 }} />{form.id ? 'Editar' : 'Nuevo'} Registro de Gasto</h3>
               <button className="modal-close" onClick={() => setModal(null)}><X size={16} /></button>
             </div>
             <div className="modal-body">
               <div className="form-grid">
-                <div className="field field-full">
-                  <label className="field-label">Concepto</label>
+                <div className="field">
+                  <label className="field-label">Concepto <span style={{ color: 'var(--coral-500)' }}>*</span></label>
                   <select className="field-select" value={form.field || ''} onChange={e => setForm({ ...form, field: e.target.value })}>
                     <option value="">Seleccionar...</option>
                     {fields.map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
                   </select>
                 </div>
                 <div className="field">
-                  <label className="field-label">Monto</label>
-                  <input type="number" className="field-input" value={form.amount || ''} onChange={e => setForm({ ...form, amount: e.target.value })} />
+                  <label className="field-label">Monto <span style={{ color: 'var(--coral-500)' }}>*</span></label>
+                  <input type="number" className="field-input" step="0.01" min="0.01" placeholder="0.00" value={form.amount ?? ''} onChange={e => setForm({ ...form, amount: e.target.value })} />
                 </div>
                 <div className="field">
-                  <label className="field-label">Forma de Pago</label>
-                  <select className="field-select" value={form.payment_type || ''} onChange={e => setForm({ ...form, payment_type: e.target.value })}>
-                    {Object.entries(PAYMENT_TYPES).map(([k, v]) => <option key={k} value={k}>{v.short || v.label}</option>)}
+                  <label className="field-label">Tipo de Gasto</label>
+                  <select className="field-select" value={form.payment_type || 'transferencia'} onChange={e => setForm({ ...form, payment_type: e.target.value })}>
+                    {GASTO_PAYMENT_TYPES.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
                   </select>
                 </div>
                 <div className="field">
                   <label className="field-label">No. Documento</label>
-                  <input className="field-input" value={form.invoice_folio || ''} onChange={e => setForm({ ...form, invoice_folio: e.target.value })} />
+                  <input className="field-input" placeholder="No. cheque, referencia..." value={form.doc_number || form.invoice_folio || ''} onChange={e => setForm({ ...form, doc_number: e.target.value })} />
                 </div>
                 <div className="field">
-                  <label className="field-label">Fecha</label>
+                  <label className="field-label">Fecha de Gasto</label>
                   <input type="date" className="field-input" value={form.gasto_date || ''} onChange={e => setForm({ ...form, gasto_date: e.target.value })} />
                 </div>
                 <div className="field">
-                  <label className="field-label">Proveedor</label>
-                  <input className="field-input" value={form.provider_name || ''} onChange={e => setForm({ ...form, provider_name: e.target.value })} />
+                  <label className="field-label">Conciliado Banco</label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, cursor: 'pointer' }}>
+                    <input type="checkbox" checked={!!form.bank_reconciled} onChange={e => setForm({ ...form, bank_reconciled: e.target.checked })} />
+                    <span style={{ fontSize: 12, color: 'var(--ink-500)' }}>{form.bank_reconciled ? '🏦 Conciliado' : 'Sin conciliar'}</span>
+                  </label>
+                </div>
+              </div>
+              <div style={{ marginTop: 12, fontSize: 11, fontWeight: 700, color: 'var(--ink-500)', textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: '1px solid var(--sand-100)', paddingBottom: 6 }}>Proveedor</div>
+              <div className="form-grid" style={{ marginTop: 8 }}>
+                <div className="field">
+                  <label className="field-label">Nombre</label>
+                  <input className="field-input" value={form.provider_name || ''} onChange={e => setForm({ ...form, provider_name: e.target.value })} placeholder="Nombre del proveedor" />
                 </div>
                 <div className="field">
-                  <label className="field-label">RFC Proveedor</label>
-                  <input className="field-input" style={{ fontFamily: 'monospace' }} value={form.provider_rfc || ''} onChange={e => setForm({ ...form, provider_rfc: e.target.value })} />
+                  <label className="field-label">RFC</label>
+                  <input className="field-input" style={{ fontFamily: 'monospace' }} value={form.provider_rfc || ''} onChange={e => setForm({ ...form, provider_rfc: e.target.value })} placeholder="RFC del proveedor" />
                 </div>
                 <div className="field">
-                  <label className="field-label">Folio Factura</label>
-                  <input className="field-input" value={form.provider_invoice || form.invoice_folio || ''} onChange={e => setForm({ ...form, provider_invoice: e.target.value })} />
+                  <label className="field-label">No. Factura</label>
+                  <input className="field-input" value={form.provider_invoice || ''} onChange={e => setForm({ ...form, provider_invoice: e.target.value })} placeholder="Número de factura" />
                 </div>
               </div>
             </div>
             <div className="modal-foot">
-              <button className="btn btn-outline" onClick={() => setModal(null)}>Cancelar</button>
-              <button className="btn btn-primary" onClick={saveGasto}>Guardar</button>
+              <button className="btn btn-secondary" onClick={() => setModal(null)}>Cancelar</button>
+              <button className="btn btn-primary" onClick={saveGasto}><Check size={14} /> {form.id ? 'Guardar' : 'Registrar'}</button>
             </div>
           </div>
         </div>
