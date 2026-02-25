@@ -701,26 +701,39 @@ tr:hover td { background: rgba(59,185,144,0.02); }
   .modal { box-shadow: none; max-width: none; }
   .receipt-container { border: none; padding: 0; }
 
-  /* Estado de Cuenta / otras páginas: ocultar sidebar/header, mostrar contenido */
-  body:not(:has(.modal-bg.open)) .sidebar,
-  body:not(:has(.modal-bg.open)) .sidebar-overlay,
-  body:not(:has(.modal-bg.open)) .header { display: none !important; }
-  body:not(:has(.modal-bg.open)) .main,
-  body:not(:has(.modal-bg.open)) .main * { visibility: visible; }
-  body:not(:has(.modal-bg.open)) .main { position: static !important; }
-  body:not(:has(.modal-bg.open)) .content { padding: 16px 0 !important; }
+  /* Estado de Cuenta: imprimir exactamente como pantalla (body.printing-ec = beforeprint) */
+  body.printing-ec * { visibility: visible !important; }
+  body.printing-ec .sidebar,
+  body.printing-ec .sidebar-overlay,
+  body.printing-ec .header { display: none !important; }
+  body.printing-ec .main {
+    margin-left: 0 !important;
+    position: static !important;
+    min-height: auto !important;
+  }
+  body.printing-ec .content {
+    padding: 24px 32px !important;
+    max-width: none !important;
+  }
+  /* Preservar colores de fondo en impresión */
+  body.printing-ec,
+  body.printing-ec * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 
-  /* Ocultar botones de acción, tabs de navegación y elementos interactivos en impresión */
-  .ec-detail-actions,
-  .ec-view-toggle,
-  .no-print { display: none !important; }
+  /* Tablas: mostrar todo, sin overflow ni recorte */
+  body.printing-ec .table-wrap {
+    overflow: visible !important;
+    max-height: none !important;
+  }
+  body.printing-ec .table-wrap table thead { position: static !important; }
 
-  /* Tablas: evitar cortes de página y bordes visibles */
-  .ec-table,
-  .ec-summary-strip,
-  .table-wrap { break-inside: avoid; }
-  .ec-table th,
-  .ec-table td { border: 1px solid #ddd !important; }
+  /* Ocultar solo elementos interactivos */
+  body.printing-ec .ec-detail-actions,
+  body.printing-ec .ec-view-toggle,
+  body.printing-ec .no-print { display: none !important; }
+
+  /* Tablas: evitar cortes de filas entre páginas */
+  body.printing-ec .ec-table,
+  body.printing-ec .ec-summary-strip { break-inside: avoid; }
 }
 
 /* ─── Status ─── */

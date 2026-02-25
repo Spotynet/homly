@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { unitsAPI, reportsAPI, tenantsAPI, paymentsAPI, gastosAPI, cajaChicaAPI } from '../api/client';
 import { statusClass, statusLabel, fmtDate, periodLabel, todayPeriod, prevPeriod, nextPeriod } from '../utils/helpers';
@@ -10,6 +11,7 @@ function fmt(n) {
 
 export default function EstadoCuenta() {
   const { tenantId, isVecino, user } = useAuth();
+  const location = useLocation();
   const [units, setUnits] = useState([]);
   const [unitSummaries, setUnitSummaries] = useState([]);
   const [selectedUnit, setSelectedUnit] = useState(null);
@@ -83,6 +85,20 @@ export default function EstadoCuenta() {
       setGeneralData(r.data);
     }).catch(() => {}).finally(() => setGenLoading(false));
   }, [view, tenantId, cutoff]);
+
+  // Marcar body para estilos de impresión (PDF = pantalla)
+  useEffect(() => {
+    if (!location.pathname.includes('estado-cuenta')) return;
+    const onBeforePrint = () => document.body.classList.add('printing-ec');
+    const onAfterPrint = () => document.body.classList.remove('printing-ec');
+    window.addEventListener('beforeprint', onBeforePrint);
+    window.addEventListener('afterprint', onAfterPrint);
+    return () => {
+      window.removeEventListener('beforeprint', onBeforePrint);
+      window.removeEventListener('afterprint', onAfterPrint);
+      document.body.classList.remove('printing-ec');
+    };
+  }, [location.pathname]);
 
   // Compute totals from unit summaries — handle { unit, total_charge, total_paid, balance } from estado-cuenta API
   const summaryData = useMemo(() => {
