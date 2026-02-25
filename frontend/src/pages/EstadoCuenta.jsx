@@ -143,6 +143,9 @@ export default function EstadoCuenta() {
 
   const showDetail = isVecino ? true : !!selectedUnit;
   const balance = data ? parseFloat(data.balance) : 0;
+  const unitPrevDebt = data ? parseFloat(data.previous_debt ?? data.unit?.previous_debt ?? 0) : 0;
+  const prevDebtAdeudo = data ? parseFloat(data.prev_debt_adeudo ?? 0) : 0;
+  const netPrevDebt = data ? (parseFloat(data.net_prev_debt ?? 0) || Math.max(0, unitPrevDebt - prevDebtAdeudo)) : 0;
 
   // Find selected unit info from units list (for immediate display before API returns)
   const selectedUnitInfo = useMemo(() => {
@@ -170,7 +173,7 @@ export default function EstadoCuenta() {
       {showDetail && selectedUnit ? (
         <div>
           {!isVecino && (
-            <div style={{ marginBottom: 16 }}>
+            <div className="no-print" style={{ marginBottom: 16 }}>
               <button className="btn btn-outline btn-sm" onClick={() => { setSelectedUnit(null); setData(null); }}>
                 <ChevronLeft size={14} /> Volver al listado
               </button>
@@ -224,6 +227,19 @@ export default function EstadoCuenta() {
             {/* Summary strip */}
             {data && (
               <div className="ec-summary-strip">
+                {unitPrevDebt > 0 && (
+                  <div className="ec-sum-cell" style={{ background: 'var(--coral-50)' }}>
+                    <div className="ec-sum-label" style={{ color: 'var(--coral-500)' }}>
+                      Adeudo Anterior
+                      {prevDebtAdeudo > 0 && (
+                        <span style={{ fontSize: 9, color: 'var(--teal-600)', fontWeight: 400, marginLeft: 4 }}>
+                          (Abonado: {fmt(prevDebtAdeudo)})
+                        </span>
+                      )}
+                    </div>
+                    <div className="ec-sum-val debt">-{fmt(netPrevDebt)}</div>
+                  </div>
+                )}
                 <div className="ec-sum-cell">
                   <div className="ec-sum-label">Cargos Obligatorios</div>
                   <div className="ec-sum-val">{fmt(data.total_charges)}</div>
@@ -263,6 +279,30 @@ export default function EstadoCuenta() {
                     </tr>
                   </thead>
                   <tbody>
+                    {unitPrevDebt > 0 && (
+                      <tr style={{ background: 'var(--coral-50)', fontStyle: 'italic' }}>
+                        <td style={{ fontWeight: 700, color: 'var(--coral-500)', whiteSpace: 'nowrap' }}>
+                          <AlertCircle size={13} style={{ display: 'inline', verticalAlign: -2, marginRight: 6 }} />
+                          Adeudo Anterior
+                        </td>
+                        <td colSpan={2} style={{ textAlign: 'right', color: 'var(--coral-500)', fontSize: 12 }}>
+                          Saldo previo
+                          {prevDebtAdeudo > 0 && (
+                            <span style={{ color: 'var(--teal-600)', marginLeft: 4 }}>· Abonado: {fmt(prevDebtAdeudo)}</span>
+                          )}
+                        </td>
+                        <td style={{ textAlign: 'right', color: 'var(--coral-500)', fontWeight: 600 }}>—</td>
+                        <td></td>
+                        <td style={{ textAlign: 'right' }}>
+                          <span className="debt-cell" style={{ fontSize: 14, fontFamily: 'var(--font-display)' }}>
+                            -{fmt(netPrevDebt)}
+                          </span>
+                          {prevDebtAdeudo > 0 && (
+                            <div style={{ fontSize: 9, color: 'var(--teal-600)', fontStyle: 'normal' }}>Abono: {fmt(prevDebtAdeudo)}</div>
+                          )}
+                        </td>
+                      </tr>
+                    )}
                     {data.periods.map((p, i) => {
                       const charge = parseFloat(p.charge || 0);
                       const paid = parseFloat(p.paid || 0);
@@ -624,7 +664,7 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
             {startPeriod && (
               <span style={{ fontSize: 12, color: 'var(--ink-400)' }}>Desde: {periodLabel(startPeriod)}</span>
             )}
-            <button className="btn btn-primary btn-sm" style={{ marginLeft: 'auto' }} onClick={() => window.print()}>
+            <button className="btn btn-primary btn-sm no-print" style={{ marginLeft: 'auto' }} onClick={() => window.print()}>
               <Printer size={14} /> Exportar PDF
             </button>
           </div>
@@ -821,7 +861,7 @@ function ReporteGeneralView({ tenantId, tenantData, generalData, genLoading, cut
             {startPeriod && (
               <span style={{ fontSize: 12, color: 'var(--ink-400)' }}>Inicio: {periodLabel(startPeriod)}</span>
             )}
-            <button className="btn btn-primary btn-sm" style={{ marginLeft: 'auto' }} onClick={() => window.print()}>
+            <button className="btn btn-primary btn-sm no-print" style={{ marginLeft: 'auto' }} onClick={() => window.print()}>
               <Printer size={14} /> Exportar PDF
             </button>
           </div>

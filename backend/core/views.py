@@ -690,7 +690,7 @@ def _compute_statement(tenant, unit_id, start_period, cutoff_period):
     total_paid = sum(r['paid'] for r in rows)
     balance = total_charges - total_paid
 
-    return rows, float(total_charges), float(total_paid), float(balance)
+    return rows, float(total_charges), float(total_paid), float(balance), float(prev_debt_adeudo)
 
 
 class EstadoCuentaView(APIView):
@@ -746,7 +746,8 @@ class EstadoCuentaView(APIView):
             })
 
         unit = Unit.objects.get(id=unit_id, tenant_id=tenant_id)
-        rows, total_charges, total_paid, balance = _compute_statement(tenant, str(unit_id), start_period, cutoff)
+        rows, total_charges, total_paid, balance, prev_debt_adeudo = _compute_statement(tenant, str(unit_id), start_period, cutoff)
+        previous_debt = float(unit.previous_debt or 0)
 
         periods_out = []
         for r in rows:
@@ -762,6 +763,9 @@ class EstadoCuentaView(APIView):
                 'pay': r.get('pay'),
             })
 
+        prev_debt_adeudo_val = float(prev_debt_adeudo)
+        net_prev_debt = max(0, previous_debt - prev_debt_adeudo_val)
+
         return Response({
             'unit': UnitSerializer(unit).data,
             'periods': periods_out,
@@ -770,6 +774,9 @@ class EstadoCuentaView(APIView):
             'balance': str(balance),
             'currency': tenant.currency,
             'tenant_name': tenant.name,
+            'previous_debt': float(previous_debt),
+            'prev_debt_adeudo': prev_debt_adeudo_val,
+            'net_prev_debt': net_prev_debt,
         })
 
 

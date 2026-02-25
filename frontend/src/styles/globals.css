@@ -693,12 +693,34 @@ tr:hover td { background: rgba(59,185,144,0.02); }
 .receipt-total td { font-size: 14px; font-weight: 800; color: var(--ink-900); background: var(--sand-50); border-top: 2px solid var(--sand-200); padding: 11px 10px; }
 .receipt-notes { margin-top: 12px; padding: 10px 12px; background: var(--amber-50); border: 1px solid var(--amber-100); border-radius: var(--radius-sm); font-size: 12px; color: var(--ink-700); display: flex; align-items: flex-start; gap: 6px; }
 @media print {
+  /* Receipt modal (Cobranza): only show receipt */
   body * { visibility: hidden; }
   .modal-bg, .modal-bg * { visibility: visible; }
   .modal-bg { position: fixed; inset: 0; background: white !important; }
   .modal .modal-head, .modal .modal-foot { display: none !important; }
   .modal { box-shadow: none; max-width: none; }
   .receipt-container { border: none; padding: 0; }
+
+  /* Estado de Cuenta / otras páginas: ocultar sidebar/header, mostrar contenido */
+  body:not(:has(.modal-bg.open)) .sidebar,
+  body:not(:has(.modal-bg.open)) .sidebar-overlay,
+  body:not(:has(.modal-bg.open)) .header { display: none !important; }
+  body:not(:has(.modal-bg.open)) .main,
+  body:not(:has(.modal-bg.open)) .main * { visibility: visible; }
+  body:not(:has(.modal-bg.open)) .main { position: static !important; }
+  body:not(:has(.modal-bg.open)) .content { padding: 16px 0 !important; }
+
+  /* Ocultar botones de acción, tabs de navegación y elementos interactivos en impresión */
+  .ec-detail-actions,
+  .ec-view-toggle,
+  .no-print { display: none !important; }
+
+  /* Tablas: evitar cortes de página y bordes visibles */
+  .ec-table,
+  .ec-summary-strip,
+  .table-wrap { break-inside: avoid; }
+  .ec-table th,
+  .ec-table td { border: 1px solid #ddd !important; }
 }
 
 /* ─── Status ─── */
