@@ -281,7 +281,7 @@ class AssemblyPositionSerializer(serializers.ModelSerializer):
 class CommitteeSerializer(serializers.ModelSerializer):
     class Meta:
         model = Committee
-        fields = ['id', 'tenant', 'name', 'description', 'members', 'created_at']
+        fields = ['id', 'tenant', 'name', 'description', 'exemption', 'members', 'created_at']
         read_only_fields = ['id', 'created_at']
 
 

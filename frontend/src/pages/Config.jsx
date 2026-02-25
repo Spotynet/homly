@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { tenantsAPI, extraFieldsAPI, assemblyAPI, usersAPI, unitsAPI } from '../api/client';
+import { tenantsAPI, extraFieldsAPI, assemblyAPI, usersAPI, unitsAPI, superAdminAPI } from '../api/client';
 import { CURRENCIES, getStatesForCountry, COUNTRIES } from '../utils/helpers';
 import {
   Settings, Plus, Trash2, Check, X, Upload, Users,
   Building2, RefreshCw, Edit2, Search, Home, Lock,
-  Calendar, DollarSign, ShieldCheck,
+  Calendar, DollarSign, ShieldCheck, Receipt, ShoppingBag,
+  ChevronRight, AlertCircle, Shield, FileText, Globe,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -107,6 +108,8 @@ export default function Config() {
 
   // Field modal
   const [fieldForm, setFieldForm] = useState(null);
+  const [cobCollapsed, setCobCollapsed] = useState(false);
+  const [gasCollapsed, setGasCollapsed] = useState(false);
 
   // User modal
   const [addUserOpen, setAddUserOpen] = useState(false);
@@ -115,6 +118,11 @@ export default function Config() {
   // Org modals
   const [cmtForm, setCmtForm] = useState(null);
   const [posForm, setPosForm] = useState(null);
+
+  // Super Admin modal (Roles tab)
+  const [addSAOpen, setAddSAOpen] = useState(false);
+  const [addSAForm, setAddSAForm] = useState({});
+  const [superAdmins, setSuperAdmins] = useState([]);
 
   // ── Loaders ───────────────────────────────────────────────────────────────
   const loadTenant = useCallback(() => {
@@ -135,10 +143,15 @@ export default function Config() {
     assemblyAPI.committees(tenantId).then(r => setCommittees(r.data.results || r.data)).catch(() => {});
   }, [tenantId]);
 
+  const loadSuperAdmins = useCallback(() => {
+    if (!isSuperAdmin) return;
+    superAdminAPI.list().then(r => setSuperAdmins(r.data.results || r.data)).catch(() => {});
+  }, [isSuperAdmin]);
+
   useEffect(() => {
     setTenant(null); setLoadError(null);
-    loadTenant(); loadFields(); loadUsers(); loadUnits(); loadAssembly();
-  }, [loadTenant, loadFields, loadUsers, loadUnits, loadAssembly]);
+    loadTenant(); loadFields(); loadUsers(); loadUnits(); loadAssembly(); loadSuperAdmins();
+  }, [loadTenant, loadFields, loadUsers, loadUnits, loadAssembly, loadSuperAdmins]);
 
   // ── Save helpers ──────────────────────────────────────────────────────────
   const savePatch = async (data, onDone) => {
@@ -190,9 +203,29 @@ export default function Config() {
 
   const saveCommittee = async () => {
     try {
-      await assemblyAPI.createCommittee(tenantId, cmtForm);
-      toast.success('Comité creado'); setCmtForm(null); loadAssembly();
+      const payload = { name: cmtForm.name, description: cmtForm.description || '', exemption: !!cmtForm.exemption, members: cmtForm.members || '' };
+      if (cmtForm.id) {
+        await assemblyAPI.updateCommittee(tenantId, cmtForm.id, payload);
+      } else {
+        await assemblyAPI.createCommittee(tenantId, { ...payload, tenant: tenantId });
+      }
+      toast.success(cmtForm.id ? 'Comité actualizado' : 'Comité creado');
+      setCmtForm(null); loadAssembly();
     } catch { toast.error('Error'); }
+  };
+
+  const saveSuperAdmin = async () => {
+    if (!addSAForm.name || !addSAForm.email || !addSAForm.password) return toast.error('Todos los campos son obligatorios');
+    try {
+      await superAdminAPI.create({ ...addSAForm, role: 'super_admin', is_super_admin: true });
+      toast.success('Super Admin creado'); setAddSAOpen(false); setAddSAForm({}); loadSuperAdmins();
+    } catch (e) { toast.error(e.response?.data?.detail || e.response?.data?.email?.[0] || 'Error al crear'); }
+  };
+
+  const deleteSuperAdmin = async (id) => {
+    if (!window.confirm('¿Eliminar este Super Administrador?')) return;
+    try { await superAdminAPI.delete(id); toast.success('Eliminado'); loadSuperAdmins(); }
+    catch { toast.error('Error al eliminar'); }
   };
 
   const handleUnitSave = async () => {
@@ -343,10 +376,12 @@ export default function Config() {
               <FieldView label="Nombre" value={t.addr_nombre} />
               <FieldView label="Calle" value={t.addr_calle} />
               <FieldView label="No. Externo" value={t.addr_num_externo} />
-              <FieldView label="Colonia" value={t.addr_colonia} />
-              <FieldView label="Delegación" value={t.addr_delegacion} />
-              <FieldView label="Ciudad" value={t.addr_ciudad} />
-              <FieldView label="C.P." value={t.addr_codigo_postal} />
+              {(t.country === 'México' || t.country === 'Mexico' || !t.country) && <>
+                <FieldView label="Colonia" value={t.addr_colonia} />
+                <FieldView label="Delegación" value={t.addr_delegacion} />
+                <FieldView label="Ciudad" value={t.addr_ciudad} />
+                <FieldView label="C.P." value={t.addr_codigo_postal} />
+              </>}
             </div>
           </div>
         </div>
@@ -400,6 +435,7 @@ export default function Config() {
               <button className="btn btn-primary btn-sm" onClick={() => {
                 setEditGenForm({
                   name: t.name || '',
+                  units_count: t.units_count || units.length || 0,
                   maintenance_fee: t.maintenance_fee || 0,
                   currency: t.currency || 'MXN',
                   operation_start_date: t.operation_start_date || '',
@@ -503,11 +539,16 @@ export default function Config() {
                     <tr>
                       <th>ID</th><th>Nombre</th><th>Propietario</th><th>Email</th>
                       <th>Ocupación</th><th>Inquilino</th>
-                      {isAdmin && <th style={{ width:90 }}>Acciones</th>}
+                      {t.admin_type === 'mesa_directiva' && <th>Exención</th>}
+                      <th style={{ textAlign:'right' }}>Adeudo Ant.</th>
+                      <th>Evid.</th>
+                      {isAdmin && <th style={{ width:100 }}>Acciones</th>}
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredUnits.map(u => (
+                    {filteredUnits.map(u => {
+                      const pd = parseFloat(u.previous_debt || 0);
+                      return (
                       <tr key={u.id}>
                         <td>
                           <span style={{ fontFamily:'monospace', fontWeight:700, color:'var(--teal-600)', background:'var(--teal-50)', padding:'3px 10px', borderRadius:6, fontSize:13 }}>
@@ -528,6 +569,23 @@ export default function Config() {
                             ? `${u.tenant_first_name||''} ${u.tenant_last_name||''}`.trim()||'—'
                             : <span style={{ color:'var(--ink-300)' }}>—</span>}
                         </td>
+                        {t.admin_type === 'mesa_directiva' && (
+                          <td>
+                            {u.admin_exempt
+                              ? <span style={{ display:'inline-flex', alignItems:'center', gap:4, padding:'3px 10px', borderRadius:6, fontSize:11, fontWeight:700, background:'var(--teal-50)', color:'var(--teal-700)' }}>
+                                  <Shield size={11}/> Exento
+                                </span>
+                              : <span style={{ color:'var(--ink-300)' }}>—</span>}
+                          </td>
+                        )}
+                        <td style={{ textAlign:'right', fontFamily:'monospace', fontSize:13, fontWeight:600, color: pd > 0 ? 'var(--coral-500)' : 'var(--ink-300)' }}>
+                          {pd > 0 ? fmt(pd) : '—'}
+                        </td>
+                        <td>
+                          {u.prev_debt_pdf
+                            ? <button className="btn-ghost" title="Ver evidencia" onClick={() => window.open(u.prev_debt_pdf, '_blank')}><FileText size={14} color="var(--blue-500)" /></button>
+                            : <span style={{ color:'var(--ink-300)', fontSize:12 }}>—</span>}
+                        </td>
                         {isAdmin && (
                           <td>
                             <div style={{ display:'flex', gap:4 }}>
@@ -537,7 +595,8 @@ export default function Config() {
                           </td>
                         )}
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -547,110 +606,203 @@ export default function Config() {
       )}
 
       {/* ════ CONFIG. PAGOS ════ */}
-      {tab === 'fields' && (
-        <div>
-          {/* Summary banner */}
-          <div style={{ background:'var(--teal-50)', border:'1px solid var(--teal-100)', borderRadius:'var(--radius-lg)', padding:'18px 24px', marginBottom:20 }}>
-            <div style={{ display:'flex', justifyContent:'space-between', flexWrap:'wrap', gap:12, alignItems:'center' }}>
-              <div>
-                <div style={{ fontSize:11, fontWeight:700, color:'var(--teal-700)', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:4 }}>Cargo mensual mínimo por unidad</div>
-                <div style={{ display:'flex', alignItems:'baseline', gap:8 }}>
-                  <span style={{ fontFamily:'var(--font-display)', fontSize:28, fontWeight:500, color:'var(--teal-800)' }}>{fmt(totalMonthly)}</span>
-                  <span style={{ fontSize:12, color:'var(--teal-600)' }}>Mant. + {reqCobFields.length} oblig.</span>
+      {tab === 'fields' && (() => {
+        const cobFields = fields.filter(f => !f.field_type || f.field_type === 'normal');
+        const gasFields = fields.filter(f => f.field_type === 'gastos');
+        const cobActive = cobFields.filter(f => f.enabled);
+        const gasActive = gasFields.filter(f => f.enabled);
+
+        const FieldRow = ({ f }) => {
+          const isCob = !f.field_type || f.field_type === 'normal';
+          const typeColor = isCob ? 'var(--teal-500)' : 'var(--amber-500)';
+          const typeBg = isCob ? 'var(--teal-50)' : 'var(--amber-50)';
+          const typeBorder = isCob ? 'var(--teal-100)' : 'var(--amber-100)';
+          return (
+            <div style={{ display:'flex', gap:0, padding:'16px 20px', borderBottom:'1px solid var(--sand-100)', alignItems:'flex-start', transition:'background 0.12s' }}
+              onMouseOver={e => e.currentTarget.style.background='var(--sand-50)'} onMouseOut={e => e.currentTarget.style.background=''}>
+              <div style={{ width:3, borderRadius:3, minHeight:40, background:f.enabled?typeColor:'var(--sand-200)', flexShrink:0, marginRight:16, marginTop:2, transition:'background 0.2s' }} />
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap', marginBottom:4 }}>
+                  <span style={{ fontSize:14, fontWeight:700, color:'var(--ink-800)' }}>{f.label}</span>
+                  <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:'var(--radius-full)', background:typeBg, color:typeColor, border:`1px solid ${typeBorder}` }}>{isCob?'Cobranza':'Gastos'}</span>
+                  {f.enabled && isCob && <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:'var(--radius-full)', background:f.required?'var(--coral-50)':'var(--sand-100)', color:f.required?'var(--coral-500)':'var(--ink-500)', border:`1px solid ${f.required?'var(--coral-100)':'var(--sand-200)'}` }}>{f.required?'Obligatorio':'Opcional'}</span>}
+                  {!f.enabled && <span style={{ fontSize:10, fontWeight:600, padding:'2px 8px', borderRadius:'var(--radius-full)', background:'var(--sand-100)', color:'var(--ink-400)' }}>Inactivo</span>}
                 </div>
+                {isCob && f.required && f.enabled && parseFloat(f.default_amount)>0 &&
+                  <div style={{ fontSize:12, color:'var(--ink-500)' }}>Cargo mensual fijo: <strong style={{ color:'var(--teal-700)' }}>{fmt(f.default_amount)}</strong></div>}
+                {!f.enabled && <div style={{ fontSize:12, color:'var(--ink-400)' }}>Activa este campo para usarlo en cobranza</div>}
+                {f.enabled && isCob && !f.required && <div style={{ fontSize:12, color:'var(--ink-400)' }}>Campo opcional — monto variable por período</div>}
+                {!isCob && f.enabled && <div style={{ fontSize:12, color:'var(--ink-400)' }}>Campo de gastos operativos del condominio</div>}
+
+                {/* Gastos-specific settings: recurrent, active period, evidence */}
+                {!isCob && f.enabled && isAdmin && (
+                  <div style={{ marginTop:10, padding:'10px 12px', background:'var(--amber-50)', border:'1px solid var(--amber-100)', borderRadius:'var(--radius-sm)', display:'flex', flexDirection:'column', gap:8 }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                      <div className={`switch ${f.recurrent?'on':''}`} style={{ background:f.recurrent?'var(--amber-400)':undefined, cursor:'pointer' }}
+                        onClick={() => toggleField(f.id, { recurrent: !f.recurrent })}>
+                        <div className="switch-knob" />
+                      </div>
+                      <span style={{ fontSize:12, fontWeight:600, color:'var(--amber-700)' }}>{f.recurrent?'Gasto Recurrente':'Gasto Único'}</span>
+                    </div>
+                    <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+                      <span style={{ fontSize:11, fontWeight:600, color:'var(--ink-500)' }}>Período activo:</span>
+                      <input type="month" style={{ padding:'3px 6px', border:'1px solid var(--amber-200)', borderRadius:4, fontSize:11, fontFamily:'var(--font-body)' }}
+                        defaultValue={f.active_period_start||''} onBlur={e => toggleField(f.id, { active_period_start: e.target.value })} />
+                      <span style={{ fontSize:11, color:'var(--ink-400)' }}>→</span>
+                      <input type="month" style={{ padding:'3px 6px', border:'1px solid var(--amber-200)', borderRadius:4, fontSize:11, fontFamily:'var(--font-body)' }}
+                        defaultValue={f.active_period_end||''} onBlur={e => toggleField(f.id, { active_period_end: e.target.value })} />
+                    </div>
+                    <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                      <label style={{ cursor:'pointer', fontSize:11, color:'var(--blue-500)', fontWeight:600, display:'inline-flex', alignItems:'center', gap:4 }}>
+                        <Upload size={12}/> {f.evidence_file_name || 'Adjuntar contrato/documento'}
+                        <input type="file" accept=".pdf,.jpg,.png,.doc,.docx" style={{ display:'none' }}
+                          onChange={e => {
+                            const file = e.target.files[0]; if (!file) return;
+                            const reader = new FileReader();
+                            reader.onload = ev => toggleField(f.id, { evidence_file: ev.target.result, evidence_file_name: file.name });
+                            reader.readAsDataURL(file);
+                          }} />
+                      </label>
+                      {f.evidence_file_name && <button className="btn-ghost" style={{ fontSize:10, color:'var(--coral-400)', padding:2 }}
+                        onClick={() => toggleField(f.id, { evidence_file: '', evidence_file_name: '' })}><X size={12}/></button>}
+                    </div>
+                  </div>
+                )}
+                {!isCob && f.enabled && !isAdmin && (() => {
+                  const info = [];
+                  if (f.recurrent) info.push('Recurrente');
+                  if (f.active_period_start || f.active_period_end) info.push(`Período: ${f.active_period_start?periodLabel(f.active_period_start):'—'} → ${f.active_period_end?periodLabel(f.active_period_end):'Vigente'}`);
+                  if (f.evidence_file_name) info.push(`📎 ${f.evidence_file_name}`);
+                  return info.length > 0 ? <div style={{ fontSize:11, color:'var(--amber-600)', marginTop:4 }}>{info.join(' · ')}</div> : null;
+                })()}
+
+                {isAdmin && f.enabled && isCob && f.required && (
+                  <div style={{ display:'flex', alignItems:'center', gap:8, marginTop:10, padding:'10px 12px', background:'var(--teal-50)', border:'1px solid var(--teal-100)', borderRadius:'var(--radius-sm)' }}>
+                    <DollarSign size={14} color="var(--teal-600)" />
+                    <span style={{ fontSize:12, color:'var(--teal-700)', fontWeight:600 }}>Monto mensual</span>
+                    <span style={{ fontSize:12, color:'var(--teal-600)' }}>$</span>
+                    <input style={{ width:110, padding:'5px 8px', border:'1.5px solid var(--teal-200)', borderRadius:6, fontSize:13, fontWeight:700, color:'var(--teal-700)', background:'white', outline:'none', textAlign:'right', fontFamily:'var(--font-body)' }}
+                      type="number" min="0" defaultValue={f.default_amount||0}
+                      onBlur={e => toggleField(f.id, { default_amount: e.target.value })} />
+                  </div>
+                )}
               </div>
-              <div style={{ fontSize:13, color:'var(--teal-700)', lineHeight:1.8 }}>
-                <div>Mantenimiento: {fmt(t.maintenance_fee)}</div>
-                {reqCobFields.map(f => <div key={f.id}>+ {f.label}: {fmt(f.default_amount)}</div>)}
+              <div style={{ display:'flex', alignItems:'center', gap:10, paddingLeft:16, flexShrink:0 }}>
+                {isAdmin && isCob && f.enabled && (
+                  <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:4 }}>
+                    <div style={{ fontSize:9, fontWeight:700, letterSpacing:'0.06em', color:f.required?'var(--coral-500)':'var(--ink-400)' }}>OBLIG.</div>
+                    <div className={`switch ${f.required?'on':''}`} style={{ background:f.required?'var(--coral-400)':undefined, cursor:'pointer' }} onClick={() => toggleField(f.id,{required:!f.required})}>
+                      <div className="switch-knob" />
+                    </div>
+                  </div>
+                )}
+                {isAdmin && (
+                  <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:4 }}>
+                    <div style={{ fontSize:9, fontWeight:700, letterSpacing:'0.06em', color:f.enabled?'var(--teal-600)':'var(--ink-400)' }}>ACTIVO</div>
+                    <div className={`switch ${f.enabled?'on':''}`} style={{ cursor:'pointer' }} onClick={() => toggleField(f.id,{enabled:!f.enabled})}>
+                      <div className="switch-knob" />
+                    </div>
+                  </div>
+                )}
+                {isAdmin && !f.is_system_default && (
+                  <button className="btn-ghost" style={{ color:'var(--coral-400)', padding:6, borderRadius:'var(--radius-sm)' }} onClick={async () => {
+                    if (window.confirm('¿Eliminar campo?')) { await extraFieldsAPI.delete(tenantId,f.id); loadFields(); }
+                  }}><Trash2 size={15}/></button>
+                )}
+                {!isAdmin && (
+                  <span style={{ fontSize:11, fontWeight:600, padding:'4px 10px', borderRadius:'var(--radius-full)', background:f.enabled?'var(--teal-50)':'var(--sand-100)', color:f.enabled?'var(--teal-700)':'var(--ink-400)' }}>
+                    {f.enabled?'Activo':'Inactivo'}
+                  </span>
+                )}
               </div>
             </div>
-          </div>
+          );
+        };
 
-          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
+        return (
+        <div>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:12, marginBottom:20 }}>
             <p style={{ fontSize:14, color:'var(--ink-400)' }}>Configura los campos de cobranza y gastos del condominio</p>
             {isAdmin && (
-              <button className="btn btn-primary btn-sm" onClick={() => setFieldForm({ label:'', default_amount:0, required:false, enabled:true, field_type:'normal' })}>
+              <button className="btn btn-primary btn-sm" onClick={() => setFieldForm({ label:'', default_amount:0, required:false, enabled:true, field_type:'normal', cross_unit:false, description:'' })}>
                 <Plus size={14} /> Nuevo Campo
               </button>
             )}
           </div>
 
-          <div className="card">
-            <div className="card-head">
-              <h3>Campos de Cobranza y Gastos</h3>
-              <span style={{ fontSize:13, color:'var(--ink-400)' }}>{fields.length} campos</span>
+          {/* 1) Resumen de Cobranza Mensual */}
+          <div className="card" style={{ marginBottom:16 }}>
+            <div className="card-head"><h3>Resumen de Cobranza Mensual</h3></div>
+            <div className="card-body">
+              <div style={{ marginBottom:16 }}>
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'10px 14px', background:'var(--sand-50)', borderRadius:'var(--radius-sm) var(--radius-sm) 0 0', border:'1px solid var(--sand-100)' }}>
+                  <span style={{ fontSize:13, fontWeight:600, color:'var(--ink-600)', display:'flex', alignItems:'center', gap:6 }}><DollarSign size={14} /> Mantenimiento base</span>
+                  <span style={{ fontFamily:'var(--font-display)', fontSize:18, fontWeight:600, color:'var(--ink-700)' }}>{fmt(t.maintenance_fee)}</span>
+                </div>
+                {reqCobFields.map(f => (
+                  <div key={f.id} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'8px 14px', border:'1px solid var(--sand-100)', borderTop:'none' }}>
+                    <span style={{ fontSize:13, color:'var(--ink-500)' }}><span style={{ fontSize:10, fontWeight:700, padding:'2px 6px', borderRadius:'var(--radius-full)', background:'var(--coral-50)', color:'var(--coral-500)', marginRight:6 }}>Obligatorio</span>{f.label}</span>
+                    <span style={{ fontFamily:'var(--font-display)', fontSize:16, fontWeight:600, color:'var(--ink-700)' }}>{fmt(f.default_amount)}</span>
+                  </div>
+                ))}
+                {reqCobFields.length === 0 && (
+                  <div style={{ padding:'8px 14px', border:'1px solid var(--sand-100)', borderTop:'none', fontSize:12, color:'var(--ink-300)', textAlign:'center' }}>Sin campos obligatorios adicionales</div>
+                )}
+              </div>
+              <div style={{ padding:14, background:'var(--teal-50)', border:'1px solid var(--teal-100)', borderRadius:'var(--radius-md)', display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:10 }}>
+                <div style={{ fontSize:13, color:'var(--teal-700)', display:'flex', alignItems:'center', gap:6 }}>
+                  <DollarSign size={14} /> <strong>Cargo mensual mínimo por unidad</strong> <span style={{ fontSize:11, fontWeight:400 }}>(Mant. + {reqCobFields.length} oblig.)</span>
+                </div>
+                <span style={{ fontFamily:'var(--font-display)', fontSize:22, fontWeight:500, color:'var(--teal-700)' }}>{fmt(totalMonthly)} <span style={{ fontSize:13, fontWeight:400 }}>MXN</span></span>
+              </div>
+              <div style={{ marginTop:12, fontSize:12, color:'var(--ink-400)', display:'flex', alignItems:'center', gap:4 }}>
+                <AlertCircle size={13} /> Solo los campos <strong>Obligatorios</strong> con monto configurado generan deuda en el Estado de Cuenta.
+              </div>
             </div>
-            {fields.length === 0
-              ? <div className="card-body" style={{ color:'var(--ink-300)', fontSize:13 }}>Sin campos configurados</div>
-              : fields.map(f => {
-                  const isCob = !f.field_type || f.field_type === 'normal';
-                  const typeColor = isCob ? 'var(--teal-500)' : 'var(--amber-500)';
-                  return (
-                    <div key={f.id} style={{ display:'flex', padding:'16px 20px', borderBottom:'1px solid var(--sand-100)', alignItems:'flex-start' }}>
-                      <div style={{ width:3, borderRadius:3, minHeight:40, background:f.enabled?typeColor:'var(--sand-200)', flexShrink:0, marginRight:16, marginTop:2 }} />
-                      <div style={{ flex:1, minWidth:0 }}>
-                        <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap', marginBottom:4 }}>
-                          <span style={{ fontSize:14, fontWeight:700, color:'var(--ink-800)' }}>{f.label}</span>
-                          <span className={`badge ${isCob?'badge-cobranza':'badge-gastos-type'}`}>{isCob?'Cobranza':'Gastos'}</span>
-                          {f.enabled && isCob && <span className={`badge ${f.required?'badge-required':'badge-optional'}`}>{f.required?'Obligatorio':'Opcional'}</span>}
-                          {!f.enabled && <span className="badge badge-gray">Inactivo</span>}
-                          {f.is_system_default && <span className="badge badge-gray" style={{ fontSize:10 }}>sistema</span>}
-                        </div>
-                        {isCob && f.required && f.enabled && parseFloat(f.default_amount)>0 &&
-                          <div style={{ fontSize:12, color:'var(--ink-500)' }}>Cargo mensual fijo: <strong style={{ color:'var(--teal-700)' }}>{fmt(f.default_amount)}</strong></div>}
-                        {!f.enabled && <div style={{ fontSize:12, color:'var(--ink-400)' }}>Activa este campo para usarlo en cobranza</div>}
-                        {f.enabled && isCob && !f.required && <div style={{ fontSize:12, color:'var(--ink-400)' }}>Campo opcional — monto variable por período</div>}
-                        {!isCob && f.enabled && <div style={{ fontSize:12, color:'var(--ink-400)' }}>Campo de gastos operativos del condominio</div>}
-                        {isAdmin && f.enabled && isCob && f.required && (
-                          <div style={{ display:'flex', alignItems:'center', gap:8, marginTop:10, padding:'10px 12px', background:'var(--teal-50)', border:'1px solid var(--teal-100)', borderRadius:'var(--radius-sm)' }}>
-                            <DollarSign size={14} color="var(--teal-600)" />
-                            <span style={{ fontSize:12, color:'var(--teal-700)', fontWeight:600 }}>Monto mensual:</span>
-                            <input style={{ width:110, padding:'5px 8px', border:'1.5px solid var(--teal-200)', borderRadius:6, fontSize:13, fontWeight:700, color:'var(--teal-700)', background:'white', outline:'none', textAlign:'right', fontFamily:'var(--font-body)' }}
-                              type="number" min="0" defaultValue={f.default_amount||0}
-                              onBlur={e => toggleField(f.id, { default_amount: e.target.value })} />
-                          </div>
-                        )}
-                      </div>
-                      <div style={{ display:'flex', alignItems:'center', gap:12, paddingLeft:16, flexShrink:0 }}>
-                        {isAdmin && isCob && f.enabled && (
-                          <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:4 }}>
-                            <div style={{ fontSize:9, fontWeight:700, letterSpacing:'0.06em', color:f.required?'var(--coral-500)':'var(--ink-400)' }}>OBLIG.</div>
-                            <div className={`switch ${f.required?'on':''}`} style={{ background:f.required?'var(--coral-400)':undefined, cursor:'pointer' }} onClick={() => toggleField(f.id,{required:!f.required})}>
-                              <div className="switch-knob" />
-                            </div>
-                          </div>
-                        )}
-                        {isAdmin && (
-                          <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:4 }}>
-                            <div style={{ fontSize:9, fontWeight:700, letterSpacing:'0.06em', color:f.enabled?'var(--teal-600)':'var(--ink-400)' }}>ACTIVO</div>
-                            <div className={`switch ${f.enabled?'on':''}`} style={{ cursor:'pointer' }} onClick={() => toggleField(f.id,{enabled:!f.enabled})}>
-                              <div className="switch-knob" />
-                            </div>
-                          </div>
-                        )}
-                        {isAdmin && (
-                          <div style={{ display:'flex', gap:4 }}>
-                            <button className="btn-ghost" onClick={() => setFieldForm(f)}><Settings size={13}/></button>
-                            {!f.is_system_default && (
-                              <button className="btn-ghost" style={{ color:'var(--coral-400)' }} onClick={async () => {
-                                if (window.confirm('¿Eliminar campo?')) { await extraFieldsAPI.delete(tenantId,f.id); loadFields(); }
-                              }}><Trash2 size={13}/></button>
-                            )}
-                          </div>
-                        )}
-                        {!isAdmin && (
-                          <span className="badge" style={{ background:f.enabled?'var(--teal-50)':'var(--sand-100)', color:f.enabled?'var(--teal-700)':'var(--ink-400)', fontSize:11 }}>
-                            {f.enabled?'Activo':'Inactivo'}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })
-            }
+          </div>
+
+          {/* 2) Campos de Cobranza — collapsible */}
+          <div className="card" style={{ marginBottom:16, overflow:'hidden' }}>
+            <div className="collapsible-head" onClick={() => setCobCollapsed(p => !p)} style={{ cursor:'pointer' }}>
+              <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                <Receipt size={16} />
+                <h3 style={{ margin:0 }}>Campos de Cobranza</h3>
+                <span style={{ fontSize:12, color:'var(--ink-400)', marginLeft:6 }}>
+                  {cobFields.length} campo(s)
+                  {cobActive.length > 0 && <>&nbsp;<span className="badge badge-teal">{cobActive.length} activos</span></>}
+                </span>
+              </div>
+              <ChevronRight size={16} style={{ transform:cobCollapsed?'rotate(0deg)':'rotate(90deg)', transition:'transform 0.2s', color:'var(--ink-400)' }} />
+            </div>
+            {!cobCollapsed && (
+              cobFields.length === 0
+                ? <div style={{ color:'var(--ink-300)', fontSize:14, textAlign:'center', padding:24 }}>Sin campos de cobranza</div>
+                : cobFields.map(f => <FieldRow key={f.id} f={f} />)
+            )}
+          </div>
+
+          {/* 3) Campos de Gastos — collapsible */}
+          <div className="card" style={{ marginBottom:16, overflow:'hidden' }}>
+            <div className="collapsible-head" onClick={() => setGasCollapsed(p => !p)} style={{ cursor:'pointer' }}>
+              <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                <ShoppingBag size={16} />
+                <h3 style={{ margin:0 }}>Campos de Gastos</h3>
+                <span style={{ fontSize:12, color:'var(--ink-400)', marginLeft:6 }}>
+                  {gasFields.length} campo(s)
+                  {gasActive.length > 0 && <>&nbsp;<span className="badge badge-amber">{gasActive.length} activos</span></>}
+                </span>
+              </div>
+              <ChevronRight size={16} style={{ transform:gasCollapsed?'rotate(0deg)':'rotate(90deg)', transition:'transform 0.2s', color:'var(--ink-400)' }} />
+            </div>
+            {!gasCollapsed && (
+              gasFields.length === 0
+                ? <div style={{ color:'var(--ink-300)', fontSize:14, textAlign:'center', padding:24 }}>Sin campos de gastos</div>
+                : gasFields.map(f => <FieldRow key={f.id} f={f} />)
+            )}
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* ════ USUARIOS ════ */}
       {tab === 'users' && (
@@ -671,7 +823,7 @@ export default function Config() {
                   <table>
                     <thead>
                       <tr>
-                        <th>Nombre</th><th>Email</th><th>Rol</th><th>Unidad</th><th>Contraseña</th>
+                        <th>Nombre</th><th>Email</th><th>Rol</th><th>Contraseña</th>
                         {isAdmin && <th style={{ width:80 }}>Acciones</th>}
                       </tr>
                     </thead>
@@ -690,7 +842,6 @@ export default function Config() {
                                 {meta.label}
                               </span>
                             </td>
-                            <td style={{ fontSize:12, fontFamily:'monospace' }}>{u.unit_code||u.unit_id_code||'—'}</td>
                             <td>{u.must_change_password?<span className="badge badge-amber">Cambio pendiente</span>:<span className="badge badge-teal">Activa</span>}</td>
                             {isAdmin && (
                               <td>
@@ -718,80 +869,258 @@ export default function Config() {
 
       {/* ════ ROLES ════ */}
       {tab === 'roles' && (
-        <div className="card">
-          <div className="card-head"><h3>Roles del Sistema</h3></div>
-          <div className="card-body">
-            <div className="roles-grid">
-              {Object.entries(ROLE_META).filter(([k]) => !['superadmin','super_admin'].includes(k)).map(([key, meta]) => {
-                const count = tenantUsers.filter(u => u.role === key).length;
-                return (
-                  <div className="role-card" key={key}>
-                    <div className="role-card-bar" style={{ background:meta.color }} />
-                    <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8, marginTop:6 }}>
-                      <div style={{ width:28, height:28, borderRadius:8, background:meta.bg, display:'flex', alignItems:'center', justifyContent:'center' }}>
-                        <Users size={13} color={meta.color} />
+        <div style={{ display:'grid', gap:20 }}>
+          {isSuperAdmin && (
+            <div className="card">
+              <div className="card-head">
+                <h3>Super Administradores</h3>
+                <button className="btn btn-primary btn-sm" onClick={() => { setAddSAForm({ name:'', email:'', password:'' }); setAddSAOpen(true); }}>
+                  <Plus size={14}/> Agregar
+                </button>
+              </div>
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr><th>Nombre</th><th>Email</th><th>Rol</th><th>Estado</th><th style={{ width:80 }}>Acciones</th></tr>
+                  </thead>
+                  <tbody>
+                    {superAdmins.map(sa => (
+                      <tr key={sa.id}>
+                        <td style={{ fontWeight:600 }}>{sa.name || sa.email}</td>
+                        <td style={{ fontSize:13, color:'var(--ink-400)' }}>{sa.email}</td>
+                        <td><span className="badge badge-coral"><span className="badge-dot" style={{ background:'var(--coral-500)' }} />Super Admin</span></td>
+                        <td>{sa.must_change_password
+                          ? <span className="badge badge-amber">Cambio pendiente</span>
+                          : <span className="badge badge-teal">Activa</span>}
+                        </td>
+                        <td>
+                          <button className="btn-ghost" style={{ color:'var(--coral-500)' }} onClick={() => deleteSuperAdmin(sa.id)}>
+                            <Trash2 size={16}/>
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                    {superAdmins.length === 0 && (
+                      <tr><td colSpan={5} style={{ textAlign:'center', color:'var(--ink-300)', padding:20 }}>Sin super administradores</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          <div className="card">
+            <div className="card-head"><h3>Roles del Sistema</h3></div>
+            <div className="card-body">
+              <div className="roles-grid">
+                {Object.entries(ROLE_META).filter(([k]) => !['superadmin','super_admin'].includes(k)).map(([key, meta]) => {
+                  const count = tenantUsers.filter(u => u.role === key).length;
+                  return (
+                    <div className="role-card" key={key}>
+                      <div className="role-card-bar" style={{ background:meta.color }} />
+                      <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8, marginTop:6 }}>
+                        <div style={{ width:28, height:28, borderRadius:8, background:meta.bg, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                          <Users size={13} color={meta.color} />
+                        </div>
+                        <h4 style={{ color:meta.color, fontSize:13 }}>{meta.label}</h4>
                       </div>
-                      <h4 style={{ color:meta.color, fontSize:13 }}>{meta.label}</h4>
+                      <p style={{ color:'var(--ink-400)', fontSize:12, lineHeight:1.5 }}>{meta.desc}</p>
+                      <div className="role-card-count">{count} usuario{count!==1?'s':''}</div>
                     </div>
-                    <p style={{ color:'var(--ink-400)', fontSize:12, lineHeight:1.5 }}>{meta.desc}</p>
-                    <div className="role-card-count">{count} usuario{count!==1?'s':''}</div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
           </div>
         </div>
       )}
 
       {/* ════ ORGANIZACIÓN ════ */}
-      {tab === 'org' && (
-        <div style={{ display:'grid', gap:24 }}>
+      {tab === 'org' && (() => {
+        const today = new Date().toISOString().slice(0,7);
+        const activePos = positions.filter(p => (!p.start_date || p.start_date <= today) && (!p.end_date || p.end_date >= today));
+        const futurePos = positions.filter(p => p.start_date && p.start_date > today);
+        const pastPos = positions.filter(p => p.end_date && p.end_date < today);
+
+        const PositionTable = ({ items, isActive: isActiveGroup }) => (
+          <table style={{ width:'100%', borderCollapse:'collapse', fontSize:13 }}>
+            <thead>
+              <tr style={{ background:'var(--sand-50)' }}>
+                <th style={{ padding:'10px 14px', textAlign:'left', fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.06em', color:'var(--ink-400)' }}>Cargo</th>
+                <th style={{ padding:'10px 14px', textAlign:'left', fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.06em', color:'var(--ink-400)' }}>Responsable</th>
+                <th style={{ padding:'10px 14px', textAlign:'left', fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.06em', color:'var(--ink-400)' }}>Contacto</th>
+                <th style={{ padding:'10px 14px', textAlign:'left', fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.06em', color:'var(--ink-400)' }}>Comité</th>
+                <th style={{ padding:'10px 14px', textAlign:'left', fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.06em', color:'var(--ink-400)' }}>Unidad</th>
+                <th style={{ padding:'10px 14px', textAlign:'left', fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.06em', color:'var(--ink-400)' }}>Vigencia</th>
+                {isAdmin && <th style={{ padding:'10px 14px', textAlign:'center', fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.06em', color:'var(--ink-400)' }}>Acciones</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {items.map(pos => {
+                const cm = pos.committee_id ? committees.find(c => c.id === pos.committee_id) : null;
+                const posUnit = pos.holder_unit ? units.find(u => u.id === pos.holder_unit) : null;
+                return (
+                  <tr key={pos.id} style={{ borderBottom:'1px solid var(--sand-100)' }}>
+                    <td style={{ padding:'12px 14px' }}><div style={{ fontWeight:700, color:'var(--ink-800)' }}>{pos.title}</div></td>
+                    <td style={{ padding:'12px 14px' }}><div style={{ fontWeight:600, color:'var(--ink-700)' }}>{pos.holder_name || '—'}</div></td>
+                    <td style={{ padding:'12px 14px' }}>
+                      {pos.email && <div style={{ fontSize:12, color:'var(--ink-500)', display:'flex', alignItems:'center', gap:4 }}><Globe size={12}/> {pos.email}</div>}
+                      {pos.phone && <div style={{ fontSize:12, color:'var(--ink-500)', marginTop:2 }}>{pos.phone}</div>}
+                      {!pos.email && !pos.phone && <span style={{ color:'var(--ink-300)', fontSize:12 }}>—</span>}
+                    </td>
+                    <td style={{ padding:'12px 14px' }}>
+                      {cm
+                        ? <span style={{ display:'inline-flex', alignItems:'center', gap:4, padding:'2px 8px', borderRadius:4, fontSize:11, fontWeight:600, background:'var(--blue-50)', color:'var(--blue-700)' }}><Users size={11}/> {cm.name}</span>
+                        : <span style={{ color:'var(--ink-300)', fontSize:12 }}>—</span>}
+                    </td>
+                    <td style={{ padding:'12px 14px' }}>
+                      {posUnit
+                        ? <span style={{ fontFamily:'monospace', fontWeight:700, color:'var(--teal-600)', background:'var(--teal-50)', padding:'2px 8px', borderRadius:4, fontSize:12 }}>{posUnit.unit_id_code}</span>
+                        : <span style={{ color:'var(--ink-300)', fontSize:12 }}>—</span>}
+                    </td>
+                    <td style={{ padding:'12px 14px' }}>
+                      <div style={{ fontSize:12 }}>
+                        {(pos.start_date || pos.end_date)
+                          ? <span style={{ background:isActiveGroup?'var(--teal-50)':'var(--sand-100)', padding:'3px 8px', borderRadius:'var(--radius-full)', fontWeight:600, color:isActiveGroup?'var(--teal-700)':'var(--ink-500)' }}>
+                              {pos.start_date ? periodLabel(pos.start_date) : '—'} → {pos.end_date ? periodLabel(pos.end_date) : 'Vigente'}
+                            </span>
+                          : <span style={{ color:'var(--ink-300)' }}>Sin definir</span>}
+                      </div>
+                    </td>
+                    {isAdmin && (
+                      <td style={{ padding:'12px 14px', textAlign:'center', whiteSpace:'nowrap' }}>
+                        <button className="btn-ghost" style={{ marginRight:4 }} onClick={() => setPosForm({...pos})}><Edit2 size={14}/></button>
+                        <button className="btn-ghost" style={{ color:'var(--coral-500)' }} onClick={async () => { if(window.confirm('¿Eliminar?')){await assemblyAPI.deletePosition(tenantId,pos.id);loadAssembly();}}}><Trash2 size={14}/></button>
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        );
+
+        return (
+        <div style={{ display:'grid', gap:20 }}>
+          {/* Admin Externa panel */}
+          {(t.admin_type === 'admin_externa' || t.admin_type === 'administrador') && (
+            <div className="card" style={{ border:'2px solid var(--amber-200)' }}>
+              <div className="card-head" style={{ background:'var(--amber-50)' }}>
+                <h3 style={{ color:'var(--amber-700)', display:'flex', alignItems:'center', gap:6 }}><Building2 size={16}/> Administración Externa</h3>
+                <span className="badge badge-amber">Servicio contratado</span>
+              </div>
+              <div className="card-body">
+                <div className="form-grid">
+                  <FieldView label="Empresa / Administrador" value={t.admin_externa_company} />
+                  <FieldView label="Costo Mensual del Servicio" value={t.admin_externa_cost ? fmt(t.admin_externa_cost) : null} />
+                  <FieldView label="Inicio del Contrato" value={t.admin_externa_start ? periodLabel(t.admin_externa_start) : null} />
+                  <FieldView label="Fin del Contrato" value={t.admin_externa_end ? periodLabel(t.admin_externa_end) : null} />
+                </div>
+                <div style={{ marginTop:12, padding:'10px 14px', background:'var(--blue-50)', borderRadius:'var(--radius-sm)', fontSize:12, color:'var(--blue-700)', display:'flex', alignItems:'center', gap:6 }}>
+                  <AlertCircle size={12}/> El costo del servicio de administración externa se registra como gasto obligatorio mensual.
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Committees */}
           <div className="card">
             <div className="card-head">
-              <h3>Comités</h3>
-              {isAdmin && <button className="btn btn-primary btn-sm" onClick={() => setCmtForm({ name:'', type:'comite' })}><Plus size={13}/> Nuevo Comité</button>}
+              <h3 style={{ color:'var(--blue-700)', display:'flex', alignItems:'center', gap:6 }}><Users size={16}/> Comités y Grupos de Trabajo</h3>
+              {isAdmin && <button className="btn btn-primary btn-sm" onClick={() => setCmtForm({ name:'', description:'', exemption:false })}><Plus size={13}/> Nuevo Comité</button>}
             </div>
             {committees.length===0
-              ? <div className="card-body" style={{ color:'var(--ink-300)', fontSize:13 }}>Sin comités registrados.</div>
-              : <div className="table-wrap"><table>
-                  <thead><tr><th>Nombre</th><th>Tipo</th>{isAdmin&&<th>Acciones</th>}</tr></thead>
-                  <tbody>{committees.map(c=>(
-                    <tr key={c.id}>
-                      <td style={{ fontWeight:600, fontSize:13 }}>{c.name}</td>
-                      <td><span className="badge badge-teal" style={{ fontSize:11 }}>{c.type}</span></td>
-                      {isAdmin&&<td><button className="btn-ghost" style={{ color:'var(--coral-500)' }} onClick={async()=>{if(window.confirm('¿Eliminar?')){await assemblyAPI.deleteCommittee(tenantId,c.id);loadAssembly();}}}><Trash2 size={12}/></button></td>}
-                    </tr>
-                  ))}</tbody>
-                </table></div>
+              ? <div className="card-body" style={{ padding:24, textAlign:'center', color:'var(--ink-400)', fontSize:13 }}>Sin comités registrados. Agregue grupos de trabajo para organizar los cargos.</div>
+              : <div style={{ padding:0 }}>
+                  <table style={{ width:'100%', borderCollapse:'collapse', fontSize:13 }}>
+                    <thead>
+                      <tr style={{ background:'var(--sand-50)' }}>
+                        <th style={{ padding:'10px 14px', textAlign:'left', fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.06em', color:'var(--ink-400)' }}>Nombre</th>
+                        <th style={{ padding:'10px 14px', textAlign:'left', fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.06em', color:'var(--ink-400)' }}>Descripción</th>
+                        <th style={{ padding:'10px 14px', textAlign:'center', fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.06em', color:'var(--ink-400)' }}>Exención</th>
+                        <th style={{ padding:'10px 14px', textAlign:'center', fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.06em', color:'var(--ink-400)' }}>Miembros</th>
+                        {isAdmin && <th style={{ padding:'10px 14px', textAlign:'center', fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.06em', color:'var(--ink-400)' }}>Acciones</th>}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {committees.map(cm => {
+                        const memCount = positions.filter(p => p.committee_id === cm.id).length;
+                        return (
+                          <tr key={cm.id} style={{ borderBottom:'1px solid var(--sand-100)' }}>
+                            <td style={{ padding:'12px 14px', fontWeight:700, color:'var(--ink-800)' }}>
+                              <span style={{ display:'inline-flex', alignItems:'center', gap:6 }}><Users size={13}/> {cm.name}</span>
+                            </td>
+                            <td style={{ padding:'12px 14px', color:'var(--ink-500)', fontSize:12 }}>{cm.description || '—'}</td>
+                            <td style={{ padding:'12px 14px', textAlign:'center' }}>
+                              {cm.exemption
+                                ? <span style={{ display:'inline-flex', alignItems:'center', gap:4, padding:'2px 8px', borderRadius:4, fontSize:11, fontWeight:700, background:'var(--teal-50)', color:'var(--teal-700)' }}><Shield size={11}/> Sí</span>
+                                : <span style={{ color:'var(--ink-300)' }}>No</span>}
+                            </td>
+                            <td style={{ padding:'12px 14px', textAlign:'center' }}><span className="badge badge-blue">{memCount}</span></td>
+                            {isAdmin && (
+                              <td style={{ padding:'12px 14px', textAlign:'center' }}>
+                                <button className="btn-ghost" style={{ marginRight:4 }} onClick={() => setCmtForm({...cm})}><Edit2 size={14}/></button>
+                                <button className="btn-ghost" style={{ color:'var(--coral-500)' }} onClick={async()=>{if(window.confirm('¿Eliminar?')){await assemblyAPI.deleteCommittee(tenantId,cm.id);loadAssembly();}}}><Trash2 size={14}/></button>
+                              </td>
+                            )}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
             }
           </div>
 
-          <div className="card">
-            <div className="card-head">
-              <h3>Cargos de Asamblea</h3>
-              {isAdmin && <button className="btn btn-primary btn-sm" onClick={() => setPosForm({ name:'', member_name:'', start_date:'', end_date:'' })}><Plus size={13}/> Nuevo Cargo</button>}
+          {/* Positions intro */}
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:12 }}>
+            <div>
+              <div style={{ fontSize:16, fontWeight:700, color:'var(--ink-800)' }}>Estructura de la Administración</div>
+              <div style={{ fontSize:13, color:'var(--ink-400)', marginTop:4 }}>Cargos administrativos del condominio, información de contacto y vigencia de gestión.</div>
             </div>
-            {positions.length===0
-              ? <div className="card-body" style={{ color:'var(--ink-300)', fontSize:13 }}>Sin cargos registrados.</div>
-              : <div className="table-wrap"><table>
-                  <thead><tr><th>Cargo</th><th>Titular</th><th>Inicio</th><th>Fin</th>{isAdmin&&<th>Acciones</th>}</tr></thead>
-                  <tbody>{positions.map(p=>(
-                    <tr key={p.id}>
-                      <td style={{ fontWeight:600, fontSize:13 }}>{p.name}</td>
-                      <td style={{ fontSize:13 }}>{p.member_name||'—'}</td>
-                      <td style={{ fontSize:12 }}>{p.start_date||'—'}</td>
-                      <td style={{ fontSize:12 }}>{p.end_date||'—'}</td>
-                      {isAdmin&&<td><div style={{ display:'flex', gap:4 }}>
-                        <button className="btn-ghost" onClick={()=>setPosForm(p)}><Settings size={12}/></button>
-                        <button className="btn-ghost" style={{ color:'var(--coral-500)' }} onClick={async()=>{if(window.confirm('¿Eliminar?')){await assemblyAPI.deletePosition(tenantId,p.id);loadAssembly();}}}><Trash2 size={12}/></button>
-                      </div></td>}
-                    </tr>
-                  ))}</tbody>
-                </table></div>
-            }
+            {isAdmin && <button className="btn btn-primary btn-sm" onClick={() => setPosForm({ title:'', holder_name:'', email:'', phone:'', start_date:'', end_date:'', holder_unit:'', committee_id:'', notes:'' })}><Plus size={13}/> Nuevo Cargo</button>}
           </div>
+
+          {positions.length === 0 ? (
+            <div style={{ textAlign:'center', padding:'48px 24px' }}>
+              <Users size={48} color="var(--ink-300)" style={{ marginBottom:12 }}/>
+              <h4 style={{ color:'var(--ink-500)' }}>Sin cargos registrados</h4>
+              <p style={{ color:'var(--ink-400)', fontSize:13, marginTop:6 }}>Agregue los cargos de la mesa directiva y administración del condominio.</p>
+            </div>
+          ) : (
+            <>
+              {activePos.length > 0 && (
+                <div className="card">
+                  <div className="card-head">
+                    <h3 style={{ color:'var(--teal-700)', display:'flex', alignItems:'center', gap:6 }}><Shield size={16}/> Cargos Vigentes</h3>
+                    <span style={{ background:'var(--teal-50)', color:'var(--teal-700)', padding:'2px 10px', borderRadius:'var(--radius-full)', fontSize:12, fontWeight:700 }}>{activePos.length}</span>
+                  </div>
+                  <div style={{ padding:0 }}><PositionTable items={activePos} isActive /></div>
+                </div>
+              )}
+              {futurePos.length > 0 && (
+                <div className="card">
+                  <div className="card-head">
+                    <h3 style={{ color:'var(--blue-500)', display:'flex', alignItems:'center', gap:6 }}><Calendar size={16}/> Cargos Futuros</h3>
+                    <span style={{ background:'var(--blue-50)', color:'var(--blue-500)', padding:'2px 10px', borderRadius:'var(--radius-full)', fontSize:12, fontWeight:700 }}>{futurePos.length}</span>
+                  </div>
+                  <div style={{ padding:0 }}><PositionTable items={futurePos} isActive={false} /></div>
+                </div>
+              )}
+              {pastPos.length > 0 && (
+                <div className="card">
+                  <div className="card-head">
+                    <h3 style={{ color:'var(--ink-400)', display:'flex', alignItems:'center', gap:6 }}><FileText size={16}/> Cargos Anteriores</h3>
+                    <span style={{ background:'var(--sand-100)', color:'var(--ink-400)', padding:'2px 10px', borderRadius:'var(--radius-full)', fontSize:12, fontWeight:700 }}>{pastPos.length}</span>
+                  </div>
+                  <div style={{ padding:0 }}><PositionTable items={pastPos} isActive={false} /></div>
+                </div>
+              )}
+            </>
+          )}
         </div>
-      )}
+        );
+      })()}
 
       {/* ══════════════════════════════════════════════════════════
            MODALS
@@ -823,7 +1152,9 @@ export default function Config() {
       )}
 
       {/* Edit Datos Generales */}
-      {editAddrOpen && (
+      {editAddrOpen && (() => {
+        const isMX = t.country === 'México' || t.country === 'Mexico' || !t.country;
+        return (
         <Modal title="Editar Datos Generales" large
           onClose={() => setEditAddrOpen(false)}
           onSave={() => savePatch(editAddrForm, () => setEditAddrOpen(false))}
@@ -833,7 +1164,13 @@ export default function Config() {
               <label className="field-label">Nombre del Edificio</label>
               <input className="field-input" value={editAddrForm.addr_nombre||''} onChange={e=>setEditAddrForm(f=>({...f,addr_nombre:e.target.value}))} />
             </div>
-            {[['addr_calle','Calle'],['addr_num_externo','No. Externo'],['addr_colonia','Colonia'],['addr_delegacion','Delegación'],['addr_ciudad','Ciudad'],['addr_codigo_postal','C.P.']].map(([k,l])=>(
+            {[['addr_calle','Calle'],['addr_num_externo','No. Externo']].map(([k,l])=>(
+              <div className="field" key={k}>
+                <label className="field-label">{l}</label>
+                <input className="field-input" value={editAddrForm[k]||''} onChange={e=>setEditAddrForm(f=>({...f,[k]:e.target.value}))} />
+              </div>
+            ))}
+            {isMX && [['addr_colonia','Colonia'],['addr_delegacion','Delegación'],['addr_ciudad','Ciudad'],['addr_codigo_postal','C.P.']].map(([k,l])=>(
               <div className="field" key={k}>
                 <label className="field-label">{l}</label>
                 <input className="field-input" value={editAddrForm[k]||''} onChange={e=>setEditAddrForm(f=>({...f,[k]:e.target.value}))} />
@@ -841,7 +1178,8 @@ export default function Config() {
             ))}
           </div>
         </Modal>
-      )}
+        );
+      })()}
 
       {/* Edit General */}
       {editGenOpen && (
@@ -853,6 +1191,11 @@ export default function Config() {
             <div className="field field-full">
               <label className="field-label">Nombre del Condominio</label>
               <input className="field-input" value={editGenForm.name||''} onChange={e=>setEditGenForm(f=>({...f,name:e.target.value}))} />
+            </div>
+            <div className="field">
+              <label className="field-label">Unidades</label>
+              <input type="number" min="0" className="field-input" value={editGenForm.units_count||''} onChange={e=>setEditGenForm(f=>({...f,units_count:parseInt(e.target.value)||0}))} />
+              <div style={{ fontSize:11, color:'var(--ink-400)', marginTop:4 }}>Número total de unidades del condominio</div>
             </div>
             <div className="field">
               <label className="field-label">Cuota de Mantenimiento</label>
@@ -947,6 +1290,13 @@ export default function Config() {
                 <option value="rentado">Rentado</option>
               </select>
             </div>
+            <div className="field">
+              <label className="field-label">Adeudo Anterior</label>
+              <input className="field-input" type="number" step="0.01" min="0" placeholder="0.00"
+                value={unitForm.previous_debt || 0}
+                onChange={e=>setUnitForm(f=>({...f,previous_debt:parseFloat(e.target.value)||0}))} />
+              <div style={{ fontSize:11, color:'var(--ink-400)', marginTop:4 }}>Deuda previa al inicio de operaciones del sistema</div>
+            </div>
           </div>
           <div className="form-section-label">Propietario</div>
           <div className="form-grid" style={{ marginBottom:24 }}>
@@ -964,6 +1314,37 @@ export default function Config() {
               </div>
             </div>
           )}
+          {t.admin_type === 'mesa_directiva' && (
+            <>
+              <div className="form-section-label" style={{ color:'var(--teal-700)', borderColor:'var(--teal-200)' }}>
+                <Shield size={14}/> Exención por Administración
+              </div>
+              <div style={{ padding:'12px 16px', marginBottom:16, background:'var(--teal-50)', border:'1px solid var(--teal-100)', borderRadius:'var(--radius-md)' }}>
+                <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+                  <div className={`switch ${unitForm.admin_exempt?'on':''}`} style={{ cursor:'pointer' }} onClick={()=>setUnitForm(f=>({...f,admin_exempt:!f.admin_exempt}))}>
+                    <div className="switch-knob" />
+                  </div>
+                  <div>
+                    <div style={{ fontSize:13, fontWeight:700, color:unitForm.admin_exempt?'var(--teal-700)':'var(--ink-600)' }}>
+                      {unitForm.admin_exempt ? '✓ Exento por Administración' : 'Sin exención'}
+                    </div>
+                    <div style={{ fontSize:11, color:'var(--ink-400)', marginTop:2 }}>No genera deuda de mantenimiento por ser parte de la Mesa Directiva</div>
+                  </div>
+                </div>
+                {unitForm.admin_exempt && unitForm.id && (() => {
+                  const today = new Date().toISOString().slice(0,7);
+                  const hasPos = positions.some(p => p.holder_unit === unitForm.id && (!p.start_date || p.start_date <= today) && (!p.end_date || p.end_date >= today));
+                  return hasPos
+                    ? <div style={{ marginTop:10, padding:'8px 12px', background:'var(--teal-50)', border:'1px solid var(--teal-200)', borderRadius:'var(--radius-sm)', fontSize:12, color:'var(--teal-700)' }}>
+                        <Shield size={13}/> Cargo activo encontrado — la exención de mantenimiento está vigente.
+                      </div>
+                    : <div style={{ marginTop:10, padding:'8px 12px', background:'var(--amber-50)', border:'1px solid var(--amber-200)', borderRadius:'var(--radius-sm)', fontSize:12, color:'var(--amber-700)' }}>
+                        <AlertCircle size={13}/> <strong>Esta unidad no tiene cargo activo en la mesa directiva.</strong> Asigne un cargo en la pestaña Organización para que la exención sea efectiva.
+                      </div>;
+                })()}
+              </div>
+            </>
+          )}
         </Modal>
       )}
 
@@ -973,22 +1354,30 @@ export default function Config() {
           onClose={() => setFieldForm(null)}
           onSave={saveField}
           saving={saving}>
-          <div className="form-grid">
+          <div style={{ display:'flex', flexDirection:'column', gap:20 }}>
             <div className="field field-full">
               <label className="field-label">Nombre del Campo <span style={{ color:'var(--coral-500)' }}>*</span></label>
               <input className="field-input" placeholder="Ej: Fondo de Reserva, Cuota extraordinaria" value={fieldForm.label||''} onChange={e=>setFieldForm(f=>({...f,label:e.target.value}))} />
             </div>
-            <div className="field">
-              <label className="field-label">Tipo de Campo</label>
-              <select className="field-select" value={fieldForm.field_type||'normal'} onChange={e=>setFieldForm(f=>({...f,field_type:e.target.value}))}>
-                <option value="normal">Cobranza</option>
-                <option value="gastos">Gastos</option>
-              </select>
-            </div>
-            <div className="field">
-              <label className="field-label">Monto Fijo (opcional)</label>
-              <input type="number" min="0" step="0.01" className="field-input" placeholder="0" value={fieldForm.default_amount||0} onChange={e=>setFieldForm(f=>({...f,default_amount:e.target.value}))} />
-              <div style={{ fontSize:11, color:'var(--ink-400)', marginTop:4 }}>Déjalo en 0 si varía por unidad</div>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16 }}>
+              <div className="field">
+                <label className="field-label">Tipo de Campo</label>
+                <div style={{ display:'flex', border:'1.5px solid var(--sand-200)', borderRadius:'var(--radius-sm)', overflow:'hidden', marginTop:4 }}>
+                  <button type="button" style={{ flex:1, padding:'8px 14px', fontSize:13, fontWeight:600, cursor:'pointer', border:'none', display:'flex', alignItems:'center', justifyContent:'center', gap:6, background:(!fieldForm.field_type||fieldForm.field_type==='normal')?'var(--teal-50)':'var(--white)', color:(!fieldForm.field_type||fieldForm.field_type==='normal')?'var(--teal-700)':'var(--ink-500)', transition:'all 0.15s' }}
+                    onClick={()=>setFieldForm(f=>({...f,field_type:'normal'}))}>
+                    <Receipt size={14} /> Cobranza
+                  </button>
+                  <button type="button" style={{ flex:1, padding:'8px 14px', fontSize:13, fontWeight:600, cursor:'pointer', border:'none', borderLeft:'1.5px solid var(--sand-200)', display:'flex', alignItems:'center', justifyContent:'center', gap:6, background:fieldForm.field_type==='gastos'?'var(--amber-50)':'var(--white)', color:fieldForm.field_type==='gastos'?'var(--amber-700)':'var(--ink-500)', transition:'all 0.15s' }}
+                    onClick={()=>setFieldForm(f=>({...f,field_type:'gastos'}))}>
+                    <ShoppingBag size={14} /> Gastos
+                  </button>
+                </div>
+              </div>
+              <div className="field">
+                <label className="field-label">Monto Fijo (opcional)</label>
+                <input type="number" min="0" step="0.01" className="field-input" placeholder="0" value={fieldForm.default_amount||0} onChange={e=>setFieldForm(f=>({...f,default_amount:e.target.value}))} />
+                <div style={{ fontSize:11, color:'var(--ink-400)', marginTop:4 }}>Déjalo en 0 si varía por unidad</div>
+              </div>
             </div>
             {(!fieldForm.field_type || fieldForm.field_type==='normal') && (
               <div className="field">
@@ -1003,14 +1392,29 @@ export default function Config() {
                 </div>
               </div>
             )}
+            {(!fieldForm.field_type || fieldForm.field_type==='normal') && (
+              <div className="field">
+                <label className="field-label" style={{ display:'flex', alignItems:'center', gap:4 }}><Calendar size={13}/> Duración (períodos)</label>
+                <input type="number" min="0" className="field-input" value={fieldForm.duration_periods||0} onChange={e=>setFieldForm(f=>({...f,duration_periods:parseInt(e.target.value)||0}))} />
+                <div style={{ fontSize:11, color:'var(--ink-400)', marginTop:4 }}>0 = permanente · 6 = seis meses · 12 = un año</div>
+              </div>
+            )}
             <div className="field">
-              <label className="field-label">Activo</label>
+              <label className="field-label">Aplicar a Otra Unidad</label>
               <div style={{ display:'flex', alignItems:'center', gap:10, marginTop:6 }}>
-                <div className={`switch ${fieldForm.enabled?'on':''}`} style={{ cursor:'pointer' }} onClick={()=>setFieldForm(f=>({...f,enabled:!f.enabled}))}>
+                <div className={`switch ${fieldForm.cross_unit?'on':''}`} style={{ cursor:'pointer' }} onClick={()=>setFieldForm(f=>({...f,cross_unit:!f.cross_unit}))}>
                   <div className="switch-knob" />
                 </div>
-                <span style={{ fontSize:12, color:fieldForm.enabled?'var(--teal-600)':'var(--ink-400)' }}>{fieldForm.enabled?'Activo':'Inactivo'}</span>
+                <span style={{ fontSize:12, color:fieldForm.cross_unit?'var(--teal-600)':'var(--ink-400)' }}>
+                  {fieldForm.cross_unit?'Sí — puede aplicarse a otra unidad':'No — cobra solo a la unidad asignada'}
+                </span>
               </div>
+            </div>
+            <div className="field field-full">
+              <label className="field-label">Descripción</label>
+              <textarea className="field-input" rows={3} placeholder="Descripción que aparecerá en captura, estados de cuenta y reportes"
+                value={fieldForm.description||''} onChange={e=>setFieldForm(f=>({...f,description:e.target.value}))}
+                style={{ resize:'vertical' }} />
             </div>
           </div>
         </Modal>
@@ -1064,14 +1468,26 @@ export default function Config() {
 
       {/* Committee modal */}
       {cmtForm && (
-        <Modal title="Nuevo Comité" onClose={()=>setCmtForm(null)} onSave={saveCommittee} saving={saving}>
+        <Modal title={cmtForm.id ? 'Editar Comité' : 'Nuevo Comité'} large onClose={()=>setCmtForm(null)} onSave={saveCommittee} saveLabel={cmtForm.id?'Guardar':'Crear Comité'} saving={saving}>
           <div className="form-grid">
-            <div className="field field-full"><label className="field-label">Nombre</label><input className="field-input" value={cmtForm.name||''} onChange={e=>setCmtForm(f=>({...f,name:e.target.value}))}/></div>
             <div className="field field-full">
-              <label className="field-label">Tipo</label>
-              <select className="field-select" value={cmtForm.type||'comite'} onChange={e=>setCmtForm(f=>({...f,type:e.target.value}))}>
-                <option value="comite">Comité</option><option value="subcomite">Subcomité</option><option value="brigada">Brigada</option>
-              </select>
+              <label className="field-label">Nombre del Comité <span style={{ color:'var(--coral-500)' }}>*</span></label>
+              <input className="field-input" placeholder="Ej: Comité de Vigilancia, Comité de Áreas Verdes..." value={cmtForm.name||''} onChange={e=>setCmtForm(f=>({...f,name:e.target.value}))}/>
+            </div>
+            <div className="field field-full">
+              <label className="field-label">Descripción</label>
+              <textarea className="field-input" rows={2} placeholder="Funciones y responsabilidades del comité..." value={cmtForm.description||''} onChange={e=>setCmtForm(f=>({...f,description:e.target.value}))} style={{ resize:'vertical' }} />
+            </div>
+            <div className="field field-full">
+              <div style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 16px', background:'var(--teal-50)', border:'1px solid var(--teal-100)', borderRadius:'var(--radius-md)' }}>
+                <div className={`switch ${cmtForm.exemption?'on':''}`} style={{ cursor:'pointer' }} onClick={()=>setCmtForm(f=>({...f,exemption:!f.exemption}))}>
+                  <div className="switch-knob" />
+                </div>
+                <div>
+                  <div style={{ fontSize:13, fontWeight:700, color:cmtForm.exemption?'var(--teal-700)':'var(--ink-600)', display:'flex', alignItems:'center', gap:4 }}><Shield size={13}/> Exención por Administración</div>
+                  <div style={{ fontSize:11, color:'var(--ink-400)', marginTop:2 }}>Los miembros de este comité vinculados a una unidad no generarán deuda de mantenimiento</div>
+                </div>
+              </div>
             </div>
           </div>
         </Modal>
@@ -1079,12 +1495,77 @@ export default function Config() {
 
       {/* Position modal */}
       {posForm && (
-        <Modal title={posForm.id?'Editar Cargo':'Nuevo Cargo'} onClose={()=>setPosForm(null)} onSave={savePosition} saving={saving}>
+        <Modal title={posForm.id?'Editar Cargo':'Nuevo Cargo Administrativo'} large onClose={()=>setPosForm(null)} onSave={savePosition} saveLabel={posForm.id?'Guardar Cambios':'Crear Cargo'} saving={saving}>
           <div className="form-grid">
-            <div className="field field-full"><label className="field-label">Nombre del Cargo</label><input className="field-input" placeholder="Presidente, Tesorero..." value={posForm.name||''} onChange={e=>setPosForm(f=>({...f,name:e.target.value}))}/></div>
-            <div className="field field-full"><label className="field-label">Titular</label><input className="field-input" placeholder="Nombre del residente..." value={posForm.member_name||''} onChange={e=>setPosForm(f=>({...f,member_name:e.target.value}))}/></div>
-            <div className="field"><label className="field-label">Fecha de inicio</label><input type="date" className="field-input" value={posForm.start_date||''} onChange={e=>setPosForm(f=>({...f,start_date:e.target.value}))}/></div>
-            <div className="field"><label className="field-label">Fecha de fin</label><input type="date" className="field-input" value={posForm.end_date||''} onChange={e=>setPosForm(f=>({...f,end_date:e.target.value}))}/></div>
+            <div className="field field-full">
+              <label className="field-label">Cargo / Puesto <span style={{ color:'var(--coral-500)' }}>*</span></label>
+              <input className="field-input" placeholder="Ej: Presidente, Tesorero, Vocal..." value={posForm.title||''} onChange={e=>setPosForm(f=>({...f,title:e.target.value}))}/>
+            </div>
+            <div className="field field-full">
+              <label className="field-label">Nombre Completo <span style={{ color:'var(--coral-500)' }}>*</span></label>
+              <input className="field-input" placeholder="Nombre de la persona" value={posForm.holder_name||''} onChange={e=>setPosForm(f=>({...f,holder_name:e.target.value}))}/>
+            </div>
+            <div className="field">
+              <label className="field-label">Email</label>
+              <input type="email" className="field-input" placeholder="correo@ejemplo.com" value={posForm.email||''} onChange={e=>setPosForm(f=>({...f,email:e.target.value}))}/>
+            </div>
+            <div className="field">
+              <label className="field-label">Teléfono</label>
+              <input className="field-input" placeholder="+52 55 1234 5678" value={posForm.phone||''} onChange={e=>setPosForm(f=>({...f,phone:e.target.value}))}/>
+            </div>
+            <div className="field">
+              <label className="field-label">Inicio de Gestión</label>
+              <input type="month" className="field-input" value={posForm.start_date||''} onChange={e=>setPosForm(f=>({...f,start_date:e.target.value}))}/>
+              <div style={{ fontSize:11, color:'var(--ink-400)', marginTop:4 }}>Período desde el cual asume el cargo</div>
+            </div>
+            <div className="field">
+              <label className="field-label">Fin de Gestión</label>
+              <input type="month" className="field-input" value={posForm.end_date||''} onChange={e=>setPosForm(f=>({...f,end_date:e.target.value}))}/>
+              <div style={{ fontSize:11, color:'var(--ink-400)', marginTop:4 }}>Dejar vacío si sigue vigente</div>
+            </div>
+            <div className="field field-full">
+              <label className="field-label"><Building2 size={13}/> Unidad que Representa</label>
+              <select className="field-select" value={posForm.holder_unit||''} onChange={e=>setPosForm(f=>({...f,holder_unit:e.target.value||null}))}>
+                <option value="">— Sin unidad —</option>
+                {units.map(u => <option key={u.id} value={u.id}>{u.unit_id_code} — {u.unit_name}</option>)}
+              </select>
+              <div style={{ fontSize:11, color:'var(--ink-400)', marginTop:4 }}>Vincular a una unidad para habilitar la exención de mantenimiento</div>
+            </div>
+            <div className="field field-full">
+              <label className="field-label"><Users size={13}/> Comité / Grupo</label>
+              <select className="field-select" value={posForm.committee_id||''} onChange={e=>setPosForm(f=>({...f,committee_id:e.target.value||null}))}>
+                <option value="">— Sin comité —</option>
+                {committees.map(cm => <option key={cm.id} value={cm.id}>{cm.name}{cm.exemption?' (Exención)':''}</option>)}
+              </select>
+            </div>
+            <div className="field field-full">
+              <label className="field-label">Notas</label>
+              <textarea className="field-input" rows={2} placeholder="Observaciones adicionales..." value={posForm.notes||''} onChange={e=>setPosForm(f=>({...f,notes:e.target.value}))} style={{ resize:'vertical' }} />
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Super Admin modal */}
+      {addSAOpen && (
+        <Modal title="Nuevo Super Admin" onClose={() => { setAddSAOpen(false); setAddSAForm({}); }} onSave={saveSuperAdmin} saveLabel="Crear" saving={saving}>
+          <div className="form-grid" style={{ gridTemplateColumns:'1fr' }}>
+            <div className="field">
+              <label className="field-label">Nombre</label>
+              <input className="field-input" value={addSAForm.name||''} onChange={e=>setAddSAForm(f=>({...f,name:e.target.value}))}/>
+            </div>
+            <div className="field">
+              <label className="field-label">Email</label>
+              <input type="email" className="field-input" value={addSAForm.email||''} onChange={e=>setAddSAForm(f=>({...f,email:e.target.value}))}/>
+            </div>
+            <div className="field">
+              <label className="field-label">Contraseña Inicial</label>
+              <input type="text" className="field-input" placeholder="Mínimo 8 caracteres" value={addSAForm.password||''} onChange={e=>setAddSAForm(f=>({...f,password:e.target.value}))}/>
+            </div>
+          </div>
+          <div style={{ marginTop:16, padding:14, background:'var(--amber-50)', border:'1px solid var(--amber-100)', borderRadius:'var(--radius-md)', fontSize:13, color:'var(--ink-600)', display:'flex', alignItems:'flex-start', gap:10 }}>
+            <Lock size={16} color="var(--amber-500)" style={{ flexShrink:0, marginTop:1 }} />
+            <div><strong>Cambio obligatorio:</strong> Deberá cambiar su contraseña al primer ingreso.</div>
           </div>
         </Modal>
       )}

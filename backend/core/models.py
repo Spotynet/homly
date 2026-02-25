@@ -531,6 +531,7 @@ class Committee(models.Model):
     tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='committees')
     name = models.CharField(max_length=200)
     description = models.TextField(blank=True, default='')
+    exemption = models.BooleanField(default=False)
     members = models.TextField(blank=True, default='', help_text='Comma-separated member names')
     created_at = models.DateTimeField(auto_now_add=True)
 
