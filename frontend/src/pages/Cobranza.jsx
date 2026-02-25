@@ -2,19 +2,33 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { paymentsAPI, unitsAPI, extraFieldsAPI, tenantsAPI } from '../api/client';
 import { todayPeriod, periodLabel, prevPeriod, nextPeriod, fmtCurrency, statusClass, statusLabel, PAYMENT_TYPES, fmtDate } from '../utils/helpers';
-import { ChevronLeft, ChevronRight, Search, Receipt, X, Users, CheckCircle, Clock, AlertCircle, DollarSign } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Search, Receipt, X, Users, CheckCircle, Clock, AlertCircle, DollarSign, Calendar, Building2, Upload, FileText, Check } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 function fmt(n) {
   return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 0 }).format(n ?? 0);
 }
 
-function DeltaTag({ charge, received }) {
-  const c = parseFloat(charge) || 0;
-  const r = parseFloat(received) || 0;
-  if (!r) return <span style={{ fontSize: 11, color: 'var(--ink-300)' }}>—</span>;
-  if (r >= c) return <span style={{ fontSize: 11, color: 'var(--teal-600)', fontWeight: 700 }}>✓ Completo</span>;
-  return <span style={{ fontSize: 11, color: 'var(--amber-600)', fontWeight: 700 }}>Parcial {fmt(r - c)}</span>;
+// Future periods for adelantos (next N periods after fromPeriod)
+function futurePeriods(fromPeriod, count = 12) {
+  const out = [];
+  let p = nextPeriod(fromPeriod);
+  for (let i = 0; i < count; i++) {
+    out.push(p);
+    p = nextPeriod(p);
+  }
+  return out;
+}
+
+// Past periods between start and end (inclusive)
+function periodsBetween(startPeriod, endPeriod) {
+  const out = [];
+  let p = startPeriod;
+  while (p <= endPeriod) {
+    out.push(p);
+    p = nextPeriod(p);
+  }
+  return out;
 }
 
 export default function Cobranza() {
@@ -92,19 +106,43 @@ export default function Cobranza() {
     const existing = paymentMap[unit.id];
     const fp = {};
     if (existing?.field_payments) {
-      existing.field_payments.forEach(f => { fp[f.field_key] = f.received; });
+      existing.field_payments.forEach(f => {
+        const tid = f.target_unit;
+        fp[f.field_key] = {
+          received: f.received,
+          targetUnitId: (typeof tid === 'object' ? tid?.id : tid) || null,
+          adelantoTargets: f.adelanto_targets || {},
+        };
+      });
     }
+    // Build field_payments for all fields
+    const fieldPayments = {
+      maintenance: fp.maintenance || { received: '', targetUnitId: null, adelantoTargets: {} },
+      ...Object.fromEntries(extraFields.map(ef => [
+        ef.id,
+        fp[ef.id] || { received: '', targetUnitId: null, adelantoTargets: {} },
+      ])),
+    };
+    // Normalize received to string for inputs
+    Object.keys(fieldPayments).forEach(k => {
+      const v = fieldPayments[k];
+      if (typeof v === 'object' && v !== null && v.received !== undefined) {
+        fieldPayments[k] = { ...v, received: v.received ?? '' };
+      }
+    });
     setCaptureForm({
       unit_id: unit.id,
       period,
       payment_type: existing?.payment_type || '',
       payment_date: existing?.payment_date || new Date().toISOString().slice(0, 10),
-      folio: existing?.folio || '',
       notes: existing?.notes || '',
-      field_payments: {
-        maintenance: { received: fp.maintenance || '' },
-        ...Object.fromEntries(extraFields.map(ef => [ef.id, { received: fp[ef.id] || '' }])),
-      },
+      evidence: existing?.evidence || '',
+      evidenceFileName: '',
+      field_payments: fieldPayments,
+      adeudo_payments: existing?.adeudo_payments || {},
+      showAdelantoPanel: false,
+      showAdeudoPanel: false,
+      showPreview: false,
     });
     setShowCapture(unit);
   };
@@ -112,15 +150,111 @@ export default function Cobranza() {
   const setReceived = (key, val) => {
     setCaptureForm(prev => ({
       ...prev,
-      field_payments: { ...prev.field_payments, [key]: { received: val } }
+      field_payments: {
+        ...prev.field_payments,
+        [key]: { ...(prev.field_payments?.[key] || {}), received: val },
+      },
     }));
+  };
+
+  const setFieldTargetUnit = (key, unitId) => {
+    setCaptureForm(prev => ({
+      ...prev,
+      field_payments: {
+        ...prev.field_payments,
+        [key]: { ...(prev.field_payments?.[key] || {}), targetUnitId: unitId || null },
+      },
+    }));
+  };
+
+  const toggleAdelanto = (fieldKey, targetPeriod, charge) => {
+    setCaptureForm(prev => {
+      const fp = prev.field_payments?.[fieldKey] || {};
+      const targets = { ...(fp.adelantoTargets || {}) };
+      if (targets[targetPeriod] != null) {
+        delete targets[targetPeriod];
+      } else {
+        targets[targetPeriod] = parseFloat(charge) || 0;
+      }
+      return {
+        ...prev,
+        field_payments: {
+          ...prev.field_payments,
+          [fieldKey]: { ...fp, adelantoTargets: targets },
+        },
+      };
+    });
+  };
+
+  const setAdeudoSelection = (period, fieldKey, amount) => {
+    setCaptureForm(prev => {
+      const ap = { ...(prev.adeudo_payments || {}) };
+      if (!ap[period]) ap[period] = {};
+      if (amount === 0 || amount === '' || amount === null) {
+        delete ap[period][fieldKey];
+        if (Object.keys(ap[period]).length === 0) delete ap[period];
+      } else {
+        ap[period][fieldKey] = parseFloat(amount) || 0;
+      }
+      return { ...prev, adeudo_payments: ap };
+    });
+  };
+
+  const toggleAdeudoPeriod = (period) => {
+    setCaptureForm(prev => {
+      const sel = prev.adeudoSelections || {};
+      const has = !!sel[period];
+      const newSel = { ...sel };
+      if (has) delete newSel[period];
+      else newSel[period] = {};
+      return { ...prev, adeudoSelections: newSel };
+    });
+  };
+
+  const handleEvidence = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { toast.error('Máximo 5 MB'); return; }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = reader.result?.split(',')[1] || '';
+      setCaptureForm(p => ({ ...p, evidence: base64, evidenceFileName: file.name, showPreview: false }));
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  const buildCapturePayload = () => {
+    const fp = {};
+    const allKeys = ['maintenance', ...extraFields.map(ef => ef.id)];
+    allKeys.forEach(k => {
+      const v = captureForm.field_payments?.[k];
+      const rec = parseFloat(v?.received) || 0;
+      const targets = v?.adelantoTargets && Object.keys(v.adelantoTargets).length ? v.adelantoTargets : undefined;
+      const targetUnit = v?.targetUnitId || undefined;
+      fp[k] = {
+        received: rec,
+        ...(targetUnit && { targetUnitId: targetUnit }),
+        ...(targets && { adelantoTargets: targets }),
+      };
+    });
+    return {
+      unit_id: captureForm.unit_id,
+      period: captureForm.period,
+      payment_type: captureForm.payment_type,
+      payment_date: captureForm.payment_date || null,
+      notes: captureForm.notes || '',
+      evidence: captureForm.evidence || '',
+      field_payments: fp,
+      adeudo_payments: captureForm.adeudo_payments || {},
+    };
   };
 
   const handleCapture = async () => {
     if (!captureForm.payment_type) { toast.error('La forma de pago es obligatoria'); return; }
     setSaving(true);
     try {
-      await paymentsAPI.capture(tenantId, captureForm);
+      await paymentsAPI.capture(tenantId, buildCapturePayload());
       toast.success('Pago registrado');
       setShowCapture(null);
       load();
@@ -230,7 +364,7 @@ export default function Cobranza() {
                 <th>Estado</th>
                 <th>Forma de Pago</th>
                 <th>Fecha</th>
-                <th>Folio / Notas</th>
+                <th>Notas</th>
                 <th>Acción</th>
               </tr>
             </thead>
@@ -264,7 +398,6 @@ export default function Cobranza() {
                     <td style={{ fontSize: 12 }}>{pay?.payment_type ? (PAYMENT_TYPES[pay.payment_type]?.label || pay.payment_type) : '—'}</td>
                     <td style={{ fontSize: 12 }}>{fmtDate(pay?.payment_date)}</td>
                     <td style={{ fontSize: 12, color: 'var(--ink-400)', maxWidth: 160 }}>
-                      {pay?.folio && <span style={{ fontFamily: 'monospace', marginRight: 4 }}>{pay.folio}</span>}
                       {pay?.notes && <span title={pay.notes}>{pay.notes.length > 30 ? pay.notes.slice(0, 30) + '…' : pay.notes}</span>}
                     </td>
                     <td>
@@ -301,120 +434,358 @@ export default function Cobranza() {
       </div>
 
       {/* ── Capture Modal ── */}
-      {showCapture && (
-        <div className="modal-bg open" onClick={() => setShowCapture(null)}>
-          <div className="modal lg" onClick={e => e.stopPropagation()}>
-            <div className="modal-head">
-              <div>
-                <h3>Capturar Pago</h3>
-                <p style={{ fontSize: 12, color: 'var(--ink-400)', marginTop: 2 }}>
-                  {showCapture.unit_id_code} · {showCapture.unit_name} · {periodLabel(period)}
-                </p>
-              </div>
-              <button className="modal-close" onClick={() => setShowCapture(null)}><X size={16} /></button>
-            </div>
-            <div className="modal-body">
-              {/* Payment meta */}
-              <div className="grid-2" style={{ marginBottom: 20 }}>
-                <div className="field">
-                  <label className="field-label">Forma de Pago <span style={{ color: 'var(--coral-500)' }}>*</span></label>
-                  <select className="field-select" value={captureForm.payment_type}
-                    onChange={e => setCaptureForm({ ...captureForm, payment_type: e.target.value })}>
-                    <option value="">Seleccionar...</option>
-                    {Object.entries(PAYMENT_TYPES).map(([k, v]) => (
-                      <option key={k} value={k}>{v.label}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="field">
-                  <label className="field-label">Fecha de Pago</label>
-                  <input type="date" className="field-input" value={captureForm.payment_date}
-                    onChange={e => setCaptureForm({ ...captureForm, payment_date: e.target.value })} />
-                </div>
-              </div>
+      {showCapture && (() => {
+        const reqEFs = extraFields.filter(ef => ef.required);
+        const optEFs = extraFields.filter(ef => !ef.required);
+        const maintCharge = maintenanceFee;
+        const maintAbono = Math.min(parseFloat(captureForm.field_payments?.maintenance?.received) || 0, maintCharge);
+        let totalReqCharge = maintCharge, totalReqAbono = maintAbono;
+        reqEFs.forEach(ef => {
+          const ch = parseFloat(ef.default_amount) || 0;
+          const ab = Math.min(parseFloat(captureForm.field_payments?.[ef.id]?.received) || 0, ch);
+          totalReqCharge += ch; totalReqAbono += ab;
+        });
+        const totalReqSaldo = Math.max(0, totalReqCharge - totalReqAbono);
+        const totalOptAbono = optEFs.reduce((s, ef) => s + (parseFloat(captureForm.field_payments?.[ef.id]?.received) || 0), 0);
+        const autoStatus = totalReqAbono <= 0 ? 'pendiente' : (totalReqAbono >= totalReqCharge ? 'pagado' : 'parcial');
+        const obligFields = [{ id: 'maintenance', label: 'Mantenimiento', charge: maintCharge }, ...reqEFs.map(ef => ({ id: ef.id, label: ef.label, charge: parseFloat(ef.default_amount) || 0 }))];
+        const totalAdelantoCount = obligFields.reduce((s, fd) => s + Object.keys(captureForm.field_payments?.[fd.id]?.adelantoTargets || {}).length, 0);
+        const prevDebt = parseFloat(showCapture.previous_debt) || 0;
+        const tenantStart = tenantData?.operation_start_date || (() => { let p = period; for (let i = 0; i < 12; i++) p = prevPeriod(p); return p; })();
+        const allPast = periodsBetween(tenantStart, prevPeriod(period));
+        const periodsWithDebt = [];
+        if (prevDebt > 0) {
+          const existingPrev = captureForm.adeudo_payments?.__prevDebt;
+          const existingPrevSum = existingPrev ? Object.values(existingPrev).reduce((a, v) => a + (parseFloat(v) || 0), 0) : 0;
+          periodsWithDebt.push({ period: '__prevDebt', saldoPeriodo: prevDebt, label: 'Adeudo Anterior al Inicio' });
+        }
+        const responsible = showCapture.occupancy === 'rentado'
+          ? `${showCapture.tenant_first_name || ''} ${showCapture.tenant_last_name || ''}`.trim() || showCapture.responsible_name
+          : `${showCapture.owner_first_name || ''} ${showCapture.owner_last_name || ''}`.trim() || showCapture.responsible_name;
 
-              {/* Per-concept rows */}
-              <div style={{ marginBottom: 20 }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px 12px', marginBottom: 6 }}>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-400)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Concepto</span>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-400)', textTransform: 'uppercase', letterSpacing: '0.06em', textAlign: 'right' }}>Cargo</span>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-400)', textTransform: 'uppercase', letterSpacing: '0.06em', textAlign: 'right' }}>Recibido</span>
+        return (
+          <div className="modal-bg open" onClick={() => setShowCapture(null)}>
+            <div className="modal lg" onClick={e => e.stopPropagation()} style={{ maxWidth: 620 }}>
+              <div className="modal-head">
+                <div>
+                  <h3>Captura de Pago — {periodLabel(period)}</h3>
                 </div>
-                <div style={{ borderTop: '1px solid var(--sand-100)', paddingTop: 10 }}>
-                  {/* Maintenance row */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px 12px', alignItems: 'center', paddingBottom: 10, borderBottom: '1px solid var(--sand-50)' }}>
+                <button className="modal-close" onClick={() => setShowCapture(null)}><X size={16} /></button>
+              </div>
+              <div className="modal-body" style={{ maxHeight: 'calc(100vh - 140px)', overflowY: 'auto' }}>
+                {/* Unit header */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', background: 'var(--sand-50)', border: '1px solid var(--sand-100)', borderRadius: 'var(--radius-md)' }}>
+                  <span style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--teal-600)', background: 'var(--teal-50)', padding: '4px 10px', borderRadius: 6, fontSize: 12 }}>{showCapture.unit_id_code}</span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 700, fontSize: 14 }}>{showCapture.unit_name}</div>
+                    <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>{responsible || '—'} · {showCapture.occupancy === 'rentado' ? 'Inquilino' : 'Propietario'}</div>
+                  </div>
+                  <span className={`badge ${statusClass(autoStatus)}`}>{statusLabel(autoStatus)}</span>
+                </div>
+
+                {/* SECCIÓN 1: OBLIGATORIOS */}
+                <div style={{ marginTop: 14, background: 'var(--white)', border: '1.5px solid var(--teal-100)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 100px 120px 85px', gap: 0, padding: '8px 16px', background: 'var(--teal-50)', borderBottom: '1px solid var(--teal-100)', alignItems: 'center' }}>
+                    <div style={{ fontSize: 10, fontWeight: 800, color: 'var(--teal-700)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>● Obligatorios — {periodLabel(period)}</div>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--ink-400)', textAlign: 'right', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Cargo</div>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--teal-600)', textAlign: 'right', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Abono</div>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--coral-400)', textAlign: 'right', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Saldo</div>
+                  </div>
+                  {/* Mantenimiento */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 100px 120px 85px', gap: 0, alignItems: 'center', padding: '11px 16px', borderBottom: '1px solid var(--sand-50)' }}>
                     <div>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-800)' }}>Mantenimiento</div>
-                      <DeltaTag charge={maintenanceFee} received={captureForm.field_payments?.maintenance?.received} />
+                      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-800)' }}>Mantenimiento <span style={{ marginLeft: 6, fontSize: 10, color: 'var(--coral-500)', background: 'var(--coral-50)', padding: '2px 6px', borderRadius: 4 }}>Oblig.</span></div>
+                      <div style={{ fontSize: 11, color: 'var(--ink-400)' }}>Cuota base fija</div>
                     </div>
-                    <div style={{ textAlign: 'right', fontSize: 13, color: 'var(--ink-400)' }}>{fmt(maintenanceFee)}</div>
-                    <div>
-                      <input type="number" className="field-input" style={{ textAlign: 'right' }}
-                        placeholder={maintenanceFee.toFixed(2)}
-                        value={captureForm.field_payments?.maintenance?.received || ''}
+                    <div style={{ textAlign: 'right', fontSize: 15, fontWeight: 700, color: 'var(--ink-700)' }}>{fmt(maintCharge)}</div>
+                    <div style={{ textAlign: 'right' }}>
+                      <input type="number" className="field-input" min={0} step="0.01" style={{ textAlign: 'right', maxWidth: 100 }}
+                        value={captureForm.field_payments?.maintenance?.received ?? ''}
                         onChange={e => setReceived('maintenance', e.target.value)} />
                     </div>
-                  </div>
-
-                  {/* Extra fields rows */}
-                  {extraFields.map(ef => (
-                    <div key={ef.id} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px 12px', alignItems: 'center', paddingTop: 10, paddingBottom: 10, borderBottom: '1px solid var(--sand-50)' }}>
-                      <div>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-800)' }}>
-                          {ef.label}
-                          {ef.required && <span style={{ color: 'var(--coral-400)', marginLeft: 4 }}>★</span>}
-                          {!ef.required && <span style={{ fontSize: 10, color: 'var(--ink-300)', marginLeft: 4 }}>opcional</span>}
-                        </div>
-                        <DeltaTag charge={ef.default_amount} received={captureForm.field_payments?.[ef.id]?.received} />
-                      </div>
-                      <div style={{ textAlign: 'right', fontSize: 13, color: 'var(--ink-400)' }}>{fmt(ef.default_amount)}</div>
-                      <div>
-                        <input type="number" className="field-input" style={{ textAlign: 'right' }}
-                          placeholder={(parseFloat(ef.default_amount) || 0).toFixed(2)}
-                          value={captureForm.field_payments?.[ef.id]?.received || ''}
-                          onChange={e => setReceived(ef.id, e.target.value)} />
-                      </div>
+                    <div style={{ textAlign: 'right', fontWeight: 700, fontSize: 13, color: maintCharge - maintAbono > 0 ? 'var(--coral-500)' : 'var(--teal-600)' }}>
+                      {maintCharge - maintAbono === 0 ? '✓' : fmt(maintCharge - maintAbono)}
                     </div>
-                  ))}
+                  </div>
+                  {reqEFs.map(ef => {
+                    const ch = parseFloat(ef.default_amount) || 0;
+                    const ab = Math.min(parseFloat(captureForm.field_payments?.[ef.id]?.received) || 0, ch);
+                    const saldo = ch - ab;
+                    return (
+                      <div key={ef.id}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 100px 120px 85px', gap: 0, alignItems: 'center', padding: '11px 16px', borderBottom: '1px solid var(--sand-50)' }}>
+                          <div>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-800)' }}>{ef.label} <span style={{ marginLeft: 6, fontSize: 10, color: 'var(--coral-500)', background: 'var(--coral-50)', padding: '2px 6px', borderRadius: 4 }}>Oblig.</span></div>
+                            <div style={{ fontSize: 11, color: 'var(--ink-400)' }}>Campo obligatorio</div>
+                          </div>
+                          <div style={{ textAlign: 'right', fontSize: 15, fontWeight: 700, color: 'var(--ink-700)' }}>{fmt(ch)}</div>
+                          <div style={{ textAlign: 'right' }}>
+                            <input type="number" className="field-input" min={0} step="0.01" style={{ textAlign: 'right', maxWidth: 100 }}
+                              value={captureForm.field_payments?.[ef.id]?.received ?? ''}
+                              onChange={e => setReceived(ef.id, e.target.value)} />
+                          </div>
+                          <div style={{ textAlign: 'right', fontWeight: 700, fontSize: 13, color: saldo > 0 ? 'var(--coral-500)' : 'var(--teal-600)' }}>
+                            {saldo === 0 ? '✓' : fmt(saldo)}
+                          </div>
+                        </div>
+                        {ef.cross_unit && (
+                          <div style={{ marginTop: 6, padding: 8, background: 'var(--blue-50)', borderRadius: 6, border: '1px solid var(--blue-200)', marginLeft: 16, marginRight: 16, marginBottom: 8 }}>
+                            <div style={{ fontSize: 11, color: 'var(--blue-700)', fontWeight: 700, marginBottom: 4 }}><Building2 size={11} style={{ display: 'inline', verticalAlign: -2 }} /> Aplicar a otra unidad</div>
+                            <select className="field-select" style={{ fontSize: 12 }}
+                              value={captureForm.field_payments?.[ef.id]?.targetUnitId || ''}
+                              onChange={e => setFieldTargetUnit(ef.id, e.target.value || null)}>
+                              <option value="">— Seleccionar unidad destino —</option>
+                              {units.filter(u => u.id !== showCapture.id).map(u => (
+                                <option key={u.id} value={u.id}>{u.unit_id_code} — {u.unit_name}</option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 100px 120px 85px', gap: 0, padding: '10px 16px', background: 'var(--teal-50)', borderTop: '2px solid var(--teal-200)', alignItems: 'center' }}>
+                    <div style={{ fontSize: 10, fontWeight: 800, color: 'var(--teal-700)' }}>SUBTOTAL OBLIGATORIOS</div>
+                    <div style={{ textAlign: 'right', fontWeight: 700, fontSize: 13, color: 'var(--ink-700)' }}>{fmt(totalReqCharge)}</div>
+                    <div style={{ textAlign: 'right', fontWeight: 800, fontSize: 13, color: 'var(--teal-700)' }}>{fmt(totalReqAbono)}</div>
+                    <div style={{ textAlign: 'right', fontWeight: 800, fontSize: 13, color: totalReqSaldo > 0 ? 'var(--coral-500)' : 'var(--teal-600)' }}>{fmt(totalReqSaldo)}</div>
+                  </div>
                 </div>
 
-                {/* Total row */}
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 16, paddingTop: 10 }}>
-                  <span style={{ fontSize: 13, color: 'var(--ink-500)' }}>Total recibido:</span>
-                  <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--teal-700)', fontFamily: 'var(--font-display)' }}>
-                    {fmt(
-                      (parseFloat(captureForm.field_payments?.maintenance?.received) || 0) +
-                      extraFields.reduce((s, ef) => s + (parseFloat(captureForm.field_payments?.[ef.id]?.received) || 0), 0)
+                {/* SECCIÓN 2: OPCIONALES */}
+                {optEFs.length > 0 && (
+                  <div style={{ marginTop: 8, background: 'var(--white)', border: '1.5px solid var(--sand-200)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px', gap: 0, padding: '8px 16px', background: 'var(--sand-50)', borderBottom: '1px solid var(--sand-100)', alignItems: 'center' }}>
+                      <div style={{ fontSize: 10, fontWeight: 800, color: 'var(--ink-500)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>○ Opcionales</div>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--teal-600)', textAlign: 'right', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Abono</div>
+                    </div>
+                    {optEFs.map(ef => (
+                      <div key={ef.id}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px', gap: 0, alignItems: 'center', padding: '10px 16px', borderBottom: '1px solid var(--sand-50)' }}>
+                          <div>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-700)' }}>{ef.label} <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: 'var(--ink-400)', background: 'var(--sand-100)', padding: '2px 6px', borderRadius: 4 }}>Opcional</span></div>
+                            <div style={{ fontSize: 11, color: 'var(--ink-400)' }}>Monto variable — sin cargo fijo</div>
+                          </div>
+                          <div style={{ textAlign: 'right' }}>
+                            <input type="number" className="field-input" min={0} step="0.01" style={{ textAlign: 'right' }}
+                              value={captureForm.field_payments?.[ef.id]?.received ?? ''}
+                              onChange={e => setReceived(ef.id, e.target.value)} />
+                          </div>
+                        </div>
+                        {ef.cross_unit && (
+                          <div style={{ marginTop: 6, padding: 8, background: 'var(--blue-50)', borderRadius: 6, border: '1px solid var(--blue-200)', marginLeft: 16, marginRight: 16, marginBottom: 8 }}>
+                            <div style={{ fontSize: 11, color: 'var(--blue-700)', fontWeight: 700, marginBottom: 4 }}><Building2 size={11} style={{ display: 'inline', verticalAlign: -2 }} /> Aplicar a otra unidad</div>
+                            <select className="field-select" style={{ fontSize: 12 }}
+                              value={captureForm.field_payments?.[ef.id]?.targetUnitId || ''}
+                              onChange={e => setFieldTargetUnit(ef.id, e.target.value || null)}>
+                              <option value="">— Seleccionar unidad destino —</option>
+                              {units.filter(u => u.id !== showCapture.id).map(u => (
+                                <option key={u.id} value={u.id}>{u.unit_id_code} — {u.unit_name}</option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                    {totalOptAbono > 0 && (
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px', gap: 0, padding: '8px 16px', background: 'var(--sand-50)', borderTop: '2px solid var(--sand-200)' }}>
+                        <div style={{ fontSize: 10, fontWeight: 800, color: 'var(--ink-500)' }}>SUBTOTAL OPCIONALES</div>
+                        <div style={{ textAlign: 'right', fontWeight: 800, fontSize: 13, color: 'var(--ink-600)' }}>{fmt(totalOptAbono)}</div>
+                      </div>
                     )}
-                  </span>
-                </div>
-              </div>
+                  </div>
+                )}
 
-              {/* Folio + Notes */}
-              <div className="grid-2" style={{ marginBottom: 4 }}>
-                <div className="field">
-                  <label className="field-label">Folio / Referencia</label>
-                  <input className="field-input" placeholder="Número de referencia..."
-                    value={captureForm.folio || ''}
-                    onChange={e => setCaptureForm({ ...captureForm, folio: e.target.value })} />
+                {/* SECCIÓN 3: ADELANTOS */}
+                <div style={{ marginTop: 8, border: '1.5px solid var(--blue-100)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+                  <button type="button" style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', background: 'var(--blue-50)', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-body)' }}
+                    onClick={() => setCaptureForm(p => ({ ...p, showAdelantoPanel: !p.showAdelantoPanel }))}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, fontWeight: 700, color: 'var(--blue-700)' }}><Calendar size={14} /> Adelantos (Períodos Futuros){totalAdelantoCount > 0 ? ` (${totalAdelantoCount} período(s))` : ''}</span>
+                    <span style={{ fontSize: 11, color: 'var(--blue-500)', fontWeight: 600 }}>{captureForm.showAdelantoPanel ? '▲ Ocultar' : '▼ Expandir'}</span>
+                  </button>
+                  {captureForm.showAdelantoPanel && (
+                    <div style={{ background: 'white', borderTop: '1px solid var(--blue-100)' }}>
+                      <div style={{ padding: '10px 16px 4px', fontSize: 11, color: 'var(--blue-700)', borderBottom: '1px solid var(--blue-50)' }}>Selecciona los períodos futuros a los que aplica este pago como adelanto, campo por campo.</div>
+                      {obligFields.map(fd => {
+                        const targets = captureForm.field_payments?.[fd.id]?.adelantoTargets || {};
+                        const selCount = Object.keys(targets).length;
+                        const panelKey = 'showAdelanto_' + fd.id;
+                        const isOpen = !!(captureForm[panelKey]);
+                        const futPeriods = futurePeriods(period, 12);
+                        return (
+                          <div key={fd.id} style={{ borderBottom: '1px solid var(--blue-50)' }}>
+                            <button type="button" style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', background: selCount > 0 ? 'var(--blue-50)' : 'white', border: 'none', cursor: 'pointer' }}
+                              onClick={() => setCaptureForm(p => ({ ...p, [panelKey]: !p[panelKey] }))}>
+                              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-700)' }}>{fd.label} <span style={{ fontSize: 11, color: 'var(--ink-400)' }}>cargo: {fmt(fd.charge)}</span>{selCount > 0 ? ` (${selCount} per.)` : ''}</span>
+                              <span style={{ fontSize: 10, color: 'var(--blue-400)' }}>{isOpen ? '▲' : '▼'}</span>
+                            </button>
+                            {isOpen && (
+                              <div style={{ padding: '10px 16px 12px', background: 'var(--sand-50)' }}>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 8 }}>
+                                  {futPeriods.map(p3 => {
+                                    const sel = targets[p3] != null;
+                                    return (
+                                      <button key={p3} type="button" style={{ padding: '5px 12px', borderRadius: 999, fontSize: 11, fontWeight: 700, cursor: 'pointer', border: `1.5px solid ${sel ? 'var(--blue-500)' : 'var(--sand-200)'}`, background: sel ? 'var(--blue-50)' : 'white', color: sel ? 'var(--blue-700)' : 'var(--ink-500)' }}
+                                        onClick={() => toggleAdelanto(fd.id, p3, fd.charge)}>
+                                        {periodLabel(p3)}{sel ? ' ✓' : ''}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                                {selCount > 0 && (
+                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                                    {Object.entries(targets).map(([tp, amt]) => (
+                                      <span key={tp} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'var(--blue-50)', border: '1px solid var(--blue-100)', padding: '3px 8px', borderRadius: 999, fontSize: 11, color: 'var(--blue-700)' }}>
+                                        <Check size={10} /> {periodLabel(tp)}: {fmt(amt)}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
-                <div className="field">
-                  <label className="field-label">Notas</label>
-                  <input className="field-input" placeholder="Observaciones..."
-                    value={captureForm.notes || ''}
-                    onChange={e => setCaptureForm({ ...captureForm, notes: e.target.value })} />
+
+                {/* SECCIÓN 4: ADEUDOS */}
+                {periodsWithDebt.length > 0 && (
+                  <div style={{ marginTop: 8, border: '1.5px solid var(--coral-100)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+                    <button type="button" style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', background: 'var(--coral-50)', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-body)' }}
+                      onClick={() => setCaptureForm(p => ({ ...p, showAdeudoPanel: !p.showAdeudoPanel }))}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, fontWeight: 700, color: 'var(--coral-700)' }}><AlertCircle size={14} /> Abono a Adeudo — {periodsWithDebt.length} período(s) con saldo pendiente</span>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--coral-500)' }}>{fmt(periodsWithDebt.reduce((a, d) => a + (d.saldoPeriodo || 0), 0))} {captureForm.showAdeudoPanel ? '▲' : '▼'}</span>
+                    </button>
+                    {captureForm.showAdeudoPanel && (
+                      <div style={{ background: 'white', borderTop: '1px solid var(--coral-100)' }}>
+                        {periodsWithDebt.map(d => {
+                          const sel = !!(captureForm.adeudoSelections && captureForm.adeudoSelections[d.period]);
+                          const ds = (captureForm.adeudo_payments && captureForm.adeudo_payments[d.period]) || {};
+                          const capturedTotal = Object.values(ds).reduce((a, v) => a + (parseFloat(v) || 0), 0);
+                          return (
+                            <div key={d.period} style={{ borderBottom: '1px solid var(--coral-50)' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', cursor: 'pointer', background: sel ? 'var(--coral-50)' : undefined }}
+                                onClick={() => toggleAdeudoPeriod(d.period)}>
+                                <div style={{ width: 20, height: 20, borderRadius: 6, border: `2px solid ${sel ? 'var(--coral-400)' : 'var(--sand-300)'}`, background: sel ? 'var(--coral-400)' : 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                  {sel && <Check size={12} style={{ color: 'white' }} />}
+                                </div>
+                                <div style={{ flex: 1 }}>
+                                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink-800)' }}>{d.period === '__prevDebt' ? '⚠️ Adeudo Anterior al Inicio' : periodLabel(d.period)}</div>
+                                  <div style={{ fontSize: 11, color: 'var(--coral-500)', fontWeight: 600 }}>Saldo pendiente: {fmt(d.saldoPeriodo)}{capturedTotal > 0 ? ` · Abonando: ${fmt(capturedTotal)}` : ''}</div>
+                                </div>
+                                <span style={{ fontSize: 11, color: 'var(--ink-400)' }}>{sel ? '▲ ocultar' : '▼ capturar'}</span>
+                              </div>
+                              {sel && (
+                                <div style={{ padding: '10px 16px 14px', background: 'var(--coral-50)' }}>
+                                  <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--coral-700)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>Abono por campo — período {d.period === '__prevDebt' ? 'Adeudo Anterior' : periodLabel(d.period)}:</div>
+                                  {d.period === '__prevDebt' ? (
+                                    <div style={{ marginBottom: 8 }}>
+                                      <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-700)' }}>Adeudo Anterior (Pre-Inicio)</label>
+                                      <input type="number" className="field-input" min={0} step="0.01" style={{ marginTop: 4, maxWidth: 140 }}
+                                        value={ds.prevDebt ?? ''}
+                                        onChange={e => setAdeudoSelection(d.period, 'prevDebt', e.target.value)} />
+                                    </div>
+                                  ) : (
+                                    <>
+                                      <div style={{ marginBottom: 8 }}>
+                                        <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-700)' }}>Mantenimiento</label>
+                                        <input type="number" className="field-input" min={0} step="0.01" style={{ marginTop: 4, maxWidth: 140 }}
+                                          value={ds.maintenance ?? ''}
+                                          onChange={e => setAdeudoSelection(d.period, 'maintenance', e.target.value)} />
+                                      </div>
+                                      {reqEFs.map(ef => (
+                                        <div key={ef.id} style={{ marginBottom: 8 }}>
+                                          <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-700)' }}>{ef.label}</label>
+                                          <input type="number" className="field-input" min={0} step="0.01" style={{ marginTop: 4, maxWidth: 140 }}
+                                            value={ds[ef.id] ?? ''}
+                                            onChange={e => setAdeudoSelection(d.period, ef.id, e.target.value)} />
+                                        </div>
+                                      ))}
+                                    </>
+                                  )}
+                                  {capturedTotal > 0 && (
+                                    <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between', padding: '8px 12px', background: 'white', border: '1px solid var(--coral-100)', borderRadius: 'var(--radius-sm)' }}>
+                                      <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--coral-700)' }}>Total a abonar este período</span>
+                                      <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--teal-700)' }}>{fmt(capturedTotal)}</span>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                        <div style={{ padding: '8px 14px', background: 'var(--sand-50)', borderTop: '1px solid var(--sand-100)', fontSize: 11, color: 'var(--ink-500)' }}>Cada campo abonado actualiza el período correspondiente.</div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* SECCIÓN 5: Información del Pago */}
+                <div style={{ marginTop: 16, fontSize: 12, fontWeight: 700, color: 'var(--ink-500)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Información del Pago</div>
+                <div className="grid-2" style={{ gap: 12, marginTop: 8 }}>
+                  <div className="field">
+                    <label className="field-label">Forma de Pago <span style={{ color: 'var(--coral-500)' }}>*</span></label>
+                    <select className="field-select" value={captureForm.payment_type}
+                      onChange={e => setCaptureForm({ ...captureForm, payment_type: e.target.value })} style={!captureForm.payment_type ? { borderColor: 'var(--coral-400)' } : {}}>
+                      <option value="">— Seleccionar (obligatorio) —</option>
+                      <option value="transferencia">🏦 Transferencia</option>
+                      <option value="deposito">💵 Depósito en efectivo</option>
+                      <option value="efectivo">💰 Efectivo directo</option>
+                    </select>
+                  </div>
+                  <div className="field">
+                    <label className="field-label">Fecha de Pago</label>
+                    <input type="date" className="field-input" value={captureForm.payment_date}
+                      onChange={e => setCaptureForm({ ...captureForm, payment_date: e.target.value })} />
+                  </div>
+                  <div className="field" style={{ gridColumn: '1 / -1' }}>
+                    <label className="field-label">Notas (opcional)</label>
+                    <input className="field-input" placeholder="Referencia, observaciones..." value={captureForm.notes || ''}
+                      onChange={e => setCaptureForm({ ...captureForm, notes: e.target.value })} />
+                  </div>
                 </div>
+
+                {/* SECCIÓN 6: Evidencia */}
+                <div style={{ marginTop: 12, fontSize: 12, fontWeight: 700, color: 'var(--ink-500)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Evidencia de Pago (opcional)</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 8 }}>
+                  <label className="btn btn-secondary btn-sm" style={{ cursor: 'pointer' }}><Upload size={14} style={{ display: 'inline', verticalAlign: -2 }} /> Adjuntar<input type="file" accept=".png,.jpg,.jpeg,.pdf" style={{ display: 'none' }} onChange={handleEvidence} /></label>
+                  {(captureForm.evidenceFileName || captureForm.evidence) ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--blue-50)', border: '1px solid var(--blue-100)', padding: '6px 12px', borderRadius: 'var(--radius-sm)' }}>
+                      <FileText size={14} />
+                      <span style={{ fontSize: 12, color: 'var(--blue-600)', fontWeight: 600 }}>{captureForm.evidenceFileName || 'Evidencia adjunta'}</span>
+                      <button type="button" className="btn btn-secondary btn-sm" style={{ padding: '3px 8px', fontSize: 11 }}
+                        onClick={() => setCaptureForm(p => ({ ...p, showPreview: !p.showPreview }))}>
+                        {captureForm.showPreview ? 'Ocultar' : 'Ver'}
+                      </button>
+                      <button type="button" className="btn-ghost" style={{ color: 'var(--coral-500)', padding: 0, marginLeft: 4 }}
+                        onClick={() => setCaptureForm(p => ({ ...p, evidenceFileName: '', evidence: '', showPreview: false }))}>✕</button>
+                    </div>
+                  ) : (
+                    <span style={{ fontSize: 12, color: 'var(--ink-300)' }}>PNG, JPG o PDF — máx. 5 MB</span>
+                  )}
+                </div>
+                {captureForm.showPreview && captureForm.evidence && (
+                  <div style={{ width: '100%', marginTop: 8 }}>
+                    {(captureForm.evidenceFileName || '').match(/\.(pdf)$/i) ? (
+                      <div style={{ border: '1px solid var(--sand-200)', borderRadius: 'var(--radius-md)', overflow: 'hidden', height: 200 }}><iframe src={`data:application/pdf;base64,${captureForm.evidence}`} style={{ width: '100%', height: '100%', border: 'none' }} title="Evidencia" /></div>
+                    ) : (
+                      <div style={{ border: '1px solid var(--sand-200)', borderRadius: 'var(--radius-md)', overflow: 'hidden', maxHeight: 200 }}><img src={`data:image/jpeg;base64,${captureForm.evidence}`} alt="Evidencia" style={{ width: '100%', display: 'block' }} /></div>
+                    )}
+                  </div>
+                )}
               </div>
-            </div>
-            <div className="modal-foot">
-              <button className="btn btn-outline" onClick={() => setShowCapture(null)}>Cancelar</button>
-              <button className="btn btn-primary" onClick={handleCapture} disabled={saving}>
-                {saving ? 'Guardando…' : 'Guardar Pago'}
-              </button>
+              <div className="modal-foot">
+                <button className="btn btn-secondary" onClick={() => setShowCapture(null)}>Cancelar</button>
+                <button className="btn btn-primary" onClick={handleCapture} disabled={saving}>
+                  {saving ? 'Guardando…' : 'Guardar Pago'}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
