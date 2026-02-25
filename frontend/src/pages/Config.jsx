@@ -255,8 +255,18 @@ export default function Config() {
   const saveUser = async () => {
     if (!addUserForm.name || !addUserForm.email || !addUserForm.role || !addUserForm.password)
       return toast.error('Todos los campos son obligatorios');
+    if (addUserForm.role === 'vecino' && !addUserForm.unit_id)
+      return toast.error('Los vecinos deben tener una unidad asignada');
     try {
-      await usersAPI.create({ ...addUserForm, tenant_id: tenantId });
+      const payload = {
+        name: addUserForm.name,
+        email: addUserForm.email,
+        role: addUserForm.role,
+        password: addUserForm.password,
+        tenant_id: tenantId,
+        unit_id: addUserForm.role === 'vecino' && addUserForm.unit_id ? addUserForm.unit_id : null,
+      };
+      await usersAPI.create(payload);
       toast.success('Usuario creado');
       setAddUserOpen(false);
       setAddUserForm({});
