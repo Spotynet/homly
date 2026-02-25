@@ -162,7 +162,12 @@ class SuperAdminViewSet(viewsets.ModelViewSet):
 class ExtraFieldViewSet(viewsets.ModelViewSet):
     """CRUD /api/tenants/{tenant_id}/extra-fields/"""
     serializer_class = ExtraFieldSerializer
-    permission_classes = [IsTenantAdmin]
+
+    def get_permissions(self):
+        # All tenant members can read fields; only admins can write
+        if self.request.method in permissions.SAFE_METHODS:
+            return [IsTenantMember()]
+        return [IsTenantAdmin()]
 
     def get_queryset(self):
         return ExtraField.objects.filter(tenant_id=self.kwargs['tenant_id'])
@@ -452,7 +457,7 @@ class DashboardView(APIView):
         payments = Payment.objects.filter(tenant_id=tenant_id, period=period)
         paid_count = payments.filter(status='pagado').count()
         partial_count = payments.filter(status='parcial').count()
-        pending_count = total_units - paid_count - partial_count
+        pending_count = max(0, total_units - paid_count - partial_count)
 
         # Total collected
         total_collected = FieldPayment.objects.filter(
@@ -482,16 +487,21 @@ class DashboardView(APIView):
             tenant_id=tenant_id, period=period
         ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
 
+        rented_count = units.filter(occupancy='rentada').count()
+
         data = {
             'total_units': total_units,
-            'total_collected': total_collected,
-            'total_expected': total_expected,
+            'units_planned': tenant.units_count,
+            'rented_count': rented_count,
+            'total_collected': float(total_collected),
+            'total_expected': float(total_expected),
             'collection_rate': round(collection_rate, 1),
             'paid_count': paid_count,
             'partial_count': partial_count,
             'pending_count': pending_count,
-            'total_gastos': total_gastos,
-            'total_caja_chica': total_caja,
+            'total_gastos': float(total_gastos),
+            'total_caja_chica': float(total_caja),
+            'maintenance_fee': float(tenant.maintenance_fee),
             'period': period,
         }
         return Response(DashboardSerializer(data).data)
@@ -532,16 +542,17 @@ class EstadoCuentaView(APIView):
         total_charges = Decimal('0')
         total_paid = Decimal('0')
 
+        req_fields = list(ExtraField.objects.filter(
+            tenant_id=tenant_id, enabled=True, required=True
+        ))
+
         for payment in payments_qs:
             fp_total = payment.field_payments.aggregate(
                 total=Sum('received')
             )['total'] or Decimal('0')
 
             charge = tenant.maintenance_fee
-            # Add required extra fields
-            for ef in ExtraField.objects.filter(
-                tenant_id=tenant_id, enabled=True, required=True
-            ):
+            for ef in req_fields:
                 charge += ef.default_amount
 
             total_charges += charge

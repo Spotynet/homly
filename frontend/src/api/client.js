@@ -128,7 +128,15 @@ export const assemblyAPI = {
   deletePosition: (tenantId, id) => api.delete(`/tenants/${tenantId}/assembly-positions/${id}/`),
   committees: (tenantId) => api.get(`/tenants/${tenantId}/committees/`),
   createCommittee: (tenantId, data) => api.post(`/tenants/${tenantId}/committees/`, data),
+  updateCommittee: (tenantId, id, data) => api.patch(`/tenants/${tenantId}/committees/${id}/`, data),
   deleteCommittee: (tenantId, id) => api.delete(`/tenants/${tenantId}/committees/${id}/`),
+};
+
+// ─── Super Admins ────────────────────────────────
+export const superAdminAPI = {
+  list: () => api.get('/super-admins/'),
+  create: (data) => api.post('/super-admins/', data),
+  delete: (id) => api.delete(`/super-admins/${id}/`),
 };
 
 // ─── Dashboard & Reports ────────────────────────

@@ -281,7 +281,7 @@ class AssemblyPositionSerializer(serializers.ModelSerializer):
 class CommitteeSerializer(serializers.ModelSerializer):
     class Meta:
         model = Committee
-        fields = ['id', 'tenant', 'name', 'description', 'members', 'created_at']
+        fields = ['id', 'tenant', 'name', 'description', 'exemption', 'members', 'created_at']
         read_only_fields = ['id', 'created_at']
 
 
@@ -299,14 +299,17 @@ class UnrecognizedIncomeSerializer(serializers.ModelSerializer):
 class DashboardSerializer(serializers.Serializer):
     """Read-only serializer for dashboard data."""
     total_units = serializers.IntegerField()
-    total_collected = serializers.DecimalField(max_digits=14, decimal_places=2)
-    total_expected = serializers.DecimalField(max_digits=14, decimal_places=2)
+    units_planned = serializers.IntegerField()
+    rented_count = serializers.IntegerField()
+    total_collected = serializers.FloatField()
+    total_expected = serializers.FloatField()
     collection_rate = serializers.FloatField()
     paid_count = serializers.IntegerField()
     partial_count = serializers.IntegerField()
     pending_count = serializers.IntegerField()
-    total_gastos = serializers.DecimalField(max_digits=14, decimal_places=2)
-    total_caja_chica = serializers.DecimalField(max_digits=14, decimal_places=2)
+    total_gastos = serializers.FloatField()
+    total_caja_chica = serializers.FloatField()
+    maintenance_fee = serializers.FloatField()
     period = serializers.CharField()
 
 

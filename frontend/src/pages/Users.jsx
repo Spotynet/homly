@@ -63,14 +63,13 @@ export default function Users() {
 
   const setField = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
-  if (loading) return <div className="p-8 text-center text-ink-400">Cargando usuarios...</div>;
+  if (loading) return <div style={{ padding: 32, textAlign: 'center', color: 'var(--ink-400)' }}>Cargando usuarios...</div>;
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
+    <div className="content-fade">
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 16, marginBottom: 20 }}>
         <div>
-          <h2 className="text-xl font-bold text-ink-800">Usuarios</h2>
-          <p className="text-sm text-ink-400">{users.length} usuarios con acceso</p>
+          <p style={{ fontSize: 14, color: 'var(--ink-400)' }}>{users.length} usuarios con acceso</p>
         </div>
         {isAdmin && (
           <button onClick={openAdd} className="btn btn-primary">
@@ -96,17 +95,17 @@ export default function Users() {
                 const roleInfo = ROLES[tu.role] || { label: tu.role, color: '#64748B', bg: '#F1F5F9' };
                 return (
                   <tr key={tu.id}>
-                    <td className="font-semibold">{tu.user_name}</td>
-                    <td className="text-sm text-ink-500">{tu.user_email}</td>
+                    <td style={{ fontWeight: 600 }}>{tu.user_name}</td>
+                    <td style={{ fontSize: 13, color: 'var(--ink-500)' }}>{tu.user_email}</td>
                     <td>
                       <span className="badge" style={{ background: roleInfo.bg, color: roleInfo.color }}>
                         {roleInfo.label}
                       </span>
                     </td>
-                    <td className="text-sm">{tu.unit_code || '—'}</td>
+                    <td style={{ fontSize: 13 }}>{tu.unit_code || '—'}</td>
                     {isAdmin && (
                       <td>
-                        <button onClick={() => handleDelete(tu)} className="btn-icon text-coral-500" title="Eliminar">
+                        <button onClick={() => handleDelete(tu)} className="btn-icon" style={{ color: 'var(--coral-500)' }} title="Eliminar">
                           <Trash2 size={15} />
                         </button>
                       </td>
@@ -115,7 +114,7 @@ export default function Users() {
                 );
               })}
               {users.length === 0 && (
-                <tr><td colSpan={5} className="text-center py-8 text-ink-400">Sin usuarios</td></tr>
+                <tr><td colSpan={5} style={{ textAlign: 'center', padding: '32px 20px', color: 'var(--ink-400)' }}>Sin usuarios</td></tr>
               )}
             </tbody>
           </table>
@@ -124,34 +123,30 @@ export default function Users() {
 
       {/* Modal */}
       {modal && (
-        <div className="modal-overlay" onClick={() => setModal(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3 className="text-lg font-bold flex items-center gap-2">
-                <Shield size={20} className="text-teal-600" /> Nuevo Usuario
-              </h3>
-              <button onClick={() => setModal(false)} className="btn-icon"><X size={20} /></button>
+        <div className="modal-bg open" onClick={() => setModal(false)}>
+          <div className="modal lg" onClick={e => e.stopPropagation()}>
+            <div className="modal-head">
+              <h3>Nuevo Usuario</h3>
+              <button onClick={() => setModal(false)} className="modal-close"><X size={16} /></button>
             </div>
-            <div className="modal-body space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
+            <div className="modal-body">
+              <div className="form-grid">
+                <div className="field">
                   <label className="field-label">Nombre Completo *</label>
                   <input className="field-input" value={form.name}
                     onChange={e => setField('name', e.target.value)} />
                 </div>
-                <div>
+                <div className="field">
                   <label className="field-label">Email *</label>
                   <input type="email" className="field-input" value={form.email}
                     onChange={e => setField('email', e.target.value)} />
                 </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
+                <div className="field">
                   <label className="field-label">Contraseña *</label>
                   <input type="password" className="field-input" value={form.password}
                     onChange={e => setField('password', e.target.value)} />
                 </div>
-                <div>
+                <div className="field">
                   <label className="field-label">Rol</label>
                   <select className="field-select" value={form.role}
                     onChange={e => setField('role', e.target.value)}>
@@ -160,23 +155,23 @@ export default function Users() {
                     ))}
                   </select>
                 </div>
+                {form.role === 'vecino' && (
+                  <div className="field field-full">
+                    <label className="field-label">Unidad Asignada *</label>
+                    <select className="field-select" value={form.unit_id}
+                      onChange={e => setField('unit_id', e.target.value)}>
+                      <option value="">— Seleccione —</option>
+                      {units.map(u => (
+                        <option key={u.id} value={u.id}>{u.unit_id_code} — {u.unit_name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
-              {form.role === 'vecino' && (
-                <div>
-                  <label className="field-label">Unidad Asignada *</label>
-                  <select className="field-select" value={form.unit_id}
-                    onChange={e => setField('unit_id', e.target.value)}>
-                    <option value="">— Seleccione —</option>
-                    {units.map(u => (
-                      <option key={u.id} value={u.id}>{u.unit_id_code} — {u.unit_name}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-              <div className="flex justify-end gap-3 pt-4">
-                <button onClick={() => setModal(false)} className="btn btn-outline">Cancelar</button>
-                <button onClick={handleSave} className="btn btn-primary">Crear Usuario</button>
-              </div>
+            </div>
+            <div className="modal-foot">
+              <button onClick={() => setModal(false)} className="btn btn-outline">Cancelar</button>
+              <button onClick={handleSave} className="btn btn-primary">Crear Usuario</button>
             </div>
           </div>
         </div>

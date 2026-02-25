@@ -104,7 +104,7 @@ class Tenant(models.Model):
     maintenance_fee = models.DecimalField(max_digits=12, decimal_places=2, default=0,
                                           validators=[MinValueValidator(0)])
     currency = models.CharField(max_length=3, choices=CURRENCY_CHOICES, default='MXN')
-    logo = models.ImageField(upload_to='tenant_logos/', blank=True, null=True)
+    logo = models.TextField(blank=True, default='', help_text='Base64-encoded logo image')
     operation_start_date = models.CharField(max_length=7, default='2024-01',
                                             help_text='Format: YYYY-MM')
     operation_type = models.CharField(max_length=10, choices=OPERATION_TYPE_CHOICES, default='fiscal')
@@ -531,6 +531,7 @@ class Committee(models.Model):
     tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='committees')
     name = models.CharField(max_length=200)
     description = models.TextField(blank=True, default='')
+    exemption = models.BooleanField(default=False)
     members = models.TextField(blank=True, default='', help_text='Comma-separated member names')
     created_at = models.DateTimeField(auto_now_add=True)
 

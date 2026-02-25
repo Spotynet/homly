@@ -15,7 +15,14 @@ export default function Login() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    authAPI.getTenants().then(r => setTenants(r.data)).catch(() => {});
+    authAPI.getTenants().then(r => {
+      const list = r.data || [];
+      setTenants(list);
+      // Pre-select the tenant automatically when there is only one
+      if (list.length === 1) {
+        setSelectedTenant(list[0].id);
+      }
+    }).catch(() => {});
   }, []);
 
   const handleSubmit = async (e) => {
@@ -28,7 +35,9 @@ export default function Login() {
       if (data.must_change_password) {
         navigate('/change-password');
       } else {
-        navigate('/app');
+        const savedPath = sessionStorage.getItem('redirect_after_login');
+        sessionStorage.removeItem('redirect_after_login');
+        navigate(savedPath && savedPath.startsWith('/app') ? savedPath : '/app');
       }
     } catch (err) {
       setError(err.response?.data?.non_field_errors?.[0] || err.response?.data?.detail || 'Credenciales inválidas.');
