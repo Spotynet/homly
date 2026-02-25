@@ -29,7 +29,7 @@ export default function Landing() {
             La administración que tu hogar se merece
           </h1>
           <p className="text-lg text-ink-500 mb-8 leading-relaxed">
-            Cuentas claras, pagos simples y una convivencia más feliz. 
+            Cuentas claras, registros simples y una convivencia más feliz.
             Gestiona tu condominio de manera profesional y transparente.
           </p>
           <div className="flex gap-4">
