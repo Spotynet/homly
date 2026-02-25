@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { unitsAPI, reportsAPI, tenantsAPI, paymentsAPI, gastosAPI, cajaChicaAPI, unrecognizedIncomeAPI } from '../api/client';
+import PaginationBar from '../components/PaginationBar';
 import { statusClass, statusLabel, fmtDate, periodLabel, todayPeriod, prevPeriod, nextPeriod, ROLES } from '../utils/helpers';
 import { Search, ChevronLeft, ChevronRight, Building, Globe, DollarSign, ArrowDown, TrendingDown, AlertCircle, Calendar, Printer, ShoppingBag } from 'lucide-react';
 
@@ -25,6 +26,9 @@ export default function EstadoCuenta() {
   const [tenantData, setTenantData] = useState(null);
   const [detailFrom, setDetailFrom] = useState('');
   const [detailTo, setDetailTo] = useState(todayPeriod());
+  const [unitsPage, setUnitsPage] = useState(1);
+  const [unitsPerPage, setUnitsPerPage] = useState(25);
+  const UNITS_PAGE_OPTIONS = [10, 25, 50, 100];
 
   // Load units + tenant info
   useEffect(() => {
@@ -160,6 +164,12 @@ export default function EstadoCuenta() {
       (u.responsible_name || '').toLowerCase().includes(q)
     );
   }, [summaryData.items, search]);
+
+  const unitsTotalPages = Math.max(1, Math.ceil(filteredUnits.length / unitsPerPage));
+  const pagedUnits = useMemo(() => {
+    const start = (unitsPage - 1) * unitsPerPage;
+    return filteredUnits.slice(start, start + unitsPerPage);
+  }, [filteredUnits, unitsPage, unitsPerPage]);
 
   const showDetail = isVecino ? true : !!selectedUnit;
   const balance = data ? parseFloat(data.balance) : 0;
@@ -375,7 +385,7 @@ export default function EstadoCuenta() {
                   <input
                     placeholder="Buscar unidad o residente..."
                     value={search}
-                    onChange={e => setSearch(e.target.value)}
+                    onChange={e => { setSearch(e.target.value); setUnitsPage(1); }}
                   />
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -453,10 +463,10 @@ export default function EstadoCuenta() {
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredUnits.length === 0 ? (
+                      {pagedUnits.length === 0 ? (
                         <tr><td colSpan={7} style={{ textAlign: 'center', padding: 40, color: 'var(--ink-400)' }}>Sin resultados.</td></tr>
                       ) : (
-                        filteredUnits.map(u => {
+                        pagedUnits.map(u => {
                           const hasDebt = u.balance > 0;
                           const hasFavor = u.balance < 0;
                           const occupancyLabel = u.occupancy === 'rentado' ? 'Inquilino' : 'Propietario';
@@ -505,6 +515,18 @@ export default function EstadoCuenta() {
                     </tbody>
                   </table>
                 </div>
+                {filteredUnits.length > 0 && (
+                  <PaginationBar
+                    page={unitsPage}
+                    totalPages={unitsTotalPages}
+                    totalItems={filteredUnits.length}
+                    perPage={unitsPerPage}
+                    onPageChange={setUnitsPage}
+                    pageSizeOptions={UNITS_PAGE_OPTIONS}
+                    onPerPageChange={(n) => { setUnitsPerPage(n); setUnitsPage(1); }}
+                    itemLabel="unidades"
+                  />
+                )}
               </div>
             </>
           )}

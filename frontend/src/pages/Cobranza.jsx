@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { paymentsAPI, unitsAPI, extraFieldsAPI, tenantsAPI, unrecognizedIncomeAPI } from '../api/client';
+import PaginationBar from '../components/PaginationBar';
 import { todayPeriod, periodLabel, prevPeriod, nextPeriod, tenantStartPeriod, fmtCurrency, statusClass, statusLabel, PAYMENT_TYPES, fmtDate, ROLES, CURRENCIES, APP_VERSION } from '../utils/helpers';
 import { ChevronLeft, ChevronRight, Search, Receipt, X, Users, CheckCircle, Clock, AlertCircle, DollarSign, Calendar, Building2, Upload, FileText, Check, Printer, Plus, Edit2, Trash2, Banknote } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -91,14 +92,15 @@ export default function Cobranza() {
   const [unidentForm, setUnidentForm] = useState({ concept: '', amount: '', payment_type: '', payment_date: '', notes: '', bank_reconciled: false });
   const [showAddPaymentModal, setShowAddPaymentModal] = useState(null); // { unit, pay }
   const [addPaymentForm, setAddPaymentForm] = useState({ extraFieldPayments: {}, payment_type: '', payment_date: '', notes: '', bank_reconciled: false });
-  const perPage = 25;
+  const [perPage, setPerPage] = useState(25);
+  const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 
   const load = async () => {
     if (!tenantId) return;
     try {
       const [uRes, pRes, efRes, tRes, uiRes] = await Promise.all([
-        unitsAPI.list(tenantId),
-        paymentsAPI.list(tenantId, { period }),
+        unitsAPI.list(tenantId, { page_size: 9999 }),
+        paymentsAPI.list(tenantId, { period, page_size: 9999 }),
         extraFieldsAPI.list(tenantId),
         tenantsAPI.get(tenantId).catch(() => ({ data: null })),
         unrecognizedIncomeAPI.list(tenantId, { period }).catch(() => ({ data: [] })),
@@ -507,18 +509,17 @@ export default function Cobranza() {
         </div>
 
         {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="pag-bar">
-            <span>{filtered.length} unidades</span>
-            <div className="pag-btns">
-              <button className="pag-btn" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>‹</button>
-              {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => i + 1).map(p => (
-                <button key={p} className={`pag-btn ${p === page ? 'active' : ''}`} onClick={() => setPage(p)}>{p}</button>
-              ))}
-              <button className="pag-btn" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>›</button>
-            </div>
-            <span>Pág. {page} / {totalPages}</span>
-          </div>
+        {filtered.length > 0 && (
+          <PaginationBar
+            page={page}
+            totalPages={totalPages}
+            totalItems={filtered.length}
+            perPage={perPage}
+            onPageChange={(p) => setPage(p)}
+            pageSizeOptions={PAGE_SIZE_OPTIONS}
+            onPerPageChange={(n) => { setPerPage(n); setPage(1); }}
+            itemLabel="unidades"
+          />
         )}
       </div>
 
