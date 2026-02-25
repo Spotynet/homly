@@ -196,7 +196,7 @@ class PaymentSerializer(serializers.ModelSerializer):
         model = Payment
         fields = ['id', 'tenant', 'unit', 'unit_code', 'unit_name', 'responsible',
                   'period', 'status', 'payment_type', 'payment_date', 'notes',
-                  'evidence', 'adeudo_payments', 'field_payments', 'additional_payments',
+                  'evidence', 'bank_reconciled', 'adeudo_payments', 'field_payments', 'additional_payments',
                   'created_at', 'updated_at']
         read_only_fields = ['id', 'created_at', 'updated_at']
 
@@ -209,6 +209,7 @@ class PaymentCaptureSerializer(serializers.Serializer):
     payment_date = serializers.DateField(required=False, allow_null=True)
     notes = serializers.CharField(required=False, allow_blank=True, default='')
     evidence = serializers.CharField(required=False, allow_blank=True, default='')
+    bank_reconciled = serializers.BooleanField(required=False, default=False)
     field_payments = serializers.DictField(child=serializers.DictField(), required=False)
     adeudo_payments = serializers.DictField(required=False, default=dict)
 

@@ -187,6 +187,7 @@ export default function Cobranza() {
       notes: existing?.notes || '',
       evidence: existing?.evidence || '',
       evidenceFileName: '',
+      bank_reconciled: !!existing?.bank_reconciled,
       field_payments: fieldPayments,
       adeudo_payments: existing?.adeudo_payments || {},
       showAdelantoPanel: false,
@@ -294,6 +295,7 @@ export default function Cobranza() {
       payment_date: captureForm.payment_date || null,
       notes: captureForm.notes || '',
       evidence: captureForm.evidence || '',
+      bank_reconciled: !!captureForm.bank_reconciled,
       field_payments: fp,
       adeudo_payments: captureForm.adeudo_payments || {},
     };
@@ -457,7 +459,10 @@ export default function Cobranza() {
                     <td>
                       <span className={`badge ${statusClass(st)}`}>{statusLabel(st)}</span>
                     </td>
-                    <td style={{ fontSize: 12 }}>{pay?.payment_type ? (PAYMENT_TYPES[pay.payment_type]?.label || pay.payment_type) : '—'}</td>
+                    <td style={{ fontSize: 12 }}>
+                      {pay?.payment_type ? (PAYMENT_TYPES[pay.payment_type]?.label || pay.payment_type) : '—'}
+                      {pay?.bank_reconciled && <div style={{ fontSize: 10, color: 'var(--teal-600)', marginTop: 2, fontWeight: 700 }}>🏦 Conciliado</div>}
+                    </td>
                     <td style={{ fontSize: 12 }}>{fmtDate(pay?.payment_date)}</td>
                     <td style={{ fontSize: 12, color: 'var(--ink-400)', maxWidth: 160 }}>
                       {pay?.notes && <span title={pay.notes}>{pay.notes.length > 30 ? pay.notes.slice(0, 30) + '…' : pay.notes}</span>}
@@ -1077,6 +1082,21 @@ export default function Cobranza() {
                     <label className="field-label">Notas (opcional)</label>
                     <input className="field-input" placeholder="Referencia, observaciones..." value={captureForm.notes || ''}
                       onChange={e => setCaptureForm({ ...captureForm, notes: e.target.value })} />
+                  </div>
+                </div>
+
+                {/* SECCIÓN: Conciliación Bancaria */}
+                <div style={{ marginTop: 14, padding: 14, border: `1.5px solid ${captureForm.bank_reconciled ? 'var(--teal-200)' : 'var(--sand-200)'}`, background: captureForm.bank_reconciled ? 'var(--teal-50)' : 'var(--sand-50)', borderRadius: 'var(--radius-md)', cursor: 'pointer' }} onClick={() => setCaptureForm(p => ({ ...p, bank_reconciled: !p.bank_reconciled }))}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div style={{ width: 22, height: 22, borderRadius: 6, border: `2px solid ${captureForm.bank_reconciled ? 'var(--teal-500)' : 'var(--sand-300)'}`, background: captureForm.bank_reconciled ? 'var(--teal-500)' : 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      {captureForm.bank_reconciled && <Check size={14} style={{ color: 'white' }} />}
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: captureForm.bank_reconciled ? 'var(--teal-700)' : 'var(--ink-600)' }}>🏦 Conciliación Bancaria</div>
+                      <div style={{ fontSize: 11, color: captureForm.bank_reconciled ? 'var(--teal-600)' : 'var(--ink-400)', marginTop: 2 }}>
+                        {captureForm.bank_reconciled ? '✓ Este ingreso está confirmado en el estado de cuenta bancario' : 'Marca esta casilla si el ingreso está verificado en el banco'}
+                      </div>
+                    </div>
                   </div>
                 </div>
 

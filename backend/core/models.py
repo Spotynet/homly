@@ -303,6 +303,7 @@ class Payment(models.Model):
     payment_date = models.DateField(null=True, blank=True)
     notes = models.TextField(blank=True, default='')
     evidence = models.TextField(blank=True, default='', help_text='Base64 evidence image')
+    bank_reconciled = models.BooleanField(default=False)
 
     # JSONB for flexible adeudo payments across periods
     adeudo_payments = models.JSONField(default=dict, blank=True,

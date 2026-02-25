@@ -255,6 +255,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
                 'payment_date': data.get('payment_date'),
                 'notes': data.get('notes', ''),
                 'evidence': data.get('evidence', ''),
+                'bank_reconciled': data.get('bank_reconciled', False),
                 'adeudo_payments': data.get('adeudo_payments', {}),
             }
         )
