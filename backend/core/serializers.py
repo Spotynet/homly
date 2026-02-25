@@ -305,7 +305,7 @@ class UnrecognizedIncomeSerializer(serializers.ModelSerializer):
     class Meta:
         model = UnrecognizedIncome
         fields = ['id', 'tenant', 'period', 'amount', 'description', 'date', 'payment_type', 'notes', 'bank_reconciled', 'created_at']
-        read_only_fields = ['id', 'created_at']
+        read_only_fields = ['id', 'tenant', 'created_at']
 
 
 # ═══════════════════════════════════════════════════════════
