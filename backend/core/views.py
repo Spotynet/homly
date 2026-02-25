@@ -852,6 +852,25 @@ class EstadoCuentaView(APIView):
 #  REPORTE GENERAL — Replicates HTML computePeriodBankData + computeBankBalanceForPeriod
 # ═══════════════════════════════════════════════════════════
 
+def _payment_total_income(pay):
+    """Total income from payment (field_payments + additional_payments)."""
+    total = Decimal('0')
+    for fp in pay.field_payments.all():
+        total += Decimal(str(fp.received or 0))
+        for amt in (fp.adelanto_targets or {}).values():
+            total += Decimal(str(amt or 0))
+    ap = pay.adeudo_payments or {}
+    for _tp, field_map in ap.items():
+        for amt in (field_map or {}).values():
+            total += Decimal(str(amt or 0))
+    for ap_entry in (pay.additional_payments or []):
+        fp = ap_entry.get('field_payments') or ap_entry.get('fieldPayments') or {}
+        for v in fp.values():
+            rec = v.get('received', v) if isinstance(v, dict) else v
+            total += Decimal(str(rec or 0))
+    return total
+
+
 def _compute_report_data(tenant, period):
     """Compute bank reconciliation data for a period (HTML computePeriodBankData)."""
     units = Unit.objects.filter(tenant_id=tenant.id).order_by('unit_id_code')
@@ -869,10 +888,26 @@ def _compute_report_data(tenant, period):
     ingresos_referenciados = Decimal('0')
     ingresos_conceptos = {}
     ingreso_units_count = 0
+    ingresos_no_reconciled = Decimal('0')
+    ingreso_no_recon_count = 0
+    ingresos_no_recon_details = []
 
     for unit in units:
         pay = payments.get(unit.id)
         if not pay:
+            continue
+        if not pay.bank_reconciled:
+            pti = _payment_total_income(pay)
+            if pti > 0:
+                ingresos_no_reconciled += pti
+                ingreso_no_recon_count += 1
+                ingresos_no_recon_details.append({
+                    'unit_id': unit.unit_id_code,
+                    'unit_name': unit.unit_name,
+                    'amount': float(pti),
+                    'payment_type': pay.payment_type or '',
+                    'payment_date': str(pay.payment_date) if pay.payment_date else '',
+                })
             continue
         ingreso_units_count += 1
         fp_map = {fp.field_key: fp for fp in pay.field_payments.all()}
@@ -952,6 +987,31 @@ def _compute_report_data(tenant, period):
                             ingresos_conceptos[f_id] = {'total': Decimal('0'), 'label': getattr(cf3, 'label', f_id) if cf3 else f_id}
                         ingresos_conceptos[f_id]['total'] += a3
 
+        # Additional payments (igual que HTML: cuando main está conciliado, incluir adicionales)
+        for ap_entry in (pay.additional_payments or []):
+            ap_recon = ap_entry.get('bank_reconciled', True)
+            if not pay.bank_reconciled and not ap_recon:
+                continue
+            fp_a = ap_entry.get('field_payments') or ap_entry.get('fieldPayments') or {}
+            for f_id, fd in fp_a.items():
+                a_r = Decimal(str((fd or {}).get('received', 0) or 0))
+                if a_r <= 0:
+                    continue
+                if f_id == 'maintenance':
+                    from decimal import ROUND_FLOOR
+                    int_ar = a_r.quantize(Decimal('1'), rounding=ROUND_FLOOR)
+                    cents_ar = a_r - int_ar
+                    if cents_ar > Decimal('0.001'):
+                        ingreso_mantenimiento += int_ar
+                        ingresos_referenciados += cents_ar
+                    else:
+                        ingreso_mantenimiento += a_r
+                else:
+                    if f_id not in ingresos_conceptos:
+                        cf_a = cf_map.get(f_id)
+                        ingresos_conceptos[f_id] = {'total': Decimal('0'), 'label': getattr(cf_a, 'label', f_id) if cf_a else f_id}
+                    ingresos_conceptos[f_id]['total'] += a_r
+
     for cf in cob_fields:
         fid = str(cf.id)
         if fid in ingresos_conceptos:
@@ -1014,9 +1074,9 @@ def _compute_report_data(tenant, period):
         'cheques_transito': cheques_transito,
         'total_egresos_reconciled': float(total_egresos),
         'total_cheques_transito': float(total_cheques),
-        'ingresos_no_reconciled': 0,  # Payment has no bank_reconciled in backend
-        'ingreso_no_recon_count': 0,
-        'ingresos_no_recon_details': [],
+        'ingresos_no_reconciled': float(ingresos_no_reconciled),
+        'ingreso_no_recon_count': ingreso_no_recon_count,
+        'ingresos_no_recon_details': ingresos_no_recon_details,
     }
 
 
