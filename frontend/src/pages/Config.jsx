@@ -245,8 +245,26 @@ export default function Config() {
   const handleUnitSave = async () => {
     if (!unitForm.unit_name || !unitForm.unit_id_code) return toast.error('Nombre e ID son obligatorios');
     try {
-      if (unitModal === 'add') await unitsAPI.create(tenantId, { ...unitForm, tenant: tenantId });
-      else await unitsAPI.update(tenantId, unitForm.id, unitForm);
+      const payload = {
+        unit_name: unitForm.unit_name,
+        unit_id_code: unitForm.unit_id_code,
+        occupancy: unitForm.occupancy || 'propietario',
+        previous_debt: parseFloat(unitForm.previous_debt) || 0,
+        admin_exempt: !!unitForm.admin_exempt,
+        owner_first_name: unitForm.owner_first_name || '',
+        owner_last_name: unitForm.owner_last_name || '',
+        owner_email: unitForm.owner_email || '',
+        owner_phone: unitForm.owner_phone || '',
+        tenant_first_name: unitForm.tenant_first_name || '',
+        tenant_last_name: unitForm.tenant_last_name || '',
+        tenant_email: unitForm.tenant_email || '',
+        tenant_phone: unitForm.tenant_phone || '',
+      };
+      if (unitModal === 'add') {
+        await unitsAPI.create(tenantId, { ...payload, tenant: tenantId });
+      } else {
+        await unitsAPI.update(tenantId, unitForm.id, payload);
+      }
       toast.success(unitModal === 'add' ? 'Unidad creada' : 'Unidad actualizada');
       setUnitModal(null); loadUnits();
     } catch (e) { toast.error(e.response?.data?.unit_id_code?.[0] || 'Error guardando unidad'); }
@@ -540,7 +558,7 @@ export default function Config() {
               </div>
               {isAdmin && (
                 <button className="btn btn-primary" onClick={() => {
-                  setUnitForm({ unit_name:'', unit_id_code:'', owner_first_name:'', owner_last_name:'', owner_email:'', owner_phone:'', occupancy:'propietario', tenant_first_name:'', tenant_last_name:'', tenant_email:'', tenant_phone:'' });
+                  setUnitForm({ unit_name:'', unit_id_code:'', owner_first_name:'', owner_last_name:'', owner_email:'', owner_phone:'', occupancy:'propietario', previous_debt:0, admin_exempt:false, tenant_first_name:'', tenant_last_name:'', tenant_email:'', tenant_phone:'' });
                   setUnitModal('add');
                 }}>
                   <Plus size={14} /> Nueva Unidad

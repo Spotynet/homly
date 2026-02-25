@@ -210,6 +210,10 @@ class Unit(models.Model):
     tenant_last_name = models.CharField(max_length=150, blank=True, default='')
     tenant_email = models.EmailField(blank=True, default='')
     tenant_phone = models.CharField(max_length=30, blank=True, default='')
+    admin_exempt = models.BooleanField(default=False,
+                                       help_text='Exento por Mesa Directiva')
+    previous_debt = models.DecimalField(max_digits=12, decimal_places=2, default=0,
+                                        help_text='Adeudo anterior al inicio')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
