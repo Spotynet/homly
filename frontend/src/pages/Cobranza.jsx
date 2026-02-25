@@ -1,12 +1,33 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { paymentsAPI, unitsAPI, extraFieldsAPI, tenantsAPI } from '../api/client';
-import { todayPeriod, periodLabel, prevPeriod, nextPeriod, fmtCurrency, statusClass, statusLabel, PAYMENT_TYPES, fmtDate, ROLES } from '../utils/helpers';
+import { todayPeriod, periodLabel, prevPeriod, nextPeriod, tenantStartPeriod, fmtCurrency, statusClass, statusLabel, PAYMENT_TYPES, fmtDate, ROLES, CURRENCIES, APP_VERSION } from '../utils/helpers';
 import { ChevronLeft, ChevronRight, Search, Receipt, X, Users, CheckCircle, Clock, AlertCircle, DollarSign, Calendar, Building2, Upload, FileText, Check, Printer } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 function fmt(n) {
   return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 0 }).format(n ?? 0);
+}
+
+// Receipt format: symbol + toLocaleString (matches HTML exactly)
+function receiptFmt(n, currency = 'MXN') {
+  const c = CURRENCIES[currency] || CURRENCIES.MXN;
+  return c.symbol + (parseFloat(n) || 0).toLocaleString('es-MX');
+}
+
+// Receipt status badge (matches HTML statusBadge exactly)
+function receiptStatusBadge(status) {
+  const map = {
+    pagado: { cls: 'badge-teal', si: 'si-pagado', label: 'Pagado' },
+    parcial: { cls: 'badge-amber', si: 'si-parcial', label: 'Parcial' },
+    pendiente: { cls: 'badge-gray', si: 'si-pendiente', label: 'Pendiente' },
+  };
+  const s = map[status] || map.pendiente;
+  return (
+    <span className={`badge ${s.cls}`}>
+      <span className={`status-indicator ${s.si}`} /> {s.label}
+    </span>
+  );
 }
 
 // Future periods for adelantos (next N periods after fromPeriod)
@@ -266,18 +287,30 @@ export default function Cobranza() {
     }
   };
 
+  const minPeriod = tenantStartPeriod(tenantData);
+
   return (
     <div className="content-fade">
       {/* ── Period + Search ── */}
       <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-        <div className="period-nav">
-          <button className="period-nav-btn" onClick={() => { setPeriod(prevPeriod(period)); setPage(1); }}>
+        <div className="period-nav" style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+          <button
+            className="period-nav-btn"
+            disabled={period <= minPeriod}
+            style={period <= minPeriod ? { opacity: 0.3, cursor: 'not-allowed' } : undefined}
+            onClick={() => { if (period > minPeriod) { setPeriod(prevPeriod(period)); setPage(1); } }}
+          >
             <ChevronLeft size={16} />
           </button>
           <div className="period-label" style={{ fontSize: 14 }}>{periodLabel(period)}</div>
           <button className="period-nav-btn" onClick={() => { setPeriod(nextPeriod(period)); setPage(1); }}>
             <ChevronRight size={16} />
           </button>
+          {period <= minPeriod && (
+            <span style={{ fontSize: 11, color: 'var(--ink-400)', marginLeft: 8, display: 'flex', alignItems: 'center', gap: 4 }}>
+              <AlertCircle size={12} /> Período inicial del tenant
+            </span>
+          )}
         </div>
         <div style={{ flex: 1, minWidth: 220, position: 'relative' }}>
           <Search size={14} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--ink-400)' }} />
@@ -846,6 +879,7 @@ export default function Cobranza() {
         const pdLabel = pay?.payment_date ? new Date(pay.payment_date + 'T12:00:00').toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric' }) : 'No registrada';
         const condominioName = tc?.razon_social || tc?.name || '';
         const roleLabel = user ? (ROLES[user.role]?.label || user.role) : '';
+        const rfmt = (n) => receiptFmt(n, tc?.currency || 'MXN');
 
         return (
           <div className="modal-bg open" onClick={() => setShowReceipt(null)}>
@@ -865,6 +899,7 @@ export default function Cobranza() {
                     </div>
                     <div className="receipt-folio-block">
                       <div className="receipt-folio-label">RECIBO DE PAGO</div>
+                      {pay?.folio && <div className="receipt-folio-num">{pay.folio}</div>}
                       <div className="receipt-folio-date">{pdLabel}</div>
                     </div>
                   </div>
@@ -881,9 +916,9 @@ export default function Cobranza() {
                       <tr className="receipt-section-header"><td colSpan={4}>● CAMPOS OBLIGATORIOS</td></tr>
                       <tr>
                         <td>Mantenimiento<br /><small>Cuota base del condominio</small></td>
-                        <td style={{ textAlign: 'right' }}>{fmt(maintCharge)}</td>
-                        <td style={{ textAlign: 'right', color: 'var(--teal-600)', fontWeight: 700 }}>{fmt(maintAbono)}</td>
-                        <td style={{ textAlign: 'right', color: (maintCharge - maintAbono) > 0 ? 'var(--coral-500)' : 'var(--teal-600)' }}>{fmt(maintCharge - maintAbono)}</td>
+                        <td style={{ textAlign: 'right' }}>{rfmt(maintCharge)}</td>
+                        <td style={{ textAlign: 'right', color: 'var(--teal-600)', fontWeight: 700 }}>{rfmt(maintAbono)}</td>
+                        <td style={{ textAlign: 'right', color: (maintCharge - maintAbono) > 0 ? 'var(--coral-500)' : 'var(--teal-600)' }}>{rfmt(maintCharge - maintAbono)}</td>
                       </tr>
                       {reqEFs.map(ef => {
                         const ch = parseFloat(ef.default_amount) || 0;
@@ -892,9 +927,9 @@ export default function Cobranza() {
                         return (
                           <tr key={ef.id}>
                             <td>{ef.label}<br /><small>Obligatorio</small></td>
-                            <td style={{ textAlign: 'right' }}>{fmt(ch)}</td>
-                            <td style={{ textAlign: 'right', color: 'var(--teal-600)', fontWeight: 700 }}>{fmt(ab)}</td>
-                            <td style={{ textAlign: 'right', color: sd > 0 ? 'var(--coral-500)' : 'var(--teal-600)' }}>{fmt(sd)}</td>
+                            <td style={{ textAlign: 'right' }}>{rfmt(ch)}</td>
+                            <td style={{ textAlign: 'right', color: 'var(--teal-600)', fontWeight: 700 }}>{rfmt(ab)}</td>
+                            <td style={{ textAlign: 'right', color: sd > 0 ? 'var(--coral-500)' : 'var(--teal-600)' }}>{rfmt(sd)}</td>
                           </tr>
                         );
                       })}
@@ -905,7 +940,7 @@ export default function Cobranza() {
                             <tr key={ef.id}>
                               <td>{ef.label}<br /><small>Opcional</small></td>
                               <td style={{ textAlign: 'right', color: 'var(--ink-300)' }}>—</td>
-                              <td style={{ textAlign: 'right', color: 'var(--teal-600)', fontWeight: 700 }}>{fmt(parseFloat(fp[ef.id].received || 0))}</td>
+                              <td style={{ textAlign: 'right', color: 'var(--teal-600)', fontWeight: 700 }}>{rfmt(parseFloat(fp[ef.id].received || 0))}</td>
                               <td style={{ textAlign: 'right', color: 'var(--ink-300)' }}>—</td>
                             </tr>
                           ))}
@@ -918,7 +953,7 @@ export default function Cobranza() {
                             <tr key={i}>
                               <td>{ar.fieldLabel}<br /><small style={{ color: 'var(--blue-600)' }}>Adelanto → {periodLabel(ar.targetPeriod)}</small></td>
                               <td style={{ textAlign: 'right', color: 'var(--ink-300)' }}>—</td>
-                              <td style={{ textAlign: 'right', color: 'var(--blue-600)', fontWeight: 700 }}>{fmt(ar.amount)}</td>
+                              <td style={{ textAlign: 'right', color: 'var(--blue-600)', fontWeight: 700 }}>{rfmt(ar.amount)}</td>
                               <td style={{ textAlign: 'right', color: 'var(--ink-300)' }}>—</td>
                             </tr>
                           ))}
@@ -931,7 +966,7 @@ export default function Cobranza() {
                             <tr key={i}>
                               <td>{ar.fieldLabel}<br /><small style={{ color: 'var(--coral-500)' }}>{ar.targetPeriod === '__prevDebt' ? 'Adeudo Anterior al Inicio' : `Abono a Adeudo → ${periodLabel(ar.targetPeriod)}`}</small></td>
                               <td style={{ textAlign: 'right', color: 'var(--ink-300)' }}>—</td>
-                              <td style={{ textAlign: 'right', color: 'var(--coral-500)', fontWeight: 700 }}>{fmt(ar.amount)}</td>
+                              <td style={{ textAlign: 'right', color: 'var(--coral-500)', fontWeight: 700 }}>{rfmt(ar.amount)}</td>
                               <td style={{ textAlign: 'right', color: 'var(--ink-300)' }}>—</td>
                             </tr>
                           ))}
@@ -941,23 +976,29 @@ export default function Cobranza() {
                     <tfoot>
                       <tr className="receipt-total">
                         <td>TOTAL</td>
-                        <td style={{ textAlign: 'right' }}>{fmt(totReqCharge)}</td>
-                        <td style={{ textAlign: 'right', color: 'var(--teal-600)' }}>{fmt(grandTotal)}</td>
-                        <td style={{ textAlign: 'right', color: totSaldo > 0 ? 'var(--coral-500)' : 'var(--teal-600)' }}>{fmt(totSaldo)}</td>
+                        <td style={{ textAlign: 'right' }}>{rfmt(totReqCharge)}</td>
+                        <td style={{ textAlign: 'right', color: 'var(--teal-600)' }}>{rfmt(grandTotal)}</td>
+                        <td style={{ textAlign: 'right', color: totSaldo > 0 ? 'var(--coral-500)' : 'var(--teal-600)' }}>{rfmt(totSaldo)}</td>
                       </tr>
-                      {totalAdelanto > 0 && <tr><td colSpan={4} style={{ textAlign: 'right', fontSize: 11, color: 'var(--blue-600)', padding: '4px 12px' }}>Incluye {fmt(totalAdelanto)} en pagos adelantados</td></tr>}
-                      {totalAdeudo > 0 && <tr><td colSpan={4} style={{ textAlign: 'right', fontSize: 11, color: 'var(--coral-500)', padding: '4px 12px' }}>Incluye {fmt(totalAdeudo)} en abonos a adeudo</td></tr>}
+                      {totalAdelanto > 0 && <tr><td colSpan={4} style={{ textAlign: 'right', fontSize: 11, color: 'var(--blue-600)', padding: '4px 12px' }}>Incluye {rfmt(totalAdelanto)} en pagos adelantados</td></tr>}
+                      {totalAdeudo > 0 && <tr><td colSpan={4} style={{ textAlign: 'right', fontSize: 11, color: 'var(--coral-500)', padding: '4px 12px' }}>Incluye {rfmt(totalAdeudo)} en abonos a adeudo</td></tr>}
                     </tfoot>
                   </table>
                   {pay?.notes && <div className="receipt-notes"><AlertCircle size={13} /> <strong>Notas:</strong> {pay.notes}</div>}
-                  <div style={{ display: 'flex', justifyContent: 'center', marginTop: 16 }}><span className={`badge ${statusClass(pay?.status)}`}>{statusLabel(pay?.status)}</span></div>
+                  <div style={{ display: 'flex', justifyContent: 'center', marginTop: 16 }}>{receiptStatusBadge(pay?.status)}</div>
+                  {pay?.evidence && <div style={{ marginTop: 12, textAlign: 'center', fontSize: 12, color: 'var(--blue-500)' }}><FileText size={14} style={{ display: 'inline', verticalAlign: -2, marginRight: 4 }} /> Evidencia adjunta</div>}
                   <div style={{ marginTop: 20, paddingTop: 14, borderTop: '1.5px solid var(--sand-100)', display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--ink-400)' }}>
                     <div><Calendar size={11} style={{ display: 'inline', verticalAlign: -2, marginRight: 4 }} /> <strong>Fecha de pago:</strong> {pdLabel}</div>
                     <div><FileText size={11} style={{ display: 'inline', verticalAlign: -2, marginRight: 4 }} /> <strong>Recibo creado:</strong> {new Date().toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric' })}</div>
                   </div>
+                  <div style={{ marginTop: 12, textAlign: 'center' }}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 'var(--radius-full)', fontSize: 12, fontWeight: 700, background: pay?.bank_reconciled ? 'var(--teal-50)' : 'var(--sand-50)', border: `1.5px solid ${pay?.bank_reconciled ? 'var(--teal-200)' : 'var(--sand-200)'}`, color: pay?.bank_reconciled ? 'var(--teal-700)' : 'var(--ink-400)' }}>
+                      {pay?.bank_reconciled ? '🏦 ✓ Conciliado en Banco' : '🏦 Sin conciliar'}
+                    </span>
+                  </div>
                   <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--sand-100)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 10, color: 'var(--ink-300)' }}>
                     <span>Generado por: {user?.name || ''} ({roleLabel})</span>
-                    <span>Homly · Powered by Spotynet</span>
+                    <span>Homly v{APP_VERSION} · Powered by Spotynet</span>
                     <span>{tc?.name || ''} — Recibo — {periodLabel(pay.period)}</span>
                   </div>
                 </div>

@@ -3,7 +3,7 @@ Homly — API Views
 All endpoints for the property management system.
 """
 from decimal import Decimal
-from django.db.models import Sum, Count, Q, F
+from django.db.models import Sum, Count, Q, F  # noqa: F401 - Q used in estado cuenta
 from django.utils import timezone
 from rest_framework import viewsets, status, generics, permissions
 from rest_framework.decorators import api_view, permission_classes, action
@@ -508,71 +508,266 @@ class DashboardView(APIView):
 
 
 # ═══════════════════════════════════════════════════════════
-#  ESTADO DE CUENTA (Account Statement)
+#  ESTADO DE CUENTA (Account Statement) — Replicates HTML computeStatement
 # ═══════════════════════════════════════════════════════════
 
+def _periods_between(start_ym, end_ym):
+    """Yield YYYY-MM strings from start to end inclusive."""
+    from datetime import date
+    if not start_ym or not end_ym or start_ym > end_ym:
+        return []
+    y, m = map(int, start_ym.split('-'))
+    end_y, end_m = map(int, end_ym.split('-'))
+    out = []
+    while (y, m) <= (end_y, end_m):
+        out.append(f'{y}-{m:02d}')
+        m += 1
+        if m > 12:
+            m, y = 1, y + 1
+    return out
+
+
+def _today_period():
+    from datetime import date
+    d = date.today()
+    return f'{d.year}-{d.month:02d}'
+
+
+def _has_admin_exempt(tenant, unit_id, period):
+    """Check if unit has active admin exemption for period (mesa_directiva)."""
+    if not tenant or getattr(tenant, 'admin_type', None) != 'mesa_directiva':
+        return False
+    unit = Unit.objects.filter(id=unit_id, tenant_id=tenant.id).first()
+    if not unit or not unit.admin_exempt:
+        return False
+    qs = AssemblyPosition.objects.filter(tenant_id=tenant.id, holder_unit_id=unit_id, active=True)
+    for pos in qs:
+        if pos.start_date and period < pos.start_date:
+            continue
+        if pos.end_date and period > pos.end_date:
+            continue
+        if pos.committee_id:
+            cm = Committee.objects.filter(id=pos.committee_id).first()
+            if cm and cm.exemption:
+                return True
+        return True
+    return False
+
+
+def _compute_statement(tenant, unit_id, start_period, cutoff_period):
+    """
+    Replicate HTML computeStatement logic.
+    Returns list of period rows: charge, paid, status, maintenance, saldo_accum.
+    """
+    from datetime import date
+    today = _today_period()
+
+    cob_fields = list(ExtraField.objects.filter(
+        tenant_id=tenant.id, enabled=True
+    ).exclude(field_type='gastos'))
+    req_fields = [f for f in cob_fields if f.required]
+    opt_fields = [f for f in cob_fields if not f.required]
+
+    unit = Unit.objects.filter(id=unit_id, tenant_id=tenant.id).first()
+    previous_debt = float(unit.previous_debt or 0) if unit else 0
+
+    payments_qs = Payment.objects.filter(
+        tenant_id=tenant.id, unit_id=unit_id
+    ).prefetch_related('field_payments')
+
+    payments_by_period = {p.period: p for p in payments_qs}
+
+    adelanto_credits = {}
+    adeudo_credits_received = {}
+    prev_debt_adeudo = Decimal('0')
+
+    for p in payments_qs:
+        fp_map = {fp.field_key: fp for fp in p.field_payments.all()}
+        for field_key, fp in fp_map.items():
+            at = fp.adelanto_targets or {}
+            for target_period, amt in at.items():
+                if target_period not in adelanto_credits:
+                    adelanto_credits[target_period] = {}
+                adelanto_credits[target_period][field_key] = adelanto_credits[target_period].get(field_key, Decimal('0')) + Decimal(str(amt or 0))
+
+        ap = p.adeudo_payments or {}
+        for target_p, field_map in ap.items():
+            total = sum(Decimal(str(v or 0)) for v in (field_map or {}).values())
+            if target_p == '__prevDebt':
+                prev_debt_adeudo += total
+            else:
+                adeudo_credits_received[target_p] = adeudo_credits_received.get(target_p, Decimal('0')) + total
+
+    saldo_acum = max(Decimal('0'), Decimal(str(previous_debt)) - prev_debt_adeudo)
+
+    periods = _periods_between(start_period, cutoff_period)
+    rows = []
+
+    for period in periods:
+        pay = payments_by_period.get(period)
+        fp_map = {}
+        if pay:
+            for fp in pay.field_payments.all():
+                fp_map[fp.field_key] = fp
+
+        ac = adelanto_credits.get(period, {})
+
+        is_exempt = _has_admin_exempt(tenant, unit_id, period)
+        maint_charge = Decimal('0') if is_exempt else (tenant.maintenance_fee or Decimal('0'))
+        maint_fp = fp_map.get('maintenance')
+        maint_received = Decimal(str(maint_fp.received or 0)) if maint_fp else Decimal('0')
+        maint_adelanto = Decimal(str(ac.get('maintenance', 0))) if isinstance(ac.get('maintenance'), (int, float, str)) else Decimal(str(ac.get('maintenance', 0) or 0))
+        maint_abono = maint_received + maint_adelanto
+
+        total_cargo_req = maint_charge
+        total_abono_req = maint_abono
+        total_cargo_opt = Decimal('0')
+        total_abono_opt = Decimal('0')
+
+        field_detail = []
+
+        for ef in req_fields:
+            charge = Decimal(str(ef.default_amount or 0))
+            field_fp = fp_map.get(str(ef.id))
+            received = Decimal(str(field_fp.received or 0)) if field_fp else Decimal('0')
+            adelanto = Decimal(str(ac.get(str(ef.id), 0))) if str(ef.id) in ac else Decimal('0')
+            abono = received + adelanto
+            total_cargo_req += charge
+            total_abono_req += abono
+            field_detail.append({'id': str(ef.id), 'label': ef.label, 'charge': float(charge), 'received': float(received), 'adelanto': float(adelanto), 'abono': float(abono), 'required': True})
+
+        for ef in opt_fields:
+            field_fp = fp_map.get(str(ef.id))
+            charge = Decimal('0')  # Optional fields: charge from capture not stored in FieldPayment
+            received = Decimal(str(field_fp.received or 0)) if field_fp else Decimal('0')
+            adelanto = Decimal(str(ac.get(str(ef.id), 0))) if str(ef.id) in ac else Decimal('0')
+            abono = received + adelanto
+            total_cargo_opt += charge
+            total_abono_opt += abono
+            field_detail.append({'id': str(ef.id), 'label': ef.label, 'charge': float(charge), 'received': float(received), 'adelanto': float(adelanto), 'abono': float(abono), 'required': False})
+
+        cargo_oblig = maint_charge + sum(Decimal(str(ef.default_amount or 0)) for ef in req_fields)
+        cargo_opt = total_cargo_opt
+        cargo_total = cargo_oblig + cargo_opt
+        abono = total_abono_req + total_abono_opt
+
+        oblig_abono = maint_abono + sum((fd['abono'] for fd in field_detail if fd.get('required')), 0)
+        oblig_abono = Decimal(str(oblig_abono)) if not isinstance(oblig_abono, Decimal) else oblig_abono
+        oblig_abono_capped = min(oblig_abono, cargo_oblig) if cargo_oblig > 0 else oblig_abono
+
+        is_past = period <= today
+        if pay:
+            eff_status = pay.status
+        else:
+            eff_status = 'pendiente' if is_past else 'futuro'
+        if cargo_oblig > 0 and oblig_abono_capped >= cargo_oblig:
+            eff_status = 'pagado'
+        elif oblig_abono > 0:
+            eff_status = 'parcial'
+        elif is_past:
+            eff_status = 'pendiente'
+        else:
+            eff_status = 'futuro'
+
+        saldo_periodo = cargo_total - abono
+        saldo_acum += saldo_periodo
+
+        rows.append({
+            'period': period,
+            'charge': float(cargo_total),
+            'paid': float(abono),
+            'maintenance': float(maint_charge),
+            'status': eff_status,
+            'payment_type': pay.payment_type if pay else None,
+            'payment_date': str(pay.payment_date) if pay and pay.payment_date else None,
+            'field_detail': field_detail,
+            'maint_detail': {'charge': float(maint_charge), 'received': float(maint_received), 'adelanto': float(maint_adelanto), 'abono': float(maint_abono)},
+            'pay': PaymentSerializer(pay).data if pay else None,
+            'saldo_accum': float(saldo_acum),
+        })
+
+    total_charges = sum(r['charge'] for r in rows)
+    total_paid = sum(r['paid'] for r in rows)
+    balance = total_charges - total_paid
+
+    return rows, float(total_charges), float(total_paid), float(balance)
+
+
 class EstadoCuentaView(APIView):
-    """GET /api/tenants/{tenant_id}/estado-cuenta/?unit_id=X&from=YYYY-MM&to=YYYY-MM"""
+    """GET /api/tenants/{tenant_id}/estado-cuenta/?unit_id=X&from=YYYY-MM&to=YYYY-MM
+       Without unit_id: returns units list with totals (for Estado por Unidad view)."""
     permission_classes = [IsTenantMember]
 
     def get(self, request, tenant_id):
         unit_id = request.query_params.get('unit_id')
         period_from = request.query_params.get('from')
         period_to = request.query_params.get('to')
+        cutoff_param = request.query_params.get('cutoff')  # for units list
+
+        tenant = Tenant.objects.get(id=tenant_id)
+        start_period = period_from or tenant.operation_start_date or '2024-01'
+        cutoff = period_to or cutoff_param or _today_period()
 
         if not unit_id:
-            return Response(
-                {'detail': 'unit_id is required'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            units = Unit.objects.filter(tenant_id=tenant_id).order_by('unit_id_code')
+            unit_data = []
+            total_cargo = Decimal('0')
+            total_abono = Decimal('0')
+            total_deuda = Decimal('0')
+            con_adeudo = 0
+
+            for unit in units:
+                rows, tc, tp, bal = _compute_statement(tenant, str(unit.id), start_period, cutoff)
+                total_cargo += Decimal(str(tc))
+                total_abono += Decimal(str(tp))
+                deuda = max(Decimal('0'), Decimal(str(bal)))
+                if deuda > 0:
+                    con_adeudo += 1
+                total_deuda += deuda
+
+                unit_data.append({
+                    'unit': UnitSerializer(unit).data,
+                    'payment': None,
+                    'total_charge': str(tc),
+                    'total_paid': str(tp),
+                    'balance': str(bal),
+                })
+
+            return Response({
+                'tenant': TenantDetailSerializer(tenant).data,
+                'period': cutoff,
+                'units': unit_data,
+                'total_cargo': str(total_cargo),
+                'total_abono': str(total_abono),
+                'total_deuda': str(total_deuda),
+                'con_adeudo': con_adeudo,
+                'start_period': start_period,
+                'cutoff': cutoff,
+            })
 
         unit = Unit.objects.get(id=unit_id, tenant_id=tenant_id)
-        tenant = Tenant.objects.get(id=tenant_id)
+        rows, total_charges, total_paid, balance = _compute_statement(tenant, str(unit_id), start_period, cutoff)
 
-        payments_qs = Payment.objects.filter(
-            tenant_id=tenant_id, unit_id=unit_id
-        ).prefetch_related('field_payments').order_by('period')
-
-        if period_from:
-            payments_qs = payments_qs.filter(period__gte=period_from)
-        if period_to:
-            payments_qs = payments_qs.filter(period__lte=period_to)
-
-        periods = []
-        total_charges = Decimal('0')
-        total_paid = Decimal('0')
-
-        req_fields = list(ExtraField.objects.filter(
-            tenant_id=tenant_id, enabled=True, required=True
-        ))
-
-        for payment in payments_qs:
-            fp_total = payment.field_payments.aggregate(
-                total=Sum('received')
-            )['total'] or Decimal('0')
-
-            charge = tenant.maintenance_fee
-            for ef in req_fields:
-                charge += ef.default_amount
-
-            total_charges += charge
-            total_paid += fp_total
-
-            periods.append({
-                'period': payment.period,
-                'charge': str(charge),
-                'paid': str(fp_total),
-                'status': payment.status,
-                'payment_type': payment.payment_type,
-                'payment_date': str(payment.payment_date) if payment.payment_date else None,
+        periods_out = []
+        for r in rows:
+            periods_out.append({
+                'period': r['period'],
+                'charge': str(r['charge']),
+                'paid': str(r['paid']),
+                'maintenance': str(r['maintenance']),
+                'status': r['status'],
+                'payment_type': r.get('payment_type'),
+                'payment_date': r.get('payment_date'),
+                'saldo_accum': str(r['saldo_accum']),
+                'pay': r.get('pay'),
             })
 
         return Response({
             'unit': UnitSerializer(unit).data,
-            'periods': periods,
+            'periods': periods_out,
             'total_charges': str(total_charges),
             'total_payments': str(total_paid),
-            'balance': str(total_charges - total_paid),
+            'balance': str(balance),
             'currency': tenant.currency,
             'tenant_name': tenant.name,
         })

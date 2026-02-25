@@ -44,6 +44,18 @@ export function nextPeriod(period) {
   return format(d, 'yyyy-MM');
 }
 
+/** Apply prevPeriod n times. Used for tenant start when operation_start_date is not set. */
+export function prevMonthN(period, n) {
+  let p = period;
+  for (let i = 0; i < n; i++) p = prevPeriod(p);
+  return p;
+}
+
+/** Minimum period for Cobranza (blocks viewing records before this date). */
+export function tenantStartPeriod(tenantData) {
+  return tenantData?.operation_start_date || prevMonthN(todayPeriod(), 11);
+}
+
 // Role labels and colors (matches roles object from original)
 export const ROLES = {
   superadmin: { label: 'Super Administrador', color: '#6D28D9', bg: '#F5F3FF' },

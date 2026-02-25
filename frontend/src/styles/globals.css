@@ -692,7 +692,14 @@ tr:hover td { background: rgba(59,185,144,0.02); }
 .receipt-section-header td { font-size: 10px; font-weight: 800; color: var(--teal-700); background: var(--teal-50); text-transform: uppercase; letter-spacing: 0.07em; padding: 6px 10px; }
 .receipt-total td { font-size: 14px; font-weight: 800; color: var(--ink-900); background: var(--sand-50); border-top: 2px solid var(--sand-200); padding: 11px 10px; }
 .receipt-notes { margin-top: 12px; padding: 10px 12px; background: var(--amber-50); border: 1px solid var(--amber-100); border-radius: var(--radius-sm); font-size: 12px; color: var(--ink-700); display: flex; align-items: flex-start; gap: 6px; }
-@media print { .modal-bg { display: none !important; } .modal .modal-head, .modal .modal-foot { display: none !important; } .modal { box-shadow: none; max-width: none; } .receipt-container { border: none; padding: 0; } }
+@media print {
+  body * { visibility: hidden; }
+  .modal-bg, .modal-bg * { visibility: visible; }
+  .modal-bg { position: fixed; inset: 0; background: white !important; }
+  .modal .modal-head, .modal .modal-foot { display: none !important; }
+  .modal { box-shadow: none; max-width: none; }
+  .receipt-container { border: none; padding: 0; }
+}
 
 /* ─── Status ─── */
 .status-indicator { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex-shrink: 0; }

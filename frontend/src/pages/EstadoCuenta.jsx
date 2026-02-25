@@ -51,10 +51,10 @@ export default function EstadoCuenta() {
     setDetailTo(cutoff || todayPeriod());
   }, [startPeriod, cutoff]);
 
-  // Load unit summaries via reporteGeneral for list view
+  // Load unit summaries via estado-cuenta (without unit_id) for list view
   useEffect(() => {
     if (!tenantId || selectedUnit) return;
-    reportsAPI.reporteGeneral(tenantId, cutoff)
+    reportsAPI.estadoCuenta(tenantId, { cutoff })
       .then(r => {
         const unitsList = r.data?.units || [];
         setUnitSummaries(unitsList);
@@ -84,14 +84,14 @@ export default function EstadoCuenta() {
     }).catch(() => {}).finally(() => setGenLoading(false));
   }, [view, tenantId, cutoff]);
 
-  // Compute totals from unit summaries — handle nested { unit: {...}, payment: {...} } structure
+  // Compute totals from unit summaries — handle { unit, total_charge, total_paid, balance } from estado-cuenta API
   const summaryData = useMemo(() => {
     const raw = unitSummaries.length > 0 ? unitSummaries : [];
     const items = raw.map(item => {
       const u = item.unit || item;
-      const payment = item.payment;
-      const charge = parseFloat(payment?.total_charge || 0) || parseFloat(u.total_charges || 0);
-      const paid = parseFloat(payment?.total_paid || 0) || parseFloat(u.total_payments || 0);
+      const charge = parseFloat(item.total_charge ?? u.total_charges ?? 0) || 0;
+      const paid = parseFloat(item.total_paid ?? u.total_payments ?? 0) || 0;
+      const bal = parseFloat(item.balance ?? (charge - paid)) || 0;
       return {
         id: u.id,
         unit_id_code: u.unit_id_code || '',
@@ -100,7 +100,7 @@ export default function EstadoCuenta() {
         occupancy: u.occupancy || 'propietario',
         total_charges: charge,
         total_payments: paid,
-        balance: charge - paid,
+        balance: bal,
       };
     });
 
@@ -266,15 +266,9 @@ export default function EstadoCuenta() {
                     {data.periods.map((p, i) => {
                       const charge = parseFloat(p.charge || 0);
                       const paid = parseFloat(p.paid || 0);
-                      const rowBalance = charge - paid;
+                      const saldoAcum = parseFloat(p.saldo_accum ?? 0);
                       const maint = parseFloat(p.maintenance || p.charge || 0);
-                      const hasDebt = rowBalance > 0.5;
-
-                      // Compute running saldo acumulado
-                      let saldoAcum = 0;
-                      for (let j = 0; j <= i; j++) {
-                        saldoAcum += parseFloat(data.periods[j].charge || 0) - parseFloat(data.periods[j].paid || 0);
-                      }
+                      const hasDebt = saldoAcum > 0.5;
 
                       return (
                         <tr key={i} className={hasDebt ? 'period-row-debt' : 'period-row-ok'}>
@@ -492,6 +486,22 @@ export default function EstadoCuenta() {
   );
 }
 
+// Total income from payment (matches HTML payTotalIncome: received + adelantos + adeudos)
+function payTotalIncome(pay) {
+  if (!pay) return 0;
+  let total = 0;
+  (pay.field_payments || []).forEach(fp => { total += parseFloat(fp.received || 0); });
+  (pay.field_payments || []).forEach(fp => {
+    const at = fp.adelanto_targets || {};
+    Object.values(at).forEach(amt => { total += parseFloat(amt) || 0; });
+  });
+  const ap = pay.adeudo_payments || {};
+  Object.values(ap).forEach(fm => {
+    Object.values(fm || {}).forEach(amt => { total += parseFloat(amt) || 0; });
+  });
+  return total;
+}
+
 /* ═══════════════════════════════════════════════════════════
    ESTADO GENERAL — per-period rows across all units
    ═══════════════════════════════════════════════════════════ */
@@ -502,12 +512,12 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
   const [ecLoading, setEcLoading] = useState(false);
   const numUnits = generalData?.units?.length || 0;
 
-  // Fetch ALL payments + gastos + caja chica for the tenant
+  // Fetch ALL payments (no period filter) + gastos + caja chica for the tenant
   useEffect(() => {
     if (!tenantId) return;
     setEcLoading(true);
     Promise.all([
-      paymentsAPI.list(tenantId).catch(() => ({ data: [] })),
+      paymentsAPI.list(tenantId, {}).catch(() => ({ data: [] })),
       gastosAPI.list(tenantId).catch(() => ({ data: [] })),
       cajaChicaAPI.list(tenantId).catch(() => ({ data: [] })),
     ]).then(([pRes, gRes, cRes]) => {
@@ -567,9 +577,7 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
       let pagados = 0, parciales = 0, pendientesCount = 0;
 
       periodPayments.forEach(pay => {
-        let payTotal = 0;
-        (pay.field_payments || []).forEach(fp => { payTotal += parseFloat(fp.received || 0); });
-        recaudo += payTotal;
+        recaudo += payTotalIncome(pay);
 
         if (pay.status === 'pagado') pagados++;
         else if (pay.status === 'parcial') parciales++;
@@ -747,7 +755,7 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
 function ReporteGeneralView({ tenantId, tenantData, generalData, genLoading, cutoff, setCutoff, startPeriod }) {
   const tenantUnits = generalData?.units || [];
 
-  // Compute income/expense totals
+  // Compute income/expense totals (payment income = received + adelantos + adeudos)
   const reportData = useMemo(() => {
     let totalIngresos = 0, totalEgresos = 0;
     let maintIncome = 0;
@@ -755,18 +763,23 @@ function ReporteGeneralView({ tenantId, tenantData, generalData, genLoading, cut
 
     tenantUnits.forEach(item => {
       const payment = item.payment;
-      if (!payment) return;
-      const mr = parseFloat(payment.maintenance_received || 0);
-      maintIncome += mr;
-      totalIngresos += mr;
+      totalIngresos += payTotalIncome(payment);
 
-      const fps = item.field_payments || {};
-      Object.entries(fps).forEach(([fid, fp]) => {
-        const rec = parseFloat(fp.received || 0);
-        totalIngresos += rec;
-        if (!fieldIncome[fid]) fieldIncome[fid] = 0;
-        fieldIncome[fid] += rec;
-      });
+      if (payment) {
+        const fps = item.field_payments || {};
+        const fpList = payment.field_payments || [];
+        const fpMap = { ...fps };
+        fpList.forEach(fp => { fpMap[fp.field_key] = fp; });
+        const mr = parseFloat((fpMap.maintenance || {}).received || 0);
+        maintIncome += mr;
+        Object.entries(fpMap).forEach(([fid, fp]) => {
+          const rec = parseFloat((fp && fp.received) || 0);
+          if (rec > 0) {
+            if (!fieldIncome[fid]) fieldIncome[fid] = 0;
+            fieldIncome[fid] += rec;
+          }
+        });
+      }
     });
 
     (generalData?.gastos || []).forEach(g => { totalEgresos += parseFloat(g.amount || 0); });
