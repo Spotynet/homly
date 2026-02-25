@@ -156,7 +156,7 @@ class UnitSerializer(serializers.ModelSerializer):
                   'owner_first_name', 'owner_last_name', 'owner_email', 'owner_phone',
                   'occupancy', 'tenant_first_name', 'tenant_last_name',
                   'tenant_email', 'tenant_phone', 'responsible_name',
-                  'admin_exempt', 'previous_debt',
+                  'admin_exempt', 'previous_debt', 'previous_debt_evidence',
                   'created_at', 'updated_at']
         read_only_fields = ['id', 'created_at', 'updated_at']
 

@@ -250,6 +250,7 @@ export default function Config() {
         unit_id_code: unitForm.unit_id_code,
         occupancy: unitForm.occupancy || 'propietario',
         previous_debt: parseFloat(unitForm.previous_debt) || 0,
+        previous_debt_evidence: unitForm.previous_debt_evidence || '',
         admin_exempt: !!unitForm.admin_exempt,
         owner_first_name: unitForm.owner_first_name || '',
         owner_last_name: unitForm.owner_last_name || '',
@@ -558,7 +559,7 @@ export default function Config() {
               </div>
               {isAdmin && (
                 <button className="btn btn-primary" onClick={() => {
-                  setUnitForm({ unit_name:'', unit_id_code:'', owner_first_name:'', owner_last_name:'', owner_email:'', owner_phone:'', occupancy:'propietario', previous_debt:0, admin_exempt:false, tenant_first_name:'', tenant_last_name:'', tenant_email:'', tenant_phone:'' });
+                  setUnitForm({ unit_name:'', unit_id_code:'', owner_first_name:'', owner_last_name:'', owner_email:'', owner_phone:'', occupancy:'propietario', previous_debt:0, previous_debt_evidence:'', admin_exempt:false, tenant_first_name:'', tenant_last_name:'', tenant_email:'', tenant_phone:'' });
                   setUnitModal('add');
                 }}>
                   <Plus size={14} /> Nueva Unidad
@@ -624,8 +625,12 @@ export default function Config() {
                           {pd > 0 ? fmt(pd) : '—'}
                         </td>
                         <td>
-                          {u.prev_debt_pdf
-                            ? <button className="btn-ghost" title="Ver evidencia" onClick={() => window.open(u.prev_debt_pdf, '_blank')}><FileText size={14} color="var(--blue-500)" /></button>
+                          {u.previous_debt_evidence
+                            ? <button className="btn-ghost" title="Ver evidencia" style={{ fontSize:10, color:'var(--blue-500)' }} onClick={()=>{
+                              const win=window.open('','_blank');
+                              win.document.write('<html><body style="margin:0"><embed src="data:application/pdf;base64,'+u.previous_debt_evidence+'" type="application/pdf" width="100%" height="100%" style="position:absolute;inset:0"></body></html>');
+                              win.document.close();
+                            }}><FileText size={14}/> PDF</button>
                             : <span style={{ color:'var(--ink-300)', fontSize:12 }}>—</span>}
                         </td>
                         {isAdmin && (
@@ -1338,6 +1343,27 @@ export default function Config() {
                 value={unitForm.previous_debt || 0}
                 onChange={e=>setUnitForm(f=>({...f,previous_debt:parseFloat(e.target.value)||0}))} />
               <div style={{ fontSize:11, color:'var(--ink-400)', marginTop:4 }}>Deuda previa al inicio de operaciones del sistema</div>
+              <div style={{ marginTop:6, display:'flex', alignItems:'center', gap:6, flexWrap:'wrap' }}>
+                <label className="btn btn-secondary btn-sm" style={{ cursor:'pointer', display:'inline-flex', alignItems:'center', gap:4 }}>
+                  <Upload size={12} />
+                  {unitForm.previous_debt_evidence ? '✓ PDF cargado' : 'Cargar PDF evidencia'}
+                  <input type="file" accept=".pdf" style={{ display:'none' }} onChange={e=>{
+                    const file=e.target.files?.[0]; if(!file) return;
+                    if(file.type!=='application/pdf'){ toast.error('Solo se permiten archivos PDF.'); return; }
+                    const r=new FileReader(); r.onload=()=>{ const b=r.result?.split(',')[1]||''; setUnitForm(f=>({...f,previous_debt_evidence:b})); }; r.readAsDataURL(file);
+                    e.target.value='';
+                  }} />
+                </label>
+                {unitForm.previous_debt_evidence && (
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={()=>{
+                    const data=unitForm.previous_debt_evidence;
+                    if(!data) return toast.error('No hay PDF cargado.');
+                    const win=window.open('','_blank');
+                    win.document.write('<html><body style="margin:0"><embed src="data:application/pdf;base64,'+data+'" type="application/pdf" width="100%" height="100%" style="position:absolute;inset:0"></body></html>');
+                    win.document.close();
+                  }}><FileText size={12}/> Ver</button>
+                )}
+              </div>
             </div>
           </div>
           <div className="form-section-label">Propietario</div>

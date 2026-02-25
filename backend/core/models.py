@@ -214,6 +214,8 @@ class Unit(models.Model):
                                        help_text='Exento por Mesa Directiva')
     previous_debt = models.DecimalField(max_digits=12, decimal_places=2, default=0,
                                         help_text='Adeudo anterior al inicio')
+    previous_debt_evidence = models.TextField(blank=True, default='',
+                                             help_text='Base64 PDF evidencia del adeudo anterior')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

@@ -56,7 +56,7 @@ export default function Cobranza() {
       ]);
       setUnits(uRes.data.results || uRes.data);
       setPayments(pRes.data.results || pRes.data);
-      setExtraFields((efRes.data.results || efRes.data).filter(f => f.enabled));
+      setExtraFields((efRes.data.results || efRes.data).filter(f => f.enabled && (!f.field_type || f.field_type === 'normal')));
       setTenantData(tRes.data);
     } catch (err) { console.error(err); }
   };
