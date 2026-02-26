@@ -325,9 +325,13 @@ class DashboardSerializer(serializers.Serializer):
     partial_count = serializers.IntegerField()
     pending_count = serializers.IntegerField()
     total_gastos = serializers.FloatField()
+    total_gastos_conciliados = serializers.FloatField()
     total_caja_chica = serializers.FloatField()
     maintenance_fee = serializers.FloatField()
     period = serializers.CharField()
+    ingreso_adicional = serializers.FloatField()
+    total_adeudo_recibido = serializers.FloatField()
+    deuda_total = serializers.FloatField()
 
 
 class EstadoCuentaSerializer(serializers.Serializer):

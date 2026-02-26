@@ -129,7 +129,9 @@ export default function Cobranza() {
     let paid = 0, partial = 0, pending = 0, recaudo = 0;
     units.forEach(u => {
       const p = paymentMap[u.id];
-      const st = p?.status || 'pendiente';
+      // Unidades exentas (admin_exempt) se cuentan como pagadas en KPI
+      const isExempt = !!u.admin_exempt;
+      const st = isExempt ? 'pagado' : (p?.status || 'pendiente');
       if (st === 'pagado') paid++;
       else if (st === 'parcial') partial++;
       else pending++;
@@ -438,7 +440,8 @@ export default function Cobranza() {
             <tbody>
               {paged.map(u => {
                 const pay = paymentMap[u.id];
-                const st = pay?.status || 'pendiente';
+                // Exentas siempre aparecen como pagadas
+                const st = u.admin_exempt ? 'pagado' : (pay?.status || 'pendiente');
                 const effTotals = getEffectiveFieldTotals(pay);
                 const totalRec = Object.values(effTotals).reduce((s, v) => s + v, 0);
                 return (

@@ -201,13 +201,19 @@ export default function Dashboard() {
   const totalColl  = s.total_collected ?? 0;
 
   // Economic tab
-  const cargosFijos   = s.total_expected ?? 0;
-  const cobranza      = s.total_collected ?? 0;
-  const gastos        = (s.total_gastos ?? 0) + (s.total_caja_chica ?? 0);
-  const pctCobVsCargos = cargosFijos > 0 ? Math.round((cobranza / cargosFijos) * 100) : 0;
-  const pctGastosVsIng = cobranza > 0 ? Math.round((gastos / cobranza) * 100) : 0;
-  const ingAdicional   = Math.max(0, cobranza - cargosFijos);
-  const pctIngAdicional = cargosFijos > 0 ? Math.round((ingAdicional / cargosFijos) * 100) : 0;
+  const cargosFijos        = s.total_expected ?? 0;
+  const cobranza           = s.total_collected ?? 0;
+  // Gastos: solo los conciliados (bank_reconciled=True)
+  const gastos             = s.total_gastos_conciliados ?? 0;
+  const pctCobVsCargos     = cargosFijos > 0 ? Math.round((cobranza / cargosFijos) * 100) : 0;
+  const pctGastosVsIng     = cobranza > 0 ? Math.round((gastos / cobranza) * 100) : 0;
+  // Ingresos adicionales: backend ya calcula (no-maintenance FieldPayments menos adeudo)
+  const ingAdicional       = s.ingreso_adicional ?? 0;
+  const pctIngAdicional    = cargosFijos > 0 ? Math.round((ingAdicional / cargosFijos) * 100) : 0;
+  // Recuperación de deuda
+  const deudaTotal         = s.deuda_total ?? 0;
+  const adeudoRecibido     = s.total_adeudo_recibido ?? 0;
+  const pctDeudaRecuperada = deudaTotal > 0 ? Math.round((adeudoRecibido / deudaTotal) * 100) : 0;
 
   // Dynamic colors (match HTML ref F7)
   const gviRatio = cobranza > 0 ? gastos / cobranza : 0;
@@ -467,7 +473,7 @@ export default function Dashboard() {
               <div className="stat-icon coral"><ShoppingBag size={20} /></div>
               <div className="stat-label">Gastos Mensuales</div>
               <div className="stat-value" style={{ fontSize: 20 }}>{fmt(gastos)}</div>
-              <div className="stat-sub">{gastos > 0 ? 'gastos + caja chica' : 'sin registros'}</div>
+              <div className="stat-sub">{gastos > 0 ? 'gastos conciliados' : 'sin registros conciliados'}</div>
             </div>
           </div>
 
@@ -488,9 +494,9 @@ export default function Dashboard() {
               pct={pctGastosVsIng}
               color={gviBg}
               darkColor={gviDk}
-              row1Label="Gastos"
+              row1Label="Gastos conciliados"
               row1Value={fmt(gastos)}
-              row2Label="Ingresos"
+              row2Label="Cobranza"
               row2Value={fmt(cobranza)}
             />
             <DonutCard
@@ -498,20 +504,20 @@ export default function Dashboard() {
               pct={pctIngAdicional}
               color="var(--blue-400)"
               darkColor="var(--blue-700)"
-              row1Label="Adicional"
+              row1Label="Adicional neto"
               row1Value={fmt(ingAdicional)}
-              row2Label="Sobre cargos fijos"
-              row2Value={null}
+              row2Label="Adeudo recibido"
+              row2Value={fmt(adeudoRecibido)}
             />
             <DonutCard
               title="Recuperación de Deuda"
-              pct={0}
+              pct={pctDeudaRecuperada}
               color="var(--coral-400)"
               darkColor="var(--coral-600)"
-              row1Label="Recuperado"
-              row1Value={fmt(0)}
-              row2Label="Deuda total"
-              row2Value={fmt(0)}
+              row1Label="Recibido este período"
+              row1Value={fmt(adeudoRecibido)}
+              row2Label="Deuda inicial total"
+              row2Value={fmt(deudaTotal)}
             />
           </div>
 

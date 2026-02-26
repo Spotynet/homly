@@ -602,11 +602,36 @@ class DashboardView(APIView):
             tenant_id=tenant_id, period=period
         ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
 
+        # Solo gastos conciliados (para tarjeta Gastos vs Ingresos)
+        total_gastos_conciliados = GastoEntry.objects.filter(
+            tenant_id=tenant_id, period=period, bank_reconciled=True
+        ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+
         total_caja = CajaChicaEntry.objects.filter(
             tenant_id=tenant_id, period=period
         ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
 
         rented_count = units.filter(occupancy='rentada').count()
+
+        # Ingresos adicionales: FieldPayments del periodo que NO sean mantenimiento
+        ingreso_adicional_fp = FieldPayment.objects.filter(
+            payment__tenant_id=tenant_id,
+            payment__period=period,
+        ).exclude(field_key='maintenance').aggregate(total=Sum('received'))['total'] or Decimal('0')
+
+        # Adeudo recibido este periodo (suma de adeudo_payments de todos los pagos del periodo)
+        total_adeudo_recibido = Decimal('0')
+        for p in payments:
+            for period_debt in (p.adeudo_payments or {}).values():
+                if isinstance(period_debt, dict):
+                    for amt in period_debt.values():
+                        total_adeudo_recibido += Decimal(str(amt or 0))
+
+        # Ingresos adicionales netos (excluir adeudo)
+        ingreso_adicional = max(Decimal('0'), ingreso_adicional_fp - total_adeudo_recibido)
+
+        # Deuda total = suma de previous_debt de todas las unidades del tenant
+        deuda_total = units.aggregate(total=Sum('previous_debt'))['total'] or Decimal('0')
 
         data = {
             'total_units': total_units,
@@ -619,9 +644,13 @@ class DashboardView(APIView):
             'partial_count': partial_count,
             'pending_count': pending_count,
             'total_gastos': float(total_gastos),
+            'total_gastos_conciliados': float(total_gastos_conciliados),
             'total_caja_chica': float(total_caja),
             'maintenance_fee': float(tenant.maintenance_fee),
             'period': period,
+            'ingreso_adicional': float(ingreso_adicional),
+            'total_adeudo_recibido': float(total_adeudo_recibido),
+            'deuda_total': float(deuda_total),
         }
         return Response(DashboardSerializer(data).data)
 
@@ -939,7 +968,8 @@ def _compute_report_data(tenant, period):
         Payment.objects.filter(tenant_id=tenant.id, period=period).prefetch_related('field_payments')
     }
 
-    ingreso_mantenimiento = Decimal('0')
+    ingreso_mantenimiento = Decimal('0')       # Mantenimiento del período
+    ingreso_maint_adelanto = Decimal('0')      # Mantenimiento adelantado (otros períodos)
     ingresos_referenciados = Decimal('0')
     ingresos_conceptos = {}
     ingreso_units_count = 0
@@ -981,7 +1011,7 @@ def _compute_report_data(tenant, period):
                 else:
                     ingreso_mantenimiento += rec
 
-        # Adelanto targets (maintenance)
+        # Adelanto targets (maintenance) — pagos adelantados de mantenimiento
         if maint and maint.adelanto_targets:
             for amt in (maint.adelanto_targets or {}).values():
                 a = Decimal(str(amt or 0))
@@ -990,10 +1020,10 @@ def _compute_report_data(tenant, period):
                     int_a = a.quantize(Decimal('1'), rounding=ROUND_FLOOR)
                     cents_a = a - int_a
                     if cents_a > Decimal('0.001'):
-                        ingreso_mantenimiento += int_a
+                        ingreso_maint_adelanto += int_a
                         ingresos_referenciados += cents_a
                     else:
-                        ingreso_mantenimiento += a
+                        ingreso_maint_adelanto += a
 
         # Extra cobranza fields
         for fk, fp in fp_map.items():
@@ -1107,12 +1137,13 @@ def _compute_report_data(tenant, period):
                 'bank_reconciled': ui.bank_reconciled,
             })
 
-    total_ingresos = ingreso_mantenimiento + ingresos_referenciados + sum(
+    total_ingresos = ingreso_mantenimiento + ingreso_maint_adelanto + ingresos_referenciados + sum(
         x['total'] for x in ingresos_conceptos.values()
     ) + ingresos_no_identificados
 
     return {
         'ingreso_mantenimiento': float(ingreso_mantenimiento),
+        'ingreso_maint_adelanto': float(ingreso_maint_adelanto),
         'ingresos_referenciados': float(ingresos_referenciados),
         'ingresos_conceptos': {k: {'total': float(v['total']), 'label': v['label']} for k, v in ingresos_conceptos.items()},
         'ingresos_no_identificados': float(ingresos_no_identificados),

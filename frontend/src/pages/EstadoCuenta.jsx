@@ -596,6 +596,8 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
   // cajaChica ya no se incluye en el reporte general
   const [unrecognizedIncome, setUnrecognizedIncome] = useState([]);
   const [ecLoading, setEcLoading] = useState(false);
+  const [expandedPeriods, setExpandedPeriods] = useState({});
+  const togglePeriod = (period) => setExpandedPeriods(prev => ({ ...prev, [period]: !prev[period] }));
   const numUnits = generalData?.units?.length || 0;
 
   // Fetch ALL payments (no period filter) + gastos for the tenant
@@ -826,10 +828,30 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
                   const allPaid = row.pendientes === 0 && row.parciales === 0;
                   const hasRecaudoDetail = row.recaudoDetails.conciliado.length + row.recaudoDetails.noConciliado.length > 0;
                   const hasGastoDetail = row.gastoDetail.reconciled.length + row.gastoDetail.noReconciled.length > 0;
+                  const hasDetail = hasRecaudoDetail || hasGastoDetail;
+                  const isExpanded = !!expandedPeriods[row.period];
                   return (
                     <React.Fragment key={row.period}>
-                      <tr style={allPaid ? { background: 'rgba(42,157,115,0.03)' } : undefined}>
-                        <td style={{ fontWeight: 600 }}>{periodLabel(row.period)}</td>
+                      <tr
+                        style={{ ...(allPaid ? { background: 'rgba(42,157,115,0.03)' } : {}), cursor: hasDetail ? 'pointer' : 'default' }}
+                        onClick={() => hasDetail && togglePeriod(row.period)}
+                        title={hasDetail ? (isExpanded ? 'Colapsar detalle' : 'Ver detalle') : undefined}
+                      >
+                        <td style={{ fontWeight: 600 }}>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                            {hasDetail && (
+                              <span style={{
+                                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                width: 16, height: 16, borderRadius: 4,
+                                background: 'var(--sand-100)', color: 'var(--ink-400)',
+                                fontSize: 10, flexShrink: 0,
+                                transition: 'transform 0.15s',
+                                transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+                              }}>▶</span>
+                            )}
+                            {periodLabel(row.period)}
+                          </span>
+                        </td>
                         <td style={{ textAlign: 'right' }}>{fmt(row.cargoOblig)}</td>
                         <td style={{ textAlign: 'right', color: 'var(--teal-600)', fontWeight: 700 }}>{row.recaudoConciliado > 0 ? fmt(row.recaudoConciliado) : <span style={{ color: 'var(--ink-300)' }}>—</span>}</td>
                         <td style={{ textAlign: 'right', color: 'var(--amber-500)', fontWeight: 700 }}>{row.recaudoNoConciliado > 0 ? fmt(row.recaudoNoConciliado) : <span style={{ color: 'var(--ink-300)' }}>—</span>}</td>
@@ -842,36 +864,35 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
                           <span style={{ fontWeight: 700, color: row.balance >= 0 ? 'var(--teal-600)' : 'var(--coral-500)' }}>{fmt(row.balance)}</span>
                         </td>
                       </tr>
-                      {/* Detalle de ingresos conciliados */}
-                      {hasRecaudoDetail && row.recaudoDetails.conciliado.map((d, i) => (
+                      {/* Detalle colapsable */}
+                      {isExpanded && hasRecaudoDetail && row.recaudoDetails.conciliado.map((d, i) => (
                         <tr key={`rc-${i}`} style={{ background: 'rgba(42,157,115,0.04)', fontSize: 11 }}>
-                          <td style={{ paddingLeft: 24, color: 'var(--teal-600)', fontStyle: 'italic' }}>↳ 🏦 {d.unit}{d.responsible ? ` — ${d.responsible}` : ''}</td>
+                          <td style={{ paddingLeft: 32, color: 'var(--teal-600)', fontStyle: 'italic' }}>↳ 🏦 {d.unit}{d.responsible ? ` — ${d.responsible}` : ''}</td>
                           <td></td>
                           <td style={{ textAlign: 'right', color: 'var(--teal-600)' }}>{fmt(d.amount)}</td>
                           <td colSpan={7}><span style={{ fontSize: 10, color: 'var(--ink-400)' }}>{d.payment_type || ''}</span></td>
                         </tr>
                       ))}
-                      {hasRecaudoDetail && row.recaudoDetails.noConciliado.map((d, i) => (
+                      {isExpanded && hasRecaudoDetail && row.recaudoDetails.noConciliado.map((d, i) => (
                         <tr key={`rn-${i}`} style={{ background: 'rgba(255,180,0,0.04)', fontSize: 11 }}>
-                          <td style={{ paddingLeft: 24, color: 'var(--amber-600)', fontStyle: 'italic' }}>↳ ⏳ {d.unit}{d.responsible ? ` — ${d.responsible}` : ''}</td>
+                          <td style={{ paddingLeft: 32, color: 'var(--amber-600)', fontStyle: 'italic' }}>↳ ⏳ {d.unit}{d.responsible ? ` — ${d.responsible}` : ''}</td>
                           <td></td>
                           <td></td>
                           <td style={{ textAlign: 'right', color: 'var(--amber-500)' }}>{fmt(d.amount)}</td>
                           <td colSpan={6}><span style={{ fontSize: 10, color: 'var(--ink-400)' }}>{d.payment_type || ''}</span></td>
                         </tr>
                       ))}
-                      {/* Detalle de gastos */}
-                      {hasGastoDetail && row.gastoDetail.reconciled.map((g, i) => (
+                      {isExpanded && hasGastoDetail && row.gastoDetail.reconciled.map((g, i) => (
                         <tr key={`gc-${i}`} style={{ background: 'rgba(255,140,0,0.04)', fontSize: 11 }}>
-                          <td style={{ paddingLeft: 24, color: 'var(--amber-700)', fontStyle: 'italic' }}>↳ 🏦 {g.label}{g.provider ? ` — ${g.provider}` : ''}</td>
+                          <td style={{ paddingLeft: 32, color: 'var(--amber-700)', fontStyle: 'italic' }}>↳ 🏦 {g.label}{g.provider ? ` — ${g.provider}` : ''}</td>
                           <td colSpan={6}></td>
                           <td style={{ textAlign: 'right', color: 'var(--amber-700)' }}>{fmt(g.amount)}</td>
                           <td colSpan={2}></td>
                         </tr>
                       ))}
-                      {hasGastoDetail && row.gastoDetail.noReconciled.map((g, i) => (
+                      {isExpanded && hasGastoDetail && row.gastoDetail.noReconciled.map((g, i) => (
                         <tr key={`gn-${i}`} style={{ background: 'rgba(100,100,100,0.03)', fontSize: 11 }}>
-                          <td style={{ paddingLeft: 24, color: 'var(--ink-500)', fontStyle: 'italic' }}>↳ ⏳ {g.label}{g.provider ? ` — ${g.provider}` : ''}</td>
+                          <td style={{ paddingLeft: 32, color: 'var(--ink-500)', fontStyle: 'italic' }}>↳ ⏳ {g.label}{g.provider ? ` — ${g.provider}` : ''}</td>
                           <td colSpan={7}></td>
                           <td style={{ textAlign: 'right', color: 'var(--ink-400)' }}>{fmt(g.amount)}</td>
                           <td></td>
@@ -990,14 +1011,87 @@ function ReporteGeneralView({ tenantData, generalData, genLoading, cutoff, setCu
       {genLoading && <div style={{ textAlign: 'center', padding: 40, color: 'var(--ink-400)' }}>Cargando…</div>}
 
       {!genLoading && generalData && (
-        <div className="card">
-          <div className="card-head">
-            <h3 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              {tenantData?.logo ? <img src={tenantData.logo} alt="" style={{ height: 22, borderRadius: 4 }} /> : <DollarSign size={16} />}
-              Reporte General de {tenantData?.name || ''} — {periodLabel(cutoff)}
-            </h3>
-            <span style={{ fontSize: 12, color: 'var(--ink-400)' }}>{unitsCount} unidades</span>
+        <div className="card" style={{ overflow: 'hidden' }}>
+
+          {/* ── MEMBRETE EJECUTIVO ── */}
+          <div style={{
+            background: 'linear-gradient(135deg, #0f4c75 0%, #1b6ca8 50%, #2a9d8f 100%)',
+            padding: '28px 32px 24px',
+            position: 'relative',
+            overflow: 'hidden',
+          }}>
+            {/* Decorative circles */}
+            <div style={{ position: 'absolute', top: -30, right: -30, width: 120, height: 120, borderRadius: '50%', background: 'rgba(255,255,255,0.05)', pointerEvents: 'none' }} />
+            <div style={{ position: 'absolute', bottom: -20, right: 60, width: 80, height: 80, borderRadius: '50%', background: 'rgba(255,255,255,0.07)', pointerEvents: 'none' }} />
+
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 20, position: 'relative' }}>
+              {/* Logo */}
+              {tenantData?.logo ? (
+                <img src={tenantData.logo} alt="Logo"
+                  style={{ width: 64, height: 64, borderRadius: 12, objectFit: 'cover', background: 'white', padding: 4, flexShrink: 0, boxShadow: '0 4px 12px rgba(0,0,0,0.2)' }} />
+              ) : (
+                <div style={{ width: 64, height: 64, borderRadius: 12, background: 'rgba(255,255,255,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <Building size={30} color="rgba(255,255,255,0.8)" />
+                </div>
+              )}
+
+              {/* Tenant info */}
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.6)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 4 }}>
+                  Condominio
+                </div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: '#fff', lineHeight: 1.2, marginBottom: 6 }}>
+                  {tenantData?.razon_social || tenantData?.name || ''}
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 16px' }}>
+                  {tenantData?.rfc && (
+                    <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.75)' }}>RFC: {tenantData.rfc}</span>
+                  )}
+                  {[tenantData?.info_calle, tenantData?.info_num_externo, tenantData?.info_colonia, tenantData?.info_ciudad]
+                    .filter(Boolean).join(', ') && (
+                    <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.65)' }}>
+                      {[tenantData?.info_calle, tenantData?.info_num_externo, tenantData?.info_colonia, tenantData?.info_ciudad].filter(Boolean).join(', ')}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Report meta — top right */}
+              <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.55)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>
+                  Período
+                </div>
+                <div style={{ fontSize: 18, fontWeight: 800, color: '#fff', marginBottom: 8 }}>
+                  {periodLabel(cutoff)}
+                </div>
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.55)' }}>
+                  {unitsCount} unidades · {new Date().toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' })}
+                </div>
+              </div>
+            </div>
+
+            {/* Report title bar */}
+            <div style={{
+              marginTop: 20,
+              paddingTop: 16,
+              borderTop: '1px solid rgba(255,255,255,0.2)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+            }}>
+              <div>
+                <span style={{ fontSize: 15, fontWeight: 800, color: '#fff', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                  Reporte General de Conciliación Bancaria
+                </span>
+              </div>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <span style={{ fontSize: 11, background: 'rgba(255,255,255,0.15)', color: '#fff', padding: '3px 10px', borderRadius: 20, fontWeight: 600 }}>
+                  CONFIDENCIAL
+                </span>
+              </div>
+            </div>
           </div>
+
           <div className="card-body" style={{ padding: 0 }}>
 
             {/* SALDO INICIAL (HTML) */}
@@ -1028,6 +1122,16 @@ function ReporteGeneralView({ tenantData, generalData, genLoading, cutoff, setCu
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--sand-50)' }}>
                   <span style={{ fontSize: 13, color: 'var(--ink-600)' }}>Mantenimiento</span>
                   <span style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 600, color: 'var(--teal-600)' }}>{fmt2(rd.ingreso_mantenimiento)}</span>
+                </div>
+              )}
+
+              {rd.ingreso_maint_adelanto > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--sand-50)' }}>
+                  <span style={{ fontSize: 13, color: 'var(--ink-500)' }}>
+                    Mantenimiento Adelantado
+                    <small style={{ fontSize: 11, color: 'var(--ink-400)', marginLeft: 6 }}>(pagos de períodos futuros)</small>
+                  </span>
+                  <span style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 600, color: 'var(--teal-500)' }}>{fmt2(rd.ingreso_maint_adelanto)}</span>
                 </div>
               )}
 
@@ -1182,10 +1286,23 @@ function ReporteGeneralView({ tenantData, generalData, genLoading, cutoff, setCu
               )}
             </div>
 
-            {/* Footer (HTML) */}
-            <div style={{ padding: '12px 24px', display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--ink-400)' }}>
-              <span>Generado por: {user?.name || ''} {role && ROLES[role] ? ` (${ROLES[role].label})` : ''} · Homly · Powered by Spotynet</span>
-              <span>{tenantData?.name || ''} — Reporte General — {periodLabel(cutoff)}</span>
+            {/* Footer ejecutivo */}
+            <div style={{
+              padding: '14px 32px',
+              background: '#0f4c75',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              fontSize: 11,
+              color: 'rgba(255,255,255,0.6)',
+            }}>
+              <span>
+                Generado por: <strong style={{ color: 'rgba(255,255,255,0.85)' }}>{user?.name || ''}</strong>
+                {role && ROLES[role] ? ` · ${ROLES[role].label}` : ''} · Homly — Powered by Spotynet
+              </span>
+              <span style={{ color: 'rgba(255,255,255,0.5)' }}>
+                {tenantData?.name || ''} · {periodLabel(cutoff)} · {new Date().toLocaleString('es-MX', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+              </span>
             </div>
           </div>
         </div>
