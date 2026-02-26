@@ -216,6 +216,8 @@ class Unit(models.Model):
                                         help_text='Adeudo anterior al inicio')
     previous_debt_evidence = models.TextField(blank=True, default='',
                                              help_text='Base64 PDF evidencia del adeudo anterior')
+    credit_balance = models.DecimalField(max_digits=12, decimal_places=2, default=0,
+                                         help_text='Saldo a favor previo al inicio de operaciones')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -379,6 +381,7 @@ class GastoEntry(models.Model):
     provider_rfc = models.CharField(max_length=20, blank=True, default='')
     provider_invoice = models.CharField(max_length=100, blank=True, default='')
     bank_reconciled = models.BooleanField(default=False)
+    notes = models.TextField(blank=True, default='')
     evidence = models.TextField(blank=True, default='')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

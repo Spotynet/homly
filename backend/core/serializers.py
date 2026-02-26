@@ -157,6 +157,7 @@ class UnitSerializer(serializers.ModelSerializer):
                   'occupancy', 'tenant_first_name', 'tenant_last_name',
                   'tenant_email', 'tenant_phone', 'responsible_name',
                   'admin_exempt', 'previous_debt', 'previous_debt_evidence',
+                  'credit_balance',
                   'created_at', 'updated_at']
         read_only_fields = ['id', 'created_at', 'updated_at']
 
@@ -234,7 +235,7 @@ class GastoEntrySerializer(serializers.ModelSerializer):
         model = GastoEntry
         fields = ['id', 'tenant', 'period', 'field', 'field_label', 'amount',
                   'payment_type', 'doc_number', 'gasto_date', 'provider_name',
-                  'provider_rfc', 'provider_invoice', 'bank_reconciled', 'evidence',
+                  'provider_rfc', 'provider_invoice', 'bank_reconciled', 'notes', 'evidence',
                   'created_at', 'updated_at']
         read_only_fields = ['id', 'tenant', 'created_at', 'updated_at']
 

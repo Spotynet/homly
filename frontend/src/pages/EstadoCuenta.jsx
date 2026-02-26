@@ -176,6 +176,7 @@ export default function EstadoCuenta() {
   const unitPrevDebt = data ? parseFloat(data.previous_debt ?? data.unit?.previous_debt ?? 0) : 0;
   const prevDebtAdeudo = data ? parseFloat(data.prev_debt_adeudo ?? 0) : 0;
   const netPrevDebt = data ? (parseFloat(data.net_prev_debt ?? 0) || Math.max(0, unitPrevDebt - prevDebtAdeudo)) : 0;
+  const unitCreditBalance = data ? parseFloat(data.credit_balance ?? data.unit?.credit_balance ?? 0) : 0;
 
   // Find selected unit info from units list (for immediate display before API returns)
   const selectedUnitInfo = useMemo(() => {
@@ -270,6 +271,12 @@ export default function EstadoCuenta() {
                     <div className="ec-sum-val debt">-{fmt(netPrevDebt)}</div>
                   </div>
                 )}
+                {unitCreditBalance > 0 && (
+                  <div className="ec-sum-cell" style={{ background: 'var(--teal-50)' }}>
+                    <div className="ec-sum-label" style={{ color: 'var(--teal-600)' }}>Saldo a Favor Previo</div>
+                    <div className="ec-sum-val ok">+{fmt(unitCreditBalance)}</div>
+                  </div>
+                )}
                 <div className="ec-sum-cell">
                   <div className="ec-sum-label">Cargos Obligatorios</div>
                   <div className="ec-sum-val">{fmt(data.total_charges)}</div>
@@ -330,6 +337,24 @@ export default function EstadoCuenta() {
                           {prevDebtAdeudo > 0 && (
                             <div style={{ fontSize: 9, color: 'var(--teal-600)', fontStyle: 'normal' }}>Abono: {fmt(prevDebtAdeudo)}</div>
                           )}
+                        </td>
+                      </tr>
+                    )}
+                    {unitCreditBalance > 0 && (
+                      <tr style={{ background: 'var(--teal-50)', fontStyle: 'italic' }}>
+                        <td style={{ fontWeight: 700, color: 'var(--teal-600)', whiteSpace: 'nowrap' }}>
+                          <DollarSign size={13} style={{ display: 'inline', verticalAlign: -2, marginRight: 6 }} />
+                          Saldo a Favor Previo
+                        </td>
+                        <td colSpan={2} style={{ textAlign: 'right', color: 'var(--teal-500)', fontSize: 12 }}>
+                          Saldo acumulado antes del inicio de operaciones
+                        </td>
+                        <td style={{ textAlign: 'right', color: 'var(--teal-600)', fontWeight: 600 }}>—</td>
+                        <td></td>
+                        <td style={{ textAlign: 'right' }}>
+                          <span style={{ fontSize: 14, fontFamily: 'var(--font-display)', color: 'var(--teal-600)', fontWeight: 700 }}>
+                            +{fmt(unitCreditBalance)}
+                          </span>
                         </td>
                       </tr>
                     )}
@@ -946,8 +971,8 @@ function ReporteGeneralView({ tenantData, generalData, genLoading, cutoff, setCu
 
   return (
     <div className="content-fade">
-      {/* Period controls */}
-      <div className="card" style={{ marginBottom: 20 }}>
+      {/* Period controls — oculto al imprimir */}
+      <div className="card no-print" style={{ marginBottom: 20 }}>
         <div className="card-body" style={{ padding: '16px 24px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-600)' }}>Período:</span>
@@ -967,15 +992,15 @@ function ReporteGeneralView({ tenantData, generalData, genLoading, cutoff, setCu
             {startPeriod && (
               <span style={{ fontSize: 12, color: 'var(--ink-400)' }}>Inicio: {periodLabel(startPeriod)}</span>
             )}
-            <button className="btn btn-primary btn-sm no-print" style={{ marginLeft: 'auto' }} onClick={() => window.print()}>
+            <button className="btn btn-primary btn-sm" style={{ marginLeft: 'auto' }} onClick={() => window.print()}>
               <Printer size={14} /> Exportar PDF
             </button>
           </div>
         </div>
       </div>
 
-      {/* KPI Strip (HTML) */}
-      <div className="cob-stats" style={{ marginBottom: 20, gridTemplateColumns: 'repeat(4, 1fr)' }}>
+      {/* KPI Strip (HTML) — oculto al imprimir */}
+      <div className="cob-stats no-print" style={{ marginBottom: 20, gridTemplateColumns: 'repeat(4, 1fr)' }}>
         <div className="cob-stat">
           <div className="cob-stat-icon" style={{ background: 'var(--blue-50)', color: 'var(--blue-500)' }}><DollarSign size={18} /></div>
           <div>
@@ -1137,7 +1162,7 @@ function ReporteGeneralView({ tenantData, generalData, genLoading, cutoff, setCu
 
               {Object.entries(rd.ingresos_conceptos || {}).filter(([, obj]) => obj.total > 0).map(([fid, obj]) => (
                 <div key={fid} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--sand-50)' }}>
-                  <span style={{ fontSize: 13, color: 'var(--ink-600)' }}>{obj.label || fid}</span>
+                  <span style={{ fontSize: 13, color: 'var(--ink-600)' }}>{fid === '__prevDebt' ? 'Cobranza de deuda' : (obj.label || fid)}</span>
                   <span style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 600, color: 'var(--teal-600)' }}>{fmt2(obj.total)}</span>
                 </div>
               ))}

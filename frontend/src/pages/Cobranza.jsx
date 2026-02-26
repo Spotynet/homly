@@ -1323,7 +1323,9 @@ export default function Cobranza() {
       {showReceipt && (() => {
         const { unit, pay } = showReceipt;
         const tc = tenantData;
-        const maintCharge = parseFloat(tc?.maintenance_fee) || 0;
+        // Unidades exentas no tienen cargo de mantenimiento
+        const isReceiptExempt = !!unit?.admin_exempt;
+        const maintCharge = isReceiptExempt ? 0 : (parseFloat(tc?.maintenance_fee) || 0);
         const reqEFs = extraFields.filter(ef => ef.required);
         const optEFs = extraFields.filter(ef => !ef.required);
         const effTotals = getEffectiveFieldTotals(pay);
@@ -1521,7 +1523,14 @@ export default function Cobranza() {
                     </tfoot>
                   </table>
                   {pay?.notes && <div className="receipt-notes"><AlertCircle size={13} /> <strong>Notas:</strong> {pay.notes}</div>}
-                  <div style={{ display: 'flex', justifyContent: 'center', marginTop: 16 }}>{receiptStatusBadge(pay?.status)}</div>
+                  {isReceiptExempt && (
+                    <div className="receipt-notes" style={{ background: 'var(--teal-50)', borderColor: 'var(--teal-200)', color: 'var(--teal-700)', marginTop: 10 }}>
+                      🛡 Unidad Exenta — Sin cargo de mantenimiento base para este período
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', justifyContent: 'center', marginTop: 16 }}>
+                    {receiptStatusBadge(isReceiptExempt ? 'pagado' : pay?.status)}
+                  </div>
                   {pay?.evidence && <div style={{ marginTop: 12, textAlign: 'center', fontSize: 12, color: 'var(--blue-500)' }}><FileText size={14} style={{ display: 'inline', verticalAlign: -2, marginRight: 4 }} /> Evidencia adjunta</div>}
                   <div style={{ marginTop: 20, paddingTop: 14, borderTop: '1.5px solid var(--sand-100)', display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--ink-400)' }}>
                     <div><Calendar size={11} style={{ display: 'inline', verticalAlign: -2, marginRight: 4 }} /> <strong>Fecha de pago:</strong> {pdLabel}</div>
@@ -1541,8 +1550,17 @@ export default function Cobranza() {
               </div>
               <div className="modal-foot">
                 <button className="btn btn-secondary" onClick={() => setShowReceipt(null)}>Cerrar</button>
-                <button className="btn btn-primary" onClick={() => window.print()}>
-                  <Printer size={14} /> Imprimir
+                <button className="btn btn-primary" onClick={() => {
+                  const folioNum = pay?.folio || pay?.id?.slice(0, 8)?.toUpperCase() || 'SN';
+                  const tenantName = (tc?.name || '').replace(/[^a-zA-Z0-9À-ÿ\s]/g, '').trim();
+                  const unitCode = (unit?.unit_id_code || '').replace(/[^a-zA-Z0-9]/g, '');
+                  const periodo = pay?.period || '';
+                  const prevTitle = document.title;
+                  document.title = `Recibo de pago No. ${folioNum} ${tenantName} ${unitCode} ${periodo}`;
+                  window.print();
+                  setTimeout(() => { document.title = prevTitle; }, 1500);
+                }}>
+                  <Printer size={14} /> Imprimir / PDF
                 </button>
               </div>
             </div>

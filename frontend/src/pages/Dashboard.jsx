@@ -203,20 +203,21 @@ export default function Dashboard() {
   // Economic tab
   const cargosFijos        = s.total_expected ?? 0;
   const cobranza           = s.total_collected ?? 0;
+  const totalIngresos      = s.total_ingresos ?? (cobranza + (s.total_adeudo_recibido ?? 0) + (s.ingreso_adicional ?? 0));
   // Gastos: solo los conciliados (bank_reconciled=True)
   const gastos             = s.total_gastos_conciliados ?? 0;
   const pctCobVsCargos     = cargosFijos > 0 ? Math.round((cobranza / cargosFijos) * 100) : 0;
-  const pctGastosVsIng     = cobranza > 0 ? Math.round((gastos / cobranza) * 100) : 0;
-  // Ingresos adicionales: backend ya calcula (no-maintenance FieldPayments menos adeudo)
+  const pctGastosVsIng     = totalIngresos > 0 ? Math.round((gastos / totalIngresos) * 100) : 0;
+  // Ingresos adicionales: vs cobranza base de mantenimiento
   const ingAdicional       = s.ingreso_adicional ?? 0;
-  const pctIngAdicional    = cargosFijos > 0 ? Math.round((ingAdicional / cargosFijos) * 100) : 0;
+  const pctIngAdicional    = cobranza > 0 ? Math.round((ingAdicional / cobranza) * 100) : 0;
   // Recuperación de deuda
   const deudaTotal         = s.deuda_total ?? 0;
   const adeudoRecibido     = s.total_adeudo_recibido ?? 0;
   const pctDeudaRecuperada = deudaTotal > 0 ? Math.round((adeudoRecibido / deudaTotal) * 100) : 0;
 
   // Dynamic colors (match HTML ref F7)
-  const gviRatio = cobranza > 0 ? gastos / cobranza : 0;
+  const gviRatio = totalIngresos > 0 ? gastos / totalIngresos : 0;
   const gviBg  = gviRatio > 1 ? 'var(--coral-400)' : gviRatio >= 0.9 ? 'var(--amber-400)' : 'var(--teal-400)';
   const gviDk  = gviRatio > 1 ? 'var(--coral-600)' : gviRatio >= 0.9 ? 'var(--amber-700)' : 'var(--teal-700)';
   const cvcBg  = cobranza < cargosFijos ? 'var(--coral-400)' : 'var(--teal-400)';
@@ -232,12 +233,14 @@ export default function Dashboard() {
     ? t.common_areas.split(',').map(a => a.trim()).filter(Boolean)
     : (Array.isArray(t.common_areas) ? t.common_areas : []);
 
-  // Status counts for economic bars
+  // Status counts for economic bars (include exempt units)
+  const exemptCnt  = s.exempt_count ?? 0;
   const totalUnits = registered || 1;
   const bars = [
-    { label: 'Pagado',    count: s.paid_count ?? 0,    color: 'var(--teal-400)',  bg: 'var(--teal-50)' },
-    { label: 'Parcial',   count: s.partial_count ?? 0, color: 'var(--amber-400)', bg: 'var(--amber-50)' },
-    { label: 'Pendiente', count: s.pending_count ?? 0,  color: 'var(--coral-400)', bg: 'var(--coral-50)' },
+    { label: 'Pagado',    count: s.paid_count ?? 0,    color: 'var(--teal-400)',   bg: 'var(--teal-50)' },
+    { label: 'Parcial',   count: s.partial_count ?? 0, color: 'var(--amber-400)',  bg: 'var(--amber-50)' },
+    { label: 'Pendiente', count: s.pending_count ?? 0,  color: 'var(--coral-400)',  bg: 'var(--coral-50)' },
+    ...(exemptCnt > 0 ? [{ label: 'Exento', count: exemptCnt, color: 'var(--blue-400)', bg: 'var(--blue-50)' }] : []),
   ];
 
   return (
@@ -294,10 +297,11 @@ export default function Dashboard() {
               <div className="stat-label">Cobrado {monthLabel(s.period || period)}</div>
               <div className="stat-value">
                 {paidCnt}
-                <span style={{ fontSize: 14, color: 'var(--ink-400)' }}>/{registered}</span>
+                <span style={{ fontSize: 14, color: 'var(--ink-400)' }}>/{registered - (s.exempt_count ?? 0)}</span>
               </div>
               <div className="stat-sub">
                 {new Intl.NumberFormat('es-MX').format(totalColl)} recaudado
+                {(s.exempt_count ?? 0) > 0 && <span style={{ color: 'var(--blue-500)', marginLeft: 4 }}>· {s.exempt_count} exentas</span>}
               </div>
             </div>
           </div>
@@ -455,7 +459,11 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* 3 KPI stats (Cargos, Cobranza, Gastos) */}
+          {/* KPI's Económicos header + stats */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--teal-500)', flexShrink: 0 }} />
+            <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--teal-700)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>KPI's Económicos</span>
+          </div>
           <div className="stats" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))' }}>
             <div className="stat">
               <div className="stat-icon blue"><DollarSign size={20} /></div>
@@ -467,7 +475,13 @@ export default function Dashboard() {
               <div className="stat-icon teal"><Receipt size={20} /></div>
               <div className="stat-label">Cobranza Mensual</div>
               <div className="stat-value" style={{ fontSize: 20 }}>{fmt(cobranza)}</div>
-              <div className="stat-sub">recaudado en {monthLabel(period)}</div>
+              <div className="stat-sub">ingresos de cargos fijos</div>
+            </div>
+            <div className="stat">
+              <div className="stat-icon blue"><DollarSign size={20} /></div>
+              <div className="stat-label">Total Ingresos</div>
+              <div className="stat-value" style={{ fontSize: 20 }}>{fmt(totalIngresos)}</div>
+              <div className="stat-sub">cobranza + adicionales + adeudos</div>
             </div>
             <div className="stat">
               <div className="stat-icon coral"><ShoppingBag size={20} /></div>
@@ -496,8 +510,8 @@ export default function Dashboard() {
               darkColor={gviDk}
               row1Label="Gastos conciliados"
               row1Value={fmt(gastos)}
-              row2Label="Cobranza"
-              row2Value={fmt(cobranza)}
+              row2Label="Total ingresos"
+              row2Value={fmt(totalIngresos)}
             />
             <DonutCard
               title="Ingresos Adicionales"
@@ -506,8 +520,8 @@ export default function Dashboard() {
               darkColor="var(--blue-700)"
               row1Label="Adicional neto"
               row1Value={fmt(ingAdicional)}
-              row2Label="Adeudo recibido"
-              row2Value={fmt(adeudoRecibido)}
+              row2Label="vs Cobranza mensual"
+              row2Value={fmt(cobranza)}
             />
             <DonutCard
               title="Recuperación de Deuda"

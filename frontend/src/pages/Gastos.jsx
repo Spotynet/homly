@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { gastosAPI, cajaChicaAPI, extraFieldsAPI } from '../api/client';
-import { todayPeriod, periodLabel, prevPeriod, nextPeriod, fmtCurrency, fmtDate, PAYMENT_TYPES } from '../utils/helpers';
-import { ChevronLeft, ChevronRight, Plus, Edit, Trash2, X, ShoppingBag, DollarSign, Printer, Check } from 'lucide-react';
+import { todayPeriod, periodLabel, prevPeriod, nextPeriod, fmtDate, PAYMENT_TYPES } from '../utils/helpers';
+import { ChevronLeft, ChevronRight, Plus, Edit, Trash2, X, ShoppingBag, DollarSign, Printer, Check, AlertCircle } from 'lucide-react';
+import toast from 'react-hot-toast';
 
 const GASTO_PAYMENT_TYPES = [
   { value: 'transferencia', label: '🏦 Transferencia', short: 'Transferencia' },
@@ -10,10 +11,61 @@ const GASTO_PAYMENT_TYPES = [
   { value: 'efectivo', label: '💰 Efectivo', short: 'Efectivo' },
 ];
 const gastoPaymentLabel = (v) => GASTO_PAYMENT_TYPES.find(p => p.value === v)?.short || v || '—';
-import toast from 'react-hot-toast';
+
+// Caja Chica NO tiene Transferencia
+const CAJA_PAYMENT_TYPES = Object.entries(PAYMENT_TYPES)
+  .filter(([k]) => k !== 'transferencia')
+  .map(([k, v]) => ({ value: k, ...v }));
 
 function fmt(n) {
   return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n ?? 0);
+}
+
+function GastosTable({ rows, isReadOnly, onEdit, onDelete, showBadge }) {
+  const cols = isReadOnly ? 6 : 7;
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Concepto</th>
+            <th style={{ textAlign: 'right' }}>Monto</th>
+            <th>Forma de Pago</th>
+            <th>No. Doc</th>
+            <th>Fecha</th>
+            <th>Proveedor / Notas</th>
+            {!isReadOnly && <th style={{ width: 70 }}>Acc.</th>}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(g => (
+            <tr key={g.id}>
+              <td style={{ fontWeight: 600, fontSize: 13, color: 'var(--ink-700)' }}>
+                {g.field_label || '—'}
+                {showBadge && g.bank_reconciled && (
+                  <span style={{ marginLeft: 6, fontSize: 10, background: 'var(--teal-50)', color: 'var(--teal-700)', padding: '1px 6px', borderRadius: 10, fontWeight: 700 }}>🏦</span>
+                )}
+              </td>
+              <td style={{ textAlign: 'right', fontWeight: 700, fontSize: 13, color: 'var(--amber-700)' }}>{fmt(g.amount)}</td>
+              <td style={{ fontSize: 11 }}>{gastoPaymentLabel(g.payment_type)}</td>
+              <td style={{ fontSize: 11, color: 'var(--ink-500)' }}>{g.doc_number || '—'}</td>
+              <td style={{ fontSize: 11, color: 'var(--ink-500)' }}>{fmtDate(g.gasto_date)}</td>
+              <td style={{ fontSize: 11 }}>
+                <div>{g.provider_name || '—'}</div>
+                {g.notes && <div style={{ color: 'var(--ink-400)', fontStyle: 'italic', marginTop: 2 }}><AlertCircle size={10} style={{ display:'inline', verticalAlign: -1, marginRight: 3 }} />{g.notes}</div>}
+              </td>
+              {!isReadOnly && (
+                <td style={{ textAlign: 'center' }}>
+                  <button className="btn-icon" onClick={() => onEdit(g)}><Edit size={13} /></button>
+                  <button className="btn-icon" style={{ color: 'var(--coral-500)' }} onClick={() => onDelete(g)}><Trash2 size={13} /></button>
+                </td>
+              )}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 export default function Gastos() {
@@ -41,7 +93,13 @@ export default function Gastos() {
 
   useEffect(() => { load(); }, [tenantId, period]);
 
-  const totalGastos = gastos.reduce((s, g) => s + parseFloat(g.amount || 0), 0);
+  // Separar conciliados y no conciliados
+  const gastosConciliados = gastos.filter(g => g.bank_reconciled);
+  const gastosNoConciliados = gastos.filter(g => !g.bank_reconciled);
+  const totalGastosConciliados = gastosConciliados.reduce((s, g) => s + parseFloat(g.amount || 0), 0);
+  const totalGastosNoConciliados = gastosNoConciliados.reduce((s, g) => s + parseFloat(g.amount || 0), 0);
+  // Total de gastos = solo conciliados
+  const totalGastos = totalGastosConciliados;
   const totalCaja = cajaChica.reduce((s, c) => s + parseFloat(c.amount || 0), 0);
   const totalEgresos = totalGastos + totalCaja;
 
@@ -66,6 +124,7 @@ export default function Gastos() {
       provider_rfc: form.provider_rfc || '',
       provider_invoice: form.provider_invoice || '',
       bank_reconciled: !!form.bank_reconciled,
+      notes: form.notes || '',
     };
     try {
       if (form.id) await gastosAPI.update(tenantId, form.id, payload);
@@ -86,6 +145,14 @@ export default function Gastos() {
     } catch { toast.error('Error al guardar'); }
   };
 
+  const handleDeleteGasto = async (g) => {
+    if (window.confirm('¿Eliminar este gasto?')) {
+      await gastosAPI.delete(tenantId, g.id);
+      toast.success('Eliminado');
+      load();
+    }
+  };
+
   return (
     <div className="content-fade">
       {/* ── Period nav + Action buttons ── */}
@@ -103,12 +170,16 @@ export default function Gastos() {
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           {!isReadOnly && (
-            <button className="btn btn-primary btn-sm" onClick={() => { setForm({ amount: '', field: '', payment_type: 'transferencia', doc_number: '', gasto_date: '', provider_name: '', provider_rfc: '', provider_invoice: '', bank_reconciled: false }); setModal('gasto'); }}>
+            <button className="btn btn-primary btn-sm" onClick={() => {
+              setForm({ amount: '', field: '', payment_type: 'transferencia', doc_number: '', gasto_date: '', provider_name: '', provider_rfc: '', provider_invoice: '', bank_reconciled: false, notes: '' });
+              setModal('gasto');
+            }}>
               <Plus size={14} /> Nuevo Gasto
             </button>
           )}
           {!isReadOnly && (
-            <button className="btn btn-outline btn-sm" style={{ borderColor: 'var(--purple-200, var(--sand-200))', color: 'var(--purple-700, var(--ink-700))' }} onClick={() => { setForm({ amount: '', description: '', payment_type: 'efectivo' }); setModal('caja'); }}>
+            <button className="btn btn-outline btn-sm" style={{ borderColor: 'var(--purple-200, var(--sand-200))', color: 'var(--purple-700, var(--ink-700))' }}
+              onClick={() => { setForm({ amount: '', description: '', payment_type: 'efectivo' }); setModal('caja'); }}>
               <Plus size={14} /> Caja Chica
             </button>
           )}
@@ -118,84 +189,80 @@ export default function Gastos() {
         </div>
       </div>
 
-      {/* ── Gastos Collapsible Card ── */}
-      <div className="card" style={{ marginBottom: 16 }}>
-        <div
-          className="card-head"
-          style={{ cursor: 'pointer' }}
-          onClick={() => setGastosCollapsed(!gastosCollapsed)}
-        >
+      {/* ── Gastos Conciliados ── */}
+      <div className="card" style={{ marginBottom: 12 }}>
+        <div className="card-head" style={{ cursor: 'pointer' }} onClick={() => setGastosCollapsed(!gastosCollapsed)}>
           <h3 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             {gastosCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
             <ShoppingBag size={16} />
-            Gastos — {periodLabel(period)}
+            🏦 Gastos Conciliados — {periodLabel(period)}
           </h3>
-          <span className="badge badge-amber">{gastos.length} reg. · {fmt(totalGastos)}</span>
+          <span className="badge badge-teal">{gastosConciliados.length} reg. · {fmt(totalGastosConciliados)}</span>
         </div>
-
         {!gastosCollapsed && (
-          <>
-            {gastos.length === 0 ? (
-              <div className="card-body" style={{ textAlign: 'center', padding: 40, color: 'var(--ink-400)' }}>
-                <div style={{ fontSize: 36, marginBottom: 12 }}>📊</div>
-                <h4 style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink-600)', marginBottom: 4 }}>Sin registros de gastos</h4>
-                <p style={{ fontSize: 13, color: 'var(--ink-400)' }}>
-                  Agrega gastos con el botón "Nuevo Gasto"{fields.length === 0 ? ' · Activa campos de gastos en Config. Pagos' : ''}
-                </p>
+          gastosConciliados.length === 0 ? (
+            <div className="card-body" style={{ textAlign: 'center', padding: '24px 20px', color: 'var(--ink-400)', fontSize: 13 }}>
+              Sin gastos conciliados en este período
+            </div>
+          ) : (
+            <>
+              <GastosTable
+                rows={gastosConciliados}
+                isReadOnly={isReadOnly}
+                onEdit={g => { setForm(g); setModal('gasto'); }}
+                onDelete={handleDeleteGasto}
+                showBadge={false}
+              />
+              <div style={{ padding: '10px 20px', background: 'var(--teal-50)', borderTop: '1px solid var(--teal-100)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontWeight: 800, fontSize: 13, color: 'var(--teal-700)' }}>TOTAL GASTOS CONCILIADOS</span>
+                <span style={{ fontWeight: 800, fontSize: 15, color: 'var(--teal-700)' }}>{fmt(totalGastosConciliados)}</span>
               </div>
-            ) : (
-              <div className="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Concepto</th>
-                      <th style={{ textAlign: 'right' }}>Monto</th>
-                      <th>Forma de Pago</th>
-                      <th>No. Doc</th>
-                      <th>Fecha</th>
-                      <th>Proveedor</th>
-                      {!isReadOnly && <th style={{ width: 70 }}>Acc.</th>}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {gastos.map(g => (
-                      <tr key={g.id}>
-                        <td style={{ fontWeight: 600, fontSize: 13, color: 'var(--ink-700)' }}>{g.field_label || '—'}</td>
-                        <td style={{ textAlign: 'right', fontWeight: 700, fontSize: 13, color: 'var(--amber-700)' }}>{fmt(g.amount)}</td>
-                        <td style={{ fontSize: 11 }}>{gastoPaymentLabel(g.payment_type)}</td>
-                        <td style={{ fontSize: 11, color: 'var(--ink-500)' }}>{g.doc_number || '—'}</td>
-                        <td style={{ fontSize: 11, color: 'var(--ink-500)' }}>{fmtDate(g.gasto_date)}</td>
-                        <td style={{ fontSize: 11 }}>{g.provider_name || '—'}</td>
-                        {!isReadOnly && (
-                          <td style={{ textAlign: 'center' }}>
-                            <button className="btn-icon" onClick={() => { setForm(g); setModal('gasto'); }}><Edit size={13} /></button>
-                            <button className="btn-icon" style={{ color: 'var(--coral-500)' }} onClick={async () => {
-                              if (window.confirm('¿Eliminar este gasto?')) { await gastosAPI.delete(tenantId, g.id); toast.success('Eliminado'); load(); }
-                            }}><Trash2 size={13} /></button>
-                          </td>
-                        )}
-                      </tr>
-                    ))}
-                    <tr style={{ background: 'var(--amber-50)' }}>
-                      <td style={{ padding: 12, fontWeight: 800, color: 'var(--amber-800)' }}>TOTAL GASTOS</td>
-                      <td style={{ padding: 12, textAlign: 'right', fontWeight: 800, color: 'var(--amber-800)', fontSize: 15 }}>{fmt(totalGastos)}</td>
-                      <td colSpan={!isReadOnly ? 5 : 4}></td>
-                    </tr>
-                  </tbody>
-                </table>
+            </>
+          )
+        )}
+      </div>
+
+      {/* ── Gastos NO Conciliados (en tránsito) ── */}
+      <div className="card" style={{ marginBottom: 16, border: '1.5px solid var(--amber-200)' }}>
+        <div className="card-head" style={{ background: 'var(--amber-50)', cursor: 'pointer' }}
+          onClick={() => setGastosCollapsed(!gastosCollapsed)}>
+          <h3 style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--amber-700)' }}>
+            {gastosCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+            <ShoppingBag size={16} />
+            ⏳ Gastos en Tránsito (No Conciliados) — {periodLabel(period)}
+          </h3>
+          <span className="badge badge-amber">{gastosNoConciliados.length} reg. · {fmt(totalGastosNoConciliados)}</span>
+        </div>
+        {!gastosCollapsed && (
+          gastosNoConciliados.length === 0 ? (
+            <div className="card-body" style={{ textAlign: 'center', padding: '24px 20px', color: 'var(--ink-400)', fontSize: 13 }}>
+              Sin gastos pendientes de conciliación
+            </div>
+          ) : (
+            <>
+              <GastosTable
+                rows={gastosNoConciliados}
+                isReadOnly={isReadOnly}
+                onEdit={g => { setForm(g); setModal('gasto'); }}
+                onDelete={handleDeleteGasto}
+                showBadge={false}
+              />
+              <div style={{ padding: '10px 20px', background: 'var(--amber-50)', borderTop: '1px solid var(--amber-100)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontWeight: 800, fontSize: 13, color: 'var(--amber-700)' }}>
+                  TOTAL EN TRÁNSITO
+                  <span style={{ fontWeight: 400, fontSize: 11, marginLeft: 8, color: 'var(--ink-400)' }}>(no incluido en total de egresos)</span>
+                </span>
+                <span style={{ fontWeight: 800, fontSize: 15, color: 'var(--amber-700)' }}>{fmt(totalGastosNoConciliados)}</span>
               </div>
-            )}
-          </>
+            </>
+          )
         )}
       </div>
 
       {/* ── Caja Chica Collapsible Card (purple-themed) ── */}
-      <div className="card" style={{ marginTop: 16, border: '1.5px solid var(--purple-200, #DDD6FE)' }}>
-        <div
-          className="card-head"
-          style={{ background: 'var(--purple-50)', cursor: 'pointer' }}
-          onClick={() => setCajaCollapsed(!cajaCollapsed)}
-        >
+      <div className="card" style={{ marginTop: 4, border: '1.5px solid var(--purple-200, #DDD6FE)' }}>
+        <div className="card-head" style={{ background: 'var(--purple-50)', cursor: 'pointer' }}
+          onClick={() => setCajaCollapsed(!cajaCollapsed)}>
           <h3 style={{ color: 'var(--purple-700, #6D28D9)', display: 'flex', alignItems: 'center', gap: 8 }}>
             {cajaCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
             <DollarSign size={16} />
@@ -205,82 +272,80 @@ export default function Gastos() {
             {cajaChica.length} reg. · {fmt(totalCaja)}
           </span>
         </div>
-
         {!cajaCollapsed && (
-          <>
-            {cajaChica.length === 0 ? (
-              <div className="card-body" style={{ textAlign: 'center', padding: 24, color: 'var(--ink-400)', fontSize: 13 }}>
-                Sin registros de caja chica
-              </div>
-            ) : (
-              <div className="table-wrap">
-                <table>
-                  <thead>
-                    <tr style={{ background: 'var(--purple-50)' }}>
-                      <th>Descripción</th>
-                      <th style={{ textAlign: 'right' }}>Monto</th>
-                      <th>Tipo</th>
-                      <th>Fecha</th>
-                      {!isReadOnly && <th style={{ width: 70 }}>Acc.</th>}
+          cajaChica.length === 0 ? (
+            <div className="card-body" style={{ textAlign: 'center', padding: 24, color: 'var(--ink-400)', fontSize: 13 }}>
+              Sin registros de caja chica
+            </div>
+          ) : (
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr style={{ background: 'var(--purple-50)' }}>
+                    <th>Descripción</th>
+                    <th style={{ textAlign: 'right' }}>Monto</th>
+                    <th>Tipo</th>
+                    <th>Fecha</th>
+                    {!isReadOnly && <th style={{ width: 70 }}>Acc.</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {cajaChica.map(c => (
+                    <tr key={c.id} style={{ borderBottom: '1px solid var(--sand-100)' }}>
+                      <td style={{ fontWeight: 600, color: 'var(--purple-700, #6D28D9)', fontSize: 13 }}>{c.description}</td>
+                      <td style={{ textAlign: 'right', fontWeight: 700, fontSize: 13, color: 'var(--purple-700, #6D28D9)' }}>{fmt(c.amount)}</td>
+                      <td style={{ fontSize: 11 }}>{PAYMENT_TYPES[c.payment_type]?.short || c.payment_type || '—'}</td>
+                      <td style={{ fontSize: 11, color: 'var(--ink-500)' }}>{fmtDate(c.date)}</td>
+                      {!isReadOnly && (
+                        <td style={{ textAlign: 'center' }}>
+                          <button className="btn-icon" onClick={() => { setForm(c); setModal('caja'); }}><Edit size={13} /></button>
+                          <button className="btn-icon" style={{ color: 'var(--coral-500)' }} onClick={async () => {
+                            if (window.confirm('¿Eliminar?')) { await cajaChicaAPI.delete(tenantId, c.id); toast.success('Eliminado'); load(); }
+                          }}><Trash2 size={13} /></button>
+                        </td>
+                      )}
                     </tr>
-                  </thead>
-                  <tbody>
-                    {cajaChica.map(c => (
-                      <tr key={c.id} style={{ borderBottom: '1px solid var(--sand-100)' }}>
-                        <td style={{ fontWeight: 600, color: 'var(--purple-700, #6D28D9)', fontSize: 13 }}>{c.description}</td>
-                        <td style={{ textAlign: 'right', fontWeight: 700, fontSize: 13, color: 'var(--purple-700, #6D28D9)' }}>{fmt(c.amount)}</td>
-                        <td style={{ fontSize: 11 }}>{PAYMENT_TYPES[c.payment_type]?.short || c.payment_type || '—'}</td>
-                        <td style={{ fontSize: 11, color: 'var(--ink-500)' }}>{fmtDate(c.date)}</td>
-                        {!isReadOnly && (
-                          <td style={{ textAlign: 'center' }}>
-                            <button className="btn-icon" onClick={() => { setForm(c); setModal('caja'); }}><Edit size={13} /></button>
-                            <button className="btn-icon" style={{ color: 'var(--coral-500)' }} onClick={async () => {
-                              if (window.confirm('¿Eliminar?')) { await cajaChicaAPI.delete(tenantId, c.id); toast.success('Eliminado'); load(); }
-                            }}><Trash2 size={13} /></button>
-                          </td>
-                        )}
-                      </tr>
-                    ))}
-                    <tr style={{ background: 'var(--purple-50)' }}>
-                      <td style={{ padding: '10px 12px', fontWeight: 800, color: 'var(--purple-800, #5B21B6)' }}>TOTAL CAJA CHICA</td>
-                      <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 800, color: 'var(--purple-800, #5B21B6)', fontSize: 15 }}>{fmt(totalCaja)}</td>
-                      <td colSpan={!isReadOnly ? 3 : 2}></td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </>
+                  ))}
+                  <tr style={{ background: 'var(--purple-50)' }}>
+                    <td style={{ padding: '10px 12px', fontWeight: 800, color: 'var(--purple-800, #5B21B6)' }}>TOTAL CAJA CHICA</td>
+                    <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 800, color: 'var(--purple-800, #5B21B6)', fontSize: 15 }}>{fmt(totalCaja)}</td>
+                    <td colSpan={!isReadOnly ? 3 : 2}></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          )
         )}
       </div>
 
       {/* ── Total Egresos Banner ── */}
       <div style={{
-        marginTop: 16,
-        padding: 16,
+        marginTop: 16, padding: 16,
         background: 'var(--amber-50)',
         border: '2px solid var(--amber-200, #FDE68A)',
         borderRadius: 'var(--radius-md)',
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
       }}>
         <div>
           <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--amber-700)', display: 'flex', alignItems: 'center', gap: 8 }}>
-            <ShoppingBag size={16} /> Total Egresos {periodLabel(period)}
+            <ShoppingBag size={16} /> Total Egresos Conciliados {periodLabel(period)}
           </div>
-          {totalCaja > 0 && (
-            <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 4 }}>
-              Gastos: {fmt(totalGastos)} + Caja Chica: {fmt(totalCaja)}
-            </div>
-          )}
+          <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 4 }}>
+            Gastos conciliados: {fmt(totalGastosConciliados)}
+            {totalCaja > 0 && ` + Caja Chica: ${fmt(totalCaja)}`}
+            {totalGastosNoConciliados > 0 && (
+              <span style={{ color: 'var(--amber-600)', marginLeft: 8 }}>
+                · En tránsito (no incluido): {fmt(totalGastosNoConciliados)}
+              </span>
+            )}
+          </div>
         </div>
         <span style={{ fontFamily: 'var(--font-display)', fontSize: 24, fontWeight: 600, color: 'var(--amber-700)' }}>
           {fmt(totalEgresos)}
         </span>
       </div>
 
-      {/* ── Gasto Modal (igual al HTML addGastoEntry) ── */}
+      {/* ── Gasto Modal ── */}
       {modal === 'gasto' && (
         <div className="modal-bg open" onClick={() => setModal(null)}>
           <div className="modal lg" onClick={e => e.stopPropagation()}>
@@ -323,6 +388,20 @@ export default function Gastos() {
                   </label>
                 </div>
               </div>
+
+              {/* Notas */}
+              <div style={{ marginTop: 12 }}>
+                <label className="field-label">Notas</label>
+                <textarea
+                  className="field-input"
+                  rows={2}
+                  placeholder="Observaciones, descripción adicional del gasto..."
+                  value={form.notes || ''}
+                  onChange={e => setForm({ ...form, notes: e.target.value })}
+                  style={{ resize: 'vertical', minHeight: 56 }}
+                />
+              </div>
+
               <div style={{ marginTop: 12, fontSize: 11, fontWeight: 700, color: 'var(--ink-500)', textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: '1px solid var(--sand-100)', paddingBottom: 6 }}>Proveedor</div>
               <div className="form-grid" style={{ marginTop: 8 }}>
                 <div className="field">
@@ -347,7 +426,7 @@ export default function Gastos() {
         </div>
       )}
 
-      {/* ── Caja Chica Modal ── */}
+      {/* ── Caja Chica Modal (sin Transferencia) ── */}
       {modal === 'caja' && (
         <div className="modal-bg open" onClick={() => setModal(null)}>
           <div className="modal" onClick={e => e.stopPropagation()}>
@@ -367,8 +446,10 @@ export default function Gastos() {
                 </div>
                 <div className="field">
                   <label className="field-label">Forma de Pago</label>
-                  <select className="field-select" value={form.payment_type || ''} onChange={e => setForm({ ...form, payment_type: e.target.value })}>
-                    {Object.entries(PAYMENT_TYPES).map(([k, v]) => <option key={k} value={k}>{v.short || v.label}</option>)}
+                  <select className="field-select" value={form.payment_type || 'efectivo'} onChange={e => setForm({ ...form, payment_type: e.target.value })}>
+                    {CAJA_PAYMENT_TYPES.map(p => (
+                      <option key={p.value} value={p.value}>{p.short || p.label}</option>
+                    ))}
                   </select>
                 </div>
                 <div className="field">

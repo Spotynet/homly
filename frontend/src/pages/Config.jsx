@@ -264,6 +264,7 @@ export default function Config() {
         occupancy: unitForm.occupancy || 'propietario',
         previous_debt: parseFloat(unitForm.previous_debt) || 0,
         previous_debt_evidence: unitForm.previous_debt_evidence || '',
+        credit_balance: parseFloat(unitForm.credit_balance) || 0,
         admin_exempt: !!unitForm.admin_exempt,
         owner_first_name: unitForm.owner_first_name || '',
         owner_last_name: unitForm.owner_last_name || '',
@@ -578,7 +579,7 @@ export default function Config() {
               </div>
               {isAdmin && (
                 <button className="btn btn-primary" onClick={() => {
-                  setUnitForm({ unit_name:'', unit_id_code:'', owner_first_name:'', owner_last_name:'', owner_email:'', owner_phone:'', occupancy:'propietario', previous_debt:0, previous_debt_evidence:'', admin_exempt:false, tenant_first_name:'', tenant_last_name:'', tenant_email:'', tenant_phone:'' });
+                  setUnitForm({ unit_name:'', unit_id_code:'', owner_first_name:'', owner_last_name:'', owner_email:'', owner_phone:'', occupancy:'propietario', previous_debt:0, previous_debt_evidence:'', credit_balance:0, admin_exempt:false, tenant_first_name:'', tenant_last_name:'', tenant_email:'', tenant_phone:'' });
                   setUnitModal('add');
                 }}>
                   <Plus size={14} /> Nueva Unidad
@@ -1419,6 +1420,13 @@ export default function Config() {
                   }}><FileText size={12}/> Ver</button>
                 )}
               </div>
+            </div>
+            <div className="field">
+              <label className="field-label">Saldo a Favor Previo</label>
+              <input className="field-input" type="number" step="0.01" min="0" placeholder="0.00"
+                value={unitForm.credit_balance || 0}
+                onChange={e=>setUnitForm(f=>({...f,credit_balance:parseFloat(e.target.value)||0}))} />
+              <div style={{ fontSize:11, color:'var(--teal-600)', marginTop:4 }}>Saldo a favor acumulado antes del inicio de operaciones (reduce el adeudo inicial)</div>
             </div>
           </div>
           <div className="form-section-label">Propietario</div>

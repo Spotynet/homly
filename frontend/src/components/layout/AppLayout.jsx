@@ -149,10 +149,7 @@ export default function AppLayout() {
             <div className="sidebar-footer-role" style={{ color: roleConfig.color, fontWeight: 600 }}>
               {roleConfig.label}
             </div>
-            <div className="version-badge">
-              v{APP_VERSION} · <span style={{ color: 'var(--teal-500)' }}>💾 Auto-guardado</span>
-            </div>
-            <div className="version-badge">Powered by Spotynet</div>
+            <div className="version-badge">v{APP_VERSION} · Powered by Spotynet</div>
           </div>
           <button onClick={handleLogout} className="logout-btn" title="Cerrar sesión">
             <LogOut size={16} />

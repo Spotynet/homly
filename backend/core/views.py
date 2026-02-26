@@ -572,11 +572,14 @@ class DashboardView(APIView):
         tenant = Tenant.objects.get(id=tenant_id)
         units = Unit.objects.filter(tenant_id=tenant_id)
         total_units = units.count()
+        exempt_count = units.filter(admin_exempt=True).count()
 
         payments = Payment.objects.filter(tenant_id=tenant_id, period=period)
         paid_count = payments.filter(status='pagado').count()
         partial_count = payments.filter(status='parcial').count()
-        pending_count = max(0, total_units - paid_count - partial_count)
+        # pending = non-exempt units without a paid/partial payment
+        non_exempt_units = total_units - exempt_count
+        pending_count = max(0, non_exempt_units - paid_count - partial_count)
 
         # Total collected
         total_collected = FieldPayment.objects.filter(
@@ -584,14 +587,16 @@ class DashboardView(APIView):
             payment__period=period,
         ).aggregate(total=Sum('received'))['total'] or Decimal('0')
 
-        total_expected = tenant.maintenance_fee * total_units
+        # Cargos fijos: solo unidades no exentas
+        billable_units = total_units - exempt_count
+        total_expected = tenant.maintenance_fee * billable_units
 
         # Required extra fields
         req_fields = ExtraField.objects.filter(
             tenant_id=tenant_id, enabled=True, required=True
         )
         for ef in req_fields:
-            total_expected += ef.default_amount * total_units
+            total_expected += ef.default_amount * billable_units
 
         collection_rate = (
             float(total_collected / total_expected * 100) if total_expected > 0 else 0
@@ -633,6 +638,9 @@ class DashboardView(APIView):
         # Deuda total = suma de previous_debt de todas las unidades del tenant
         deuda_total = units.aggregate(total=Sum('previous_debt'))['total'] or Decimal('0')
 
+        # Total ingresos del periodo = cobranza + adeudo recibido + ingreso adicional
+        total_ingresos = total_collected + total_adeudo_recibido + ingreso_adicional
+
         data = {
             'total_units': total_units,
             'units_planned': tenant.units_count,
@@ -643,6 +651,7 @@ class DashboardView(APIView):
             'paid_count': paid_count,
             'partial_count': partial_count,
             'pending_count': pending_count,
+            'exempt_count': exempt_count,
             'total_gastos': float(total_gastos),
             'total_gastos_conciliados': float(total_gastos_conciliados),
             'total_caja_chica': float(total_caja),
@@ -651,6 +660,7 @@ class DashboardView(APIView):
             'ingreso_adicional': float(ingreso_adicional),
             'total_adeudo_recibido': float(total_adeudo_recibido),
             'deuda_total': float(deuda_total),
+            'total_ingresos': float(total_ingresos),
         }
         return Response(DashboardSerializer(data).data)
 
@@ -718,6 +728,7 @@ def _compute_statement(tenant, unit_id, start_period, cutoff_period):
 
     unit = Unit.objects.filter(id=unit_id, tenant_id=tenant.id).first()
     previous_debt = float(unit.previous_debt or 0) if unit else 0
+    credit_balance = float(unit.credit_balance or 0) if unit else 0
 
     payments_qs = Payment.objects.filter(
         tenant_id=tenant.id, unit_id=unit_id
@@ -746,7 +757,8 @@ def _compute_statement(tenant, unit_id, start_period, cutoff_period):
             else:
                 adeudo_credits_received[target_p] = adeudo_credits_received.get(target_p, Decimal('0')) + total
 
-    saldo_acum = max(Decimal('0'), Decimal(str(previous_debt)) - prev_debt_adeudo)
+    # Saldo inicial = deuda anterior - abonos a deuda - saldo a favor previo
+    saldo_acum = max(Decimal('0'), Decimal(str(previous_debt)) - prev_debt_adeudo - Decimal(str(credit_balance)))
 
     periods = _periods_between(start_period, cutoff_period)
     rows = []
@@ -868,7 +880,7 @@ class EstadoCuentaView(APIView):
                 total_ingresos_no_identificados += Decimal(str(ui.amount or 0))
 
             for unit in units:
-                rows, tc, tp, bal = _compute_statement(tenant, str(unit.id), start_period, cutoff)
+                rows, tc, tp, bal, _pda = _compute_statement(tenant, str(unit.id), start_period, cutoff)
                 total_cargo += Decimal(str(tc))
                 total_abono += Decimal(str(tp))
                 deuda = max(Decimal('0'), Decimal(str(bal)))
@@ -929,6 +941,7 @@ class EstadoCuentaView(APIView):
             'previous_debt': float(previous_debt),
             'prev_debt_adeudo': prev_debt_adeudo_val,
             'net_prev_debt': net_prev_debt,
+            'credit_balance': float(credit_balance),
         })
 
 
@@ -1069,7 +1082,8 @@ def _compute_report_data(tenant, period):
                     else:
                         if f_id not in ingresos_conceptos:
                             cf3 = cf_map.get(f_id)
-                            ingresos_conceptos[f_id] = {'total': Decimal('0'), 'label': getattr(cf3, 'label', f_id) if cf3 else f_id}
+                            default_label = 'Cobranza de deuda' if f_id == '__prevDebt' else f_id
+                            ingresos_conceptos[f_id] = {'total': Decimal('0'), 'label': getattr(cf3, 'label', default_label) if cf3 else default_label}
                         ingresos_conceptos[f_id]['total'] += a3
 
         # Additional payments (igual que HTML: cuando main está conciliado, incluir adicionales)
