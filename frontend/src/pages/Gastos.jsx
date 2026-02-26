@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { gastosAPI, cajaChicaAPI, extraFieldsAPI } from '../api/client';
+import { gastosAPI, cajaChicaAPI, extraFieldsAPI, tenantsAPI } from '../api/client';
 import { todayPeriod, periodLabel, prevPeriod, nextPeriod, fmtDate, PAYMENT_TYPES } from '../utils/helpers';
 import { ChevronLeft, ChevronRight, Plus, Edit, Trash2, X, ShoppingBag, DollarSign, Printer, Check, AlertCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -21,8 +21,11 @@ function fmt(n) {
   return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n ?? 0);
 }
 
+function fmtShort(n) {
+  return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n ?? 0);
+}
+
 function GastosTable({ rows, isReadOnly, onEdit, onDelete, showBadge }) {
-  const cols = isReadOnly ? 6 : 7;
   return (
     <div className="table-wrap">
       <table>
@@ -68,12 +71,287 @@ function GastosTable({ rows, isReadOnly, onEdit, onDelete, showBadge }) {
   );
 }
 
+/* ══════════════════════════════════════════════════════════════
+   PDF EJECUTIVO — se muestra solo al imprimir (body.printing-gastos)
+   ══════════════════════════════════════════════════════════════ */
+function GastosPrintLayout({ tenant, period, gastosConciliados, gastosNoConciliados, cajaChica, totalGastosConciliados, totalGastosNoConciliados, totalCaja }) {
+
+  // Agrupar gastos conciliados por categoría (field_label)
+  const gruposConciliados = gastosConciliados.reduce((acc, g) => {
+    const cat = g.field_label || 'Sin categoría';
+    if (!acc[cat]) acc[cat] = [];
+    acc[cat].push(g);
+    return acc;
+  }, {});
+
+  const tenantName  = tenant?.razon_social || tenant?.name || 'Condominio';
+  const tenantRFC   = tenant?.rfc || '';
+  const tenantAddr  = [tenant?.info_calle, tenant?.info_num_externo, tenant?.info_colonia, tenant?.info_ciudad]
+    .filter(Boolean).join(', ');
+  const tenantLogo  = tenant?.logo || null;
+  const genDate     = new Date().toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric' });
+  const periodStr   = periodLabel(period);
+
+  const thStyle = {
+    background: '#1E3A5F', color: '#fff', fontSize: 9,
+    fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em',
+    padding: '6px 8px', textAlign: 'left', borderRight: '1px solid rgba(255,255,255,0.15)',
+  };
+  const tdStyle = (extra = {}) => ({
+    fontSize: 11, padding: '6px 8px', borderBottom: '1px solid #EEE',
+    verticalAlign: 'top', ...extra,
+  });
+  const sectionHeaderStyle = (color = '#1E3A5F', bg = '#EBF0FA') => ({
+    display: 'flex', alignItems: 'center', gap: 8,
+    background: bg, borderLeft: `4px solid ${color}`,
+    padding: '7px 12px', marginBottom: 0, marginTop: 18,
+  });
+
+  return (
+    <div className="gastos-print-layout" style={{ fontFamily: 'Arial, Helvetica, sans-serif', color: '#1A1612', fontSize: 12 }}>
+
+      {/* ── MEMBRETE ── */}
+      <div style={{
+        display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+        borderBottom: '3px solid #1E3A5F', paddingBottom: 14, marginBottom: 20,
+      }}>
+        {/* Logo + Datos tenant */}
+        <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
+          {tenantLogo && (
+            <img src={tenantLogo} alt="Logo" style={{ width: 64, height: 64, objectFit: 'contain', borderRadius: 8 }} />
+          )}
+          <div>
+            <div style={{ fontSize: 17, fontWeight: 700, color: '#1E3A5F', lineHeight: 1.2 }}>{tenantName}</div>
+            {tenantRFC && <div style={{ fontSize: 10, color: '#555', marginTop: 3 }}>RFC: <strong>{tenantRFC}</strong></div>}
+            {tenantAddr && <div style={{ fontSize: 10, color: '#666', marginTop: 2 }}>{tenantAddr}</div>}
+            {tenant?.phone && <div style={{ fontSize: 10, color: '#666', marginTop: 1 }}>Tel: {tenant.phone}</div>}
+          </div>
+        </div>
+        {/* Título del reporte */}
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ fontSize: 20, fontWeight: 700, color: '#1E3A5F', letterSpacing: '-0.02em' }}>REPORTE DE EGRESOS</div>
+          <div style={{ fontSize: 13, color: '#666', marginTop: 4 }}>Período: <strong style={{ color: '#1E3A5F' }}>{periodStr}</strong></div>
+          <div style={{
+            marginTop: 8, display: 'inline-block', padding: '4px 12px',
+            background: '#1E3A5F', color: '#fff', borderRadius: 4, fontSize: 10,
+            fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em',
+          }}>
+            Conciliación Bancaria
+          </div>
+        </div>
+      </div>
+
+      {/* ── SECCIÓN 1: GASTOS CONCILIADOS ── */}
+      <div style={sectionHeaderStyle('#0D6E55', '#E6F7F3')}>
+        <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#0D6E55', flexShrink: 0 }} />
+        <span style={{ fontSize: 11, fontWeight: 800, color: '#0D6E55', textTransform: 'uppercase', letterSpacing: '0.07em', flex: 1 }}>
+          Gastos Conciliados
+        </span>
+        <span style={{ fontSize: 10, color: '#555' }}>{gastosConciliados.length} registro(s)</span>
+      </div>
+
+      {gastosConciliados.length === 0 ? (
+        <div style={{ padding: '10px 12px', fontSize: 11, color: '#999', fontStyle: 'italic', borderBottom: '1px solid #EEE' }}>
+          Sin gastos conciliados en este período
+        </div>
+      ) : (
+        Object.entries(gruposConciliados).map(([cat, items]) => {
+          const subtotal = items.reduce((s, g) => s + parseFloat(g.amount || 0), 0);
+          return (
+            <div key={cat} style={{ marginBottom: 6 }}>
+              {/* Sub-encabezado de categoría */}
+              <div style={{ background: '#F0F7FF', padding: '4px 10px', fontSize: 10, fontWeight: 700, color: '#1E3A5F', borderBottom: '1px solid #DDEEFF', letterSpacing: '0.04em' }}>
+                {cat.toUpperCase()}
+              </div>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <th style={{ ...thStyle, width: '22%' }}>Forma de Pago</th>
+                    <th style={{ ...thStyle, width: '12%' }}>No. Doc.</th>
+                    <th style={{ ...thStyle, width: '10%' }}>Fecha</th>
+                    <th style={{ ...thStyle, width: '22%' }}>Proveedor</th>
+                    <th style={{ ...thStyle, width: '22%' }}>RFC / Factura</th>
+                    <th style={{ ...thStyle, width: '12%', textAlign: 'right' }}>Monto</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((g, i) => (
+                    <tr key={g.id} style={{ background: i % 2 === 0 ? '#fff' : '#FAFAFA' }}>
+                      <td style={tdStyle()}>{gastoPaymentLabel(g.payment_type)}</td>
+                      <td style={tdStyle({ fontFamily: 'monospace', fontSize: 10 })}>{g.doc_number || '—'}</td>
+                      <td style={tdStyle({ fontSize: 10 })}>{fmtDate(g.gasto_date)}</td>
+                      <td style={tdStyle()}>
+                        {g.provider_name || '—'}
+                        {g.notes && <div style={{ fontSize: 9, color: '#888', fontStyle: 'italic', marginTop: 1 }}>{g.notes}</div>}
+                      </td>
+                      <td style={tdStyle({ fontSize: 10, color: '#555' })}>
+                        {g.provider_rfc && <div style={{ fontFamily: 'monospace' }}>{g.provider_rfc}</div>}
+                        {g.provider_invoice && <div>Fac: {g.provider_invoice}</div>}
+                        {!g.provider_rfc && !g.provider_invoice && '—'}
+                      </td>
+                      <td style={tdStyle({ textAlign: 'right', fontWeight: 700, color: '#B45309' })}>{fmt(g.amount)}</td>
+                    </tr>
+                  ))}
+                  {/* Subtotal por categoría */}
+                  <tr>
+                    <td colSpan={5} style={{ padding: '5px 8px', fontSize: 10, fontWeight: 700, color: '#0D6E55', background: '#F0FDF4', borderTop: '1.5px solid #BBF7D0', textAlign: 'right' }}>
+                      Subtotal {cat}
+                    </td>
+                    <td style={{ padding: '5px 8px', textAlign: 'right', fontWeight: 800, fontSize: 12, color: '#0D6E55', background: '#F0FDF4', borderTop: '1.5px solid #BBF7D0' }}>
+                      {fmt(subtotal)}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          );
+        })
+      )}
+
+      {/* Total gastos conciliados */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#0D6E55', color: '#fff', padding: '10px 14px', marginTop: 6, borderRadius: 4 }}>
+        <span style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Total Gastos Conciliados</span>
+        <span style={{ fontSize: 18, fontWeight: 700 }}>{fmt(totalGastosConciliados)}</span>
+      </div>
+
+      {/* ── SECCIÓN 2: GASTOS EN TRÁNSITO (informativo) ── */}
+      {gastosNoConciliados.length > 0 && (
+        <>
+          <div style={{ ...sectionHeaderStyle('#B45309', '#FFFBEB'), marginTop: 22 }}>
+            <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#B45309', flexShrink: 0 }} />
+            <span style={{ fontSize: 11, fontWeight: 800, color: '#B45309', textTransform: 'uppercase', letterSpacing: '0.07em', flex: 1 }}>
+              Gastos en Tránsito — Pendientes de Conciliación
+            </span>
+            <span style={{ fontSize: 10, color: '#888', fontStyle: 'italic' }}>Solo informativo · no incluido en total</span>
+          </div>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr>
+                <th style={{ ...thStyle, background: '#92400E', width: '28%' }}>Concepto</th>
+                <th style={{ ...thStyle, background: '#92400E', width: '20%' }}>Forma de Pago</th>
+                <th style={{ ...thStyle, background: '#92400E', width: '14%' }}>No. Doc.</th>
+                <th style={{ ...thStyle, background: '#92400E', width: '12%' }}>Fecha</th>
+                <th style={{ ...thStyle, background: '#92400E', width: '14%' }}>Proveedor</th>
+                <th style={{ ...thStyle, background: '#92400E', width: '12%', textAlign: 'right' }}>Monto</th>
+              </tr>
+            </thead>
+            <tbody>
+              {gastosNoConciliados.map((g, i) => (
+                <tr key={g.id} style={{ background: i % 2 === 0 ? '#FFFBEB' : '#FEF3C7' }}>
+                  <td style={tdStyle({ fontWeight: 600 })}>{g.field_label || '—'}</td>
+                  <td style={tdStyle()}>{gastoPaymentLabel(g.payment_type)}</td>
+                  <td style={tdStyle({ fontSize: 10, fontFamily: 'monospace' })}>{g.doc_number || '—'}</td>
+                  <td style={tdStyle({ fontSize: 10 })}>{fmtDate(g.gasto_date)}</td>
+                  <td style={tdStyle()}>{g.provider_name || '—'}</td>
+                  <td style={tdStyle({ textAlign: 'right', fontWeight: 700, color: '#92400E' })}>{fmt(g.amount)}</td>
+                </tr>
+              ))}
+              <tr>
+                <td colSpan={5} style={{ padding: '5px 8px', fontSize: 10, fontWeight: 700, color: '#92400E', background: '#FEF3C7', borderTop: '1.5px solid #FCD34D', textAlign: 'right' }}>
+                  Total en Tránsito (referencial)
+                </td>
+                <td style={{ padding: '5px 8px', textAlign: 'right', fontWeight: 800, fontSize: 12, color: '#92400E', background: '#FEF3C7', borderTop: '1.5px solid #FCD34D' }}>
+                  {fmt(totalGastosNoConciliados)}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </>
+      )}
+
+      {/* ── SECCIÓN 3: CAJA CHICA (informativo) ── */}
+      {cajaChica.length > 0 && (
+        <>
+          <div style={{ ...sectionHeaderStyle('#5B21B6', '#F5F3FF'), marginTop: 22 }}>
+            <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#5B21B6', flexShrink: 0 }} />
+            <span style={{ fontSize: 11, fontWeight: 800, color: '#5B21B6', textTransform: 'uppercase', letterSpacing: '0.07em', flex: 1 }}>
+              Caja Chica
+            </span>
+            <span style={{ fontSize: 10, color: '#888', fontStyle: 'italic' }}>Solo informativo · no incluido en total</span>
+          </div>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr>
+                <th style={{ ...thStyle, background: '#4C1D95', width: '44%' }}>Descripción</th>
+                <th style={{ ...thStyle, background: '#4C1D95', width: '22%' }}>Forma de Pago</th>
+                <th style={{ ...thStyle, background: '#4C1D95', width: '16%' }}>Fecha</th>
+                <th style={{ ...thStyle, background: '#4C1D95', width: '18%', textAlign: 'right' }}>Monto</th>
+              </tr>
+            </thead>
+            <tbody>
+              {cajaChica.map((c, i) => (
+                <tr key={c.id} style={{ background: i % 2 === 0 ? '#FAF5FF' : '#F3E8FF' }}>
+                  <td style={tdStyle({ fontWeight: 600, color: '#5B21B6' })}>{c.description}</td>
+                  <td style={tdStyle()}>{PAYMENT_TYPES[c.payment_type]?.short || c.payment_type || '—'}</td>
+                  <td style={tdStyle({ fontSize: 10 })}>{fmtDate(c.date)}</td>
+                  <td style={tdStyle({ textAlign: 'right', fontWeight: 700, color: '#5B21B6' })}>{fmt(c.amount)}</td>
+                </tr>
+              ))}
+              <tr>
+                <td colSpan={3} style={{ padding: '5px 8px', fontSize: 10, fontWeight: 700, color: '#5B21B6', background: '#EDE9FE', borderTop: '1.5px solid #C4B5FD', textAlign: 'right' }}>
+                  Total Caja Chica (referencial)
+                </td>
+                <td style={{ padding: '5px 8px', textAlign: 'right', fontWeight: 800, fontSize: 12, color: '#5B21B6', background: '#EDE9FE', borderTop: '1.5px solid #C4B5FD' }}>
+                  {fmt(totalCaja)}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </>
+      )}
+
+      {/* ── RESUMEN FINAL ── */}
+      <div style={{ marginTop: 24, borderTop: '2px solid #1E3A5F', paddingTop: 14 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 20 }}>
+          {/* Desglose */}
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#555', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Desglose</div>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+              <tbody>
+                <tr>
+                  <td style={{ padding: '3px 0', color: '#555' }}>Gastos conciliados</td>
+                  <td style={{ textAlign: 'right', fontWeight: 600, color: '#0D6E55' }}>{fmt(totalGastosConciliados)}</td>
+                </tr>
+                {gastosNoConciliados.length > 0 && (
+                  <tr>
+                    <td style={{ padding: '3px 0', color: '#888', fontStyle: 'italic' }}>En tránsito (ref.)</td>
+                    <td style={{ textAlign: 'right', color: '#B45309', fontStyle: 'italic' }}>{fmt(totalGastosNoConciliados)}</td>
+                  </tr>
+                )}
+                {cajaChica.length > 0 && (
+                  <tr>
+                    <td style={{ padding: '3px 0', color: '#888', fontStyle: 'italic' }}>Caja chica (ref.)</td>
+                    <td style={{ textAlign: 'right', color: '#5B21B6', fontStyle: 'italic' }}>{fmt(totalCaja)}</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          {/* Total principal */}
+          <div style={{ background: '#1E3A5F', color: '#fff', padding: '14px 22px', borderRadius: 6, textAlign: 'right', minWidth: 200 }}>
+            <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em', opacity: 0.75, marginBottom: 4 }}>Total Egresos Conciliados</div>
+            <div style={{ fontSize: 24, fontWeight: 700 }}>{fmt(totalGastosConciliados)}</div>
+            <div style={{ fontSize: 9, opacity: 0.6, marginTop: 4 }}>Período {periodStr}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── PIE DE PÁGINA ── */}
+      <div style={{ marginTop: 18, paddingTop: 10, borderTop: '1px solid #DDD', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 9, color: '#999' }}>
+        <span>Generado el {genDate} · Sistema Homly</span>
+        <span style={{ fontStyle: 'italic' }}>Documento de uso interno — Conciliación Bancaria</span>
+      </div>
+    </div>
+  );
+}
+
 export default function Gastos() {
   const { tenantId, isReadOnly } = useAuth();
   const [period, setPeriod] = useState(todayPeriod());
   const [gastos, setGastos] = useState([]);
   const [cajaChica, setCajaChica] = useState([]);
   const [fields, setFields] = useState([]);
+  const [tenant, setTenant] = useState(null);
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState({});
   const [gastosCollapsed, setGastosCollapsed] = useState(false);
@@ -81,27 +359,41 @@ export default function Gastos() {
 
   const load = async () => {
     if (!tenantId) return;
-    const [g, cc, ef] = await Promise.all([
+    const [g, cc, ef, tn] = await Promise.all([
       gastosAPI.list(tenantId, { period, page_size: 9999 }),
       cajaChicaAPI.list(tenantId, { period, page_size: 9999 }),
       extraFieldsAPI.list(tenantId, { page_size: 9999 }),
+      tenantsAPI.get(tenantId).catch(() => ({ data: null })),
     ]);
     setGastos(g.data.results || g.data);
     setCajaChica(cc.data.results || cc.data);
     setFields((ef.data.results || ef.data).filter(f => f.field_type === 'gastos' && f.enabled));
+    setTenant(tn.data);
   };
 
   useEffect(() => { load(); }, [tenantId, period]);
 
   // Separar conciliados y no conciliados
-  const gastosConciliados = gastos.filter(g => g.bank_reconciled);
-  const gastosNoConciliados = gastos.filter(g => !g.bank_reconciled);
-  const totalGastosConciliados = gastosConciliados.reduce((s, g) => s + parseFloat(g.amount || 0), 0);
+  const gastosConciliados    = gastos.filter(g => g.bank_reconciled);
+  const gastosNoConciliados  = gastos.filter(g => !g.bank_reconciled);
+  const totalGastosConciliados   = gastosConciliados.reduce((s, g) => s + parseFloat(g.amount || 0), 0);
   const totalGastosNoConciliados = gastosNoConciliados.reduce((s, g) => s + parseFloat(g.amount || 0), 0);
-  // Total de gastos = solo conciliados
+  // Total de gastos = SOLO conciliados (caja chica es informativa)
   const totalGastos = totalGastosConciliados;
-  const totalCaja = cajaChica.reduce((s, c) => s + parseFloat(c.amount || 0), 0);
-  const totalEgresos = totalGastos + totalCaja;
+  const totalCaja   = cajaChica.reduce((s, c) => s + parseFloat(c.amount || 0), 0);
+  // Egresos del periodo = solo gastos conciliados (caja chica NO se suma)
+  const totalEgresos = totalGastos;
+
+  const handlePrint = () => {
+    const prev = document.title;
+    document.title = `Reporte de Egresos ${periodLabel(period)} - ${tenant?.name || ''}`;
+    document.body.classList.add('printing-gastos');
+    window.print();
+    setTimeout(() => {
+      document.body.classList.remove('printing-gastos');
+      document.title = prev;
+    }, 1500);
+  };
 
   const saveGasto = async () => {
     const amount = parseFloat(form.amount);
@@ -155,195 +447,224 @@ export default function Gastos() {
 
   return (
     <div className="content-fade">
-      {/* ── Period nav + Action buttons ── */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 20 }}>
-        <div className="period-nav">
-          <button className="period-nav-btn" onClick={() => setPeriod(prevPeriod(period))}><ChevronLeft size={16} /></button>
-          <input
-            type="month"
-            className="period-month-select"
-            style={{ fontSize: 15, fontWeight: 700 }}
-            value={period}
-            onChange={e => setPeriod(e.target.value)}
-          />
-          <button className="period-nav-btn" onClick={() => setPeriod(nextPeriod(period))}><ChevronRight size={16} /></button>
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          {!isReadOnly && (
-            <button className="btn btn-primary btn-sm" onClick={() => {
-              setForm({ amount: '', field: '', payment_type: 'transferencia', doc_number: '', gasto_date: '', provider_name: '', provider_rfc: '', provider_invoice: '', bank_reconciled: false, notes: '' });
-              setModal('gasto');
-            }}>
-              <Plus size={14} /> Nuevo Gasto
-            </button>
-          )}
-          {!isReadOnly && (
-            <button className="btn btn-outline btn-sm" style={{ borderColor: 'var(--purple-200, var(--sand-200))', color: 'var(--purple-700, var(--ink-700))' }}
-              onClick={() => { setForm({ amount: '', description: '', payment_type: 'efectivo' }); setModal('caja'); }}>
-              <Plus size={14} /> Caja Chica
-            </button>
-          )}
-          <button className="btn btn-outline btn-sm" onClick={() => window.print()}>
-            <Printer size={14} /> Imprimir
-          </button>
-        </div>
-      </div>
 
-      {/* ── Gastos Conciliados ── */}
-      <div className="card" style={{ marginBottom: 12 }}>
-        <div className="card-head" style={{ cursor: 'pointer' }} onClick={() => setGastosCollapsed(!gastosCollapsed)}>
-          <h3 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {gastosCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
-            <ShoppingBag size={16} />
-            🏦 Gastos Conciliados — {periodLabel(period)}
-          </h3>
-          <span className="badge badge-teal">{gastosConciliados.length} reg. · {fmt(totalGastosConciliados)}</span>
+      {/* ── PDF ejecutivo (oculto en pantalla, visible solo al imprimir con body.printing-gastos) ── */}
+      <GastosPrintLayout
+        tenant={tenant}
+        period={period}
+        gastosConciliados={gastosConciliados}
+        gastosNoConciliados={gastosNoConciliados}
+        cajaChica={cajaChica}
+        totalGastosConciliados={totalGastosConciliados}
+        totalGastosNoConciliados={totalGastosNoConciliados}
+        totalCaja={totalCaja}
+      />
+
+      {/* ══════════════════════════════════════════════════════
+          VISTA DE PANTALLA (oculta al imprimir gastos)
+          ══════════════════════════════════════════════════════ */}
+      <div className="gastos-screen-only">
+        {/* ── Period nav + Action buttons ── */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 20 }}>
+          <div className="period-nav">
+            <button className="period-nav-btn" onClick={() => setPeriod(prevPeriod(period))}><ChevronLeft size={16} /></button>
+            <input
+              type="month"
+              className="period-month-select"
+              style={{ fontSize: 15, fontWeight: 700 }}
+              value={period}
+              onChange={e => setPeriod(e.target.value)}
+            />
+            <button className="period-nav-btn" onClick={() => setPeriod(nextPeriod(period))}><ChevronRight size={16} /></button>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {!isReadOnly && (
+              <button className="btn btn-primary btn-sm" onClick={() => {
+                setForm({ amount: '', field: '', payment_type: 'transferencia', doc_number: '', gasto_date: '', provider_name: '', provider_rfc: '', provider_invoice: '', bank_reconciled: false, notes: '' });
+                setModal('gasto');
+              }}>
+                <Plus size={14} /> Nuevo Gasto
+              </button>
+            )}
+            {!isReadOnly && (
+              <button className="btn btn-outline btn-sm" style={{ borderColor: 'var(--purple-200, var(--sand-200))', color: 'var(--purple-700, var(--ink-700))' }}
+                onClick={() => { setForm({ amount: '', description: '', payment_type: 'efectivo' }); setModal('caja'); }}>
+                <Plus size={14} /> Caja Chica
+              </button>
+            )}
+            <button className="btn btn-outline btn-sm" onClick={handlePrint}>
+              <Printer size={14} /> Imprimir
+            </button>
+          </div>
         </div>
-        {!gastosCollapsed && (
-          gastosConciliados.length === 0 ? (
-            <div className="card-body" style={{ textAlign: 'center', padding: '24px 20px', color: 'var(--ink-400)', fontSize: 13 }}>
-              Sin gastos conciliados en este período
-            </div>
-          ) : (
-            <>
-              <GastosTable
-                rows={gastosConciliados}
-                isReadOnly={isReadOnly}
-                onEdit={g => { setForm(g); setModal('gasto'); }}
-                onDelete={handleDeleteGasto}
-                showBadge={false}
-              />
-              <div style={{ padding: '10px 20px', background: 'var(--teal-50)', borderTop: '1px solid var(--teal-100)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontWeight: 800, fontSize: 13, color: 'var(--teal-700)' }}>TOTAL GASTOS CONCILIADOS</span>
-                <span style={{ fontWeight: 800, fontSize: 15, color: 'var(--teal-700)' }}>{fmt(totalGastosConciliados)}</span>
+
+        {/* ── Gastos Conciliados ── */}
+        <div className="card" style={{ marginBottom: 12 }}>
+          <div className="card-head" style={{ cursor: 'pointer' }} onClick={() => setGastosCollapsed(!gastosCollapsed)}>
+            <h3 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {gastosCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+              <ShoppingBag size={16} />
+              🏦 Gastos Conciliados — {periodLabel(period)}
+            </h3>
+            <span className="badge badge-teal">{gastosConciliados.length} reg. · {fmt(totalGastosConciliados)}</span>
+          </div>
+          {!gastosCollapsed && (
+            gastosConciliados.length === 0 ? (
+              <div className="card-body" style={{ textAlign: 'center', padding: '24px 20px', color: 'var(--ink-400)', fontSize: 13 }}>
+                Sin gastos conciliados en este período
               </div>
-            </>
-          )
-        )}
-      </div>
-
-      {/* ── Gastos NO Conciliados (en tránsito) ── */}
-      <div className="card" style={{ marginBottom: 16, border: '1.5px solid var(--amber-200)' }}>
-        <div className="card-head" style={{ background: 'var(--amber-50)', cursor: 'pointer' }}
-          onClick={() => setGastosCollapsed(!gastosCollapsed)}>
-          <h3 style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--amber-700)' }}>
-            {gastosCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
-            <ShoppingBag size={16} />
-            ⏳ Gastos en Tránsito (No Conciliados) — {periodLabel(period)}
-          </h3>
-          <span className="badge badge-amber">{gastosNoConciliados.length} reg. · {fmt(totalGastosNoConciliados)}</span>
+            ) : (
+              <>
+                <GastosTable
+                  rows={gastosConciliados}
+                  isReadOnly={isReadOnly}
+                  onEdit={g => { setForm(g); setModal('gasto'); }}
+                  onDelete={handleDeleteGasto}
+                  showBadge={false}
+                />
+                <div style={{ padding: '10px 20px', background: 'var(--teal-50)', borderTop: '1px solid var(--teal-100)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontWeight: 800, fontSize: 13, color: 'var(--teal-700)' }}>TOTAL GASTOS CONCILIADOS</span>
+                  <span style={{ fontWeight: 800, fontSize: 15, color: 'var(--teal-700)' }}>{fmt(totalGastosConciliados)}</span>
+                </div>
+              </>
+            )
+          )}
         </div>
-        {!gastosCollapsed && (
-          gastosNoConciliados.length === 0 ? (
-            <div className="card-body" style={{ textAlign: 'center', padding: '24px 20px', color: 'var(--ink-400)', fontSize: 13 }}>
-              Sin gastos pendientes de conciliación
+
+        {/* ── Gastos NO Conciliados (en tránsito) ── */}
+        <div className="card" style={{ marginBottom: 16, border: '1.5px solid var(--amber-200)' }}>
+          <div className="card-head" style={{ background: 'var(--amber-50)', cursor: 'pointer' }}
+            onClick={() => setGastosCollapsed(!gastosCollapsed)}>
+            <h3 style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--amber-700)' }}>
+              {gastosCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+              <ShoppingBag size={16} />
+              ⏳ Gastos en Tránsito (No Conciliados) — {periodLabel(period)}
+            </h3>
+            <span className="badge badge-amber">{gastosNoConciliados.length} reg. · {fmt(totalGastosNoConciliados)}</span>
+          </div>
+          {!gastosCollapsed && (
+            gastosNoConciliados.length === 0 ? (
+              <div className="card-body" style={{ textAlign: 'center', padding: '24px 20px', color: 'var(--ink-400)', fontSize: 13 }}>
+                Sin gastos pendientes de conciliación
+              </div>
+            ) : (
+              <>
+                <GastosTable
+                  rows={gastosNoConciliados}
+                  isReadOnly={isReadOnly}
+                  onEdit={g => { setForm(g); setModal('gasto'); }}
+                  onDelete={handleDeleteGasto}
+                  showBadge={false}
+                />
+                <div style={{ padding: '10px 20px', background: 'var(--amber-50)', borderTop: '1px solid var(--amber-100)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontWeight: 800, fontSize: 13, color: 'var(--amber-700)' }}>
+                    TOTAL EN TRÁNSITO
+                    <span style={{ fontWeight: 400, fontSize: 11, marginLeft: 8, color: 'var(--ink-400)' }}>(no incluido en total de egresos)</span>
+                  </span>
+                  <span style={{ fontWeight: 800, fontSize: 15, color: 'var(--amber-700)' }}>{fmt(totalGastosNoConciliados)}</span>
+                </div>
+              </>
+            )
+          )}
+        </div>
+
+        {/* ── Caja Chica Collapsible Card (purple-themed) ── */}
+        <div className="card" style={{ marginTop: 4, border: '1.5px solid var(--purple-200, #DDD6FE)' }}>
+          <div className="card-head" style={{ background: 'var(--purple-50)', cursor: 'pointer' }}
+            onClick={() => setCajaCollapsed(!cajaCollapsed)}>
+            <h3 style={{ color: 'var(--purple-700, #6D28D9)', display: 'flex', alignItems: 'center', gap: 8 }}>
+              {cajaCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+              <DollarSign size={16} />
+              Caja Chica — {periodLabel(period)}
+              <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--ink-400)', marginLeft: 4 }}>(informativo)</span>
+            </h3>
+            <span className="badge" style={{ background: 'var(--purple-100, #EDE9FE)', color: 'var(--purple-700, #6D28D9)' }}>
+              {cajaChica.length} reg. · {fmt(totalCaja)}
+            </span>
+          </div>
+          {!cajaCollapsed && (
+            cajaChica.length === 0 ? (
+              <div className="card-body" style={{ textAlign: 'center', padding: 24, color: 'var(--ink-400)', fontSize: 13 }}>
+                Sin registros de caja chica
+              </div>
+            ) : (
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr style={{ background: 'var(--purple-50)' }}>
+                      <th>Descripción</th>
+                      <th style={{ textAlign: 'right' }}>Monto</th>
+                      <th>Tipo</th>
+                      <th>Fecha</th>
+                      {!isReadOnly && <th style={{ width: 70 }}>Acc.</th>}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {cajaChica.map(c => (
+                      <tr key={c.id} style={{ borderBottom: '1px solid var(--sand-100)' }}>
+                        <td style={{ fontWeight: 600, color: 'var(--purple-700, #6D28D9)', fontSize: 13 }}>{c.description}</td>
+                        <td style={{ textAlign: 'right', fontWeight: 700, fontSize: 13, color: 'var(--purple-700, #6D28D9)' }}>{fmt(c.amount)}</td>
+                        <td style={{ fontSize: 11 }}>{PAYMENT_TYPES[c.payment_type]?.short || c.payment_type || '—'}</td>
+                        <td style={{ fontSize: 11, color: 'var(--ink-500)' }}>{fmtDate(c.date)}</td>
+                        {!isReadOnly && (
+                          <td style={{ textAlign: 'center' }}>
+                            <button className="btn-icon" onClick={() => { setForm(c); setModal('caja'); }}><Edit size={13} /></button>
+                            <button className="btn-icon" style={{ color: 'var(--coral-500)' }} onClick={async () => {
+                              if (window.confirm('¿Eliminar?')) { await cajaChicaAPI.delete(tenantId, c.id); toast.success('Eliminado'); load(); }
+                            }}><Trash2 size={13} /></button>
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                    <tr style={{ background: 'var(--purple-50)' }}>
+                      <td style={{ padding: '10px 12px', fontWeight: 800, color: 'var(--purple-800, #5B21B6)' }}>
+                        TOTAL CAJA CHICA
+                        <span style={{ fontSize: 10, fontWeight: 400, color: 'var(--ink-400)', marginLeft: 6 }}>(solo informativo)</span>
+                      </td>
+                      <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 800, color: 'var(--purple-800, #5B21B6)', fontSize: 15 }}>{fmt(totalCaja)}</td>
+                      <td colSpan={!isReadOnly ? 3 : 2}></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            )
+          )}
+        </div>
+
+        {/* ── Total Egresos Banner ── */}
+        <div style={{
+          marginTop: 16, padding: 16,
+          background: 'var(--teal-50)',
+          border: '2px solid var(--teal-200)',
+          borderRadius: 'var(--radius-md)',
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        }}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--teal-700)', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <ShoppingBag size={16} /> Total Egresos del Período — {periodLabel(period)}
             </div>
-          ) : (
-            <>
-              <GastosTable
-                rows={gastosNoConciliados}
-                isReadOnly={isReadOnly}
-                onEdit={g => { setForm(g); setModal('gasto'); }}
-                onDelete={handleDeleteGasto}
-                showBadge={false}
-              />
-              <div style={{ padding: '10px 20px', background: 'var(--amber-50)', borderTop: '1px solid var(--amber-100)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontWeight: 800, fontSize: 13, color: 'var(--amber-700)' }}>
-                  TOTAL EN TRÁNSITO
-                  <span style={{ fontWeight: 400, fontSize: 11, marginLeft: 8, color: 'var(--ink-400)' }}>(no incluido en total de egresos)</span>
+            <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 4 }}>
+              Gastos conciliados: {fmt(totalGastosConciliados)}
+            </div>
+            <div style={{ fontSize: 10, color: 'var(--ink-300)', marginTop: 2 }}>
+              {totalGastosNoConciliados > 0 && (
+                <span style={{ color: 'var(--amber-600)' }}>
+                  En tránsito (ref.): {fmt(totalGastosNoConciliados)}
                 </span>
-                <span style={{ fontWeight: 800, fontSize: 15, color: 'var(--amber-700)' }}>{fmt(totalGastosNoConciliados)}</span>
-              </div>
-            </>
-          )
-        )}
-      </div>
-
-      {/* ── Caja Chica Collapsible Card (purple-themed) ── */}
-      <div className="card" style={{ marginTop: 4, border: '1.5px solid var(--purple-200, #DDD6FE)' }}>
-        <div className="card-head" style={{ background: 'var(--purple-50)', cursor: 'pointer' }}
-          onClick={() => setCajaCollapsed(!cajaCollapsed)}>
-          <h3 style={{ color: 'var(--purple-700, #6D28D9)', display: 'flex', alignItems: 'center', gap: 8 }}>
-            {cajaCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
-            <DollarSign size={16} />
-            Caja Chica — {periodLabel(period)}
-          </h3>
-          <span className="badge" style={{ background: 'var(--purple-100, #EDE9FE)', color: 'var(--purple-700, #6D28D9)' }}>
-            {cajaChica.length} reg. · {fmt(totalCaja)}
+              )}
+              {totalGastosNoConciliados > 0 && totalCaja > 0 && ' · '}
+              {totalCaja > 0 && (
+                <span style={{ color: 'var(--purple-600, #7C3AED)' }}>
+                  Caja chica (ref.): {fmt(totalCaja)}
+                </span>
+              )}
+            </div>
+          </div>
+          <span style={{ fontFamily: 'var(--font-display)', fontSize: 26, fontWeight: 700, color: 'var(--teal-700)' }}>
+            {fmt(totalEgresos)}
           </span>
         </div>
-        {!cajaCollapsed && (
-          cajaChica.length === 0 ? (
-            <div className="card-body" style={{ textAlign: 'center', padding: 24, color: 'var(--ink-400)', fontSize: 13 }}>
-              Sin registros de caja chica
-            </div>
-          ) : (
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr style={{ background: 'var(--purple-50)' }}>
-                    <th>Descripción</th>
-                    <th style={{ textAlign: 'right' }}>Monto</th>
-                    <th>Tipo</th>
-                    <th>Fecha</th>
-                    {!isReadOnly && <th style={{ width: 70 }}>Acc.</th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {cajaChica.map(c => (
-                    <tr key={c.id} style={{ borderBottom: '1px solid var(--sand-100)' }}>
-                      <td style={{ fontWeight: 600, color: 'var(--purple-700, #6D28D9)', fontSize: 13 }}>{c.description}</td>
-                      <td style={{ textAlign: 'right', fontWeight: 700, fontSize: 13, color: 'var(--purple-700, #6D28D9)' }}>{fmt(c.amount)}</td>
-                      <td style={{ fontSize: 11 }}>{PAYMENT_TYPES[c.payment_type]?.short || c.payment_type || '—'}</td>
-                      <td style={{ fontSize: 11, color: 'var(--ink-500)' }}>{fmtDate(c.date)}</td>
-                      {!isReadOnly && (
-                        <td style={{ textAlign: 'center' }}>
-                          <button className="btn-icon" onClick={() => { setForm(c); setModal('caja'); }}><Edit size={13} /></button>
-                          <button className="btn-icon" style={{ color: 'var(--coral-500)' }} onClick={async () => {
-                            if (window.confirm('¿Eliminar?')) { await cajaChicaAPI.delete(tenantId, c.id); toast.success('Eliminado'); load(); }
-                          }}><Trash2 size={13} /></button>
-                        </td>
-                      )}
-                    </tr>
-                  ))}
-                  <tr style={{ background: 'var(--purple-50)' }}>
-                    <td style={{ padding: '10px 12px', fontWeight: 800, color: 'var(--purple-800, #5B21B6)' }}>TOTAL CAJA CHICA</td>
-                    <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 800, color: 'var(--purple-800, #5B21B6)', fontSize: 15 }}>{fmt(totalCaja)}</td>
-                    <td colSpan={!isReadOnly ? 3 : 2}></td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          )
-        )}
-      </div>
-
-      {/* ── Total Egresos Banner ── */}
-      <div style={{
-        marginTop: 16, padding: 16,
-        background: 'var(--amber-50)',
-        border: '2px solid var(--amber-200, #FDE68A)',
-        borderRadius: 'var(--radius-md)',
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-      }}>
-        <div>
-          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--amber-700)', display: 'flex', alignItems: 'center', gap: 8 }}>
-            <ShoppingBag size={16} /> Total Egresos Conciliados {periodLabel(period)}
-          </div>
-          <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 4 }}>
-            Gastos conciliados: {fmt(totalGastosConciliados)}
-            {totalCaja > 0 && ` + Caja Chica: ${fmt(totalCaja)}`}
-            {totalGastosNoConciliados > 0 && (
-              <span style={{ color: 'var(--amber-600)', marginLeft: 8 }}>
-                · En tránsito (no incluido): {fmt(totalGastosNoConciliados)}
-              </span>
-            )}
-          </div>
-        </div>
-        <span style={{ fontFamily: 'var(--font-display)', fontSize: 24, fontWeight: 600, color: 'var(--amber-700)' }}>
-          {fmt(totalEgresos)}
-        </span>
-      </div>
+      </div>{/* /gastos-screen-only */}
 
       {/* ── Gasto Modal ── */}
       {modal === 'gasto' && (

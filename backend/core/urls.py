@@ -46,4 +46,6 @@ urlpatterns = [
          views.EstadoCuentaView.as_view(), name='estado-cuenta'),
     path('tenants/<uuid:tenant_id>/reporte-general/',
          views.ReporteGeneralView.as_view(), name='reporte-general'),
+    path('tenants/<uuid:tenant_id>/reporte-adeudos/',
+         views.ReporteAdeudosView.as_view(), name='reporte-adeudos'),
 ]

@@ -73,17 +73,6 @@ export default function Login() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="field-label">Condominio / Tenant</label>
-              <select className="field-select" value={selectedTenant}
-                onChange={e => setSelectedTenant(e.target.value)}>
-                <option value="__super">— Super Administrador —</option>
-                {tenants.map(t => (
-                  <option key={t.id} value={t.id}>{t.name}</option>
-                ))}
-              </select>
-            </div>
-
-            <div>
               <label className="field-label">Correo Electrónico</label>
               <input type="email" className="field-input" placeholder="usuario@email.com"
                 value={email} onChange={e => setEmail(e.target.value)} required />

@@ -766,6 +766,21 @@ tr:hover td { background: rgba(59,185,144,0.02); }
   /* Tablas: evitar cortes de filas entre páginas */
   body.printing-ec .ec-table,
   body.printing-ec .ec-summary-strip { break-inside: avoid; }
+
+  /* ── Gastos: imprimir solo el layout ejecutivo ── */
+  body.printing-gastos * { visibility: hidden; }
+  body.printing-gastos .gastos-print-layout,
+  body.printing-gastos .gastos-print-layout * { visibility: visible; }
+  body.printing-gastos .gastos-print-layout {
+    position: fixed;
+    inset: 0;
+    background: white !important;
+    padding: 0;
+    overflow: visible !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  body.printing-gastos .gastos-screen-only { display: none !important; }
 }
 
 /* ─── Status ─── */

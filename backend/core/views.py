@@ -1189,6 +1189,79 @@ def _compute_saldo_inicial(tenant, target_period):
     return float(running)
 
 
+class ReporteAdeudosView(APIView):
+    """GET /api/tenants/{tenant_id}/reporte-adeudos/?cutoff=YYYY-MM
+    Returns per-unit debt breakdown: previous debt + unpaid periods up to cutoff."""
+    permission_classes = [IsTenantMember]
+
+    def get(self, request, tenant_id):
+        cutoff = request.query_params.get('cutoff') or _today_period()
+
+        tenant = Tenant.objects.get(id=tenant_id)
+        start_period = tenant.operation_start_date or '2024-01'
+        units = Unit.objects.filter(tenant_id=tenant_id).order_by('unit_id_code')
+
+        result = []
+        grand_total = Decimal('0')
+        units_with_debt = 0
+
+        for unit in units:
+            rows, tc, tp, bal, prev_debt_adeudo = _compute_statement(
+                tenant, str(unit.id), start_period, cutoff
+            )
+            previous_debt = Decimal(str(unit.previous_debt or 0))
+            credit_balance = Decimal(str(unit.credit_balance or 0))
+            prev_debt_adeudo_dec = Decimal(str(prev_debt_adeudo))
+
+            net_prev_debt = max(
+                Decimal('0'),
+                previous_debt - prev_debt_adeudo_dec - credit_balance
+            )
+
+            # Periods with outstanding debt (charge > paid)
+            period_debts = []
+            for row in rows:
+                deficit = Decimal(str(row['charge'])) - Decimal(str(row['paid']))
+                if deficit > Decimal('0'):
+                    period_debts.append({
+                        'period': row['period'],
+                        'charge': float(row['charge']),
+                        'paid': float(row['paid']),
+                        'deficit': float(deficit),
+                        'status': row['status'],
+                        'maintenance': float(row['maintenance']),
+                    })
+
+            total_adeudo = net_prev_debt + sum(
+                Decimal(str(pd['deficit'])) for pd in period_debts
+            )
+
+            if total_adeudo > Decimal('0'):
+                units_with_debt += 1
+                grand_total += total_adeudo
+                result.append({
+                    'unit': UnitSerializer(unit).data,
+                    'net_prev_debt': float(net_prev_debt),
+                    'previous_debt': float(previous_debt),
+                    'prev_debt_adeudo': float(prev_debt_adeudo_dec),
+                    'credit_balance': float(credit_balance),
+                    'period_debts': period_debts,
+                    'total_adeudo': float(total_adeudo),
+                })
+
+        result.sort(key=lambda x: x['total_adeudo'], reverse=True)
+
+        return Response({
+            'tenant': TenantDetailSerializer(tenant).data,
+            'cutoff': cutoff,
+            'start_period': start_period,
+            'units': result,
+            'grand_total_adeudo': float(grand_total),
+            'units_with_debt': units_with_debt,
+            'total_units': units.count(),
+        })
+
+
 class ReporteGeneralView(APIView):
     """GET /api/tenants/{tenant_id}/reporte-general/?period=YYYY-MM"""
     permission_classes = [IsTenantMember]

@@ -22,6 +22,9 @@ export default function EstadoCuenta() {
   const [view, setView] = useState('units');
   const [generalData, setGeneralData] = useState(null);
   const [genLoading, setGenLoading] = useState(false);
+  const [adeudosData, setAdeudosData] = useState(null);
+  const [adeudosLoading, setAdeudosLoading] = useState(false);
+  const [adeudosCutoff, setAdeudosCutoff] = useState(todayPeriod());
   const [cutoff, setCutoff] = useState(todayPeriod());
   const [tenantData, setTenantData] = useState(null);
   const [detailFrom, setDetailFrom] = useState('');
@@ -93,6 +96,16 @@ export default function EstadoCuenta() {
       setGeneralData(r.data);
     }).catch(() => {}).finally(() => setGenLoading(false));
   }, [view, tenantId, cutoff]);
+
+  // Load reporte de adeudos
+  useEffect(() => {
+    if (view !== 'adeudos' || !tenantId) return;
+    setAdeudosLoading(true);
+    reportsAPI.reporteAdeudos(tenantId, { cutoff: adeudosCutoff })
+      .then(r => setAdeudosData(r.data))
+      .catch(() => {})
+      .finally(() => setAdeudosLoading(false));
+  }, [view, tenantId, adeudosCutoff]);
 
   // Marcar body para estilos de impresión (PDF = pantalla)
   useEffect(() => {
@@ -196,6 +209,9 @@ export default function EstadoCuenta() {
           </button>
           <button className={`ec-view-btn ${view === 'reporte' ? 'active' : ''}`} onClick={() => { setView('reporte'); setSelectedUnit(null); }}>
             <DollarSign size={14} /> Reporte General
+          </button>
+          <button className={`ec-view-btn ${view === 'adeudos' ? 'active' : ''}`} onClick={() => { setView('adeudos'); setSelectedUnit(null); }}>
+            <AlertCircle size={14} /> Reporte de Adeudos
           </button>
         </div>
       )}
@@ -579,6 +595,18 @@ export default function EstadoCuenta() {
               setCutoff={setCutoff}
               startPeriod={startPeriod}
               user={user} role={role}
+            />
+          )}
+
+          {/* ════════════════════════ REPORTE DE ADEUDOS ════════════════════════ */}
+          {view === 'adeudos' && (
+            <ReporteAdeudosView
+              tenantData={tenantData}
+              adeudosData={adeudosData}
+              adeudosLoading={adeudosLoading}
+              cutoff={adeudosCutoff}
+              setCutoff={setAdeudosCutoff}
+              startPeriod={startPeriod}
             />
           )}
 
@@ -1330,6 +1358,287 @@ function ReporteGeneralView({ tenantData, generalData, genLoading, cutoff, setCu
               </span>
             </div>
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
+   REPORTE DE ADEUDOS — deuda por unidad con corte de período
+   ═══════════════════════════════════════════════════════════ */
+function ReporteAdeudosView({ tenantData, adeudosData, adeudosLoading, cutoff, setCutoff, startPeriod }) {
+  const [search, setSearch] = useState('');
+  const [expanded, setExpanded] = useState({});
+  const toggle = (id) => setExpanded(prev => ({ ...prev, [id]: !prev[id] }));
+
+  const units = adeudosData?.units || [];
+  const grandTotal = parseFloat(adeudosData?.grand_total_adeudo || 0);
+  const unitsWithDebt = adeudosData?.units_with_debt || 0;
+  const totalUnits = adeudosData?.total_units || 0;
+  const avgDebt = unitsWithDebt > 0 ? grandTotal / unitsWithDebt : 0;
+
+  const filtered = useMemo(() => {
+    if (!search) return units;
+    const q = search.toLowerCase();
+    return units.filter(u =>
+      (u.unit?.unit_id_code || '').toLowerCase().includes(q) ||
+      (u.unit?.unit_name || '').toLowerCase().includes(q) ||
+      (u.unit?.responsible_name || '').toLowerCase().includes(q)
+    );
+  }, [units, search]);
+
+  const handlePrint = () => {
+    const prev = document.title;
+    document.title = `Reporte de Adeudos — Corte ${periodLabel(cutoff)} — ${tenantData?.name || ''}`;
+    window.print();
+    setTimeout(() => { document.title = prev; }, 1500);
+  };
+
+  return (
+    <div>
+      {/* Controls */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
+        <div className="ec-search-bar">
+          <Search size={16} style={{ color: 'var(--ink-400)', flexShrink: 0 }} />
+          <input
+            placeholder="Buscar unidad o residente..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontSize: 12, color: 'var(--ink-500)' }}>Corte:</span>
+          <input
+            type="month"
+            className="period-month-select"
+            value={cutoff}
+            onChange={e => setCutoff(e.target.value)}
+            max={todayPeriod()}
+            min={startPeriod}
+          />
+        </div>
+        <button
+          className="btn btn-outline btn-sm no-print"
+          style={{ marginLeft: 'auto' }}
+          onClick={handlePrint}
+        >
+          <Printer size={14} /> Imprimir / PDF
+        </button>
+      </div>
+
+      {/* KPI Cards */}
+      <div className="cob-stats" style={{ marginBottom: 20 }}>
+        <div className="cob-stat">
+          <div className="cob-stat-icon" style={{ background: 'var(--coral-50)', color: 'var(--coral-500)' }}>
+            <AlertCircle size={18} />
+          </div>
+          <div>
+            <div className="cob-stat-label">Unidades con Adeudo</div>
+            <div className="cob-stat-value">{unitsWithDebt} / {totalUnits}</div>
+          </div>
+        </div>
+        <div className="cob-stat">
+          <div className="cob-stat-icon" style={{ background: 'var(--coral-50)', color: 'var(--coral-400)' }}>
+            <TrendingDown size={18} />
+          </div>
+          <div>
+            <div className="cob-stat-label">Adeudo Total</div>
+            <div className="cob-stat-value">{fmt(grandTotal)}</div>
+          </div>
+        </div>
+        <div className="cob-stat">
+          <div className="cob-stat-icon" style={{ background: 'var(--amber-50)', color: 'var(--amber-500)' }}>
+            <DollarSign size={18} />
+          </div>
+          <div>
+            <div className="cob-stat-label">Promedio por Unidad</div>
+            <div className="cob-stat-value">{fmt(avgDebt)}</div>
+          </div>
+        </div>
+        <div className="cob-stat">
+          <div className="cob-stat-icon" style={{ background: 'var(--blue-50)', color: 'var(--blue-500)' }}>
+            <Calendar size={18} />
+          </div>
+          <div>
+            <div className="cob-stat-label">Corte de Período</div>
+            <div className="cob-stat-value" style={{ fontSize: 14 }}>{periodLabel(cutoff)}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Loading */}
+      {adeudosLoading && (
+        <div style={{ textAlign: 'center', padding: '50px 20px', color: 'var(--ink-400)', fontSize: 14 }}>
+          Calculando adeudos…
+        </div>
+      )}
+
+      {/* Table */}
+      {!adeudosLoading && (
+        <div className="card">
+          <div className="card-head">
+            <h3>Unidades con Adeudo</h3>
+            <span style={{ fontSize: 12, color: 'var(--ink-400)' }}>
+              Corte: {periodLabel(cutoff)} · {filtered.length} unidad(es)
+            </span>
+          </div>
+
+          {filtered.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--ink-400)' }}>
+              <div style={{ fontSize: 32, marginBottom: 12 }}>✅</div>
+              <div style={{ fontWeight: 600 }}>Sin adeudos al corte seleccionado</div>
+              <div style={{ fontSize: 13, marginTop: 6 }}>Todas las unidades están al corriente.</div>
+            </div>
+          ) : (
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Unidad</th>
+                    <th>Responsable</th>
+                    <th style={{ textAlign: 'right' }}>Adeudo Anterior</th>
+                    <th style={{ textAlign: 'right' }}>Períodos con Deuda</th>
+                    <th style={{ textAlign: 'right' }}>Adeudo Total</th>
+                    <th style={{ width: 40 }}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map(item => {
+                    const u = item.unit || {};
+                    const isOpen = !!expanded[u.id];
+                    const prevDebt = parseFloat(item.net_prev_debt || 0);
+                    const totalAdeudo = parseFloat(item.total_adeudo || 0);
+                    const periodDebts = item.period_debts || [];
+
+                    return (
+                      <React.Fragment key={u.id}>
+                        <tr
+                          style={{ cursor: 'pointer', background: isOpen ? 'var(--sand-50)' : undefined }}
+                          onClick={() => toggle(u.id)}
+                        >
+                          <td>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                              <div style={{ width: 4, height: 36, borderRadius: 2, background: 'var(--coral-400)', flexShrink: 0 }} />
+                              <div>
+                                <span style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--teal-600)', background: 'var(--teal-50)', padding: '2px 8px', borderRadius: 5, fontSize: 12 }}>
+                                  {u.unit_id_code}
+                                </span>
+                                <div style={{ fontWeight: 600, fontSize: 13, marginTop: 3 }}>{u.unit_name}</div>
+                              </div>
+                            </div>
+                          </td>
+                          <td>
+                            <div style={{ fontSize: 13 }}>{u.responsible_name || '—'}</div>
+                            <div style={{ fontSize: 11, color: 'var(--ink-400)' }}>
+                              {u.occupancy === 'rentado' ? 'Inquilino' : 'Propietario'}
+                            </div>
+                          </td>
+                          <td style={{ textAlign: 'right', fontSize: 13 }}>
+                            {prevDebt > 0 ? (
+                              <span style={{ color: 'var(--coral-500)', fontWeight: 600 }}>{fmt(prevDebt)}</span>
+                            ) : '—'}
+                          </td>
+                          <td style={{ textAlign: 'right', fontSize: 13 }}>
+                            <span className="badge badge-amber">{periodDebts.length}</span>
+                          </td>
+                          <td style={{ textAlign: 'right' }}>
+                            <span style={{ fontFamily: 'var(--font-display)', fontSize: 16, fontWeight: 700, color: 'var(--coral-500)' }}>
+                              -{fmt(totalAdeudo)}
+                            </span>
+                          </td>
+                          <td style={{ color: 'var(--ink-400)' }}>
+                            {isOpen ? <ChevronLeft size={16} style={{ transform: 'rotate(-90deg)' }} /> : <ChevronRight size={16} />}
+                          </td>
+                        </tr>
+
+                        {/* Expanded detail */}
+                        {isOpen && (
+                          <tr>
+                            <td colSpan={6} style={{ padding: 0, background: 'var(--sand-50)', borderTop: 'none' }}>
+                              <div style={{ padding: '12px 24px 16px 24px' }}>
+                                <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>
+                                  <thead>
+                                    <tr style={{ borderBottom: '1px solid var(--sand-200)' }}>
+                                      <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: 600, color: 'var(--ink-500)', fontSize: 11 }}>Concepto / Período</th>
+                                      <th style={{ textAlign: 'right', padding: '6px 8px', fontWeight: 600, color: 'var(--ink-500)', fontSize: 11 }}>Cargo</th>
+                                      <th style={{ textAlign: 'right', padding: '6px 8px', fontWeight: 600, color: 'var(--ink-500)', fontSize: 11 }}>Abonado</th>
+                                      <th style={{ textAlign: 'right', padding: '6px 8px', fontWeight: 600, color: 'var(--ink-500)', fontSize: 11 }}>Déficit</th>
+                                      <th style={{ textAlign: 'center', padding: '6px 8px', fontWeight: 600, color: 'var(--ink-500)', fontSize: 11 }}>Estado</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {/* Previous debt row */}
+                                    {prevDebt > 0 && (
+                                      <tr style={{ background: 'var(--coral-50)' }}>
+                                        <td style={{ padding: '6px 8px', color: 'var(--coral-600)', fontWeight: 600, fontStyle: 'italic' }}>
+                                          <AlertCircle size={12} style={{ display: 'inline', verticalAlign: -1, marginRight: 4 }} />
+                                          Adeudo Anterior
+                                          {parseFloat(item.prev_debt_adeudo || 0) > 0 && (
+                                            <span style={{ fontSize: 11, color: 'var(--teal-600)', fontStyle: 'normal', marginLeft: 6 }}>
+                                              (Abonado: {fmt(item.prev_debt_adeudo)})
+                                            </span>
+                                          )}
+                                        </td>
+                                        <td style={{ textAlign: 'right', padding: '6px 8px', color: 'var(--coral-500)' }}>—</td>
+                                        <td style={{ textAlign: 'right', padding: '6px 8px', color: 'var(--coral-500)' }}>—</td>
+                                        <td style={{ textAlign: 'right', padding: '6px 8px', fontWeight: 700, color: 'var(--coral-500)' }}>{fmt(prevDebt)}</td>
+                                        <td style={{ textAlign: 'center', padding: '6px 8px' }}>
+                                          <span className="badge badge-coral">Pendiente</span>
+                                        </td>
+                                      </tr>
+                                    )}
+                                    {/* Period debt rows */}
+                                    {periodDebts.map((pd, idx) => (
+                                      <tr key={idx} style={{ borderBottom: '1px solid var(--sand-100)' }}>
+                                        <td style={{ padding: '6px 8px', fontWeight: 600 }}>{periodLabel(pd.period)}</td>
+                                        <td style={{ textAlign: 'right', padding: '6px 8px' }}>{fmt(pd.charge)}</td>
+                                        <td style={{ textAlign: 'right', padding: '6px 8px', color: 'var(--teal-600)' }}>
+                                          {pd.paid > 0 ? fmt(pd.paid) : '—'}
+                                        </td>
+                                        <td style={{ textAlign: 'right', padding: '6px 8px', fontWeight: 700, color: 'var(--coral-500)' }}>
+                                          {fmt(pd.deficit)}
+                                        </td>
+                                        <td style={{ textAlign: 'center', padding: '6px 8px' }}>
+                                          <span className={`badge ${statusClass(pd.status)}`}>{statusLabel(pd.status)}</span>
+                                        </td>
+                                      </tr>
+                                    ))}
+                                    {/* Total row */}
+                                    <tr style={{ borderTop: '2px solid var(--coral-200)', background: 'var(--coral-50)' }}>
+                                      <td colSpan={3} style={{ padding: '8px 8px', fontWeight: 700, color: 'var(--coral-700)', fontSize: 12 }}>
+                                        Total Adeudo — {u.unit_name}
+                                      </td>
+                                      <td style={{ textAlign: 'right', padding: '8px 8px', fontWeight: 800, color: 'var(--coral-600)', fontSize: 15, fontFamily: 'var(--font-display)' }}>
+                                        -{fmt(totalAdeudo)}
+                                      </td>
+                                      <td />
+                                    </tr>
+                                  </tbody>
+                                </table>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
+                </tbody>
+                {/* Grand total footer */}
+                <tfoot>
+                  <tr style={{ background: '#1e3a5f', color: 'white' }}>
+                    <td colSpan={4} style={{ padding: '12px 16px', fontWeight: 700, fontSize: 13 }}>
+                      Total General de Adeudos · {unitsWithDebt} unidad(es)
+                    </td>
+                    <td style={{ textAlign: 'right', padding: '12px 16px', fontFamily: 'var(--font-display)', fontSize: 20, fontWeight: 800 }}>
+                      -{fmt(grandTotal)}
+                    </td>
+                    <td />
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
         </div>
       )}
     </div>

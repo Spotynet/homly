@@ -155,6 +155,7 @@ export const reportsAPI = {
   dashboard: (tenantId, period) => api.get(`/tenants/${tenantId}/dashboard/`, { params: { period } }),
   estadoCuenta: (tenantId, params) => api.get(`/tenants/${tenantId}/estado-cuenta/`, { params }),
   reporteGeneral: (tenantId, period) => api.get(`/tenants/${tenantId}/reporte-general/`, { params: { period } }),
+  reporteAdeudos: (tenantId, params) => api.get(`/tenants/${tenantId}/reporte-adeudos/`, { params }),
 };
 
 export default api;
