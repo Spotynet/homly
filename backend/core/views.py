@@ -343,6 +343,61 @@ class PaymentViewSet(viewsets.ModelViewSet):
         payment.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
+    @action(detail=True, methods=['delete'], url_path='delete-additional/(?P<additional_id>[^/.]+)')
+    def delete_additional(self, request, tenant_id=None, pk=None, additional_id=None):
+        """DELETE /api/tenants/{tenant_id}/payments/{id}/delete-additional/{additional_id}/"""
+        payment = self.get_object()
+        if payment.tenant_id != tenant_id:
+            return Response({'detail': 'No encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+        if ClosedPeriod.objects.filter(tenant_id=tenant_id, period=payment.period).exists():
+            return Response({'detail': 'El periodo está cerrado.'}, status=status.HTTP_400_BAD_REQUEST)
+        existing = payment.additional_payments or []
+        new_list = [ap for ap in existing if str(ap.get('id', '')) != str(additional_id)]
+        if len(new_list) == len(existing):
+            return Response({'detail': 'Pago adicional no encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+        payment.additional_payments = new_list
+        tenant = Tenant.objects.get(id=tenant_id)
+        extra_fields = ExtraField.objects.filter(tenant_id=tenant_id, enabled=True, required=True)
+        payment.status = _compute_payment_status(payment, tenant, list(extra_fields))
+        payment.save()
+        return Response(PaymentSerializer(payment).data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['patch'], url_path='update-additional/(?P<additional_id>[^/.]+)')
+    def update_additional(self, request, tenant_id=None, pk=None, additional_id=None):
+        """PATCH /api/tenants/{tenant_id}/payments/{id}/update-additional/{additional_id}/"""
+        payment = self.get_object()
+        if payment.tenant_id != tenant_id:
+            return Response({'detail': 'No encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+        if ClosedPeriod.objects.filter(tenant_id=tenant_id, period=payment.period).exists():
+            return Response({'detail': 'El periodo está cerrado.'}, status=status.HTTP_400_BAD_REQUEST)
+        existing = payment.additional_payments or []
+        data = request.data
+        new_fp = {}
+        for fk, fp_data in (data.get('field_payments') or {}).items():
+            rec = float((fp_data or {}).get('received', 0) or 0)
+            if rec > 0:
+                new_fp[fk] = {'received': rec}
+        updated = False
+        new_list = []
+        for ap in existing:
+            if str(ap.get('id', '')) == str(additional_id):
+                ap = dict(ap)
+                ap['field_payments'] = new_fp
+                ap['payment_type'] = data.get('payment_type', ap.get('payment_type', ''))
+                ap['payment_date'] = data.get('payment_date', ap.get('payment_date', ''))
+                ap['notes'] = data.get('notes', ap.get('notes', ''))
+                ap['bank_reconciled'] = data.get('bank_reconciled', ap.get('bank_reconciled', False))
+                updated = True
+            new_list.append(ap)
+        if not updated:
+            return Response({'detail': 'Pago adicional no encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+        payment.additional_payments = new_list
+        tenant = Tenant.objects.get(id=tenant_id)
+        extra_fields = ExtraField.objects.filter(tenant_id=tenant_id, enabled=True, required=True)
+        payment.status = _compute_payment_status(payment, tenant, list(extra_fields))
+        payment.save()
+        return Response(PaymentSerializer(payment).data, status=status.HTTP_200_OK)
+
 
 # ═══════════════════════════════════════════════════════════
 #  GASTOS
@@ -1037,13 +1092,7 @@ def _compute_report_data(tenant, period):
             cheques_transito.append(entry)
             total_cheques += amt
 
-    # Caja chica (treated as reconciled expense)
-    caja = CajaChicaEntry.objects.filter(tenant_id=tenant.id, period=period)
-    for c in caja:
-        amt = Decimal(str(c.amount or 0))
-        if amt > 0:
-            egresos_reconciled.append({'label': 'Caja Chica', 'amount': float(amt), 'provider': c.description or ''})
-            total_egresos += amt
+    # Nota: Caja chica NO se incluye en el reporte general (sólo se incluyen gastos)
 
     # Ingresos no identificados (UnrecognizedIncome)
     ingresos_no_identificados = Decimal('0')

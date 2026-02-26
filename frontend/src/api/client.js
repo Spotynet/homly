@@ -78,6 +78,8 @@ export const paymentsAPI = {
   list: (tenantId, params) => api.get(`/tenants/${tenantId}/payments/`, { params }),
   capture: (tenantId, data) => api.post(`/tenants/${tenantId}/payments/capture/`, data),
   addAdditional: (tenantId, paymentId, data) => api.post(`/tenants/${tenantId}/payments/${paymentId}/add-additional/`, data),
+  deleteAdditional: (tenantId, paymentId, additionalId) => api.delete(`/tenants/${tenantId}/payments/${paymentId}/delete-additional/${additionalId}/`),
+  updateAdditional: (tenantId, paymentId, additionalId, data) => api.patch(`/tenants/${tenantId}/payments/${paymentId}/update-additional/${additionalId}/`, data),
   clear: (tenantId, id) => api.delete(`/tenants/${tenantId}/payments/${id}/clear/`),
 };
 

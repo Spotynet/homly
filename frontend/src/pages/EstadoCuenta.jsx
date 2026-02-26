@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { unitsAPI, reportsAPI, tenantsAPI, paymentsAPI, gastosAPI, cajaChicaAPI, unrecognizedIncomeAPI } from '../api/client';
+import { unitsAPI, reportsAPI, tenantsAPI, paymentsAPI, gastosAPI, unrecognizedIncomeAPI } from '../api/client';
 import PaginationBar from '../components/PaginationBar';
 import { statusClass, statusLabel, fmtDate, periodLabel, todayPeriod, prevPeriod, nextPeriod, ROLES } from '../utils/helpers';
 import { Search, ChevronLeft, ChevronRight, Building, Globe, DollarSign, ArrowDown, TrendingDown, AlertCircle, Calendar, Printer, ShoppingBag } from 'lucide-react';
@@ -593,24 +593,23 @@ function payTotalIncome(pay) {
 function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cutoff, setCutoff, startPeriod }) {
   const [payments, setPayments] = useState([]);
   const [gastos, setGastos] = useState([]);
-  const [cajaChica, setCajaChica] = useState([]);
+  // cajaChica ya no se incluye en el reporte general
   const [unrecognizedIncome, setUnrecognizedIncome] = useState([]);
   const [ecLoading, setEcLoading] = useState(false);
   const numUnits = generalData?.units?.length || 0;
 
-  // Fetch ALL payments (no period filter) + gastos + caja chica for the tenant
+  // Fetch ALL payments (no period filter) + gastos for the tenant
+  // Nota: cajaChica NO se incluye en el reporte general
   useEffect(() => {
     if (!tenantId) return;
     setEcLoading(true);
     Promise.all([
       paymentsAPI.list(tenantId, { page_size: 9999 }).catch(() => ({ data: [] })),
       gastosAPI.list(tenantId, { page_size: 9999 }).catch(() => ({ data: [] })),
-      cajaChicaAPI.list(tenantId, { page_size: 9999 }).catch(() => ({ data: [] })),
       unrecognizedIncomeAPI.list(tenantId, { page_size: 9999 }).catch(() => ({ data: [] })),
-    ]).then(([pRes, gRes, cRes, uiRes]) => {
+    ]).then(([pRes, gRes, uiRes]) => {
       setPayments(pRes.data?.results || pRes.data || []);
       setGastos(gRes.data?.results || gRes.data || []);
-      setCajaChica(cRes.data?.results || cRes.data || []);
       setUnrecognizedIncome(Array.isArray(uiRes.data) ? uiRes.data : (uiRes.data?.results || []));
     }).finally(() => setEcLoading(false));
   }, [tenantId]);
@@ -646,17 +645,22 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
       if (!payByPeriod[p.period]) payByPeriod[p.period] = [];
       payByPeriod[p.period].push(p);
     });
+    // Gastos por período — solo inputs capturados como "gastos" (caja chica excluida)
     const gastoByPeriod = {};
+    const gastoDetailByPeriod = {};
     gastos.forEach(g => {
       const per = g.period;
-      if (!gastoByPeriod[per]) gastoByPeriod[per] = 0;
-      gastoByPeriod[per] += parseFloat(g.amount || 0);
+      if (!gastoByPeriod[per]) { gastoByPeriod[per] = { reconciled: 0, noReconciled: 0 }; gastoDetailByPeriod[per] = { reconciled: [], noReconciled: [] }; }
+      const amt = parseFloat(g.amount || 0);
+      if (g.bank_reconciled) {
+        gastoByPeriod[per].reconciled += amt;
+        gastoDetailByPeriod[per].reconciled.push({ label: g.field_label || g.field?.label || 'Gasto', amount: amt, provider: g.provider_name || '' });
+      } else {
+        gastoByPeriod[per].noReconciled += amt;
+        gastoDetailByPeriod[per].noReconciled.push({ label: g.field_label || g.field?.label || 'Gasto', amount: amt, provider: g.provider_name || '' });
+      }
     });
-    cajaChica.forEach(c => {
-      const per = c.period;
-      if (!gastoByPeriod[per]) gastoByPeriod[per] = 0;
-      gastoByPeriod[per] += parseFloat(c.amount || 0);
-    });
+
     const uiByPeriod = {};
     unrecognizedIncome.forEach(ui => {
       const per = ui.period;
@@ -667,26 +671,45 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
     return allPeriods.map(period => {
       const periodPayments = payByPeriod[period] || [];
       const totalCargo = chargePerUnit * numUnits;
-      let recaudo = 0;
+      let recaudo = 0, recaudoConciliado = 0, recaudoNoConciliado = 0;
       let pagados = 0, parciales = 0, pendientesCount = 0;
+      const recaudoDetails = { conciliado: [], noConciliado: [] };
 
       periodPayments.forEach(pay => {
-        recaudo += payTotalIncome(pay);
-
+        const income = payTotalIncome(pay);
+        recaudo += income;
+        const responsible = pay.responsible || '';
+        if (pay.bank_reconciled) {
+          recaudoConciliado += income;
+          if (income > 0) recaudoDetails.conciliado.push({ unit: pay.unit_id_code || '', responsible, amount: income, payment_type: pay.payment_type });
+        } else {
+          recaudoNoConciliado += income;
+          if (income > 0) recaudoDetails.noConciliado.push({ unit: pay.unit_id_code || '', responsible, amount: income, payment_type: pay.payment_type });
+        }
         if (pay.status === 'pagado') pagados++;
         else if (pay.status === 'parcial') parciales++;
         else pendientesCount++;
       });
-      recaudo += uiByPeriod[period] || 0;
+      const uiAmt = uiByPeriod[period] || 0;
+      recaudo += uiAmt;
+      recaudoConciliado += uiAmt;
 
       pendientesCount = numUnits - pagados - parciales;
       if (pendientesCount < 0) pendientesCount = 0;
 
-      const pGastos = gastoByPeriod[period] || 0;
+      const gastosPer = gastoByPeriod[period] || { reconciled: 0, noReconciled: 0 };
+      const gastoDetailPer = gastoDetailByPeriod[period] || { reconciled: [], noReconciled: [] };
+      const pGastos = gastosPer.reconciled + gastosPer.noReconciled;
       const balance = recaudo - pGastos;
-      return { period, totalCargo, cargoOblig: totalCargo, recaudo, pagados, parciales, pendientes: pendientesCount, pGastos, balance };
+      return {
+        period, totalCargo, cargoOblig: totalCargo, recaudo,
+        recaudoConciliado, recaudoNoConciliado, recaudoDetails,
+        pagados, parciales, pendientes: pendientesCount,
+        pGastos, gastosConciliado: gastosPer.reconciled, gastosNoConciliado: gastosPer.noReconciled,
+        gastoDetail: gastoDetailPer, balance,
+      };
     });
-  }, [allPeriods, payments, gastos, cajaChica, unrecognizedIncome, chargePerUnit, numUnits]);
+  }, [allPeriods, payments, gastos, unrecognizedIncome, chargePerUnit, numUnits]);
 
   // Grand totals
   const totals = useMemo(() => {
@@ -778,61 +801,101 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
                 <tr>
                   <th>Período</th>
                   <th style={{ textAlign: 'right' }}>Cargos Oblig.</th>
-                  <th style={{ textAlign: 'right' }}>Total Cargos</th>
-                  <th style={{ textAlign: 'right' }}>Recaudo</th>
+                  <th style={{ textAlign: 'right' }}>Recaudo 🏦</th>
+                  <th style={{ textAlign: 'right' }}>Recaudo ⏳</th>
                   <th style={{ textAlign: 'center' }}>✅</th>
                   <th style={{ textAlign: 'center' }}>🔶</th>
                   <th style={{ textAlign: 'center' }}>⏳</th>
-                  {totals.grandGastos > 0 && <th style={{ textAlign: 'right' }}>Gastos</th>}
-                  {totals.grandGastos > 0 && <th style={{ textAlign: 'right' }}>Balance</th>}
+                  <th style={{ textAlign: 'right' }}>Gastos 🏦</th>
+                  <th style={{ textAlign: 'right' }}>Gastos ⏳</th>
+                  <th style={{ textAlign: 'right' }}>Balance</th>
+                </tr>
+                <tr style={{ background: 'var(--sand-50)', fontSize: 10, color: 'var(--ink-400)' }}>
+                  <td colSpan={1}></td>
+                  <td style={{ textAlign: 'right', paddingBottom: 4 }}>Total período</td>
+                  <td style={{ textAlign: 'right', paddingBottom: 4, color: 'var(--teal-600)' }}>Conciliados</td>
+                  <td style={{ textAlign: 'right', paddingBottom: 4, color: 'var(--amber-500)' }}>No conciliados</td>
+                  <td colSpan={3}></td>
+                  <td style={{ textAlign: 'right', paddingBottom: 4, color: 'var(--amber-700)' }}>Conciliados</td>
+                  <td style={{ textAlign: 'right', paddingBottom: 4, color: 'var(--ink-400)' }}>En tránsito</td>
+                  <td></td>
                 </tr>
               </thead>
               <tbody>
                 {[...periodRows].reverse().map(row => {
                   const allPaid = row.pendientes === 0 && row.parciales === 0;
+                  const hasRecaudoDetail = row.recaudoDetails.conciliado.length + row.recaudoDetails.noConciliado.length > 0;
+                  const hasGastoDetail = row.gastoDetail.reconciled.length + row.gastoDetail.noReconciled.length > 0;
                   return (
-                    <tr key={row.period} style={allPaid ? { background: 'rgba(42,157,115,0.03)' } : undefined}>
-                      <td style={{ fontWeight: 600 }}>{periodLabel(row.period)}</td>
-                      <td style={{ textAlign: 'right' }}>{fmt(row.cargoOblig)}</td>
-                      <td style={{ textAlign: 'right', fontWeight: 700 }}>{fmt(row.totalCargo)}</td>
-                      <td style={{ textAlign: 'right', color: 'var(--teal-600)', fontWeight: 700 }}>{fmt(row.recaudo)}</td>
-                      <td style={{ textAlign: 'center', color: 'var(--teal-600)', fontWeight: 700 }}>{row.pagados}</td>
-                      <td style={{ textAlign: 'center', color: 'var(--amber-500)', fontWeight: 700 }}>{row.parciales}</td>
-                      <td style={{ textAlign: 'center', color: 'var(--coral-400)', fontWeight: 700 }}>{row.pendientes}</td>
-                      {totals.grandGastos > 0 && (
-                        <td style={{ textAlign: 'right', color: 'var(--amber-500)' }}>
-                          {row.pGastos > 0 ? fmt(row.pGastos) : <span style={{ color: 'var(--ink-300)' }}>—</span>}
-                        </td>
-                      )}
-                      {totals.grandGastos > 0 && (
+                    <React.Fragment key={row.period}>
+                      <tr style={allPaid ? { background: 'rgba(42,157,115,0.03)' } : undefined}>
+                        <td style={{ fontWeight: 600 }}>{periodLabel(row.period)}</td>
+                        <td style={{ textAlign: 'right' }}>{fmt(row.cargoOblig)}</td>
+                        <td style={{ textAlign: 'right', color: 'var(--teal-600)', fontWeight: 700 }}>{row.recaudoConciliado > 0 ? fmt(row.recaudoConciliado) : <span style={{ color: 'var(--ink-300)' }}>—</span>}</td>
+                        <td style={{ textAlign: 'right', color: 'var(--amber-500)', fontWeight: 700 }}>{row.recaudoNoConciliado > 0 ? fmt(row.recaudoNoConciliado) : <span style={{ color: 'var(--ink-300)' }}>—</span>}</td>
+                        <td style={{ textAlign: 'center', color: 'var(--teal-600)', fontWeight: 700 }}>{row.pagados}</td>
+                        <td style={{ textAlign: 'center', color: 'var(--amber-500)', fontWeight: 700 }}>{row.parciales}</td>
+                        <td style={{ textAlign: 'center', color: 'var(--coral-400)', fontWeight: 700 }}>{row.pendientes}</td>
+                        <td style={{ textAlign: 'right', color: 'var(--amber-700)' }}>{row.gastosConciliado > 0 ? fmt(row.gastosConciliado) : <span style={{ color: 'var(--ink-300)' }}>—</span>}</td>
+                        <td style={{ textAlign: 'right', color: 'var(--ink-400)' }}>{row.gastosNoConciliado > 0 ? fmt(row.gastosNoConciliado) : <span style={{ color: 'var(--ink-300)' }}>—</span>}</td>
                         <td style={{ textAlign: 'right' }}>
-                          <span style={{ fontWeight: 700, color: row.balance >= 0 ? 'var(--teal-600)' : 'var(--coral-500)' }}>
-                            {fmt(row.balance)}
-                          </span>
+                          <span style={{ fontWeight: 700, color: row.balance >= 0 ? 'var(--teal-600)' : 'var(--coral-500)' }}>{fmt(row.balance)}</span>
                         </td>
-                      )}
-                    </tr>
+                      </tr>
+                      {/* Detalle de ingresos conciliados */}
+                      {hasRecaudoDetail && row.recaudoDetails.conciliado.map((d, i) => (
+                        <tr key={`rc-${i}`} style={{ background: 'rgba(42,157,115,0.04)', fontSize: 11 }}>
+                          <td style={{ paddingLeft: 24, color: 'var(--teal-600)', fontStyle: 'italic' }}>↳ 🏦 {d.unit}{d.responsible ? ` — ${d.responsible}` : ''}</td>
+                          <td></td>
+                          <td style={{ textAlign: 'right', color: 'var(--teal-600)' }}>{fmt(d.amount)}</td>
+                          <td colSpan={7}><span style={{ fontSize: 10, color: 'var(--ink-400)' }}>{d.payment_type || ''}</span></td>
+                        </tr>
+                      ))}
+                      {hasRecaudoDetail && row.recaudoDetails.noConciliado.map((d, i) => (
+                        <tr key={`rn-${i}`} style={{ background: 'rgba(255,180,0,0.04)', fontSize: 11 }}>
+                          <td style={{ paddingLeft: 24, color: 'var(--amber-600)', fontStyle: 'italic' }}>↳ ⏳ {d.unit}{d.responsible ? ` — ${d.responsible}` : ''}</td>
+                          <td></td>
+                          <td></td>
+                          <td style={{ textAlign: 'right', color: 'var(--amber-500)' }}>{fmt(d.amount)}</td>
+                          <td colSpan={6}><span style={{ fontSize: 10, color: 'var(--ink-400)' }}>{d.payment_type || ''}</span></td>
+                        </tr>
+                      ))}
+                      {/* Detalle de gastos */}
+                      {hasGastoDetail && row.gastoDetail.reconciled.map((g, i) => (
+                        <tr key={`gc-${i}`} style={{ background: 'rgba(255,140,0,0.04)', fontSize: 11 }}>
+                          <td style={{ paddingLeft: 24, color: 'var(--amber-700)', fontStyle: 'italic' }}>↳ 🏦 {g.label}{g.provider ? ` — ${g.provider}` : ''}</td>
+                          <td colSpan={6}></td>
+                          <td style={{ textAlign: 'right', color: 'var(--amber-700)' }}>{fmt(g.amount)}</td>
+                          <td colSpan={2}></td>
+                        </tr>
+                      ))}
+                      {hasGastoDetail && row.gastoDetail.noReconciled.map((g, i) => (
+                        <tr key={`gn-${i}`} style={{ background: 'rgba(100,100,100,0.03)', fontSize: 11 }}>
+                          <td style={{ paddingLeft: 24, color: 'var(--ink-500)', fontStyle: 'italic' }}>↳ ⏳ {g.label}{g.provider ? ` — ${g.provider}` : ''}</td>
+                          <td colSpan={7}></td>
+                          <td style={{ textAlign: 'right', color: 'var(--ink-400)' }}>{fmt(g.amount)}</td>
+                          <td></td>
+                        </tr>
+                      ))}
+                    </React.Fragment>
                   );
                 })}
                 {allPeriods.length === 0 && (
-                  <tr><td colSpan={9} style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--ink-300)' }}>Sin datos</td></tr>
+                  <tr><td colSpan={10} style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--ink-300)' }}>Sin datos</td></tr>
                 )}
                 {/* TOTALES row */}
                 {periodRows.length > 0 && (
                   <tr style={{ background: 'var(--sand-50)', fontWeight: 700, borderTop: '2px solid var(--sand-200)' }}>
                     <td>TOTALES</td>
                     <td style={{ textAlign: 'right' }}>{fmt(totals.grandCargo)}</td>
-                    <td style={{ textAlign: 'right' }}>{fmt(totals.grandCargo)}</td>
-                    <td style={{ textAlign: 'right', color: 'var(--teal-600)' }}>{fmt(totals.grandRecaudo)}</td>
+                    <td style={{ textAlign: 'right', color: 'var(--teal-600)' }}>{fmt(periodRows.reduce((s,r)=>s+r.recaudoConciliado,0))}</td>
+                    <td style={{ textAlign: 'right', color: 'var(--amber-500)' }}>{fmt(periodRows.reduce((s,r)=>s+r.recaudoNoConciliado,0))}</td>
                     <td colSpan={3}></td>
-                    {totals.grandGastos > 0 && (
-                      <td style={{ textAlign: 'right', color: 'var(--amber-500)' }}>{fmt(totals.grandGastos)}</td>
-                    )}
-                    {totals.grandGastos > 0 && (
-                      <td style={{ textAlign: 'right' }}>
-                        <span style={{ color: totals.balance >= 0 ? 'var(--teal-600)' : 'var(--coral-500)' }}>{fmt(totals.balance)}</span>
-                      </td>
-                    )}
+                    <td style={{ textAlign: 'right', color: 'var(--amber-700)' }}>{fmt(periodRows.reduce((s,r)=>s+r.gastosConciliado,0))}</td>
+                    <td style={{ textAlign: 'right', color: 'var(--ink-400)' }}>{fmt(periodRows.reduce((s,r)=>s+r.gastosNoConciliado,0))}</td>
+                    <td style={{ textAlign: 'right' }}>
+                      <span style={{ color: totals.balance >= 0 ? 'var(--teal-600)' : 'var(--coral-500)' }}>{fmt(totals.balance)}</span>
+                    </td>
                   </tr>
                 )}
               </tbody>

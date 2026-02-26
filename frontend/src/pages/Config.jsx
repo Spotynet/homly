@@ -800,6 +800,12 @@ export default function Config() {
                     </div>
                   </div>
                 )}
+                {isAdmin && (
+                  <button className="btn-ghost" title="Editar nombre del campo" style={{ color:'var(--blue-500)', padding:6, borderRadius:'var(--radius-sm)' }}
+                    onClick={() => setFieldForm({ ...f })}>
+                    <Edit2 size={15}/>
+                  </button>
+                )}
                 {isAdmin && !f.is_system_default && (
                   <button className="btn-ghost" style={{ color:'var(--coral-400)', padding:6, borderRadius:'var(--radius-sm)' }} onClick={async () => {
                     if (window.confirm('¿Eliminar campo?')) { await extraFieldsAPI.delete(tenantId,f.id); loadFields(); }
