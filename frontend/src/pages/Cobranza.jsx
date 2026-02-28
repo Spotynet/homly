@@ -274,7 +274,7 @@ export default function Cobranza() {
     const reader = new FileReader();
     reader.onload = () => {
       const base64 = reader.result?.split(',')[1] || '';
-      setCaptureForm(p => ({ ...p, evidence: base64, evidenceFileName: file.name, showPreview: false }));
+      setCaptureForm(p => ({ ...p, evidence: base64, evidenceMimeType: file.type, evidenceFileName: file.name, showPreview: false }));
     };
     reader.readAsDataURL(file);
     e.target.value = '';
@@ -955,8 +955,13 @@ export default function Cobranza() {
         });
         const totalReqSaldo = Math.max(0, totalReqCharge - totalReqAbono);
         const totalOptAbono = optEFs.reduce((s, ef) => s + (parseFloat(captureForm.field_payments?.[ef.id]?.received) || 0), 0);
-        // Unidades exentas: si no hay otros campos requeridos con saldo pendiente, el estatus es 'pagado'
-        const autoStatus = (isUnitExempt && totalReqCharge === 0) ? 'pagado' : (totalReqAbono <= 0 ? 'pendiente' : (totalReqAbono >= totalReqCharge ? 'pagado' : 'parcial'));
+        // Parcial: mantenimiento fijo sin captura + al menos un campo adicional activo con pago
+        const maintCaptured = isUnitExempt ? 0 : (parseFloat(captureForm.field_payments?.maintenance?.received) || 0);
+        const hasNonMaintPayment = reqEFs.some(ef => (parseFloat(captureForm.field_payments?.[ef.id]?.received) || 0) > 0)
+          || optEFs.some(ef => (parseFloat(captureForm.field_payments?.[ef.id]?.received) || 0) > 0);
+        const autoStatus = (isUnitExempt && totalReqCharge === 0) ? 'pagado'
+          : (totalReqAbono >= totalReqCharge ? 'pagado'
+          : (maintCaptured === 0 && hasNonMaintPayment ? 'parcial' : 'pendiente'));
         const obligFields = [{ id: 'maintenance', label: 'Mantenimiento', charge: maintCharge }, ...reqEFs.map(ef => ({ id: ef.id, label: ef.label, charge: parseFloat(ef.default_amount) || 0 }))];
         const totalAdelantoCount = obligFields.reduce((s, fd) => s + Object.keys(captureForm.field_payments?.[fd.id]?.adelantoTargets || {}).length, 0);
         const prevDebt = parseFloat(showCapture.previous_debt) || 0;
@@ -1303,7 +1308,7 @@ export default function Cobranza() {
                     {(captureForm.evidenceFileName || '').match(/\.(pdf)$/i) ? (
                       <div style={{ border: '1px solid var(--sand-200)', borderRadius: 'var(--radius-md)', overflow: 'hidden', height: 200 }}><iframe src={`data:application/pdf;base64,${captureForm.evidence}`} style={{ width: '100%', height: '100%', border: 'none' }} title="Evidencia" /></div>
                     ) : (
-                      <div style={{ border: '1px solid var(--sand-200)', borderRadius: 'var(--radius-md)', overflow: 'hidden', maxHeight: 200 }}><img src={`data:image/jpeg;base64,${captureForm.evidence}`} alt="Evidencia" style={{ width: '100%', display: 'block' }} /></div>
+                      <div style={{ border: '1px solid var(--sand-200)', borderRadius: 'var(--radius-md)', overflow: 'hidden', maxHeight: 200 }}><img src={`data:${captureForm.evidenceMimeType || (/\.png$/i.test(captureForm.evidenceFileName || '') ? 'image/png' : 'image/jpeg')};base64,${captureForm.evidence}`} alt="Evidencia" style={{ width: '100%', display: 'block' }} /></div>
                     )}
                   </div>
                 )}

@@ -493,7 +493,7 @@ export default function Gastos() {
               </button>
             )}
             <button className="btn btn-outline btn-sm" onClick={handlePrint}>
-              <Printer size={14} /> Imprimir
+              <Printer size={14} /> Descargar PDF
             </button>
           </div>
         </div>

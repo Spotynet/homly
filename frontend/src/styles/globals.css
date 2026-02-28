@@ -772,6 +772,7 @@ tr:hover td { background: rgba(59,185,144,0.02); }
   body.printing-gastos .gastos-print-layout,
   body.printing-gastos .gastos-print-layout * { visibility: visible; }
   body.printing-gastos .gastos-print-layout {
+    display: block !important;
     position: fixed;
     inset: 0;
     background: white !important;
@@ -782,6 +783,9 @@ tr:hover td { background: rgba(59,185,144,0.02); }
   }
   body.printing-gastos .gastos-screen-only { display: none !important; }
 }
+
+/* El layout ejecutivo de gastos solo se muestra al imprimir, nunca en pantalla */
+.gastos-print-layout { display: none; }
 
 /* ─── Status ─── */
 .status-indicator { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex-shrink: 0; }

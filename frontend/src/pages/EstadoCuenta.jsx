@@ -1190,7 +1190,7 @@ function ReporteGeneralView({ tenantData, generalData, genLoading, cutoff, setCu
 
               {Object.entries(rd.ingresos_conceptos || {}).filter(([, obj]) => obj.total > 0).map(([fid, obj]) => (
                 <div key={fid} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--sand-50)' }}>
-                  <span style={{ fontSize: 13, color: 'var(--ink-600)' }}>{fid === '__prevDebt' ? 'Cobranza de deuda' : (obj.label || fid)}</span>
+                  <span style={{ fontSize: 13, color: 'var(--ink-600)' }}>{fid === '__prevDebt' ? 'Recaudo de adeudos' : (obj.label || fid)}</span>
                   <span style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 600, color: 'var(--teal-600)' }}>{fmt2(obj.total)}</span>
                 </div>
               ))}

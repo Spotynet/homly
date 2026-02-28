@@ -182,7 +182,8 @@ class ExtraFieldViewSet(viewsets.ModelViewSet):
 # ═══════════════════════════════════════════════════════════
 
 def _compute_payment_status(payment, tenant, extra_fields):
-    """Compute status from main field_payments + additional_payments."""
+    """Compute status from main field_payments + additional_payments.
+    'parcial' = mantenimiento fijo sin captura + al menos un campo adicional activo con pago."""
     all_fp = {}
     for fp in payment.field_payments.all():
         all_fp[fp.field_key] = float(fp.received or 0)
@@ -193,7 +194,8 @@ def _compute_payment_status(payment, tenant, extra_fields):
                 all_fp[fk] = all_fp.get(fk, 0) + rec
 
     maint_charge = float(tenant.maintenance_fee or 0)
-    maint_rec = min(all_fp.get('maintenance', 0), maint_charge)
+    maint_captured = all_fp.get('maintenance', 0)  # raw captured, not capped
+    maint_rec = min(maint_captured, maint_charge)
     total_req_charge = maint_charge
     total_req_received = maint_rec
     for ef in extra_fields:
@@ -202,11 +204,14 @@ def _compute_payment_status(payment, tenant, extra_fields):
         total_req_charge += ch
         total_req_received += rc
 
-    if total_req_received <= 0:
-        return 'pendiente'
+    # Parcial: mantenimiento fijo sin pago + al menos un campo adicional activo pagado
+    has_non_maintenance_payment = any(v > 0 for k, v in all_fp.items() if k != 'maintenance')
+
     if total_req_received >= total_req_charge:
         return 'pagado'
-    return 'parcial'
+    if maint_captured == 0 and has_non_maintenance_payment:
+        return 'parcial'
+    return 'pendiente'
 
 
 class PaymentViewSet(viewsets.ModelViewSet):
@@ -815,6 +820,11 @@ def _compute_statement(tenant, unit_id, start_period, cutoff_period):
         oblig_abono = Decimal(str(oblig_abono)) if not isinstance(oblig_abono, Decimal) else oblig_abono
         oblig_abono_capped = min(oblig_abono, cargo_oblig) if cargo_oblig > 0 else oblig_abono
 
+        # Parcial: mantenimiento fijo sin abono + al menos un campo adicional activo con abono
+        has_non_maint_abono = any(
+            fd['abono'] > 0 for fd in field_detail if fd.get('id') != 'maintenance'
+        )
+
         is_past = period <= today
         if pay:
             eff_status = pay.status
@@ -822,7 +832,7 @@ def _compute_statement(tenant, unit_id, start_period, cutoff_period):
             eff_status = 'pendiente' if is_past else 'futuro'
         if cargo_oblig > 0 and oblig_abono_capped >= cargo_oblig:
             eff_status = 'pagado'
-        elif oblig_abono > 0:
+        elif maint_abono == Decimal('0') and has_non_maint_abono:
             eff_status = 'parcial'
         elif is_past:
             eff_status = 'pendiente'
@@ -1082,7 +1092,7 @@ def _compute_report_data(tenant, period):
                     else:
                         if f_id not in ingresos_conceptos:
                             cf3 = cf_map.get(f_id)
-                            default_label = 'Cobranza de deuda' if f_id == '__prevDebt' else f_id
+                            default_label = 'Recaudo de adeudos' if f_id == '__prevDebt' else f_id
                             ingresos_conceptos[f_id] = {'total': Decimal('0'), 'label': getattr(cf3, 'label', default_label) if cf3 else default_label}
                         ingresos_conceptos[f_id]['total'] += a3
 
