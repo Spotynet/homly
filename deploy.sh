@@ -7,7 +7,7 @@
 
 set -e  # Exit on any error
 
-PEM="$HOME/Documents/pem/homly.pem"
+PEM="$HOME/Documents/homly/homly.pem"
 EC2_USER="ubuntu"
 EC2_HOST="98.81.122.194"
 EC2="$EC2_USER@$EC2_HOST"
