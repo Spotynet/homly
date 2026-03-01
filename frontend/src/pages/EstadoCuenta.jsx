@@ -32,6 +32,16 @@ export default function EstadoCuenta() {
   const [unitsPage, setUnitsPage] = useState(1);
   const [unitsPerPage, setUnitsPerPage] = useState(25);
   const UNITS_PAGE_OPTIONS = [10, 25, 50, 100];
+  const handlePrintUnits = useCallback(() => {
+    const prev = document.title;
+    document.title = `Estado por Unidad — ${cutoff}`;
+    document.body.classList.add('printing-units');
+    window.print();
+    setTimeout(() => {
+      document.title = prev;
+      document.body.classList.remove('printing-units');
+    }, 1500);
+  }, [cutoff]);
 
   // Load units + tenant info
   useEffect(() => {
@@ -70,6 +80,7 @@ export default function EstadoCuenta() {
         setUnitSummaries(unitsList);
         setListMeta({
           total_ingresos_no_identificados: parseFloat(r.data?.total_ingresos_no_identificados || 0),
+          period_aggregates: r.data?.period_aggregates || [],
         });
       })
       .catch(() => { setUnitSummaries([]); setListMeta(null); });
@@ -488,6 +499,14 @@ export default function EstadoCuenta() {
                       </span>
                     )}
                     {search && <span className="badge badge-amber">Filtrado: {filteredUnits.length}</span>}
+                    <button
+                      className="btn btn-outline btn-sm"
+                      onClick={handlePrintUnits}
+                      title="Imprimir / Guardar como PDF"
+                      style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+                    >
+                      <Printer size={14} /> Imprimir / PDF
+                    </button>
                   </div>
                 </div>
                 <div className="table-wrap">
@@ -569,6 +588,134 @@ export default function EstadoCuenta() {
                   />
                 )}
               </div>
+
+              {/* ── PRINT LAYOUT (oculto en pantalla, visible al imprimir con body.printing-units) ── */}
+              <div className="units-print-layout">
+
+                {/* Encabezado: logo + datos del tenant */}
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 20, marginBottom: 10, paddingBottom: 10, borderBottom: '2px solid #0d7c6e' }}>
+                  {tenantData?.logo && (() => {
+                    const b64 = tenantData.logo;
+                    const src = b64.startsWith('data:') ? b64
+                      : b64.startsWith('/9j/') ? `data:image/jpeg;base64,${b64}`
+                      : b64.startsWith('iVBOR') ? `data:image/png;base64,${b64}`
+                      : `data:image/png;base64,${b64}`;
+                    return (
+                      <img src={src} alt="Logo"
+                        style={{ height: 56, width: 'auto', objectFit: 'contain', flexShrink: 0 }} />
+                    );
+                  })()}
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: '#1a1a2e', lineHeight: 1.3 }}>
+                      {tenantData?.razon_social || tenantData?.name}
+                    </div>
+                    {tenantData?.name && tenantData?.razon_social && tenantData.name !== tenantData.razon_social && (
+                      <div style={{ fontSize: 11, color: '#64748b' }}>{tenantData.name}</div>
+                    )}
+                    {tenantData?.rfc && (
+                      <div style={{ fontSize: 11, color: '#64748b' }}>RFC: {tenantData.rfc}</div>
+                    )}
+                    {(tenantData?.info_calle || tenantData?.addr_calle) && (
+                      <div style={{ fontSize: 11, color: '#64748b' }}>
+                        {[
+                          tenantData.info_calle || tenantData.addr_calle,
+                          tenantData.info_num_externo || tenantData.addr_num_externo,
+                          tenantData.info_colonia || tenantData.addr_colonia,
+                          tenantData.info_ciudad || tenantData.addr_ciudad,
+                          tenantData.info_codigo_postal || tenantData.addr_codigo_postal,
+                        ].filter(Boolean).join(', ')}
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                    <div style={{ fontSize: 17, fontWeight: 800, color: '#1a1a2e', lineHeight: 1.2 }}>Estado por Unidad</div>
+                    <div style={{ fontSize: 12, color: '#0d7c6e', fontWeight: 600, marginTop: 2 }}>
+                      Corte al período: {periodLabel(cutoff)}
+                    </div>
+                    {startPeriod && (
+                      <div style={{ fontSize: 10, color: '#64748b', marginTop: 1 }}>
+                        Desde: {periodLabel(startPeriod)}
+                      </div>
+                    )}
+                    <div style={{ fontSize: 10, color: '#64748b', marginTop: 1 }}>
+                      Generado: {new Date().toLocaleDateString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                    </div>
+                  </div>
+                </div>
+
+                {/* KPI strip */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8, marginBottom: 12 }}>
+                  {[
+                    { label: 'Total Cargos', value: fmt(summaryData.totalCargos), color: '#1a1a2e' },
+                    { label: 'Total Abonado', value: fmt(summaryData.totalAbonos), color: '#0d7c6e' },
+                    { label: 'Deuda Total', value: fmt(summaryData.totalDeuda), color: '#e84040' },
+                    { label: 'Con Adeudo', value: `${summaryData.conAdeudo} uds.`, color: '#d97706' },
+                    { label: 'Total Unidades', value: `${(summaryData.items || []).length} uds.`, color: '#1a1a2e' },
+                  ].map(({ label, value, color }) => (
+                    <div key={label} style={{ background: '#f8f6f1', border: '1px solid #e5e0d5', borderRadius: 6, padding: '8px 10px' }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color }}>{value}</div>
+                      <div style={{ fontSize: 9, color: '#64748b', marginTop: 2 }}>{label}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Full unit table — uses ALL units (no pagination) */}
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 10 }}>
+                  <thead>
+                    <tr style={{ background: '#1a1a2e', color: 'white' }}>
+                      <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 700 }}>#</th>
+                      <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 700 }}>Código</th>
+                      <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 700 }}>Nombre / Unidad</th>
+                      <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 700 }}>Responsable</th>
+                      <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 700 }}>Cargos</th>
+                      <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 700 }}>Abonado</th>
+                      <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 700 }}>Saldo</th>
+                      <th style={{ padding: '6px 8px', textAlign: 'center', fontWeight: 700 }}>Estado</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(summaryData.items || []).map((u, idx) => {
+                      const hasDebt = u.balance > 0.01;
+                      const hasFavor = u.balance < -0.01;
+                      const rowBg = hasDebt ? '#fff1f0' : hasFavor ? '#e6f4f2' : idx % 2 === 0 ? '#f8f6f1' : 'white';
+                      const balColor = hasDebt ? '#e84040' : hasFavor ? '#0d7c6e' : '#64748b';
+                      const balStr = hasDebt ? `-${fmt(Math.abs(u.balance))}` : hasFavor ? `+${fmt(Math.abs(u.balance))}` : '$0';
+                      const statusTxt = hasDebt ? 'Con adeudo' : hasFavor ? 'A favor' : 'Al corriente';
+                      return (
+                        <tr key={u.id} style={{ background: rowBg }}>
+                          <td style={{ padding: '5px 8px', color: '#64748b', borderBottom: '1px solid #e5e0d5' }}>{idx + 1}</td>
+                          <td style={{ padding: '5px 8px', borderBottom: '1px solid #e5e0d5' }}>
+                            <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#0d7c6e', background: '#e6f4f2', padding: '1px 5px', borderRadius: 3 }}>
+                              {u.unit_id_code}
+                            </span>
+                          </td>
+                          <td style={{ padding: '5px 8px', fontWeight: 600, color: '#1a1a2e', borderBottom: '1px solid #e5e0d5' }}>{u.unit_name}</td>
+                          <td style={{ padding: '5px 8px', color: '#64748b', borderBottom: '1px solid #e5e0d5' }}>{u.responsible_name || '—'}</td>
+                          <td style={{ padding: '5px 8px', textAlign: 'right', borderBottom: '1px solid #e5e0d5' }}>{fmt(u.total_charges)}</td>
+                          <td style={{ padding: '5px 8px', textAlign: 'right', color: '#0d7c6e', borderBottom: '1px solid #e5e0d5' }}>{fmt(u.total_payments)}</td>
+                          <td style={{ padding: '5px 8px', textAlign: 'right', fontWeight: 700, color: balColor, borderBottom: '1px solid #e5e0d5' }}>{balStr}</td>
+                          <td style={{ padding: '5px 8px', textAlign: 'center', fontWeight: 600, color: balColor, borderBottom: '1px solid #e5e0d5' }}>{statusTxt}</td>
+                        </tr>
+                      );
+                    })}
+                    {/* Totals row */}
+                    <tr style={{ background: '#0d7c6e', color: 'white', fontWeight: 700 }}>
+                      <td colSpan={4} style={{ padding: '7px 8px', fontSize: 11 }}>TOTALES</td>
+                      <td style={{ padding: '7px 8px', textAlign: 'right' }}>{fmt(summaryData.totalCargos)}</td>
+                      <td style={{ padding: '7px 8px', textAlign: 'right' }}>{fmt(summaryData.totalAbonos)}</td>
+                      <td style={{ padding: '7px 8px', textAlign: 'right', color: summaryData.totalDeuda > 0 ? '#fca5a5' : 'white' }}>
+                        {summaryData.totalDeuda > 0 ? `-${fmt(summaryData.totalDeuda)}` : '$0'}
+                      </td>
+                      <td style={{ padding: '7px 8px' }}></td>
+                    </tr>
+                  </tbody>
+                </table>
+
+                {/* Footer */}
+                <div style={{ marginTop: 10, borderTop: '1px solid #e5e0d5', paddingTop: 5, textAlign: 'center', fontSize: 9, color: '#64748b' }}>
+                  {tenantData?.name} · Estado por Unidad · Corte: {periodLabel(cutoff)} · Generado el {new Date().toLocaleDateString('es-MX')}
+                </div>
+              </div>
             </>
           )}
 
@@ -582,6 +729,7 @@ export default function EstadoCuenta() {
               cutoff={cutoff}
               setCutoff={setCutoff}
               startPeriod={startPeriod}
+              periodAggregates={listMeta?.period_aggregates || []}
             />
           )}
 
@@ -643,7 +791,7 @@ function payTotalIncome(pay) {
 /* ═══════════════════════════════════════════════════════════
    ESTADO GENERAL — per-period rows across all units
    ═══════════════════════════════════════════════════════════ */
-function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cutoff, setCutoff, startPeriod }) {
+function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cutoff, setCutoff, startPeriod, periodAggregates }) {
   const [payments, setPayments] = useState([]);
   const [gastos, setGastos] = useState([]);
   // cajaChica ya no se incluye en el reporte general
@@ -683,7 +831,14 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
     return periods;
   }, [startPeriod, cutoff]);
 
-  // Compute charge per unit per period
+  // Lookup de cifras reales por período (de _compute_statement, mismas que estado por unidad)
+  const periodAggMap = useMemo(() => {
+    const m = {};
+    (periodAggregates || []).forEach(pa => { m[pa.period] = pa; });
+    return m;
+  }, [periodAggregates]);
+
+  // Compute charge per unit per period (fallback si aún no hay period_aggregates)
   const chargePerUnit = useMemo(() => {
     const maint = parseFloat(tenantData?.maintenance_fee || 0);
     let charge = maint;
@@ -725,14 +880,25 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
 
     return allPeriods.map(period => {
       const periodPayments = payByPeriod[period] || [];
-      const totalCargo = chargePerUnit * numUnits;
-      let recaudo = 0, recaudoConciliado = 0, recaudoNoConciliado = 0;
-      let pagados = 0, parciales = 0, pendientesCount = 0;
+
+      // Usar cifras reales de _compute_statement (mismas que estado por unidad)
+      // Si aún no cargaron, usar la estimación plana como fallback
+      const aggData = periodAggMap[period];
+      const totalCargo = aggData ? aggData.total_charge : chargePerUnit * numUnits;
+      // recaudo: cifra de _compute_statement (abono_display) ya incluye unrecognized income desde backend
+      const recaudo = aggData ? aggData.total_paid : (() => {
+        let r = 0;
+        periodPayments.forEach(pay => { r += payTotalIncome(pay); });
+        r += uiByPeriod[period] || 0;
+        return r;
+      })();
+
+      // Detalle de conciliación sigue viniendo de registros individuales de pago
+      let recaudoConciliado = 0, recaudoNoConciliado = 0;
       const recaudoDetails = { conciliado: [], noConciliado: [] };
 
       periodPayments.forEach(pay => {
         const income = payTotalIncome(pay);
-        recaudo += income;
         const responsible = pay.responsible || '';
         if (pay.bank_reconciled) {
           recaudoConciliado += income;
@@ -741,16 +907,16 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
           recaudoNoConciliado += income;
           if (income > 0) recaudoDetails.noConciliado.push({ unit: pay.unit_id_code || '', responsible, amount: income, payment_type: pay.payment_type });
         }
-        if (pay.status === 'pagado') pagados++;
-        else if (pay.status === 'parcial') parciales++;
-        else pendientesCount++;
       });
-      const uiAmt = uiByPeriod[period] || 0;
-      recaudo += uiAmt;
-      recaudoConciliado += uiAmt;
+      if (aggData) {
+        const uiAmt = uiByPeriod[period] || 0;
+        recaudoConciliado += uiAmt;
+      }
 
-      pendientesCount = numUnits - pagados - parciales;
-      if (pendientesCount < 0) pendientesCount = 0;
+      // Estatus reales desde _compute_statement (misma lógica que estado por unidad)
+      const pagados   = aggData?.pagados   ?? 0;
+      const parciales = aggData?.parciales ?? 0;
+      const pendientesCount = aggData?.pendientes ?? Math.max(0, numUnits - pagados - parciales);
 
       const gastosPer = gastoByPeriod[period] || { reconciled: 0, noReconciled: 0 };
       const gastoDetailPer = gastoDetailByPeriod[period] || { reconciled: [], noReconciled: [] };
@@ -760,11 +926,12 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
         period, totalCargo, cargoOblig: totalCargo, recaudo,
         recaudoConciliado, recaudoNoConciliado, recaudoDetails,
         pagados, parciales, pendientes: pendientesCount,
+        futuros: aggData?.futuros ?? 0,
         pGastos, gastosConciliado: gastosPer.reconciled, gastosNoConciliado: gastosPer.noReconciled,
         gastoDetail: gastoDetailPer, balance,
       };
     });
-  }, [allPeriods, payments, gastos, unrecognizedIncome, chargePerUnit, numUnits]);
+  }, [allPeriods, payments, gastos, unrecognizedIncome, chargePerUnit, numUnits, periodAggMap]);
 
   // Grand totals
   const totals = useMemo(() => {
@@ -781,6 +948,138 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
 
   return (
     <div className="content-fade">
+
+      {/* ── PRINT LAYOUT (oculto en pantalla, visible con body.printing-general) ── */}
+      <div className="general-print-layout">
+
+        {/* Encabezado — mismo estilo que units/adeudos */}
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 20, marginBottom: 10, paddingBottom: 10, borderBottom: '2px solid #0d7c6e' }}>
+          {tenantData?.logo && (() => {
+            const b64 = tenantData.logo;
+            const src = b64.startsWith('data:') ? b64
+              : b64.startsWith('/9j/') ? `data:image/jpeg;base64,${b64}`
+              : b64.startsWith('iVBOR') ? `data:image/png;base64,${b64}`
+              : `data:image/png;base64,${b64}`;
+            return <img src={src} alt="Logo" style={{ height: 56, width: 'auto', objectFit: 'contain', flexShrink: 0 }} />;
+          })()}
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: '#1a1a2e', lineHeight: 1.3 }}>
+              {tenantData?.razon_social || tenantData?.name}
+            </div>
+            {tenantData?.name && tenantData?.razon_social && tenantData.name !== tenantData.razon_social && (
+              <div style={{ fontSize: 11, color: '#64748b' }}>{tenantData.name}</div>
+            )}
+            {tenantData?.rfc && (
+              <div style={{ fontSize: 11, color: '#64748b' }}>RFC: {tenantData.rfc}</div>
+            )}
+            {(tenantData?.info_calle || tenantData?.addr_calle) && (
+              <div style={{ fontSize: 11, color: '#64748b' }}>
+                {[
+                  tenantData.info_calle || tenantData.addr_calle,
+                  tenantData.info_num_externo || tenantData.addr_num_externo,
+                  tenantData.info_colonia || tenantData.addr_colonia,
+                  tenantData.info_ciudad || tenantData.addr_ciudad,
+                  tenantData.info_codigo_postal || tenantData.addr_codigo_postal,
+                ].filter(Boolean).join(', ')}
+              </div>
+            )}
+          </div>
+          <div style={{ textAlign: 'right', flexShrink: 0 }}>
+            <div style={{ fontSize: 17, fontWeight: 800, color: '#1a1a2e', lineHeight: 1.2 }}>Estado General</div>
+            <div style={{ fontSize: 12, color: '#0d7c6e', fontWeight: 600, marginTop: 2 }}>
+              Corte al período: {periodLabel(cutoff)}
+            </div>
+            {startPeriod && (
+              <div style={{ fontSize: 10, color: '#64748b', marginTop: 1 }}>
+                Desde: {periodLabel(startPeriod)}
+              </div>
+            )}
+            <div style={{ fontSize: 10, color: '#64748b', marginTop: 1 }}>
+              Generado: {new Date().toLocaleDateString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+            </div>
+          </div>
+        </div>
+
+        {/* KPI strip — 4 celdas */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 12 }}>
+          {[
+            { label: 'Total Cargos',   value: fmt(totals.grandCargo),   color: '#1a1a2e' },
+            { label: 'Recaudo Total',  value: fmt(totals.grandRecaudo),  color: '#0d7c6e' },
+            { label: 'Total Gastos',   value: fmt(totals.grandGastos),   color: '#d97706' },
+            { label: 'Balance Neto',   value: fmt(totals.balance),       color: totals.balance >= 0 ? '#0d7c6e' : '#e84040' },
+          ].map(({ label, value, color }) => (
+            <div key={label} style={{ background: '#f8f6f1', border: '1px solid #e5e0d5', borderRadius: 6, padding: '8px 10px' }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color }}>{value}</div>
+              <div style={{ fontSize: 9, color: '#64748b', marginTop: 2 }}>{label}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Tabla completa — todos los períodos (más reciente primero) */}
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 9.5 }}>
+          <thead>
+            <tr style={{ background: '#1a1a2e', color: 'white' }}>
+              <th style={{ padding: '6px 7px', textAlign: 'left',    fontWeight: 700 }}>Período</th>
+              <th style={{ padding: '6px 7px', textAlign: 'right',   fontWeight: 700 }}>Cargos</th>
+              <th style={{ padding: '6px 7px', textAlign: 'right',   fontWeight: 700 }}>Recaudo 🏦</th>
+              <th style={{ padding: '6px 7px', textAlign: 'right',   fontWeight: 700 }}>Recaudo ⏳</th>
+              <th style={{ padding: '6px 7px', textAlign: 'center',  fontWeight: 700 }}>✅</th>
+              <th style={{ padding: '6px 7px', textAlign: 'center',  fontWeight: 700 }}>🔶</th>
+              <th style={{ padding: '6px 7px', textAlign: 'center',  fontWeight: 700 }}>⏳</th>
+              <th style={{ padding: '6px 7px', textAlign: 'right',   fontWeight: 700 }}>Gastos 🏦</th>
+              <th style={{ padding: '6px 7px', textAlign: 'right',   fontWeight: 700 }}>Gastos ⏳</th>
+              <th style={{ padding: '6px 7px', textAlign: 'right',   fontWeight: 700 }}>Balance</th>
+            </tr>
+          </thead>
+          <tbody>
+            {[...periodRows].reverse().map((row, idx) => {
+              const balColor = row.balance >= 0 ? '#0d7c6e' : '#e84040';
+              const rowBg = idx % 2 === 0 ? '#f8f6f1' : 'white';
+              return (
+                <tr key={row.period} style={{ background: rowBg }}>
+                  <td style={{ padding: '5px 7px', fontWeight: 600, color: '#1a1a2e', borderBottom: '1px solid #e5e0d5' }}>{periodLabel(row.period)}</td>
+                  <td style={{ padding: '5px 7px', textAlign: 'right', borderBottom: '1px solid #e5e0d5' }}>{fmt(row.cargoOblig)}</td>
+                  <td style={{ padding: '5px 7px', textAlign: 'right', color: '#0d7c6e', fontWeight: 700, borderBottom: '1px solid #e5e0d5' }}>
+                    {row.recaudoConciliado > 0 ? fmt(row.recaudoConciliado) : '—'}
+                  </td>
+                  <td style={{ padding: '5px 7px', textAlign: 'right', color: '#b45309', borderBottom: '1px solid #e5e0d5' }}>
+                    {row.recaudoNoConciliado > 0 ? fmt(row.recaudoNoConciliado) : '—'}
+                  </td>
+                  <td style={{ padding: '5px 7px', textAlign: 'center', color: '#0d7c6e', fontWeight: 700, borderBottom: '1px solid #e5e0d5' }}>{row.pagados}</td>
+                  <td style={{ padding: '5px 7px', textAlign: 'center', color: '#d97706', fontWeight: 700, borderBottom: '1px solid #e5e0d5' }}>{row.parciales}</td>
+                  <td style={{ padding: '5px 7px', textAlign: 'center', color: '#e84040', fontWeight: 700, borderBottom: '1px solid #e5e0d5' }}>{row.pendientes}</td>
+                  <td style={{ padding: '5px 7px', textAlign: 'right', color: '#b45309', borderBottom: '1px solid #e5e0d5' }}>
+                    {row.gastosConciliado > 0 ? fmt(row.gastosConciliado) : '—'}
+                  </td>
+                  <td style={{ padding: '5px 7px', textAlign: 'right', color: '#64748b', borderBottom: '1px solid #e5e0d5' }}>
+                    {row.gastosNoConciliado > 0 ? fmt(row.gastosNoConciliado) : '—'}
+                  </td>
+                  <td style={{ padding: '5px 7px', textAlign: 'right', fontWeight: 700, color: balColor, borderBottom: '1px solid #e5e0d5' }}>
+                    {fmt(row.balance)}
+                  </td>
+                </tr>
+              );
+            })}
+            {/* Fila de totales */}
+            <tr style={{ background: '#0d7c6e', color: 'white', fontWeight: 700 }}>
+              <td style={{ padding: '7px 7px', fontSize: 11 }}>TOTALES · {allPeriods.length} período(s)</td>
+              <td style={{ padding: '7px 7px', textAlign: 'right' }}>{fmt(totals.grandCargo)}</td>
+              <td style={{ padding: '7px 7px', textAlign: 'right' }}>{fmt(periodRows.reduce((s,r)=>s+r.recaudoConciliado,0))}</td>
+              <td style={{ padding: '7px 7px', textAlign: 'right' }}>{fmt(periodRows.reduce((s,r)=>s+r.recaudoNoConciliado,0))}</td>
+              <td colSpan={3} style={{ padding: '7px 7px' }}></td>
+              <td style={{ padding: '7px 7px', textAlign: 'right' }}>{fmt(periodRows.reduce((s,r)=>s+r.gastosConciliado,0))}</td>
+              <td style={{ padding: '7px 7px', textAlign: 'right' }}>{fmt(periodRows.reduce((s,r)=>s+r.gastosNoConciliado,0))}</td>
+              <td style={{ padding: '7px 7px', textAlign: 'right', color: totals.balance >= 0 ? '#a7f3d0' : '#fca5a5' }}>{fmt(totals.balance)}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        {/* Footer */}
+        <div style={{ marginTop: 10, borderTop: '1px solid #e5e0d5', paddingTop: 5, textAlign: 'center', fontSize: 9, color: '#64748b' }}>
+          {tenantData?.name} · Estado General · Corte: {periodLabel(cutoff)} · {numUnits} unidades · Generado el {new Date().toLocaleDateString('es-MX')}
+        </div>
+      </div>
+
       {/* Controls bar */}
       <div className="card" style={{ marginBottom: 20 }}>
         <div className="card-body" style={{ padding: '16px 24px' }}>
@@ -797,7 +1096,16 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
             {startPeriod && (
               <span style={{ fontSize: 12, color: 'var(--ink-400)' }}>Desde: {periodLabel(startPeriod)}</span>
             )}
-            <button className="btn btn-primary btn-sm no-print" style={{ marginLeft: 'auto' }} onClick={() => window.print()}>
+            <button className="btn btn-primary btn-sm no-print" style={{ marginLeft: 'auto' }} onClick={() => {
+              const prev = document.title;
+              document.title = `Estado General — ${tenantData?.name || ''} — Corte ${periodLabel(cutoff)}`;
+              document.body.classList.add('printing-general');
+              window.print();
+              setTimeout(() => {
+                document.title = prev;
+                document.body.classList.remove('printing-general');
+              }, 1500);
+            }}>
               <Printer size={14} /> Exportar PDF
             </button>
           </div>
@@ -1391,8 +1699,12 @@ function ReporteAdeudosView({ tenantData, adeudosData, adeudosLoading, cutoff, s
   const handlePrint = () => {
     const prev = document.title;
     document.title = `Reporte de Adeudos — Corte ${periodLabel(cutoff)} — ${tenantData?.name || ''}`;
+    document.body.classList.add('printing-adeudos');
     window.print();
-    setTimeout(() => { document.title = prev; }, 1500);
+    setTimeout(() => {
+      document.title = prev;
+      document.body.classList.remove('printing-adeudos');
+    }, 1500);
   };
 
   return (
@@ -1464,6 +1776,130 @@ function ReporteAdeudosView({ tenantData, adeudosData, adeudosLoading, cutoff, s
             <div className="cob-stat-label">Corte de Período</div>
             <div className="cob-stat-value" style={{ fontSize: 14 }}>{periodLabel(cutoff)}</div>
           </div>
+        </div>
+      </div>
+
+      {/* ── PRINT LAYOUT (oculto en pantalla, visible con body.printing-adeudos) ── */}
+      <div className="adeudos-print-layout">
+        {/* Encabezado */}
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 20, marginBottom: 10, paddingBottom: 10, borderBottom: '2px solid #c0392b' }}>
+          {tenantData?.logo && (() => {
+            const b64 = tenantData.logo;
+            const src = b64.startsWith('data:') ? b64
+              : b64.startsWith('/9j/') ? `data:image/jpeg;base64,${b64}`
+              : b64.startsWith('iVBOR') ? `data:image/png;base64,${b64}`
+              : `data:image/png;base64,${b64}`;
+            return <img src={src} alt="Logo" style={{ height: 56, width: 'auto', objectFit: 'contain', flexShrink: 0 }} />;
+          })()}
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: '#1a1a2e', lineHeight: 1.3 }}>
+              {tenantData?.razon_social || tenantData?.name}
+            </div>
+            {tenantData?.name && tenantData?.razon_social && tenantData.name !== tenantData.razon_social && (
+              <div style={{ fontSize: 11, color: '#64748b' }}>{tenantData.name}</div>
+            )}
+            {tenantData?.rfc && (
+              <div style={{ fontSize: 11, color: '#64748b' }}>RFC: {tenantData.rfc}</div>
+            )}
+            {(tenantData?.info_calle || tenantData?.addr_calle) && (
+              <div style={{ fontSize: 11, color: '#64748b' }}>
+                {[
+                  tenantData.info_calle || tenantData.addr_calle,
+                  tenantData.info_num_externo || tenantData.addr_num_externo,
+                  tenantData.info_colonia || tenantData.addr_colonia,
+                  tenantData.info_ciudad || tenantData.addr_ciudad,
+                  tenantData.info_codigo_postal || tenantData.addr_codigo_postal,
+                ].filter(Boolean).join(', ')}
+              </div>
+            )}
+          </div>
+          <div style={{ textAlign: 'right', flexShrink: 0 }}>
+            <div style={{ fontSize: 17, fontWeight: 800, color: '#c0392b', lineHeight: 1.2 }}>Reporte de Adeudos</div>
+            <div style={{ fontSize: 12, color: '#c0392b', fontWeight: 600, marginTop: 2 }}>
+              Corte al período: {periodLabel(cutoff)}
+            </div>
+            {startPeriod && (
+              <div style={{ fontSize: 10, color: '#64748b', marginTop: 1 }}>
+                Desde: {periodLabel(startPeriod)}
+              </div>
+            )}
+            <div style={{ fontSize: 10, color: '#64748b', marginTop: 1 }}>
+              Generado: {new Date().toLocaleDateString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+            </div>
+          </div>
+        </div>
+
+        {/* KPI strip */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 12 }}>
+          {[
+            { label: 'Unidades con Adeudo', value: `${unitsWithDebt} / ${totalUnits}`, color: '#c0392b' },
+            { label: 'Adeudo Total', value: fmt(grandTotal), color: '#c0392b' },
+            { label: 'Promedio por Unidad', value: fmt(avgDebt), color: '#d97706' },
+            { label: 'Corte de Período', value: periodLabel(cutoff), color: '#1a1a2e' },
+          ].map(({ label, value, color }) => (
+            <div key={label} style={{ background: '#f8f6f1', border: '1px solid #e5e0d5', borderRadius: 6, padding: '8px 10px' }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color }}>{value}</div>
+              <div style={{ fontSize: 9, color: '#64748b', marginTop: 2 }}>{label}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Tabla completa (todas las unidades con adeudo, sin paginación) */}
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 10 }}>
+          <thead>
+            <tr style={{ background: '#1a1a2e', color: 'white' }}>
+              <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 700 }}>#</th>
+              <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 700 }}>Código</th>
+              <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 700 }}>Nombre / Unidad</th>
+              <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 700 }}>Responsable</th>
+              <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 700 }}>Adeudo Anterior</th>
+              <th style={{ padding: '6px 8px', textAlign: 'center', fontWeight: 700 }}>Períodos</th>
+              <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 700 }}>Adeudo Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {units.map((item, idx) => {
+              const u = item.unit || {};
+              const prevDebt = parseFloat(item.net_prev_debt || 0);
+              const totalAd = parseFloat(item.total_adeudo || 0);
+              const periodCount = (item.period_debts || []).length;
+              const rowBg = idx % 2 === 0 ? '#fff5f5' : '#fff8f8';
+              return (
+                <tr key={u.id} style={{ background: rowBg }}>
+                  <td style={{ padding: '5px 8px', color: '#64748b', borderBottom: '1px solid #fde8e8' }}>{idx + 1}</td>
+                  <td style={{ padding: '5px 8px', borderBottom: '1px solid #fde8e8' }}>
+                    <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#0d7c6e', background: '#e6f4f2', padding: '1px 5px', borderRadius: 3 }}>
+                      {u.unit_id_code}
+                    </span>
+                  </td>
+                  <td style={{ padding: '5px 8px', fontWeight: 600, color: '#1a1a2e', borderBottom: '1px solid #fde8e8' }}>{u.unit_name}</td>
+                  <td style={{ padding: '5px 8px', color: '#64748b', borderBottom: '1px solid #fde8e8' }}>{u.responsible_name || '—'}</td>
+                  <td style={{ padding: '5px 8px', textAlign: 'right', color: prevDebt > 0 ? '#c0392b' : '#64748b', fontWeight: prevDebt > 0 ? 700 : 400, borderBottom: '1px solid #fde8e8' }}>
+                    {prevDebt > 0 ? fmt(prevDebt) : '—'}
+                  </td>
+                  <td style={{ padding: '5px 8px', textAlign: 'center', borderBottom: '1px solid #fde8e8' }}>
+                    <span style={{ background: '#fde8e8', color: '#c0392b', fontWeight: 700, padding: '1px 6px', borderRadius: 10, fontSize: 9 }}>
+                      {periodCount}
+                    </span>
+                  </td>
+                  <td style={{ padding: '5px 8px', textAlign: 'right', fontWeight: 800, color: '#c0392b', borderBottom: '1px solid #fde8e8' }}>
+                    -{fmt(totalAd)}
+                  </td>
+                </tr>
+              );
+            })}
+            {/* Fila de totales */}
+            <tr style={{ background: '#c0392b', color: 'white', fontWeight: 700 }}>
+              <td colSpan={5} style={{ padding: '7px 8px', fontSize: 11 }}>TOTAL ADEUDOS · {unitsWithDebt} unidad(es)</td>
+              <td style={{ padding: '7px 8px', textAlign: 'center' }}></td>
+              <td style={{ padding: '7px 8px', textAlign: 'right', fontSize: 13 }}>-{fmt(grandTotal)}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        {/* Footer */}
+        <div style={{ marginTop: 10, borderTop: '1px solid #e5e0d5', paddingTop: 5, textAlign: 'center', fontSize: 9, color: '#64748b' }}>
+          {tenantData?.name} · Reporte de Adeudos · Corte: {periodLabel(cutoff)} · Generado el {new Date().toLocaleDateString('es-MX')}
         </div>
       </div>
 

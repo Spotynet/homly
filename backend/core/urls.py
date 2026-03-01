@@ -48,4 +48,6 @@ urlpatterns = [
          views.ReporteGeneralView.as_view(), name='reporte-general'),
     path('tenants/<uuid:tenant_id>/reporte-adeudos/',
          views.ReporteAdeudosView.as_view(), name='reporte-adeudos'),
+    path('tenants/<uuid:tenant_id>/estado-cuenta-pdf/',
+         views.EstadoPorUnidadPDFView.as_view(), name='estado-cuenta-pdf'),
 ]

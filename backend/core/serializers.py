@@ -296,10 +296,20 @@ class AssemblyPositionSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at']
 
 
+class AssemblyPositionBriefSerializer(serializers.ModelSerializer):
+    """Serializer ligero para anidar posiciones dentro de un comité."""
+    class Meta:
+        model = AssemblyPosition
+        fields = ['id', 'title', 'holder_name', 'email', 'phone', 'active', 'sort_order', 'notes']
+        read_only_fields = ['id']
+
+
 class CommitteeSerializer(serializers.ModelSerializer):
+    positions = AssemblyPositionBriefSerializer(many=True, read_only=True)
+
     class Meta:
         model = Committee
-        fields = ['id', 'tenant', 'name', 'description', 'exemption', 'members', 'created_at']
+        fields = ['id', 'tenant', 'name', 'description', 'exemption', 'members', 'positions', 'created_at']
         read_only_fields = ['id', 'created_at']
 
 

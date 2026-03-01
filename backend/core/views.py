@@ -183,7 +183,10 @@ class ExtraFieldViewSet(viewsets.ModelViewSet):
 
 def _compute_payment_status(payment, tenant, extra_fields):
     """Compute status from main field_payments + additional_payments.
-    'parcial' = mantenimiento fijo sin captura + al menos un campo adicional activo con pago."""
+    'parcial' = mantenimiento fijo sin captura + al menos un campo adicional activo con pago.
+    Unidades exentas (admin_exempt): cargo de mantenimiento = 0; tipo 'excento' → pagado."""
+    is_exempt = getattr(payment.unit, 'admin_exempt', False)
+
     all_fp = {}
     for fp in payment.field_payments.all():
         all_fp[fp.field_key] = float(fp.received or 0)
@@ -193,8 +196,11 @@ def _compute_payment_status(payment, tenant, extra_fields):
             if rec > 0:
                 all_fp[fk] = all_fp.get(fk, 0) + rec
 
-    maint_charge = float(tenant.maintenance_fee or 0)
-    maint_captured = all_fp.get('maintenance', 0)  # raw captured, not capped
+    has_non_maintenance_payment = any(v > 0 for k, v in all_fp.items() if k != 'maintenance')
+
+    # Exentas de mantenimiento: cargo base = 0
+    maint_charge = 0 if is_exempt else float(tenant.maintenance_fee or 0)
+    maint_captured = all_fp.get('maintenance', 0)
     maint_rec = min(maint_captured, maint_charge)
     total_req_charge = maint_charge
     total_req_received = maint_rec
@@ -204,8 +210,9 @@ def _compute_payment_status(payment, tenant, extra_fields):
         total_req_charge += ch
         total_req_received += rc
 
-    # Parcial: mantenimiento fijo sin pago + al menos un campo adicional activo pagado
-    has_non_maintenance_payment = any(v > 0 for k, v in all_fp.items() if k != 'maintenance')
+    # Exenta sin pagos en campos adicionales: tipo 'excento' → pagado directamente
+    if is_exempt and payment.payment_type == 'excento' and not has_non_maintenance_payment:
+        return 'pagado'
 
     if total_req_received >= total_req_charge:
         return 'pagado'
@@ -521,7 +528,11 @@ class ReopenRequestViewSet(viewsets.ModelViewSet):
 
 class AssemblyPositionViewSet(viewsets.ModelViewSet):
     serializer_class = AssemblyPositionSerializer
-    permission_classes = [IsTenantAdmin]
+
+    def get_permissions(self):
+        if self.action in ['list', 'retrieve']:
+            return [IsTenantMember()]
+        return [IsTenantAdmin()]
 
     def get_queryset(self):
         return AssemblyPosition.objects.filter(tenant_id=self.kwargs['tenant_id'])
@@ -532,10 +543,16 @@ class AssemblyPositionViewSet(viewsets.ModelViewSet):
 
 class CommitteeViewSet(viewsets.ModelViewSet):
     serializer_class = CommitteeSerializer
-    permission_classes = [IsTenantAdmin]
+
+    def get_permissions(self):
+        if self.action in ['list', 'retrieve']:
+            return [IsTenantMember()]
+        return [IsTenantAdmin()]
 
     def get_queryset(self):
-        return Committee.objects.filter(tenant_id=self.kwargs['tenant_id'])
+        return Committee.objects.filter(
+            tenant_id=self.kwargs['tenant_id']
+        ).prefetch_related('positions')
 
     def perform_create(self, serializer):
         serializer.save(tenant_id=self.kwargs['tenant_id'])
@@ -586,10 +603,11 @@ class DashboardView(APIView):
         non_exempt_units = total_units - exempt_count
         pending_count = max(0, non_exempt_units - paid_count - partial_count)
 
-        # Total collected
+        # Total collected — solo mantenimiento fijo
         total_collected = FieldPayment.objects.filter(
             payment__tenant_id=tenant_id,
             payment__period=period,
+            field_key='maintenance',
         ).aggregate(total=Sum('received'))['total'] or Decimal('0')
 
         # Cargos fijos: solo unidades no exentas
@@ -624,12 +642,13 @@ class DashboardView(APIView):
         rented_count = units.filter(occupancy='rentada').count()
 
         # Ingresos adicionales: FieldPayments del periodo que NO sean mantenimiento
-        ingreso_adicional_fp = FieldPayment.objects.filter(
+        # (campos extra opcionales/obligatorios — NO incluye adeudo_payments que son JSON aparte)
+        ingreso_adicional = FieldPayment.objects.filter(
             payment__tenant_id=tenant_id,
             payment__period=period,
         ).exclude(field_key='maintenance').aggregate(total=Sum('received'))['total'] or Decimal('0')
 
-        # Adeudo recibido este periodo (suma de adeudo_payments de todos los pagos del periodo)
+        # Adeudo recibido este periodo (suma de adeudo_payments JSON — métrica separada, no forma parte de ingresos)
         total_adeudo_recibido = Decimal('0')
         for p in payments:
             for period_debt in (p.adeudo_payments or {}).values():
@@ -637,14 +656,14 @@ class DashboardView(APIView):
                     for amt in period_debt.values():
                         total_adeudo_recibido += Decimal(str(amt or 0))
 
-        # Ingresos adicionales netos (excluir adeudo)
-        ingreso_adicional = max(Decimal('0'), ingreso_adicional_fp - total_adeudo_recibido)
-
         # Deuda total = suma de previous_debt de todas las unidades del tenant
         deuda_total = units.aggregate(total=Sum('previous_debt'))['total'] or Decimal('0')
 
-        # Total ingresos del periodo = cobranza + adeudo recibido + ingreso adicional
-        total_ingresos = total_collected + total_adeudo_recibido + ingreso_adicional
+        # Total ingresos = mantenimiento + campos adicionales (SIN adeudos)
+        # total_collected = solo FieldPayments de mantenimiento fijo
+        # ingreso_adicional = campos extra (opcionales/obligatorios, no mantenimiento)
+        # los adeudo_payments son un JSON aparte y NO deben sumarse aquí
+        total_ingresos = total_collected + ingreso_adicional
 
         data = {
             'total_units': total_units,
@@ -729,7 +748,11 @@ def _compute_statement(tenant, unit_id, start_period, cutoff_period):
         tenant_id=tenant.id, enabled=True
     ).exclude(field_type='gastos'))
     req_fields = [f for f in cob_fields if f.required]
-    opt_fields = [f for f in cob_fields if not f.required]
+    # Adelanto: pagos opcionales que suman como saldo a favor (reducen saldo_acum y saldo_final).
+    # Neutral: pagos registrados pero que NO afectan el saldo (ni suman ni restan).
+    adelanto_opt_fields = [f for f in cob_fields if not f.required and f.field_type == 'adelanto']
+    neutral_opt_fields  = [f for f in cob_fields if not f.required and f.field_type != 'adelanto']
+    opt_fields = adelanto_opt_fields + neutral_opt_fields  # orden: adelantos primero en field_detail
 
     unit = Unit.objects.filter(id=unit_id, tenant_id=tenant.id).first()
     previous_debt = float(unit.previous_debt or 0) if unit else 0
@@ -763,7 +786,8 @@ def _compute_statement(tenant, unit_id, start_period, cutoff_period):
                 adeudo_credits_received[target_p] = adeudo_credits_received.get(target_p, Decimal('0')) + total
 
     # Saldo inicial = deuda anterior - abonos a deuda - saldo a favor previo
-    saldo_acum = max(Decimal('0'), Decimal(str(previous_debt)) - prev_debt_adeudo - Decimal(str(credit_balance)))
+    # Sin max(0,...): el excedente de saldo a favor reduce los cargos de los periodos
+    saldo_acum = Decimal(str(previous_debt)) - prev_debt_adeudo - Decimal(str(credit_balance))
 
     periods = _periods_between(start_period, cutoff_period)
     rows = []
@@ -780,14 +804,21 @@ def _compute_statement(tenant, unit_id, start_period, cutoff_period):
         is_exempt = _has_admin_exempt(tenant, unit_id, period)
         maint_charge = Decimal('0') if is_exempt else (tenant.maintenance_fee or Decimal('0'))
         maint_fp = fp_map.get('maintenance')
-        maint_received = Decimal(str(maint_fp.received or 0)) if maint_fp else Decimal('0')
-        maint_adelanto = Decimal(str(ac.get('maintenance', 0))) if isinstance(ac.get('maintenance'), (int, float, str)) else Decimal(str(ac.get('maintenance', 0) or 0))
+        # Unidades exentas: mantenimiento completamente neutro (cargo=0, abono=0)
+        # para que ni sume ni reste en saldo y totales
+        if is_exempt:
+            maint_received = Decimal('0')
+            maint_adelanto = Decimal('0')
+        else:
+            maint_received = Decimal(str(maint_fp.received or 0)) if maint_fp else Decimal('0')
+            maint_adelanto = Decimal(str(ac.get('maintenance', 0))) if isinstance(ac.get('maintenance'), (int, float, str)) else Decimal(str(ac.get('maintenance', 0) or 0))
         maint_abono = maint_received + maint_adelanto
 
         total_cargo_req = maint_charge
         total_abono_req = maint_abono
         total_cargo_opt = Decimal('0')
         total_abono_opt = Decimal('0')
+        total_received_neutral = Decimal('0')  # Pagos de campos neutrales (solo para mostrar, no afectan saldo)
 
         field_detail = []
 
@@ -803,18 +834,29 @@ def _compute_statement(tenant, unit_id, start_period, cutoff_period):
 
         for ef in opt_fields:
             field_fp = fp_map.get(str(ef.id))
-            charge = Decimal('0')  # Optional fields: charge from capture not stored in FieldPayment
+            charge = Decimal('0')  # Optional fields: no fixed charge
             received = Decimal(str(field_fp.received or 0)) if field_fp else Decimal('0')
-            adelanto = Decimal(str(ac.get(str(ef.id), 0))) if str(ef.id) in ac else Decimal('0')
-            abono = received + adelanto
+            ef_adelanto = Decimal(str(ac.get(str(ef.id), 0))) if str(ef.id) in ac else Decimal('0')
+            abono = received + ef_adelanto
             total_cargo_opt += charge
-            total_abono_opt += abono
-            field_detail.append({'id': str(ef.id), 'label': ef.label, 'charge': float(charge), 'received': float(received), 'adelanto': float(adelanto), 'abono': float(abono), 'required': False})
+            # Solo los campos tipo 'adelanto' suman al saldo (crédito a favor).
+            # Los campos neutrales se registran para mostrar en la columna de abonos pero NO afectan el saldo.
+            if ef.field_type == 'adelanto':
+                total_abono_opt += abono
+            else:
+                total_received_neutral += abono
+            field_detail.append({
+                'id': str(ef.id), 'label': ef.label,
+                'charge': float(charge), 'received': float(received),
+                'adelanto': float(ef_adelanto), 'abono': float(abono),
+                'required': False, 'contributes_balance': ef.field_type == 'adelanto',
+            })
 
         cargo_oblig = maint_charge + sum(Decimal(str(ef.default_amount or 0)) for ef in req_fields)
         cargo_opt = total_cargo_opt
         cargo_total = cargo_oblig + cargo_opt
-        abono = total_abono_req + total_abono_opt
+        abono_balance = total_abono_req + total_abono_opt          # Solo pagos que afectan el saldo
+        abono_display = abono_balance + total_received_neutral     # Todos los pagos recibidos (para mostrar)
 
         oblig_abono = maint_abono + sum((fd['abono'] for fd in field_detail if fd.get('required')), 0)
         oblig_abono = Decimal(str(oblig_abono)) if not isinstance(oblig_abono, Decimal) else oblig_abono
@@ -830,7 +872,11 @@ def _compute_statement(tenant, unit_id, start_period, cutoff_period):
             eff_status = pay.status
         else:
             eff_status = 'pendiente' if is_past else 'futuro'
-        if cargo_oblig > 0 and oblig_abono_capped >= cargo_oblig:
+
+        if is_exempt and cargo_oblig == Decimal('0'):
+            # Período completamente exento sin campos adicionales obligatorios → pagado
+            eff_status = 'pagado'
+        elif cargo_oblig > 0 and oblig_abono_capped >= cargo_oblig:
             eff_status = 'pagado'
         elif maint_abono == Decimal('0') and has_non_maint_abono:
             eff_status = 'parcial'
@@ -839,13 +885,14 @@ def _compute_statement(tenant, unit_id, start_period, cutoff_period):
         else:
             eff_status = 'futuro'
 
-        saldo_periodo = cargo_total - abono
+        saldo_periodo = cargo_total - abono_balance   # El saldo solo usa pagos que afectan el balance
         saldo_acum += saldo_periodo
 
         rows.append({
             'period': period,
             'charge': float(cargo_total),
-            'paid': float(abono),
+            'paid': float(abono_display),   # Muestra todos los pagos recibidos en la columna Abonos
+            'paid_balance': float(abono_balance),  # Solo para cálculo de balance (no expuesto al frontend)
             'maintenance': float(maint_charge),
             'status': eff_status,
             'payment_type': pay.payment_type if pay else None,
@@ -857,10 +904,11 @@ def _compute_statement(tenant, unit_id, start_period, cutoff_period):
         })
 
     total_charges = sum(r['charge'] for r in rows)
-    total_paid = sum(r['paid'] for r in rows)
-    balance = total_charges - total_paid
+    total_paid_balance = sum(r['paid_balance'] for r in rows)   # Para cálculo correcto del saldo
+    total_paid_display = sum(r['paid'] for r in rows)           # Todos los pagos recibidos (para mostrar)
+    balance = total_charges - total_paid_balance
 
-    return rows, float(total_charges), float(total_paid), float(balance), float(prev_debt_adeudo)
+    return rows, float(total_charges), float(total_paid_display), float(balance), float(prev_debt_adeudo)
 
 
 class EstadoCuentaView(APIView):
@@ -886,24 +934,57 @@ class EstadoCuentaView(APIView):
             total_deuda = Decimal('0')
             con_adeudo = 0
             total_ingresos_no_identificados = Decimal('0')
+            # Agregado por período para que EstadoGeneralView use las mismas cifras
+            period_agg = {}
+
             for ui in UnrecognizedIncome.objects.filter(tenant_id=tenant_id, period__lte=cutoff, period__gte=start_period):
-                total_ingresos_no_identificados += Decimal(str(ui.amount or 0))
+                amt = float(ui.amount or 0)
+                total_ingresos_no_identificados += Decimal(str(amt))
+                p = ui.period
+                if p not in period_agg:
+                    period_agg[p] = {'period': p, 'total_charge': 0.0, 'total_paid': 0.0,
+                                     'pagados': 0, 'parciales': 0, 'pendientes': 0, 'futuros': 0}
+                period_agg[p]['total_paid'] += amt
 
             for unit in units:
-                rows, tc, tp, bal, _pda = _compute_statement(tenant, str(unit.id), start_period, cutoff)
+                rows, tc, tp, bal, pda = _compute_statement(tenant, str(unit.id), start_period, cutoff)
+                # Apply same adjustment as unit detail: include previous_debt and credit_balance
+                prev_debt = float(unit.previous_debt or 0)
+                credit_bal = float(unit.credit_balance or 0)
+                adj_bal = bal + prev_debt - float(pda) - credit_bal
                 total_cargo += Decimal(str(tc))
                 total_abono += Decimal(str(tp))
-                deuda = max(Decimal('0'), Decimal(str(bal)))
+                deuda = max(Decimal('0'), Decimal(str(adj_bal)))
                 if deuda > 0:
                     con_adeudo += 1
                 total_deuda += deuda
+
+                # Acumular por período — incluyendo estatus reales de _compute_statement
+                for row in rows:
+                    p = row['period']
+                    if p not in period_agg:
+                        period_agg[p] = {'period': p, 'total_charge': 0.0, 'total_paid': 0.0,
+                                         'pagados': 0, 'parciales': 0, 'pendientes': 0, 'futuros': 0}
+                    period_agg[p]['total_charge'] += row['charge']
+                    period_agg[p]['total_paid'] += row['paid']  # abono_display
+                    st = row.get('status', 'pendiente')
+                    if st == 'pagado':
+                        period_agg[p]['pagados'] += 1
+                    elif st == 'parcial':
+                        period_agg[p]['parciales'] += 1
+                    elif st == 'futuro':
+                        period_agg[p]['futuros'] += 1
+                    else:
+                        period_agg[p]['pendientes'] += 1
 
                 unit_data.append({
                     'unit': UnitSerializer(unit).data,
                     'payment': None,
                     'total_charge': str(tc),
                     'total_paid': str(tp),
-                    'balance': str(bal),
+                    'balance': str(adj_bal),
+                    'previous_debt': str(prev_debt),
+                    'credit_balance': str(credit_bal),
                 })
 
             return Response({
@@ -917,6 +998,7 @@ class EstadoCuentaView(APIView):
                 'con_adeudo': con_adeudo,
                 'start_period': start_period,
                 'cutoff': cutoff,
+                'period_aggregates': sorted(period_agg.values(), key=lambda x: x['period']),
             })
 
         unit = Unit.objects.get(id=unit_id, tenant_id=tenant_id)
@@ -939,19 +1021,26 @@ class EstadoCuentaView(APIView):
 
         prev_debt_adeudo_val = float(prev_debt_adeudo)
         net_prev_debt = max(0, previous_debt - prev_debt_adeudo_val)
+        credit_balance = float(unit.credit_balance or 0)
+
+        # Saldo final real: cargos de periodos + deuda previa - abonos de periodos
+        #   - abonos a deuda previa - saldo a favor previo
+        # El saldo a favor resta del total adeudado (cubre primero la deuda previa y
+        # luego los cargos de los periodos si hubiera excedente)
+        adjusted_balance = balance + previous_debt - prev_debt_adeudo_val - credit_balance
 
         return Response({
             'unit': UnitSerializer(unit).data,
             'periods': periods_out,
             'total_charges': str(total_charges),
             'total_payments': str(total_paid),
-            'balance': str(balance),
+            'balance': str(adjusted_balance),
             'currency': tenant.currency,
             'tenant_name': tenant.name,
             'previous_debt': float(previous_debt),
             'prev_debt_adeudo': prev_debt_adeudo_val,
             'net_prev_debt': net_prev_debt,
-            'credit_balance': float(credit_balance),
+            'credit_balance': credit_balance,
         })
 
 
@@ -1223,28 +1312,30 @@ class ReporteAdeudosView(APIView):
             credit_balance = Decimal(str(unit.credit_balance or 0))
             prev_debt_adeudo_dec = Decimal(str(prev_debt_adeudo))
 
+            # Saldo ajustado igual que EstadoCuentaView (lista por unidad)
+            adj_bal = Decimal(str(bal)) + previous_debt - prev_debt_adeudo_dec - credit_balance
+            total_adeudo = max(Decimal('0'), adj_bal)
+
             net_prev_debt = max(
                 Decimal('0'),
                 previous_debt - prev_debt_adeudo_dec - credit_balance
             )
 
-            # Periods with outstanding debt (charge > paid)
+            # Períodos con déficit — usamos paid_balance (no el display) para el cálculo correcto
             period_debts = []
             for row in rows:
-                deficit = Decimal(str(row['charge'])) - Decimal(str(row['paid']))
+                paid_bal = Decimal(str(row.get('paid_balance', row['paid'])))
+                deficit = Decimal(str(row['charge'])) - paid_bal
                 if deficit > Decimal('0'):
                     period_debts.append({
                         'period': row['period'],
                         'charge': float(row['charge']),
-                        'paid': float(row['paid']),
+                        'paid': float(row['paid']),           # display (incluye neutros)
+                        'paid_balance': float(paid_bal),     # para cálculo de saldo
                         'deficit': float(deficit),
                         'status': row['status'],
                         'maintenance': float(row['maintenance']),
                     })
-
-            total_adeudo = net_prev_debt + sum(
-                Decimal(str(pd['deficit'])) for pd in period_debts
-            )
 
             if total_adeudo > Decimal('0'):
                 units_with_debt += 1
@@ -1300,3 +1391,401 @@ class ReporteGeneralView(APIView):
                 tenant_id=tenant_id, period=period
             ).exists(),
         })
+
+
+# ═══════════════════════════════════════════════════════════
+#  ESTADO POR UNIDAD — PDF EXPORT
+# ═══════════════════════════════════════════════════════════
+
+class EstadoPorUnidadPDFView(APIView):
+    """GET /api/tenants/{tenant_id}/estado-cuenta-pdf/?cutoff=YYYY-MM
+       Generates a downloadable PDF of the unit list with tenant header."""
+    permission_classes = [IsTenantMember]
+
+    def get(self, request, tenant_id):
+        import io
+        import base64
+        from datetime import date
+        from django.http import HttpResponse
+        try:
+            from reportlab.lib.pagesizes import A4
+            from reportlab.lib import colors
+            from reportlab.lib.units import cm
+            from reportlab.platypus import (
+                SimpleDocTemplate, Table, TableStyle, Paragraph,
+                Spacer, HRFlowable, Image,
+            )
+            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+            from reportlab.lib.enums import TA_CENTER, TA_RIGHT
+            from reportlab.platypus import KeepTogether  # noqa: F401
+        except ImportError:
+            return Response(
+                {'error': 'reportlab no instalado. Ejecuta: docker-compose up -d --build backend'},
+                status=503
+            )
+
+        cutoff_param = request.query_params.get('cutoff', '')
+        cutoff = cutoff_param or _today_period()
+
+        tenant = Tenant.objects.get(id=tenant_id)
+        start_period = tenant.operation_start_date or '2024-01'
+
+        # Build unit data
+        units = Unit.objects.filter(tenant_id=tenant_id).order_by('unit_id_code')
+        unit_rows = []
+        total_cargo_all = Decimal('0')
+        total_abono_all = Decimal('0')
+        total_deuda_all = Decimal('0')
+        con_adeudo = 0
+
+        for unit in units:
+            rows, tc, tp, bal, pda = _compute_statement(tenant, str(unit.id), start_period, cutoff)
+            prev_debt = float(unit.previous_debt or 0)
+            credit_bal = float(unit.credit_balance or 0)
+            adj_bal = bal + prev_debt - float(pda) - credit_bal
+            total_cargo_all += Decimal(str(tc))
+            total_abono_all += Decimal(str(tp))
+            deuda = max(0, adj_bal)
+            if deuda > 0.01:
+                con_adeudo += 1
+            total_deuda_all += Decimal(str(max(0, adj_bal)))
+            resp = unit.responsible_name or f'{unit.owner_first_name or ""} {unit.owner_last_name or ""}'.strip()
+            unit_rows.append({
+                'code': unit.unit_id_code or '',
+                'name': unit.unit_name or '',
+                'responsible': resp or '—',
+                'total_charge': tc,
+                'total_paid': tp,
+                'balance': adj_bal,
+                'exempt': unit.admin_exempt,
+            })
+
+        # Currency formatter
+        currency = tenant.currency or 'MXN'
+        def fmt_cur(n):
+            try:
+                return f'${float(n):,.0f}'
+            except Exception:
+                return '$0'
+
+        # Period label helper
+        MONTHS_ES = ['', 'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun',
+                     'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
+        MONTHS_FULL = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+                       'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+        def period_label(p):
+            try:
+                y, m = p.split('-')
+                return f'{MONTHS_FULL[int(m)]} {y}'
+            except Exception:
+                return p or ''
+
+        # Build PDF in memory
+        buffer = io.BytesIO()
+        page_w, page_h = A4
+        margin = 1.8 * cm
+        doc = SimpleDocTemplate(
+            buffer,
+            pagesize=A4,
+            leftMargin=margin,
+            rightMargin=margin,
+            topMargin=1.4 * cm,
+            bottomMargin=1.6 * cm,
+        )
+
+        styles = getSampleStyleSheet()
+        # Colour palette
+        COL_TEAL = colors.HexColor('#0d7c6e')
+        COL_TEAL_LIGHT = colors.HexColor('#e6f4f2')
+        COL_CORAL = colors.HexColor('#e84040')
+        COL_CORAL_LIGHT = colors.HexColor('#fff1f0')
+        COL_AMBER = colors.HexColor('#d97706')
+        COL_AMBER_LIGHT = colors.HexColor('#fffbeb')
+        COL_INK = colors.HexColor('#1a1a2e')
+        COL_INK_LIGHT = colors.HexColor('#64748b')
+        COL_SAND = colors.HexColor('#f8f6f1')
+        COL_SAND_BORDER = colors.HexColor('#e5e0d5')
+        COL_WHITE = colors.white
+        COL_HEADER_BG = colors.HexColor('#1a1a2e')
+
+        st_title = ParagraphStyle('DocTitle', fontSize=18, fontName='Helvetica-Bold',
+                                   textColor=COL_INK, spaceAfter=2, leading=22)
+        st_subtitle = ParagraphStyle('DocSub', fontSize=10, fontName='Helvetica',
+                                      textColor=COL_INK_LIGHT, spaceAfter=1)
+        st_tenant = ParagraphStyle('TenantName', fontSize=13, fontName='Helvetica-Bold',
+                                    textColor=COL_INK, spaceAfter=2, leading=16)
+        st_info = ParagraphStyle('Info', fontSize=8.5, fontName='Helvetica',
+                                  textColor=COL_INK_LIGHT, spaceAfter=1, leading=11)
+        st_kpi_val = ParagraphStyle('KpiVal', fontSize=14, fontName='Helvetica-Bold',
+                                     textColor=COL_INK, leading=17, spaceAfter=0)
+        st_kpi_label = ParagraphStyle('KpiLabel', fontSize=7.5, fontName='Helvetica',
+                                       textColor=COL_INK_LIGHT, leading=9, spaceAfter=0)
+        st_footer = ParagraphStyle('Footer', fontSize=7.5, fontName='Helvetica',
+                                    textColor=COL_INK_LIGHT, alignment=TA_CENTER)
+        st_cell = ParagraphStyle('Cell', fontSize=8, fontName='Helvetica',
+                                  textColor=COL_INK, leading=10)
+        st_cell_bold = ParagraphStyle('CellBold', fontSize=8, fontName='Helvetica-Bold',
+                                       textColor=COL_INK, leading=10)
+        st_cell_right = ParagraphStyle('CellRight', fontSize=8, fontName='Helvetica',
+                                        textColor=COL_INK, leading=10, alignment=TA_RIGHT)
+        st_cell_right_bold = ParagraphStyle('CellRightBold', fontSize=8.5, fontName='Helvetica-Bold',
+                                             textColor=COL_INK, leading=10, alignment=TA_RIGHT)
+
+        story = []
+
+        # ── HEADER: logo + tenant info ───────────────────────────────
+        logo_img = None
+        if tenant.logo:
+            try:
+                # logo may be stored as plain base64 or data-URL
+                b64 = tenant.logo
+                if ',' in b64:
+                    b64 = b64.split(',', 1)[1]
+                logo_bytes = base64.b64decode(b64)
+                logo_io = io.BytesIO(logo_bytes)
+                max_logo_h = 1.6 * cm
+                max_logo_w = 4.5 * cm
+                logo_img = Image(logo_io, width=max_logo_w, height=max_logo_h, kind='proportional')
+            except Exception:
+                logo_img = None
+
+        # Build address string
+        def _addr(*parts):
+            return ', '.join(p for p in parts if p and p.strip())
+
+        fiscal_addr = _addr(
+            tenant.info_calle,
+            tenant.info_num_externo,
+            tenant.info_colonia,
+            tenant.info_delegacion,
+            tenant.info_ciudad,
+            tenant.info_codigo_postal,
+        )
+        phys_addr = _addr(
+            tenant.addr_calle,
+            tenant.addr_num_externo,
+            tenant.addr_colonia,
+            tenant.addr_delegacion,
+            tenant.addr_ciudad,
+            tenant.addr_codigo_postal,
+        )
+        display_addr = fiscal_addr or phys_addr
+
+        tenant_name_str = tenant.razon_social or tenant.name
+        rfc_str = f'RFC: {tenant.rfc}' if tenant.rfc else ''
+        addr_str = display_addr
+        gen_date = date.today().strftime('%d/%m/%Y')
+
+        # Info column paragraphs
+        info_lines = [
+            Paragraph(tenant_name_str, st_tenant),
+        ]
+        if tenant.name and tenant.razon_social and tenant.name != tenant.razon_social:
+            info_lines.append(Paragraph(tenant.name, st_info))
+        if rfc_str:
+            info_lines.append(Paragraph(rfc_str, st_info))
+        if addr_str:
+            info_lines.append(Paragraph(addr_str, st_info))
+
+        title_lines = [
+            Paragraph('Estado por Unidad', st_title),
+            Paragraph(f'Corte al período: <b>{period_label(cutoff)}</b>', st_subtitle),
+            Paragraph(f'Desde: {period_label(start_period)}  ·  Generado: {gen_date}', st_info),
+        ]
+
+        # Combine logo + info + title in a 3-column header table
+        if logo_img:
+            header_data = [[logo_img, info_lines, title_lines]]
+            col_widths = [4.6 * cm, 8.2 * cm, None]
+        else:
+            header_data = [[info_lines, title_lines]]
+            col_widths = [10 * cm, None]
+
+        avail_w = page_w - 2 * margin
+        if logo_img:
+            col_widths[-1] = avail_w - col_widths[0] - col_widths[1]
+        else:
+            col_widths[-1] = avail_w - col_widths[0]
+
+        header_table = Table(header_data, colWidths=col_widths)
+        header_table.setStyle(TableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('LEFTPADDING', (0, 0), (-1, -1), 0),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+            ('TOPPADDING', (0, 0), (-1, -1), 0),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+        ]))
+        story.append(header_table)
+        story.append(HRFlowable(width='100%', thickness=1.5, color=COL_TEAL, spaceAfter=8))
+
+        # ── KPI STRIP ───────────────────────────────────────────────
+        kpi_data = [[
+            [Paragraph(fmt_cur(total_cargo_all), st_kpi_val), Paragraph('Total Cargos', st_kpi_label)],
+            [Paragraph(fmt_cur(total_abono_all), st_kpi_val), Paragraph('Total Abonado', st_kpi_label)],
+            [Paragraph(fmt_cur(total_deuda_all), ParagraphStyle('KpiValDebt', fontSize=14, fontName='Helvetica-Bold', textColor=COL_CORAL, leading=17)), Paragraph('Deuda Total', st_kpi_label)],
+            [Paragraph(str(con_adeudo), st_kpi_val), Paragraph('Unidades con adeudo', st_kpi_label)],
+            [Paragraph(str(len(unit_rows)), st_kpi_val), Paragraph('Total unidades', st_kpi_label)],
+        ]]
+        kpi_col_w = avail_w / 5
+        kpi_table = Table(kpi_data, colWidths=[kpi_col_w] * 5, rowHeights=[1.4 * cm])
+        kpi_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), COL_SAND),
+            ('BACKGROUND', (2, 0), (2, 0), COL_CORAL_LIGHT),
+            ('BOX', (0, 0), (-1, -1), 0.5, COL_SAND_BORDER),
+            ('INNERGRID', (0, 0), (-1, -1), 0.5, COL_SAND_BORDER),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ('LEFTPADDING', (0, 0), (-1, -1), 6),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+            ('ROUNDEDCORNERS', [4]),
+        ]))
+        story.append(kpi_table)
+        story.append(Spacer(1, 10))
+
+        # ── UNIT TABLE ──────────────────────────────────────────────
+        # Column widths: # | Código | Nombre | Responsable | Cargos | Abonado | Saldo | Estado
+        cw = [0.8*cm, 2.0*cm, 4.8*cm, 4.2*cm, 2.4*cm, 2.4*cm, 2.4*cm, 2.2*cm]
+        # Adjust proportionally to avail_w
+        total_cw = sum(cw)
+        cw = [c * avail_w / total_cw for c in cw]
+
+        th_style = ParagraphStyle('TH', fontSize=7.5, fontName='Helvetica-Bold',
+                                   textColor=COL_WHITE, leading=9, alignment=TA_CENTER)
+        th_right = ParagraphStyle('THR', fontSize=7.5, fontName='Helvetica-Bold',
+                                   textColor=COL_WHITE, leading=9, alignment=TA_RIGHT)
+
+        table_data = [[
+            Paragraph('#', th_style),
+            Paragraph('Código', th_style),
+            Paragraph('Nombre / Unidad', th_style),
+            Paragraph('Responsable', th_style),
+            Paragraph('Cargos', th_right),
+            Paragraph('Abonado', th_right),
+            Paragraph('Saldo', th_right),
+            Paragraph('Estado', th_style),
+        ]]
+
+        for idx, u in enumerate(unit_rows):
+            bal = u['balance']
+            has_debt = bal > 0.01
+            has_favor = bal < -0.01
+
+            if has_debt:
+                bal_str = f'-{fmt_cur(abs(bal))}'
+                bal_color = COL_CORAL
+                status_str = 'Con adeudo'
+                row_bg = COL_CORAL_LIGHT if has_debt else COL_WHITE
+            elif has_favor:
+                bal_str = f'+{fmt_cur(abs(bal))}'
+                bal_color = COL_TEAL
+                status_str = 'A favor'
+                row_bg = COL_TEAL_LIGHT
+            else:
+                bal_str = '$0'
+                bal_color = COL_INK_LIGHT
+                status_str = 'Al corriente'
+                row_bg = COL_WHITE
+
+            if u.get('exempt'):
+                status_str = 'Exento'
+                bal_color = colors.HexColor('#0891b2')
+
+            num_style = ParagraphStyle('Num', fontSize=7.5, fontName='Helvetica',
+                                        textColor=COL_INK_LIGHT, leading=9, alignment=TA_CENTER)
+            code_style = ParagraphStyle('Code', fontSize=7.5, fontName='Helvetica-Bold',
+                                         textColor=COL_TEAL, leading=9, alignment=TA_CENTER,
+                                         backColor=COL_TEAL_LIGHT)
+            name_style = ParagraphStyle('Name', fontSize=8, fontName='Helvetica-Bold',
+                                         textColor=COL_INK, leading=10)
+            resp_style = ParagraphStyle('Resp', fontSize=7.5, fontName='Helvetica',
+                                         textColor=COL_INK_LIGHT, leading=9)
+            bal_style = ParagraphStyle('Bal', fontSize=8.5, fontName='Helvetica-Bold',
+                                        textColor=bal_color, leading=10, alignment=TA_RIGHT)
+            stat_style = ParagraphStyle('Stat', fontSize=7.5, fontName='Helvetica-Bold',
+                                         textColor=bal_color, leading=9, alignment=TA_CENTER)
+
+            row = [
+                Paragraph(str(idx + 1), num_style),
+                Paragraph(u['code'], code_style),
+                Paragraph(u['name'] or '—', name_style),
+                Paragraph(u['responsible'], resp_style),
+                Paragraph(fmt_cur(u['total_charge']), st_cell_right),
+                Paragraph(fmt_cur(u['total_paid']), st_cell_right),
+                Paragraph(bal_str, bal_style),
+                Paragraph(status_str, stat_style),
+            ]
+            table_data.append(row)
+
+        # Totals row
+        total_row = [
+            Paragraph('', th_style),
+            Paragraph('', th_style),
+            Paragraph('TOTALES', ParagraphStyle('Tot', fontSize=8, fontName='Helvetica-Bold',
+                                                  textColor=COL_WHITE, leading=10)),
+            Paragraph('', th_style),
+            Paragraph(fmt_cur(total_cargo_all), ParagraphStyle('TotV', fontSize=8, fontName='Helvetica-Bold',
+                                                                  textColor=COL_WHITE, leading=10, alignment=TA_RIGHT)),
+            Paragraph(fmt_cur(total_abono_all), ParagraphStyle('TotV2', fontSize=8, fontName='Helvetica-Bold',
+                                                                  textColor=COL_WHITE, leading=10, alignment=TA_RIGHT)),
+            Paragraph(fmt_cur(total_deuda_all) if float(total_deuda_all) > 0 else '$0',
+                      ParagraphStyle('TotBal', fontSize=8, fontName='Helvetica-Bold',
+                                     textColor=colors.HexColor('#fca5a5'), leading=10, alignment=TA_RIGHT)),
+            Paragraph('', th_style),
+        ]
+        table_data.append(total_row)
+
+        unit_table = Table(table_data, colWidths=cw, repeatRows=1)
+
+        # Build row-level background styles
+        ts_cmds = [
+            # Header
+            ('BACKGROUND', (0, 0), (-1, 0), COL_HEADER_BG),
+            ('TEXTCOLOR', (0, 0), (-1, 0), COL_WHITE),
+            # Totals row
+            ('BACKGROUND', (0, -1), (-1, -1), COL_TEAL),
+            # Grid
+            ('GRID', (0, 0), (-1, -1), 0.4, COL_SAND_BORDER),
+            ('LINEBELOW', (0, 0), (-1, 0), 1, COL_TEAL),
+            # Padding
+            ('TOPPADDING', (0, 0), (-1, -1), 5),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+            ('LEFTPADDING', (0, 0), (-1, -1), 5),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 5),
+            # Vertical alignment
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ]
+
+        # Alternating row backgrounds + debt/favor highlights
+        for row_idx, u in enumerate(unit_rows, start=1):
+            bal = u['balance']
+            has_debt = bal > 0.01
+            has_favor = bal < -0.01
+            if has_debt:
+                ts_cmds.append(('BACKGROUND', (0, row_idx), (-1, row_idx), COL_CORAL_LIGHT))
+            elif has_favor:
+                ts_cmds.append(('BACKGROUND', (0, row_idx), (-1, row_idx), COL_TEAL_LIGHT))
+            elif row_idx % 2 == 0:
+                ts_cmds.append(('BACKGROUND', (0, row_idx), (-1, row_idx), COL_SAND))
+
+        unit_table.setStyle(TableStyle(ts_cmds))
+
+        story.append(unit_table)
+        story.append(Spacer(1, 8))
+
+        # ── FOOTER NOTE ──────────────────────────────────────────────
+        story.append(HRFlowable(width='100%', thickness=0.5, color=COL_SAND_BORDER, spaceBefore=4))
+        story.append(Paragraph(
+            f'Homly · {tenant.name} · Corte: {period_label(cutoff)} · Generado el {gen_date}',
+            st_footer
+        ))
+
+        # Build PDF
+        doc.build(story)
+        buffer.seek(0)
+
+        filename = f'estado_por_unidad_{cutoff}.pdf'
+        response = HttpResponse(buffer.read(), content_type='application/pdf')
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        return response

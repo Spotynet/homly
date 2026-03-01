@@ -188,7 +188,7 @@ export default function Cobranza() {
     setCaptureForm({
       unit_id: unit.id,
       period,
-      payment_type: existing?.payment_type || '',
+      payment_type: existing?.payment_type || (!!unit.admin_exempt ? 'excento' : ''),
       payment_date: existing?.payment_date || new Date().toISOString().slice(0, 10),
       notes: existing?.notes || '',
       evidence: existing?.evidence || '',
@@ -308,7 +308,13 @@ export default function Cobranza() {
   };
 
   const handleCapture = async () => {
-    if (!captureForm.payment_type) { toast.error('La forma de pago es obligatoria'); return; }
+    const fp2 = captureForm.field_payments || {};
+    const hasOtherPmts = extraFields.some(ef => (parseFloat(fp2[String(ef.id)]?.received) || 0) > 0);
+    const isExemptUnit = !!units.find(u => u.id === captureForm.unit_id)?.admin_exempt;
+    const needsRealType = isExemptUnit && hasOtherPmts;
+    if (!captureForm.payment_type || (needsRealType && captureForm.payment_type === 'excento')) {
+      toast.error('La forma de pago es obligatoria'); return;
+    }
     setSaving(true);
     try {
       await paymentsAPI.capture(tenantId, buildCapturePayload());
@@ -1248,14 +1254,24 @@ export default function Cobranza() {
                 <div style={{ marginTop: 16, fontSize: 12, fontWeight: 700, color: 'var(--ink-500)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Información del Pago</div>
                 <div className="grid-2" style={{ gap: 12, marginTop: 8 }}>
                   <div className="field">
-                    <label className="field-label">Forma de Pago <span style={{ color: 'var(--coral-500)' }}>*</span></label>
-                    <select className="field-select" value={captureForm.payment_type}
-                      onChange={e => setCaptureForm({ ...captureForm, payment_type: e.target.value })} style={!captureForm.payment_type ? { borderColor: 'var(--coral-400)' } : {}}>
-                      <option value="">— Seleccionar (obligatorio) —</option>
-                      <option value="transferencia">🏦 Transferencia</option>
-                      <option value="deposito">💵 Depósito en efectivo</option>
-                      <option value="efectivo">💰 Efectivo directo</option>
-                    </select>
+                    {/* Exento automático: unidad exenta sin ingresos en campos adicionales activos */}
+                    <label className="field-label">Forma de Pago {(!isUnitExempt || hasNonMaintPayment) && <span style={{ color: 'var(--coral-500)' }}>*</span>}</label>
+                    {(isUnitExempt && !hasNonMaintPayment) ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: 'var(--teal-50)', border: '1.5px solid var(--teal-200)', borderRadius: 'var(--radius-md)' }}>
+                        <span style={{ fontSize: 15 }}>🛡</span>
+                        <span style={{ fontWeight: 700, color: 'var(--teal-700)', fontSize: 13 }}>Exento — Sin costo para esta unidad</span>
+                      </div>
+                    ) : (
+                      <select className="field-select"
+                        value={captureForm.payment_type === 'excento' ? '' : captureForm.payment_type}
+                        onChange={e => setCaptureForm({ ...captureForm, payment_type: e.target.value })}
+                        style={(!captureForm.payment_type || captureForm.payment_type === 'excento') ? { borderColor: 'var(--coral-400)' } : {}}>
+                        <option value="">— Seleccionar (obligatorio) —</option>
+                        <option value="transferencia">🏦 Transferencia</option>
+                        <option value="deposito">💵 Depósito en efectivo</option>
+                        <option value="efectivo">💰 Efectivo directo</option>
+                      </select>
+                    )}
                   </div>
                   <div className="field">
                     <label className="field-label">Fecha de Pago</label>
@@ -1303,15 +1319,30 @@ export default function Cobranza() {
                     <span style={{ fontSize: 12, color: 'var(--ink-300)' }}>PNG, JPG o PDF — máx. 5 MB</span>
                   )}
                 </div>
-                {captureForm.showPreview && captureForm.evidence && (
-                  <div style={{ width: '100%', marginTop: 8 }}>
-                    {(captureForm.evidenceFileName || '').match(/\.(pdf)$/i) ? (
-                      <div style={{ border: '1px solid var(--sand-200)', borderRadius: 'var(--radius-md)', overflow: 'hidden', height: 200 }}><iframe src={`data:application/pdf;base64,${captureForm.evidence}`} style={{ width: '100%', height: '100%', border: 'none' }} title="Evidencia" /></div>
-                    ) : (
-                      <div style={{ border: '1px solid var(--sand-200)', borderRadius: 'var(--radius-md)', overflow: 'hidden', maxHeight: 200 }}><img src={`data:${captureForm.evidenceMimeType || (/\.png$/i.test(captureForm.evidenceFileName || '') ? 'image/png' : 'image/jpeg')};base64,${captureForm.evidence}`} alt="Evidencia" style={{ width: '100%', display: 'block' }} /></div>
-                    )}
-                  </div>
-                )}
+                {captureForm.showPreview && captureForm.evidence && (() => {
+                  // Detectar tipo real por magic bytes del base64 (independiente de filename)
+                  const b64 = captureForm.evidence;
+                  const isPdf = b64.startsWith('JVBER') || (captureForm.evidenceMimeType === 'application/pdf') || /\.pdf$/i.test(captureForm.evidenceFileName || '');
+                  const mime = captureForm.evidenceMimeType
+                    || (b64.startsWith('iVBOR') ? 'image/png'   // PNG magic: \x89PNG
+                    :   b64.startsWith('/9j/')  ? 'image/jpeg'  // JPEG magic: \xFF\xD8
+                    :   b64.startsWith('R0lGO') ? 'image/gif'   // GIF magic
+                    :   b64.startsWith('UklGR') ? 'image/webp'  // WebP magic
+                    :   'image/jpeg');
+                  return (
+                    <div style={{ width: '100%', marginTop: 8 }}>
+                      {isPdf ? (
+                        <div style={{ border: '1px solid var(--sand-200)', borderRadius: 'var(--radius-md)', overflow: 'hidden', height: 200 }}>
+                          <iframe src={`data:application/pdf;base64,${b64}`} style={{ width: '100%', height: '100%', border: 'none' }} title="Evidencia" />
+                        </div>
+                      ) : (
+                        <div style={{ border: '1px solid var(--sand-200)', borderRadius: 'var(--radius-md)', overflow: 'hidden', maxHeight: 200 }}>
+                          <img src={`data:${mime};base64,${b64}`} alt="Evidencia" style={{ width: '100%', display: 'block' }} />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
               <div className="modal-foot">
                 <button className="btn btn-secondary" onClick={() => setShowCapture(null)}>Cancelar</button>
@@ -1528,11 +1559,15 @@ export default function Cobranza() {
                     </tfoot>
                   </table>
                   {pay?.notes && <div className="receipt-notes"><AlertCircle size={13} /> <strong>Notas:</strong> {pay.notes}</div>}
-                  {isReceiptExempt && (
+                  {isReceiptExempt && pay?.payment_type === 'excento' ? (
+                    <div className="receipt-notes" style={{ background: 'var(--teal-50)', borderColor: 'var(--teal-200)', color: 'var(--teal-700)', marginTop: 10, fontWeight: 600 }}>
+                      🛡 Exento por cargo en la mesa directiva
+                    </div>
+                  ) : isReceiptExempt ? (
                     <div className="receipt-notes" style={{ background: 'var(--teal-50)', borderColor: 'var(--teal-200)', color: 'var(--teal-700)', marginTop: 10 }}>
                       🛡 Unidad Exenta — Sin cargo de mantenimiento base para este período
                     </div>
-                  )}
+                  ) : null}
                   <div style={{ display: 'flex', justifyContent: 'center', marginTop: 16 }}>
                     {receiptStatusBadge(isReceiptExempt ? 'pagado' : pay?.status)}
                   </div>
@@ -1562,8 +1597,12 @@ export default function Cobranza() {
                   const periodo = pay?.period || '';
                   const prevTitle = document.title;
                   document.title = `Recibo de pago No. ${folioNum} ${tenantName} ${unitCode} ${periodo}`;
+                  document.body.classList.add('printing-receipt');
                   window.print();
-                  setTimeout(() => { document.title = prevTitle; }, 1500);
+                  setTimeout(() => {
+                    document.title = prevTitle;
+                    document.body.classList.remove('printing-receipt');
+                  }, 1500);
                 }}>
                   <Printer size={14} /> Imprimir / PDF
                 </button>

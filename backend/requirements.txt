@@ -8,3 +8,4 @@ python-decouple>=3.8
 Pillow>=10.0
 gunicorn>=22.0
 whitenoise>=6.5
+reportlab>=4.0

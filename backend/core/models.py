@@ -251,6 +251,7 @@ class ExtraField(models.Model):
     FIELD_TYPE_CHOICES = [
         ('normal', 'Normal'),
         ('gastos', 'Gastos'),
+        ('adelanto', 'Adelanto'),  # Fondo de adelantos: pagos que suman como saldo a favor
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -293,6 +294,7 @@ class Payment(models.Model):
         ('transferencia', 'Transferencia'),
         ('deposito', 'Depósito'),
         ('efectivo', 'Efectivo'),
+        ('excento', 'Exento'),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

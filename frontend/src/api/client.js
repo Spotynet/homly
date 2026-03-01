@@ -156,6 +156,8 @@ export const reportsAPI = {
   estadoCuenta: (tenantId, params) => api.get(`/tenants/${tenantId}/estado-cuenta/`, { params }),
   reporteGeneral: (tenantId, period) => api.get(`/tenants/${tenantId}/reporte-general/`, { params: { period } }),
   reporteAdeudos: (tenantId, params) => api.get(`/tenants/${tenantId}/reporte-adeudos/`, { params }),
+  estadoCuentaPDF: (tenantId, cutoff) =>
+    api.get(`/tenants/${tenantId}/estado-cuenta-pdf/`, { params: { cutoff }, responseType: 'blob' }),
 };
 
 export default api;

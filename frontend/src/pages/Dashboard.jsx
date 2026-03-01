@@ -5,6 +5,7 @@ import { reportsAPI, tenantsAPI, assemblyAPI } from '../api/client';
 import {
   Globe, Building2, DollarSign, Receipt, ShoppingBag,
   ChevronLeft, ChevronRight, RefreshCw, TrendingDown,
+  Users, UserCheck, Mail, Phone,
 } from 'lucide-react';
 
 // ─── SVG Donut (matches svgDonut in HTML ref) ──────────────────────────────
@@ -203,7 +204,7 @@ export default function Dashboard() {
   // Economic tab
   const cargosFijos        = s.total_expected ?? 0;
   const cobranza           = s.total_collected ?? 0;
-  const totalIngresos      = s.total_ingresos ?? (cobranza + (s.total_adeudo_recibido ?? 0) + (s.ingreso_adicional ?? 0));
+  const totalIngresos      = s.total_ingresos ?? (s.total_collected ?? 0); // mantenimiento + campos adicionales, sin adeudos
   // Gastos: solo los conciliados (bank_reconciled=True)
   const gastos             = s.total_gastos_conciliados ?? 0;
   const pctCobVsCargos     = cargosFijos > 0 ? Math.round((cobranza / cargosFijos) * 100) : 0;
@@ -369,24 +370,110 @@ export default function Dashboard() {
             <div className="card" style={{ marginTop: 20 }}>
               <div className="card-head">
                 <h3 style={{ color: 'var(--blue-700)', display: 'flex', alignItems: 'center', gap: 8 }}>
-                  Comités y Grupos de Trabajo
+                  <Users size={16} /> Comités y Grupos de Trabajo
                 </h3>
-                <span className="badge badge-blue">{committees.length}</span>
+                <span className="badge badge-blue">{committees.length} comité{committees.length !== 1 ? 's' : ''}</span>
               </div>
               <div style={{ padding: 0 }}>
-                {committees.map(cm => (
-                  <div key={cm.id} style={{ padding: '14px 20px', borderBottom: '1px solid var(--sand-100)' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span style={{ fontWeight: 700, color: 'var(--ink-800)' }}>{cm.name}</span>
-                        {cm.type && <span className="badge badge-gray" style={{ fontSize: 10 }}>{cm.type}</span>}
+                {committees.map((cm, cmIdx) => {
+                  const activePositions = (cm.positions || []).filter(p => p.active).sort((a, b) => a.sort_order - b.sort_order);
+                  const inactivePositions = (cm.positions || []).filter(p => !p.active);
+                  const extraMembers = cm.members
+                    ? cm.members.split(',').map(m => m.trim()).filter(Boolean)
+                    : [];
+                  const totalIntegrantes = activePositions.length + extraMembers.length;
+
+                  return (
+                    <div key={cm.id} style={{
+                      borderBottom: cmIdx < committees.length - 1 ? '1px solid var(--sand-100)' : 'none',
+                    }}>
+                      {/* Header del comité */}
+                      <div style={{ padding: '14px 20px 10px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
+                            <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--ink-800)' }}>{cm.name}</span>
+                            {cm.exemption && (
+                              <span className="badge badge-teal" style={{ fontSize: 10 }}>Exento</span>
+                            )}
+                            {totalIntegrantes > 0 && (
+                              <span style={{ fontSize: 11, color: 'var(--ink-400)', marginLeft: 2 }}>
+                                · {totalIntegrantes} integrante{totalIntegrantes !== 1 ? 's' : ''}
+                              </span>
+                            )}
+                          </div>
+                          {cm.description && (
+                            <div style={{ fontSize: 12, color: 'var(--ink-400)', marginBottom: 2 }}>{cm.description}</div>
+                          )}
+                        </div>
+                        {inactivePositions.length > 0 && (
+                          <span style={{ fontSize: 10, color: 'var(--ink-300)', flexShrink: 0, marginTop: 2 }}>
+                            {inactivePositions.length} vacante{inactivePositions.length !== 1 ? 's' : ''}
+                          </span>
+                        )}
                       </div>
+
+                      {/* Posiciones activas */}
+                      {activePositions.length > 0 && (
+                        <div style={{ padding: '0 20px 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          {activePositions.map(pos => (
+                            <div key={pos.id} style={{
+                              display: 'flex', alignItems: 'center', gap: 10,
+                              background: 'var(--sand-50)', borderRadius: 8,
+                              padding: '8px 12px',
+                            }}>
+                              <div style={{
+                                width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
+                                background: pos.holder_name ? 'var(--blue-100)' : 'var(--sand-100)',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              }}>
+                                <UserCheck size={15} style={{ color: pos.holder_name ? 'var(--blue-600)' : 'var(--ink-300)' }} />
+                              </div>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-600)' }}>{pos.title}</div>
+                                <div style={{ fontSize: 13, fontWeight: 700, color: pos.holder_name ? 'var(--ink-800)' : 'var(--ink-300)', fontStyle: pos.holder_name ? 'normal' : 'italic' }}>
+                                  {pos.holder_name || 'Vacante'}
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                                {pos.email && (
+                                  <a href={`mailto:${pos.email}`} style={{ color: 'var(--blue-500)', display: 'flex', alignItems: 'center' }} title={pos.email}>
+                                    <Mail size={13} />
+                                  </a>
+                                )}
+                                {pos.phone && (
+                                  <a href={`tel:${pos.phone}`} style={{ color: 'var(--teal-500)', display: 'flex', alignItems: 'center' }} title={pos.phone}>
+                                    <Phone size={13} />
+                                  </a>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Miembros adicionales (campo members, texto libre) */}
+                      {extraMembers.length > 0 && (
+                        <div style={{ padding: '0 20px 12px', display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                          {extraMembers.map((m, i) => (
+                            <span key={i} style={{
+                              fontSize: 12, padding: '3px 10px', borderRadius: 20,
+                              background: 'var(--sand-100)', color: 'var(--ink-600)', fontWeight: 500,
+                            }}>
+                              {m}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Sin integrantes */}
+                      {activePositions.length === 0 && extraMembers.length === 0 && (
+                        <div style={{ padding: '0 20px 12px', fontSize: 12, color: 'var(--ink-300)', fontStyle: 'italic' }}>
+                          Sin integrantes registrados
+                        </div>
+                      )}
                     </div>
-                    {cm.description && (
-                      <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>{cm.description}</div>
-                    )}
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
@@ -475,13 +562,13 @@ export default function Dashboard() {
               <div className="stat-icon teal"><Receipt size={20} /></div>
               <div className="stat-label">Cobranza Mensual</div>
               <div className="stat-value" style={{ fontSize: 20 }}>{fmt(cobranza)}</div>
-              <div className="stat-sub">ingresos de cargos fijos</div>
+              <div className="stat-sub">mantenimiento fijo recibido</div>
             </div>
             <div className="stat">
               <div className="stat-icon blue"><DollarSign size={20} /></div>
               <div className="stat-label">Total Ingresos</div>
               <div className="stat-value" style={{ fontSize: 20 }}>{fmt(totalIngresos)}</div>
-              <div className="stat-sub">cobranza + adicionales + adeudos</div>
+              <div className="stat-sub">mantenimiento + campos adicionales</div>
             </div>
             <div className="stat">
               <div className="stat-icon coral"><ShoppingBag size={20} /></div>

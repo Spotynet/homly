@@ -6,7 +6,7 @@ import {
   Settings, Plus, Trash2, Check, X, Upload, Users,
   Building2, RefreshCw, Edit2, Search, Home, Lock,
   Calendar, DollarSign, ShieldCheck, Receipt, ShoppingBag,
-  AlertCircle, Shield, FileText, Globe, ChevronRight,
+  AlertCircle, Shield, FileText, Globe, ChevronRight, TrendingUp,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -704,16 +704,17 @@ export default function Config() {
 
       {/* ════ CONFIG. PAGOS ════ */}
       {tab === 'fields' && (() => {
-        const cobFields = fields.filter(f => !f.field_type || f.field_type === 'normal');
+        const cobFields = fields.filter(f => !f.field_type || f.field_type === 'normal' || f.field_type === 'adelanto');
         const gasFields = fields.filter(f => f.field_type === 'gastos');
         const cobActive = cobFields.filter(f => f.enabled);
         const gasActive = gasFields.filter(f => f.enabled);
 
         const FieldRow = ({ f }) => {
-          const isCob = !f.field_type || f.field_type === 'normal';
-          const typeColor = isCob ? 'var(--teal-500)' : 'var(--amber-500)';
-          const typeBg = isCob ? 'var(--teal-50)' : 'var(--amber-50)';
-          const typeBorder = isCob ? 'var(--teal-100)' : 'var(--amber-100)';
+          const isCob = !f.field_type || f.field_type === 'normal' || f.field_type === 'adelanto';
+          const isAdelanto = f.field_type === 'adelanto';
+          const typeColor = isAdelanto ? 'var(--blue-500)' : isCob ? 'var(--teal-500)' : 'var(--amber-500)';
+          const typeBg = isAdelanto ? 'var(--blue-50)' : isCob ? 'var(--teal-50)' : 'var(--amber-50)';
+          const typeBorder = isAdelanto ? 'var(--blue-100)' : isCob ? 'var(--teal-100)' : 'var(--amber-100)';
           return (
             <div style={{ display:'flex', gap:0, padding:'16px 20px', borderBottom:'1px solid var(--sand-100)', alignItems:'flex-start', transition:'background 0.12s' }}
               onMouseOver={e => e.currentTarget.style.background='var(--sand-50)'} onMouseOut={e => e.currentTarget.style.background=''}>
@@ -721,14 +722,18 @@ export default function Config() {
               <div style={{ flex:1, minWidth:0 }}>
                 <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap', marginBottom:4 }}>
                   <span style={{ fontSize:14, fontWeight:700, color:'var(--ink-800)' }}>{f.label}</span>
-                  <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:'var(--radius-full)', background:typeBg, color:typeColor, border:`1px solid ${typeBorder}` }}>{isCob?'Cobranza':'Gastos'}</span>
-                  {f.enabled && isCob && <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:'var(--radius-full)', background:f.required?'var(--coral-50)':'var(--sand-100)', color:f.required?'var(--coral-500)':'var(--ink-500)', border:`1px solid ${f.required?'var(--coral-100)':'var(--sand-200)'}` }}>{f.required?'Obligatorio':'Opcional'}</span>}
+                  <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:'var(--radius-full)', background:typeBg, color:typeColor, border:`1px solid ${typeBorder}` }}>{isAdelanto?'Adelanto':isCob?'Cobranza':'Gastos'}</span>
+                  {f.enabled && isCob && !isAdelanto && <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:'var(--radius-full)', background:f.required?'var(--coral-50)':'var(--sand-100)', color:f.required?'var(--coral-500)':'var(--ink-500)', border:`1px solid ${f.required?'var(--coral-100)':'var(--sand-200)'}` }}>{f.required?'Obligatorio':'Opcional'}</span>}
+                  {f.enabled && isAdelanto && <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:'var(--radius-full)', background:'var(--blue-50)', color:'var(--blue-500)', border:'1px solid var(--blue-100)' }}>Saldo a Favor</span>}
                   {!f.enabled && <span style={{ fontSize:10, fontWeight:600, padding:'2px 8px', borderRadius:'var(--radius-full)', background:'var(--sand-100)', color:'var(--ink-400)' }}>Inactivo</span>}
                 </div>
-                {isCob && f.required && f.enabled && parseFloat(f.default_amount)>0 &&
+                {isCob && !isAdelanto && f.required && f.enabled && parseFloat(f.default_amount)>0 &&
                   <div style={{ fontSize:12, color:'var(--ink-500)' }}>Cargo mensual fijo: <strong style={{ color:'var(--teal-700)' }}>{fmt(f.default_amount)}</strong></div>}
+                {isAdelanto && f.enabled && parseFloat(f.default_amount)>0 &&
+                  <div style={{ fontSize:12, color:'var(--ink-500)' }}>Monto habitual: <strong style={{ color:'var(--blue-700)' }}>{fmt(f.default_amount)}</strong></div>}
                 {!f.enabled && <div style={{ fontSize:12, color:'var(--ink-400)' }}>Activa este campo para usarlo en cobranza</div>}
-                {f.enabled && isCob && !f.required && <div style={{ fontSize:12, color:'var(--ink-400)' }}>Campo opcional — monto variable por período</div>}
+                {f.enabled && isCob && !isAdelanto && !f.required && <div style={{ fontSize:12, color:'var(--ink-400)' }}>Campo opcional — monto variable por período</div>}
+                {f.enabled && isAdelanto && <div style={{ fontSize:12, color:'var(--blue-400)' }}>Pagos suman como saldo a favor en el estado de cuenta</div>}
                 {!isCob && f.enabled && <div style={{ fontSize:12, color:'var(--ink-400)' }}>Campo de gastos operativos del condominio</div>}
 
                 {/* Gastos-specific settings: recurrent, active period, evidence */}
@@ -1502,6 +1507,10 @@ export default function Config() {
                     onClick={()=>setFieldForm(f=>({...f,field_type:'gastos'}))}>
                     <ShoppingBag size={14} /> Gastos
                   </button>
+                  <button type="button" style={{ flex:1, padding:'8px 14px', fontSize:13, fontWeight:600, cursor:'pointer', border:'none', borderLeft:'1.5px solid var(--sand-200)', display:'flex', alignItems:'center', justifyContent:'center', gap:6, background:fieldForm.field_type==='adelanto'?'var(--blue-50)':'var(--white)', color:fieldForm.field_type==='adelanto'?'var(--blue-700)':'var(--ink-500)', transition:'all 0.15s' }}
+                    onClick={()=>setFieldForm(f=>({...f,field_type:'adelanto',required:false}))}>
+                    <TrendingUp size={14} /> Adelanto
+                  </button>
                 </div>
               </div>
               <div className="field">
@@ -1519,6 +1528,16 @@ export default function Config() {
                   </div>
                   <span style={{ fontSize:12, fontWeight:600, color:fieldForm.required?'var(--coral-500)':'var(--ink-400)' }}>
                     {fieldForm.required?'Obligatorio — genera deuda si no se paga':'Opcional — no genera deuda'}
+                  </span>
+                </div>
+              </div>
+            )}
+            {fieldForm.field_type==='adelanto' && (
+              <div className="field">
+                <div style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 14px', background:'var(--blue-50)', border:'1px solid var(--blue-100)', borderRadius:'var(--radius-md)' }}>
+                  <TrendingUp size={14} style={{ color:'var(--blue-500)', flexShrink:0 }} />
+                  <span style={{ fontSize:12, color:'var(--blue-700)', fontWeight:600 }}>
+                    Los campos de adelanto son siempre opcionales y sus pagos suman como saldo a favor en el estado de cuenta.
                   </span>
                 </div>
               </div>

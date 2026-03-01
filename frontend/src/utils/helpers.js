@@ -72,6 +72,7 @@ export const PAYMENT_TYPES = {
   transferencia: { label: '🏦 Transferencia', short: 'Transferencia' },
   deposito: { label: '💵 Depósito', short: 'Depósito' },
   efectivo: { label: '💰 Efectivo', short: 'Efectivo' },
+  excento: { label: '🛡 Exento', short: 'Exento' },
 };
 
 // Status badge classes
