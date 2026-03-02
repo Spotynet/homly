@@ -251,24 +251,6 @@ export default function EstadoCuenta() {
                 </div>
               </div>
               <div className="ec-detail-actions">
-                {data?.unit?.previous_debt_evidence && (
-                  <button
-                    className="btn-outline-white"
-                    title="Ver adjunto de la unidad"
-                    onClick={() => {
-                      const b64 = data.unit.previous_debt_evidence;
-                      const bytes = atob(b64);
-                      const arr = new Uint8Array(bytes.length);
-                      for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
-                      const blob = new Blob([arr], { type: 'application/pdf' });
-                      const url = URL.createObjectURL(blob);
-                      window.open(url, '_blank');
-                      setTimeout(() => URL.revokeObjectURL(url), 15000);
-                    }}
-                  >
-                    <FileText size={14} /> Adjunto
-                  </button>
-                )}
                 <button className="btn-outline-white" onClick={() => window.print()}>
                   <Printer size={14} /> Imprimir / PDF
                 </button>
