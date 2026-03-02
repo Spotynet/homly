@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { unitsAPI, reportsAPI, tenantsAPI, paymentsAPI, gastosAPI, unrecognizedIncomeAPI } from '../api/client';
 import PaginationBar from '../components/PaginationBar';
 import { statusClass, statusLabel, fmtDate, periodLabel, todayPeriod, prevPeriod, nextPeriod, ROLES } from '../utils/helpers';
-import { Search, ChevronLeft, ChevronRight, Building, Globe, DollarSign, ArrowDown, TrendingDown, AlertCircle, Calendar, Printer, ShoppingBag } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight, Building, Globe, DollarSign, ArrowDown, TrendingDown, AlertCircle, Calendar, Printer, ShoppingBag, FileText } from 'lucide-react';
 
 function fmt(n) {
   return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 0 }).format(n ?? 0);
@@ -251,6 +251,24 @@ export default function EstadoCuenta() {
                 </div>
               </div>
               <div className="ec-detail-actions">
+                {data?.unit?.previous_debt_evidence && (
+                  <button
+                    className="btn-outline-white"
+                    title="Ver adjunto de la unidad"
+                    onClick={() => {
+                      const b64 = data.unit.previous_debt_evidence;
+                      const bytes = atob(b64);
+                      const arr = new Uint8Array(bytes.length);
+                      for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
+                      const blob = new Blob([arr], { type: 'application/pdf' });
+                      const url = URL.createObjectURL(blob);
+                      window.open(url, '_blank');
+                      setTimeout(() => URL.revokeObjectURL(url), 15000);
+                    }}
+                  >
+                    <FileText size={14} /> Adjunto
+                  </button>
+                )}
                 <button className="btn-outline-white" onClick={() => window.print()}>
                   <Printer size={14} /> Imprimir / PDF
                 </button>
@@ -296,6 +314,37 @@ export default function EstadoCuenta() {
                       )}
                     </div>
                     <div className="ec-sum-val debt">-{fmt(netPrevDebt)}</div>
+                    {data?.unit?.previous_debt_evidence && (
+                      <button
+                        title="Ver evidencia de adeudo anterior"
+                        onClick={() => {
+                          const b64 = data.unit.previous_debt_evidence;
+                          const bytes = atob(b64);
+                          const arr = new Uint8Array(bytes.length);
+                          for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
+                          const blob = new Blob([arr], { type: 'application/pdf' });
+                          const url = URL.createObjectURL(blob);
+                          window.open(url, '_blank');
+                          setTimeout(() => URL.revokeObjectURL(url), 15000);
+                        }}
+                        style={{
+                          marginTop: 6,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 4,
+                          fontSize: 11,
+                          color: 'var(--coral-600)',
+                          background: 'var(--coral-100)',
+                          border: '1px solid var(--coral-200)',
+                          borderRadius: 5,
+                          padding: '3px 8px',
+                          cursor: 'pointer',
+                          fontWeight: 500,
+                        }}
+                      >
+                        <FileText size={11} /> Ver evidencia
+                      </button>
+                    )}
                   </div>
                 )}
                 {unitCreditBalance > 0 && (

@@ -645,18 +645,41 @@ export default function Config() {
                           {pd > 0 ? fmt(pd) : '—'}
                         </td>
                         <td>
-                          {u.previous_debt_evidence
-                            ? <button className="btn-ghost" title="Ver evidencia" style={{ fontSize:10, color:'var(--blue-500)' }} onClick={()=>{
-                              const win=window.open('','_blank');
-                              win.document.write('<html><body style="margin:0"><embed src="data:application/pdf;base64,'+u.previous_debt_evidence+'" type="application/pdf" width="100%" height="100%" style="position:absolute;inset:0"></body></html>');
-                              win.document.close();
-                            }}><FileText size={14}/> PDF</button>
+                          {u.has_evidence
+                            ? <button
+                                title="Ver evidencia de adeudo anterior"
+                                style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:11, fontWeight:600,
+                                  color:'var(--blue-600)', background:'var(--blue-50)', border:'1px solid var(--blue-200)',
+                                  borderRadius:6, padding:'3px 9px', cursor:'pointer' }}
+                                onClick={async () => {
+                                  try {
+                                    const r = await unitsAPI.evidence(tenantId, u.id);
+                                    const b64 = r.data.evidence;
+                                    if (!b64) return toast.error('Sin evidencia adjunta.');
+                                    const bytes=atob(b64); const arr=new Uint8Array(bytes.length);
+                                    for(let i=0;i<bytes.length;i++) arr[i]=bytes.charCodeAt(i);
+                                    const blob=new Blob([arr],{type:'application/pdf'});
+                                    const url=URL.createObjectURL(blob);
+                                    window.open(url,'_blank');
+                                    setTimeout(()=>URL.revokeObjectURL(url),15000);
+                                  } catch { toast.error('Error al cargar la evidencia.'); }
+                                }}
+                              ><FileText size={12}/> Ver PDF</button>
                             : <span style={{ color:'var(--ink-300)', fontSize:12 }}>—</span>}
                         </td>
                         {isAdmin && (
                           <td>
                             <div style={{ display:'flex', gap:4 }}>
-                              <button className="btn-ghost" onClick={() => { setUnitForm({...u}); setUnitModal('edit'); }}><Edit2 size={14}/></button>
+                              <button className="btn-ghost" onClick={async () => {
+                                setUnitForm({...u, previous_debt_evidence: ''});
+                                setUnitModal('edit');
+                                if (u.has_evidence) {
+                                  try {
+                                    const r = await unitsAPI.evidence(tenantId, u.id);
+                                    setUnitForm(f => ({...f, previous_debt_evidence: r.data.evidence || ''}));
+                                  } catch { /* silencioso: el usuario puede re-subir si falla */ }
+                                }
+                              }}><Edit2 size={14}/></button>
                               <button className="btn-ghost" style={{ color:'var(--coral-500)' }} onClick={() => handleUnitDelete(u.id)}><Trash2 size={14}/></button>
                             </div>
                           </td>
@@ -1417,12 +1440,15 @@ export default function Config() {
                 </label>
                 {unitForm.previous_debt_evidence && (
                   <button type="button" className="btn btn-secondary btn-sm" onClick={()=>{
-                    const data=unitForm.previous_debt_evidence;
-                    if(!data) return toast.error('No hay PDF cargado.');
-                    const win=window.open('','_blank');
-                    win.document.write('<html><body style="margin:0"><embed src="data:application/pdf;base64,'+data+'" type="application/pdf" width="100%" height="100%" style="position:absolute;inset:0"></body></html>');
-                    win.document.close();
-                  }}><FileText size={12}/> Ver</button>
+                    const b64=unitForm.previous_debt_evidence;
+                    if(!b64) return toast.error('No hay PDF cargado.');
+                    const bytes=atob(b64); const arr=new Uint8Array(bytes.length);
+                    for(let i=0;i<bytes.length;i++) arr[i]=bytes.charCodeAt(i);
+                    const blob=new Blob([arr],{type:'application/pdf'});
+                    const url=URL.createObjectURL(blob);
+                    window.open(url,'_blank');
+                    setTimeout(()=>URL.revokeObjectURL(url),15000);
+                  }}><FileText size={12}/> Ver evidencia</button>
                 )}
               </div>
             </div>

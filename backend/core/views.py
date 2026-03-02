@@ -21,7 +21,7 @@ from .models import (
 from .serializers import (
     LoginSerializer, ChangePasswordSerializer, UserSerializer, UserCreateSerializer,
     TenantListSerializer, TenantDetailSerializer, TenantUserSerializer,
-    UnitSerializer, ExtraFieldSerializer,
+    UnitSerializer, UnitListSerializer, ExtraFieldSerializer,
     PaymentSerializer, PaymentCaptureSerializer, AddAdditionalPaymentSerializer, FieldPaymentSerializer,
     GastoEntrySerializer, CajaChicaEntrySerializer,
     BankStatementSerializer, ClosedPeriodSerializer, ReopenRequestSerializer,
@@ -112,14 +112,25 @@ class TenantViewSet(viewsets.ModelViewSet):
 
 class UnitViewSet(viewsets.ModelViewSet):
     """CRUD /api/tenants/{tenant_id}/units/"""
-    serializer_class = UnitSerializer
     permission_classes = [IsTenantMember]
+
+    def get_serializer_class(self):
+        # Lista: serializer ligero sin Base64 de evidencia
+        if self.action == 'list':
+            return UnitListSerializer
+        return UnitSerializer
 
     def get_queryset(self):
         return Unit.objects.filter(tenant_id=self.kwargs['tenant_id'])
 
     def perform_create(self, serializer):
         serializer.save(tenant_id=self.kwargs['tenant_id'])
+
+    @action(detail=True, methods=['get'], url_path='evidence')
+    def evidence(self, request, tenant_id=None, pk=None):
+        """GET /api/tenants/{tenant_id}/units/{pk}/evidence/ — devuelve solo el Base64 PDF."""
+        unit = self.get_object()
+        return Response({'evidence': unit.previous_debt_evidence or ''})
 
 
 # ═══════════════════════════════════════════════════════════
