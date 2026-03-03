@@ -367,7 +367,7 @@ export default function Gastos() {
     ]);
     setGastos(g.data.results || g.data);
     setCajaChica(cc.data.results || cc.data);
-    setFields((ef.data.results || ef.data).filter(f => f.field_type === 'gastos' && f.enabled));
+    setFields((ef.data.results || ef.data).filter(f => f.field_type === 'gastos' && f.enabled && f.show_in_gastos !== false));
     setTenant(tn.data);
   };
 

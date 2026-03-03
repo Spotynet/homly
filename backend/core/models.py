@@ -267,6 +267,13 @@ class ExtraField(models.Model):
     is_system_default = models.BooleanField(default=False,
                                              help_text='Created by system, cannot delete')
     created_at = models.DateTimeField(auto_now_add=True)
+    # Visibility per form — controls in which capture forms the field is shown
+    show_in_normal = models.BooleanField(default=True,
+                                          help_text='Show in regular monthly payment capture')
+    show_in_additional = models.BooleanField(default=True,
+                                              help_text='Show in additional payments capture')
+    show_in_gastos = models.BooleanField(default=True,
+                                          help_text='Show in gastos (expenses) form')
 
     class Meta:
         db_table = 'extra_fields'

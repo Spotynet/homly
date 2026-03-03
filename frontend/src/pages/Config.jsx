@@ -855,7 +855,7 @@ export default function Config() {
           <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:12, marginBottom:20 }}>
             <p style={{ fontSize:14, color:'var(--ink-400)' }}>Configura los campos de cobranza y gastos del condominio</p>
             {isAdmin && (
-              <button className="btn btn-primary btn-sm" onClick={() => setFieldForm({ label:'', default_amount:0, required:false, enabled:true, field_type:'normal', cross_unit:false, description:'' })}>
+              <button className="btn btn-primary btn-sm" onClick={() => setFieldForm({ label:'', default_amount:0, required:false, enabled:true, field_type:'normal', cross_unit:false, description:'', show_in_normal:true, show_in_additional:true, show_in_gastos:false })}>
                 <Plus size={14} /> Nuevo Campo
               </button>
             )}
@@ -1526,15 +1526,15 @@ export default function Config() {
                 <label className="field-label">Tipo de Campo</label>
                 <div style={{ display:'flex', border:'1.5px solid var(--sand-200)', borderRadius:'var(--radius-sm)', overflow:'hidden', marginTop:4 }}>
                   <button type="button" style={{ flex:1, padding:'8px 14px', fontSize:13, fontWeight:600, cursor:'pointer', border:'none', display:'flex', alignItems:'center', justifyContent:'center', gap:6, background:(!fieldForm.field_type||fieldForm.field_type==='normal')?'var(--teal-50)':'var(--white)', color:(!fieldForm.field_type||fieldForm.field_type==='normal')?'var(--teal-700)':'var(--ink-500)', transition:'all 0.15s' }}
-                    onClick={()=>setFieldForm(f=>({...f,field_type:'normal'}))}>
+                    onClick={()=>setFieldForm(f=>({...f,field_type:'normal',show_in_normal:true,show_in_additional:true,show_in_gastos:false}))}>
                     <Receipt size={14} /> Cobranza
                   </button>
                   <button type="button" style={{ flex:1, padding:'8px 14px', fontSize:13, fontWeight:600, cursor:'pointer', border:'none', borderLeft:'1.5px solid var(--sand-200)', display:'flex', alignItems:'center', justifyContent:'center', gap:6, background:fieldForm.field_type==='gastos'?'var(--amber-50)':'var(--white)', color:fieldForm.field_type==='gastos'?'var(--amber-700)':'var(--ink-500)', transition:'all 0.15s' }}
-                    onClick={()=>setFieldForm(f=>({...f,field_type:'gastos'}))}>
+                    onClick={()=>setFieldForm(f=>({...f,field_type:'gastos',show_in_normal:false,show_in_additional:false,show_in_gastos:true}))}>
                     <ShoppingBag size={14} /> Gastos
                   </button>
                   <button type="button" style={{ flex:1, padding:'8px 14px', fontSize:13, fontWeight:600, cursor:'pointer', border:'none', borderLeft:'1.5px solid var(--sand-200)', display:'flex', alignItems:'center', justifyContent:'center', gap:6, background:fieldForm.field_type==='adelanto'?'var(--blue-50)':'var(--white)', color:fieldForm.field_type==='adelanto'?'var(--blue-700)':'var(--ink-500)', transition:'all 0.15s' }}
-                    onClick={()=>setFieldForm(f=>({...f,field_type:'adelanto',required:false}))}>
+                    onClick={()=>setFieldForm(f=>({...f,field_type:'adelanto',required:false,show_in_normal:true,show_in_additional:false,show_in_gastos:false}))}>
                     <TrendingUp size={14} /> Adelanto
                   </button>
                 </div>
@@ -1575,6 +1575,48 @@ export default function Config() {
                 <div style={{ fontSize:11, color:'var(--ink-400)', marginTop:4 }}>0 = permanente · 6 = seis meses · 12 = un año</div>
               </div>
             )}
+            {/* Visibilidad por formulario */}
+            <div className="field field-full">
+              <label className="field-label">Mostrar en formularios</label>
+              <div style={{ display:'flex', flexDirection:'column', gap:8, marginTop:6, padding:'12px 16px', background:'var(--sand-50)', border:'1.5px solid var(--sand-200)', borderRadius:'var(--radius-md)' }}>
+                {/* Pagos normales */}
+                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', cursor:'pointer' }}
+                  onClick={()=>setFieldForm(f=>({...f,show_in_normal:!f.show_in_normal}))}>
+                  <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                    <Receipt size={14} style={{ color:'var(--teal-600)' }} />
+                    <span style={{ fontSize:13, fontWeight:600, color:'var(--ink-700)' }}>Pagos normales</span>
+                    <span style={{ fontSize:11, color:'var(--ink-400)' }}>Captura de pago mensual por unidad</span>
+                  </div>
+                  <div className={`switch ${fieldForm.show_in_normal?'on':''}`} style={{ flexShrink:0 }} onClick={e=>{e.stopPropagation();setFieldForm(f=>({...f,show_in_normal:!f.show_in_normal}))}}>
+                    <div className="switch-knob" />
+                  </div>
+                </div>
+                {/* Pagos adicionales */}
+                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', cursor:'pointer', paddingTop:8, borderTop:'1px solid var(--sand-200)' }}
+                  onClick={()=>setFieldForm(f=>({...f,show_in_additional:!f.show_in_additional}))}>
+                  <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                    <Plus size={14} style={{ color:'var(--blue-600)' }} />
+                    <span style={{ fontSize:13, fontWeight:600, color:'var(--ink-700)' }}>Pagos adicionales</span>
+                    <span style={{ fontSize:11, color:'var(--ink-400)' }}>Abonos extra en el mismo período</span>
+                  </div>
+                  <div className={`switch ${fieldForm.show_in_additional?'on':''}`} style={{ flexShrink:0 }} onClick={e=>{e.stopPropagation();setFieldForm(f=>({...f,show_in_additional:!f.show_in_additional}))}}>
+                    <div className="switch-knob" />
+                  </div>
+                </div>
+                {/* Gastos */}
+                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', cursor:'pointer', paddingTop:8, borderTop:'1px solid var(--sand-200)' }}
+                  onClick={()=>setFieldForm(f=>({...f,show_in_gastos:!f.show_in_gastos}))}>
+                  <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                    <ShoppingBag size={14} style={{ color:'var(--amber-600)' }} />
+                    <span style={{ fontSize:13, fontWeight:600, color:'var(--ink-700)' }}>Gastos</span>
+                    <span style={{ fontSize:11, color:'var(--ink-400)' }}>Registro de egresos del condominio</span>
+                  </div>
+                  <div className={`switch ${fieldForm.show_in_gastos?'on':''}`} style={{ flexShrink:0 }} onClick={e=>{e.stopPropagation();setFieldForm(f=>({...f,show_in_gastos:!f.show_in_gastos}))}}>
+                    <div className="switch-knob" />
+                  </div>
+                </div>
+              </div>
+            </div>
             <div className="field">
               <label className="field-label">Aplicar a Otra Unidad</label>
               <div style={{ display:'flex', alignItems:'center', gap:10, marginTop:6 }}>

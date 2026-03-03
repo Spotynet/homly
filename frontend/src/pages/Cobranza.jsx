@@ -97,6 +97,7 @@ export default function Cobranza() {
   const [perPage, setPerPage] = useState(25);
   const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
   const [evidencePopup, setEvidencePopup] = useState(null); // { b64, mime, fileName }
+  const [addlExtraFields, setAddlExtraFields] = useState([]); // campos para pagos adicionales (sin adelanto)
 
   const load = async () => {
     if (!tenantId) return;
@@ -104,13 +105,15 @@ export default function Cobranza() {
       const [uRes, pRes, efRes, tRes, uiRes] = await Promise.all([
         unitsAPI.list(tenantId, { page_size: 9999 }),
         paymentsAPI.list(tenantId, { period, page_size: 9999 }),
-        extraFieldsAPI.list(tenantId, { page_size: 9999 }),
+        extraFieldsAPI.list(tenantId, { page_size: 9999 }).catch(() => ({ data: [] })),
         tenantsAPI.get(tenantId).catch(() => ({ data: null })),
         unrecognizedIncomeAPI.list(tenantId, { period, page_size: 9999 }).catch(() => ({ data: [] })),
       ]);
       setUnits(uRes.data.results || uRes.data);
       setPayments(pRes.data.results || pRes.data);
-      setExtraFields((efRes.data.results || efRes.data).filter(f => f.enabled && (!f.field_type || f.field_type === 'normal')));
+      const rawEFs = Array.isArray(efRes.data) ? efRes.data : (efRes.data?.results || []);
+      setExtraFields(rawEFs.filter(f => f.enabled && (!f.field_type || f.field_type === 'normal') && f.show_in_normal !== false));
+      setAddlExtraFields(rawEFs.filter(f => f.enabled && (!f.field_type || f.field_type === 'normal') && f.show_in_additional !== false));
       setTenantData(tRes.data);
       setUnrecognizedIncome(Array.isArray(uiRes.data) ? uiRes.data : (uiRes.data?.results || []));
     } catch (err) { console.error(err); }
@@ -461,7 +464,7 @@ export default function Cobranza() {
                     </td>
                     <td style={{ fontSize: 13, color: 'var(--ink-500)' }}>{u.responsible_name || '—'}</td>
                     <td style={{ textAlign: 'right', fontWeight: 600, fontSize: 13 }}>
-                      {pay ? fmtDec(effTotals.maintenance || 0) : '—'}
+                      {u.admin_exempt ? '—' : fmtDec(maintenanceFee)}
                     </td>
                     {extraFields.filter(f => f.required).map(ef => {
                       const amt = effTotals[ef.id] || 0;
@@ -491,7 +494,7 @@ export default function Cobranza() {
                         {!isReadOnly && pay && (
                           <button className="btn btn-secondary btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }} onClick={() => {
                             setAddPaymentForm({
-                              extraFieldPayments: { maintenance: '', ...Object.fromEntries(extraFields.map(ef => [ef.id, ''])) },
+                              extraFieldPayments: Object.fromEntries(addlExtraFields.map(ef => [ef.id, ''])),
                               payment_type: '',
                               payment_date: new Date().toISOString().slice(0, 10),
                               notes: '',
@@ -704,8 +707,6 @@ export default function Cobranza() {
                 const resp = unit.responsible_name || (unit.occupancy === 'rentado' ? `${unit.tenant_first_name || ''} ${unit.tenant_last_name || ''}`.trim() : `${unit.owner_first_name || ''} ${unit.owner_last_name || ''}`.trim());
                 const existingCount = 1 + (pay?.additional_payments || []).length;
                 const pagoNum = existingCount + 1;
-                const reqEFs = extraFields.filter(f => f.required);
-                const optEFs = extraFields.filter(f => !f.required);
                 return (
                   <>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', background: 'var(--sand-50)', border: '1px solid var(--sand-100)', borderRadius: 'var(--radius-md)', marginBottom: 16 }}>
@@ -722,16 +723,15 @@ export default function Cobranza() {
                     </div>
                     <div style={{ background: 'var(--white)', border: '1.5px solid var(--teal-100)', borderRadius: 'var(--radius-md)', overflow: 'hidden', marginBottom: 16 }}>
                       <div style={{ padding: '8px 16px', background: 'var(--teal-50)', borderBottom: '1px solid var(--teal-100)', fontSize: 10, fontWeight: 800, color: 'var(--teal-700)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Conceptos a Abonar</div>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 16px', borderBottom: '1px solid var(--sand-50)' }}>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-800)' }}>Mantenimiento <span style={{ fontSize: 10, color: 'var(--ink-400)', background: 'var(--sand-100)', padding: '2px 6px', borderRadius: 4 }}>{fmt(maintenanceFee)}</span></div>
-                        <input type="number" className="field-input" min={0} step={0.01} style={{ width: 100, textAlign: 'right' }} placeholder="0.00" value={addPaymentForm.extraFieldPayments?.maintenance ?? ''} onChange={e => setAddPaymentForm(f => ({ ...f, extraFieldPayments: { ...(f.extraFieldPayments || {}), maintenance: e.target.value } }))} />
-                      </div>
-                      {[...reqEFs, ...optEFs].filter((ef, i, arr) => arr.findIndex(x => x.id === ef.id) === i).map(ef => (
+                      {addlExtraFields.map(ef => (
                         <div key={ef.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 16px', borderBottom: '1px solid var(--sand-50)' }}>
                           <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-800)' }}>{ef.label} <span style={{ marginLeft: 6, fontSize: 10, color: ef.required ? 'var(--coral-400)' : 'var(--ink-400)', background: 'var(--sand-100)', padding: '2px 6px', borderRadius: 4 }}>{ef.required ? 'Oblig.' : 'Opcional'}</span></div>
                           <input type="number" className="field-input" min={0} step={0.01} style={{ width: 100, textAlign: 'right' }} placeholder="0.00" value={addPaymentForm.extraFieldPayments?.[ef.id] ?? ''} onChange={e => setAddPaymentForm(f => ({ ...f, extraFieldPayments: { ...(f.extraFieldPayments || {}), [ef.id]: e.target.value } }))} />
                         </div>
                       ))}
+                      {addlExtraFields.length === 0 && (
+                        <div style={{ padding: '16px', fontSize: 12, color: 'var(--ink-400)', textAlign: 'center' }}>No hay campos adicionales configurados.</div>
+                      )}
                     </div>
                     <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-500)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>Información del Pago</div>
                     <div className="grid-2" style={{ gap: 12, marginBottom: 12 }}>
