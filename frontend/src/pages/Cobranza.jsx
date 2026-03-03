@@ -96,6 +96,7 @@ export default function Cobranza() {
   const [editingAdditional, setEditingAdditional] = useState(null); // additional payment being edited
   const [perPage, setPerPage] = useState(25);
   const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
+  const [evidencePopup, setEvidencePopup] = useState(null); // { b64, mime, fileName }
 
   const load = async () => {
     if (!tenantId) return;
@@ -460,14 +461,14 @@ export default function Cobranza() {
                     </td>
                     <td style={{ fontSize: 13, color: 'var(--ink-500)' }}>{u.responsible_name || '—'}</td>
                     <td style={{ textAlign: 'right', fontWeight: 600, fontSize: 13 }}>
-                      {pay ? fmt(effTotals.maintenance || 0) : '—'}
+                      {pay ? fmtDec(effTotals.maintenance || 0) : '—'}
                     </td>
                     {extraFields.filter(f => f.required).map(ef => {
                       const amt = effTotals[ef.id] || 0;
-                      return <td key={ef.id} style={{ textAlign: 'right', fontSize: 13 }}>{pay ? fmt(amt) : '—'}</td>;
+                      return <td key={ef.id} style={{ textAlign: 'right', fontSize: 13 }}>{pay ? fmtDec(amt) : '—'}</td>;
                     })}
                     <td style={{ textAlign: 'right', fontWeight: 700, fontSize: 13, color: 'var(--teal-700)' }}>
-                      {pay ? fmt(totalRec) : '—'}
+                      {pay ? fmtDec(totalRec) : '—'}
                     </td>
                     <td>
                       <span className={`badge ${statusClass(st)}`}>{statusLabel(st)}</span>
@@ -1303,46 +1304,22 @@ export default function Cobranza() {
                 {/* SECCIÓN 6: Evidencia */}
                 <div style={{ marginTop: 12, fontSize: 12, fontWeight: 700, color: 'var(--ink-500)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Evidencia de Pago (opcional)</div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 8 }}>
-                  <label className="btn btn-secondary btn-sm" style={{ cursor: 'pointer' }}><Upload size={14} style={{ display: 'inline', verticalAlign: -2 }} /> Adjuntar<input type="file" accept=".png,.jpg,.jpeg,.pdf" style={{ display: 'none' }} onChange={handleEvidence} /></label>
+                  <label className="btn btn-secondary btn-sm" style={{ cursor: 'pointer' }}><Upload size={14} style={{ display: 'inline', verticalAlign: -2 }} /> Adjuntar<input type="file" style={{ display: 'none' }} onChange={handleEvidence} /></label>
                   {(captureForm.evidenceFileName || captureForm.evidence) ? (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--blue-50)', border: '1px solid var(--blue-100)', padding: '6px 12px', borderRadius: 'var(--radius-sm)' }}>
                       <FileText size={14} />
                       <span style={{ fontSize: 12, color: 'var(--blue-600)', fontWeight: 600 }}>{captureForm.evidenceFileName || 'Evidencia adjunta'}</span>
                       <button type="button" className="btn btn-secondary btn-sm" style={{ padding: '3px 8px', fontSize: 11 }}
-                        onClick={() => setCaptureForm(p => ({ ...p, showPreview: !p.showPreview }))}>
-                        {captureForm.showPreview ? 'Ocultar' : 'Ver'}
+                        onClick={() => setEvidencePopup({ b64: captureForm.evidence, mime: captureForm.evidenceMimeType || '', fileName: captureForm.evidenceFileName || 'Evidencia adjunta' })}>
+                        Ver
                       </button>
                       <button type="button" className="btn-ghost" style={{ color: 'var(--coral-500)', padding: 0, marginLeft: 4 }}
-                        onClick={() => setCaptureForm(p => ({ ...p, evidenceFileName: '', evidence: '', showPreview: false }))}>✕</button>
+                        onClick={() => setCaptureForm(p => ({ ...p, evidenceFileName: '', evidence: '', evidenceMimeType: '', showPreview: false }))}>✕</button>
                     </div>
                   ) : (
-                    <span style={{ fontSize: 12, color: 'var(--ink-300)' }}>PNG, JPG o PDF — máx. 5 MB</span>
+                    <span style={{ fontSize: 12, color: 'var(--ink-300)' }}>Imagen, PDF u otro archivo — máx. 5 MB</span>
                   )}
                 </div>
-                {captureForm.showPreview && captureForm.evidence && (() => {
-                  // Detectar tipo real por magic bytes del base64 (independiente de filename)
-                  const b64 = captureForm.evidence;
-                  const isPdf = b64.startsWith('JVBER') || (captureForm.evidenceMimeType === 'application/pdf') || /\.pdf$/i.test(captureForm.evidenceFileName || '');
-                  const mime = captureForm.evidenceMimeType
-                    || (b64.startsWith('iVBOR') ? 'image/png'   // PNG magic: \x89PNG
-                    :   b64.startsWith('/9j/')  ? 'image/jpeg'  // JPEG magic: \xFF\xD8
-                    :   b64.startsWith('R0lGO') ? 'image/gif'   // GIF magic
-                    :   b64.startsWith('UklGR') ? 'image/webp'  // WebP magic
-                    :   'image/jpeg');
-                  return (
-                    <div style={{ width: '100%', marginTop: 8 }}>
-                      {isPdf ? (
-                        <div style={{ border: '1px solid var(--sand-200)', borderRadius: 'var(--radius-md)', overflow: 'hidden', height: 200 }}>
-                          <iframe src={`data:application/pdf;base64,${b64}`} style={{ width: '100%', height: '100%', border: 'none' }} title="Evidencia" />
-                        </div>
-                      ) : (
-                        <div style={{ border: '1px solid var(--sand-200)', borderRadius: 'var(--radius-md)', overflow: 'hidden', maxHeight: 200 }}>
-                          <img src={`data:${mime};base64,${b64}`} alt="Evidencia" style={{ width: '100%', display: 'block' }} />
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
               </div>
               <div className="modal-foot">
                 <button className="btn btn-secondary" onClick={() => setShowCapture(null)}>Cancelar</button>
@@ -1606,6 +1583,55 @@ export default function Cobranza() {
                 }}>
                   <Printer size={14} /> Imprimir / PDF
                 </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── Popup visor de evidencia (adjuntos) ── */}
+      {evidencePopup && (() => {
+        const { b64, mime, fileName } = evidencePopup;
+        const isPdf = mime === 'application/pdf' || b64.startsWith('JVBER') || /\.pdf$/i.test(fileName || '');
+        const isImage = (mime && mime.startsWith('image/'))
+          || b64.startsWith('iVBOR')   // PNG
+          || b64.startsWith('/9j/')    // JPEG
+          || b64.startsWith('R0lGO')   // GIF
+          || b64.startsWith('UklGR');  // WebP
+        const effectiveMime = isPdf ? 'application/pdf'
+          : mime && mime !== 'application/octet-stream' ? mime
+          : b64.startsWith('iVBOR') ? 'image/png'
+          : b64.startsWith('/9j/')  ? 'image/jpeg'
+          : b64.startsWith('R0lGO') ? 'image/gif'
+          : b64.startsWith('UklGR') ? 'image/webp'
+          : 'application/octet-stream';
+        return (
+          <div className="modal-bg open" style={{ zIndex: 9999 }} onClick={() => setEvidencePopup(null)}>
+            <div className="modal lg" onClick={e => e.stopPropagation()} style={{ maxWidth: 820, width: '92vw' }}>
+              <div className="modal-head">
+                <h3 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <FileText size={16} /> {fileName || 'Evidencia de Pago'}
+                </h3>
+                <button className="modal-close" onClick={() => setEvidencePopup(null)}><X size={16} /></button>
+              </div>
+              <div className="modal-body" style={{ padding: 16 }}>
+                {isPdf ? (
+                  <div style={{ height: '72vh', border: '1px solid var(--sand-200)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+                    <iframe src={`data:application/pdf;base64,${b64}`} style={{ width: '100%', height: '100%', border: 'none' }} title="Evidencia PDF" />
+                  </div>
+                ) : isImage ? (
+                  <div style={{ textAlign: 'center', background: 'var(--sand-50)', borderRadius: 'var(--radius-md)', padding: 8, maxHeight: '72vh', overflow: 'auto' }}>
+                    <img src={`data:${effectiveMime};base64,${b64}`} alt="Evidencia" style={{ maxWidth: '100%', borderRadius: 'var(--radius-sm)', display: 'inline-block' }} />
+                  </div>
+                ) : (
+                  <div style={{ textAlign: 'center', padding: 48 }}>
+                    <FileText size={52} style={{ color: 'var(--ink-300)', marginBottom: 16 }} />
+                    <p style={{ color: 'var(--ink-500)', marginBottom: 20 }}>Vista previa no disponible para este tipo de archivo.</p>
+                    <a href={`data:${effectiveMime};base64,${b64}`} download={fileName || 'evidencia'} className="btn btn-primary">
+                      Descargar archivo
+                    </a>
+                  </div>
+                )}
               </div>
             </div>
           </div>
