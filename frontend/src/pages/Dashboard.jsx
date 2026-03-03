@@ -341,6 +341,11 @@ export default function Dashboard() {
   const s = stats || {};
   const t = tenant || {};
 
+  // ── Período mínimo = inicio de operaciones del tenant ─────────────────
+  const minPeriod = t.operation_start_date
+    ? t.operation_start_date.slice(0, 7)
+    : (t.created_at ? t.created_at.slice(0, 7) : '');
+
   // ── Valores derivados ──────────────────────────────────────────────────
   const registered  = s.total_units ?? 0;
   const planned     = s.units_planned ?? t.units_count ?? 0;
@@ -451,14 +456,48 @@ export default function Dashboard() {
         .kpi-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }
       `}</style>
 
-      {/* ── Tabs ─────────────────────────────────────────────────────────── */}
-      <div className="tabs" style={{ marginBottom: 20 }}>
-        <button className={`tab ${activeTab === 'general'  ? 'active' : ''}`} onClick={() => setActiveTab('general')}>
-          General
-        </button>
-        <button className={`tab ${activeTab === 'economic' ? 'active' : ''}`} onClick={() => setActiveTab('economic')}>
-          Económicos
-        </button>
+      {/* ── Header: tabs + navegador de período ─────────────────────────── */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
+        <div className="tabs" style={{ marginBottom: 0 }}>
+          <button className={`tab ${activeTab === 'general'  ? 'active' : ''}`} onClick={() => setActiveTab('general')}>
+            General
+          </button>
+          <button className={`tab ${activeTab === 'economic' ? 'active' : ''}`} onClick={() => setActiveTab('economic')}>
+            Económicos
+          </button>
+        </div>
+
+        {/* Navegador de período — aplica a ambas pestañas */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--white)', border: '1px solid var(--sand-100)', borderRadius: 'var(--radius-lg)', padding: '6px 14px' }}>
+          <BarChart2 size={14} color="var(--teal-500)" />
+          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-500)' }}>Período:</span>
+          <div className="period-nav" style={{ gap: 2 }}>
+            <button
+              className="period-nav-btn"
+              onClick={() => setPeriod(prevPeriod(period))}
+              disabled={!!minPeriod && period <= minPeriod}
+              style={{ opacity: (!!minPeriod && period <= minPeriod) ? 0.3 : 1, cursor: (!!minPeriod && period <= minPeriod) ? 'not-allowed' : 'pointer' }}
+            >
+              <ChevronLeft size={15} />
+            </button>
+            <input type="month" className="period-month-select"
+              style={{ fontSize: 14, fontWeight: 700 }}
+              value={period}
+              min={minPeriod || undefined}
+              onChange={e => {
+                const val = e.target.value;
+                if (minPeriod && val < minPeriod) return;
+                setPeriod(val);
+              }}
+            />
+            <button className="period-nav-btn" onClick={() => setPeriod(nextPeriod(period))}>
+              <ChevronRight size={15} />
+            </button>
+          </div>
+          {loading && (
+            <div style={{ width: 14, height: 14, borderRadius: '50%', border: '2px solid var(--sand-100)', borderTopColor: 'var(--teal-400)', animation: 'spin 0.8s linear infinite', marginLeft: 4 }} />
+          )}
+        </div>
       </div>
 
       {/* ════════════════════════════════════════ GENERAL ════════════════ */}
@@ -743,33 +782,6 @@ export default function Dashboard() {
       {/* ════════════════════════════════════════ ECONÓMICOS ═════════════ */}
       {activeTab === 'economic' && (
         <div>
-          {/* Navegador de período */}
-          <div className="card" style={{ marginBottom: 20 }}>
-            <div className="card-body" style={{ padding: '12px 20px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-                <BarChart2 size={16} color="var(--teal-500)" />
-                <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink-600)' }}>Período:</span>
-                <div className="period-nav" style={{ gap: 4 }}>
-                  <button className="period-nav-btn" onClick={() => setPeriod(prevPeriod(period))}>
-                    <ChevronLeft size={16} />
-                  </button>
-                  <input type="month" className="period-month-select"
-                    style={{ fontSize: 15, fontWeight: 700 }}
-                    value={period} onChange={e => setPeriod(e.target.value)} />
-                  <button className="period-nav-btn" onClick={() => setPeriod(nextPeriod(period))}>
-                    <ChevronRight size={16} />
-                  </button>
-                </div>
-                {loading && (
-                  <div style={{ width: 16, height: 16, borderRadius: '50%', border: '2px solid var(--sand-100)', borderTopColor: 'var(--teal-400)', animation: 'spin 0.8s linear infinite' }} />
-                )}
-                <div style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--ink-400)' }}>
-                  {monthLabel(s.period || period)}
-                </div>
-              </div>
-            </div>
-          </div>
-
           {/* KPI Grid — 6 tarjetas */}
           <SectionLabel>KPI's Económicos</SectionLabel>
           <div className="kpi-grid" style={{ marginBottom: 20 }}>
