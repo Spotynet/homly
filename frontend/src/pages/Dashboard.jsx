@@ -249,21 +249,25 @@ export default function Dashboard() {
   const [tenants, setTenants] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [generalReport, setGeneralReport] = useState(null);
 
   const load = useCallback(async () => {
     if (!tenantId) return;
     setLoading(true);
     setError(null);
     try {
-      const [dashRes, tenantRes, cmtRes] = await Promise.all([
+      const [dashRes, tenantRes, cmtRes, genRes] = await Promise.all([
         reportsAPI.dashboard(tenantId, period),
         tenantsAPI.get(tenantId),
         assemblyAPI.committees(tenantId).catch(() => ({ data: [] })),
+        // reporteGeneral = fuente de verdad para conciliados (mismos números que EstadoCuenta)
+        reportsAPI.reporteGeneral(tenantId, period).catch(() => ({ data: null })),
       ]);
       setStats(dashRes.data);
       setTenant(tenantRes.data);
       const raw = cmtRes.data;
       setCommittees(Array.isArray(raw) ? raw : (raw?.results || []));
+      setGeneralReport(genRes.data);
     } catch (e) {
       setError(e.response?.data?.detail || 'Error al cargar el dashboard');
     } finally {
@@ -350,19 +354,41 @@ export default function Dashboard() {
   const exemptCnt   = s.exempt_count ?? 0;
   const totalColl   = s.total_collected ?? 0;
 
-  // Económicos
-  const cargosFijos     = s.total_expected ?? 0;
-  const cobranza        = s.total_collected ?? 0;
-  const totalIngresos   = s.total_ingresos ?? cobranza;
-  const gastos          = s.total_gastos_conciliados ?? 0;
-  const ingAdicional    = s.ingreso_adicional ?? 0;
-  const adeudoRecibido  = s.total_adeudo_recibido ?? 0;
-  const deudaTotal      = s.deuda_total ?? 0;
-  const balanceNeto     = totalIngresos - gastos;
+  // ── Económicos — reporteGeneral es la fuente de verdad (=EstadoCuenta) ──
+  // rd = report_data del reporte general conciliado con banco
+  const gr = generalReport;
+  const rd = gr?.report_data || {};
+
+  const cargosFijos    = s.total_expected ?? 0;
+
+  // Cobranza de mantenimiento = lo que el reporte general muestra como ingreso_mantenimiento
+  const cobranza       = parseFloat(rd.ingreso_mantenimiento ?? s.total_collected ?? 0);
+  // Adelantos de mantenimiento (meses futuros pagados)
+  const ingAdelanto    = parseFloat(rd.ingreso_maint_adelanto ?? 0);
+  // Conceptos adicionales conciliados (campos extra: agua, gas, etc.)
+  const ingConceptos   = rd.ingresos_conceptos
+    ? Object.values(rd.ingresos_conceptos).reduce((a, c) => a + (parseFloat(c.total) || 0), 0)
+    : (s.ingreso_adicional ?? 0);
+  // Ingresos no identificados (no asignados a ninguna unidad)
+  const ingNoId        = parseFloat(rd.ingresos_no_identificados ?? 0);
+  // Total ingresos conciliados con banco = mismo número que Reporte General
+  const totalIngresos  = parseFloat(rd.total_ingresos_reconciled ?? (s.total_ingresos ?? s.total_collected ?? 0));
+  // Gastos conciliados con banco = mismo número que Reporte General
+  const gastos         = parseFloat(rd.total_egresos_reconciled ?? s.total_gastos_conciliados ?? 0);
+  // Saldos bancarios (del reporte general)
+  const saldoInicial   = parseFloat(gr?.saldo_inicial ?? 0);
+  const saldoFinal     = parseFloat(gr?.saldo_final ?? 0);
+  const hasSaldos      = saldoInicial !== 0 || saldoFinal !== 0;
+
+  // ingAdicional para mostrar en KPI = conceptos adicionales
+  const ingAdicional   = ingConceptos;
+  const adeudoRecibido = s.total_adeudo_recibido ?? 0;
+  const deudaTotal     = s.deuda_total ?? 0;
+  const balanceNeto    = totalIngresos - gastos;
 
   const pctCobVsCargos     = cargosFijos > 0 ? Math.round((cobranza / cargosFijos) * 100) : 0;
   const pctGastosVsIng     = totalIngresos > 0 ? Math.round((gastos / totalIngresos) * 100) : 0;
-  const pctIngAdicional    = cobranza > 0 ? Math.round((ingAdicional / cobranza) * 100) : 0;
+  const pctIngAdicional    = totalIngresos > 0 ? Math.round((ingAdicional / totalIngresos) * 100) : 0;
   const pctDeudaRecuperada = deudaTotal > 0 ? Math.round((adeudoRecibido / deudaTotal) * 100) : 0;
 
   // Colores dinámicos
@@ -393,12 +419,13 @@ export default function Dashboard() {
     ...(exemptCnt > 0 ? [{ label: 'Exento', count: exemptCnt, color: 'var(--blue-400)', bg: 'var(--blue-50)', icon: Clock }] : []),
   ];
 
-  // Segmentos del donut de ingresos
+  // Segmentos del donut de ingresos (desglose del Reporte General)
   const incomeSegments = [
-    { label: 'Mantenimiento', value: cobranza,       color: 'var(--teal-400)' },
-    { label: 'Ing. Adicional', value: ingAdicional,  color: 'var(--blue-400)' },
-    { label: 'Adeudo recibido', value: adeudoRecibido, color: 'var(--amber-400)' },
-  ].filter(s => s.value > 0);
+    { label: 'Mantenimiento',       value: cobranza,     color: 'var(--teal-500)' },
+    ...(ingAdelanto > 0   ? [{ label: 'Adelantos mant.',   value: ingAdelanto,  color: 'var(--teal-200)' }]  : []),
+    ...(ingConceptos > 0  ? [{ label: 'Conceptos adicionales', value: ingConceptos, color: 'var(--blue-400)' }] : []),
+    ...(ingNoId > 0       ? [{ label: 'No identificados',  value: ingNoId,      color: 'var(--amber-400)' }] : []),
+  ].filter(seg => seg.value > 0);
 
   // ── Componentes de sección ─────────────────────────────────────────────
   const SectionLabel = ({ children }) => (
@@ -778,16 +805,16 @@ export default function Dashboard() {
               </div>
               <div className="dash-kpi-label">Total Ingresos</div>
               <div className="dash-kpi-value" style={{ fontSize: 17 }}>{fmt(totalIngresos)}</div>
-              <div className="dash-kpi-sub">mantenimiento + adicionales</div>
+              <div className="dash-kpi-sub">conciliados con banco</div>
             </div>
 
             <div className="dash-kpi" style={{ '--accent-color': 'var(--coral-400)' }}>
               <div className="dash-kpi-icon" style={{ background: 'var(--coral-50)' }}>
                 <ShoppingBag size={18} color="var(--coral-600)" />
               </div>
-              <div className="dash-kpi-label">Gastos Conciliados</div>
+              <div className="dash-kpi-label">Egresos Conciliados</div>
               <div className="dash-kpi-value" style={{ fontSize: 17 }}>{fmt(gastos)}</div>
-              <div className="dash-kpi-sub">{gastos > 0 ? 'registros conciliados' : 'sin registros conciliados'}</div>
+              <div className="dash-kpi-sub">{gastos > 0 ? 'egresos conciliados con banco' : 'sin egresos conciliados'}</div>
               {totalIngresos > 0 && (
                 <div className="dash-kpi-badge" style={{
                   background: gvColor === 'var(--teal-400)' ? 'var(--teal-50)' : gvColor === 'var(--amber-400)' ? 'var(--amber-50)' : 'var(--coral-50)',
@@ -816,10 +843,10 @@ export default function Dashboard() {
               <div className="dash-kpi-icon" style={{ background: 'var(--amber-50)' }}>
                 <Activity size={18} color="var(--amber-600)" />
               </div>
-              <div className="dash-kpi-label">Ing. Adicional</div>
+              <div className="dash-kpi-label">Conceptos Adicionales</div>
               <div className="dash-kpi-value" style={{ fontSize: 17 }}>{fmt(ingAdicional)}</div>
               <div className="dash-kpi-sub">
-                {cobranza > 0 ? `${pctIngAdicional}% vs cobranza base` : 'sin ingresos adicionales'}
+                {ingAdicional > 0 ? `${pctIngAdicional}% del total ingresos` : 'sin conceptos adicionales'}
               </div>
             </div>
           </div>
@@ -836,11 +863,11 @@ export default function Dashboard() {
               subRight={{ label: 'Cargos esperados', value: fmtDec(cargosFijos) }}
             />
             <GaugeCard
-              title="Ratio de Gastos vs Ingresos"
+              title="Ratio Egresos vs Ingresos"
               pct={pctGastosVsIng}
               color={gvColor}
               icon={ShoppingBag}
-              subLeft={{ label: 'Gastos conciliados', value: fmtDec(gastos) }}
+              subLeft={{ label: 'Egresos conciliados', value: fmtDec(gastos) }}
               subRight={{ label: 'Total ingresos', value: fmtDec(totalIngresos) }}
             />
           </div>
@@ -852,6 +879,7 @@ export default function Dashboard() {
             <div className="card">
               <div className="card-head">
                 <h3>Composición de Ingresos</h3>
+                <span style={{ fontSize: 11, color: 'var(--ink-400)' }}>conciliados</span>
               </div>
               <div className="card-body">
                 {incomeSegments.length === 0 ? (
@@ -979,7 +1007,7 @@ export default function Dashboard() {
                             Balance Neto del Período
                           </div>
                           <div style={{ fontSize: 11, color: balanceNeto >= 0 ? 'var(--teal-600)' : 'var(--coral-600)' }}>
-                            {balanceNeto >= 0 ? 'Superávit — ingresos superan gastos' : 'Déficit — gastos superan ingresos'}
+                            {balanceNeto >= 0 ? 'Superávit — ingresos superan egresos' : 'Déficit — egresos superan ingresos'}
                           </div>
                         </div>
                       </div>
@@ -987,6 +1015,33 @@ export default function Dashboard() {
                         {fmtDec(Math.abs(balanceNeto))}
                       </div>
                     </div>
+
+                    {/* Saldos bancarios (solo si existen en el reporte general) */}
+                    {hasSaldos && (
+                      <div style={{
+                        marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--sand-100)',
+                        display: 'flex', gap: 0,
+                      }}>
+                        {[
+                          { label: 'Saldo Inicial Banco', value: saldoInicial, color: 'var(--ink-700)' },
+                          { label: 'Total Ingresos Conciliados', value: totalIngresos, color: 'var(--teal-700)' },
+                          { label: 'Total Egresos Conciliados', value: gastos, color: 'var(--coral-600)' },
+                          { label: 'Saldo Final Banco', value: saldoFinal, color: saldoFinal >= 0 ? 'var(--teal-700)' : 'var(--coral-700)' },
+                        ].map((item, i, arr) => (
+                          <div key={item.label} style={{
+                            flex: 1, textAlign: 'center', padding: '0 12px',
+                            borderRight: i < arr.length - 1 ? '1px solid var(--sand-100)' : 'none',
+                          }}>
+                            <div style={{ fontSize: 10, color: 'var(--ink-400)', marginBottom: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                              {item.label}
+                            </div>
+                            <div style={{ fontSize: 13, fontWeight: 800, color: item.color }}>
+                              {fmtDec(item.value)}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 );
               })()}
