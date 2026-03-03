@@ -194,7 +194,8 @@ class ExtraFieldViewSet(viewsets.ModelViewSet):
 
 def _compute_payment_status(payment, tenant, extra_fields):
     """Compute status from main field_payments + additional_payments.
-    'parcial' = mantenimiento fijo sin captura + al menos un campo adicional activo con pago.
+    'parcial' = mantenimiento fijo sin captura + al menos un campo adicional activo con pago,
+               O mantenimiento fijo capturado de forma incompleta (abono < cargo).
     Unidades exentas (admin_exempt): cargo de mantenimiento = 0; tipo 'excento' → pagado."""
     is_exempt = getattr(payment.unit, 'admin_exempt', False)
 
@@ -228,6 +229,9 @@ def _compute_payment_status(payment, tenant, extra_fields):
     if total_req_received >= total_req_charge:
         return 'pagado'
     if maint_captured == 0 and has_non_maintenance_payment:
+        return 'parcial'
+    # Pago de mantenimiento base fija registrado de forma incompleta → Parcial
+    if maint_charge > 0 and 0 < maint_captured < maint_charge:
         return 'parcial'
     return 'pendiente'
 
@@ -873,7 +877,8 @@ def _compute_statement(tenant, unit_id, start_period, cutoff_period):
         oblig_abono = Decimal(str(oblig_abono)) if not isinstance(oblig_abono, Decimal) else oblig_abono
         oblig_abono_capped = min(oblig_abono, cargo_oblig) if cargo_oblig > 0 else oblig_abono
 
-        # Parcial: mantenimiento fijo sin abono + al menos un campo adicional activo con abono
+        # Parcial: mantenimiento fijo sin abono + al menos un campo adicional activo con abono,
+        #          o mantenimiento fijo con abono incompleto (abono < cargo).
         has_non_maint_abono = any(
             fd['abono'] > 0 for fd in field_detail if fd.get('id') != 'maintenance'
         )
@@ -890,6 +895,9 @@ def _compute_statement(tenant, unit_id, start_period, cutoff_period):
         elif cargo_oblig > 0 and oblig_abono_capped >= cargo_oblig:
             eff_status = 'pagado'
         elif maint_abono == Decimal('0') and has_non_maint_abono:
+            eff_status = 'parcial'
+        # Pago de mantenimiento base fija registrado de forma incompleta → Parcial
+        elif maint_charge > 0 and Decimal('0') < maint_abono < maint_charge:
             eff_status = 'parcial'
         elif is_past:
             eff_status = 'pendiente'
