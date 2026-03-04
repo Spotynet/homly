@@ -64,7 +64,7 @@ ssh -i "$PEM" "$EC2" << 'ENDSSH'
   cd ..
 
   echo "  → restart backend PM2..."
-  pm2 restart homly-backend
+  pm2 restart all
 
   echo "  → reload nginx..."
   sudo nginx -t && sudo nginx -s reload
