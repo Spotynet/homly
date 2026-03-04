@@ -209,21 +209,67 @@ export default function EstadoCuenta() {
 
   return (
     <div className="content-fade">
-      {/* ── 3-tab toggle (only when not in detail) ── */}
+      {/* ── Tabs + navegador de período global ── */}
       {!isVecino && !selectedUnit && (
-        <div className="ec-view-toggle">
-          <button className={`ec-view-btn ${view === 'units' ? 'active' : ''}`} onClick={() => { setView('units'); setSelectedUnit(null); }}>
-            <Building size={14} /> Estado por Unidad
-          </button>
-          <button className={`ec-view-btn ${view === 'tenant' ? 'active' : ''}`} onClick={() => { setView('tenant'); setSelectedUnit(null); }}>
-            <Globe size={14} /> Estado General
-          </button>
-          <button className={`ec-view-btn ${view === 'reporte' ? 'active' : ''}`} onClick={() => { setView('reporte'); setSelectedUnit(null); }}>
-            <DollarSign size={14} /> Reporte General
-          </button>
-          <button className={`ec-view-btn ${view === 'adeudos' ? 'active' : ''}`} onClick={() => { setView('adeudos'); setSelectedUnit(null); }}>
-            <AlertCircle size={14} /> Reporte de Adeudos
-          </button>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
+          <div className="ec-view-toggle" style={{ marginBottom: 0 }}>
+            <button className={`ec-view-btn ${view === 'units' ? 'active' : ''}`} onClick={() => { setView('units'); setSelectedUnit(null); }}>
+              <Building size={14} /> Estado por Unidad
+            </button>
+            <button className={`ec-view-btn ${view === 'tenant' ? 'active' : ''}`} onClick={() => { setView('tenant'); setSelectedUnit(null); }}>
+              <Globe size={14} /> Estado General
+            </button>
+            <button className={`ec-view-btn ${view === 'reporte' ? 'active' : ''}`} onClick={() => { setView('reporte'); setSelectedUnit(null); }}>
+              <DollarSign size={14} /> Reporte General
+            </button>
+            <button className={`ec-view-btn ${view === 'adeudos' ? 'active' : ''}`} onClick={() => { setView('adeudos'); setSelectedUnit(null); }}>
+              <AlertCircle size={14} /> Reporte de Adeudos
+            </button>
+          </div>
+
+          {/* Navegador de período — aplica a todas las vistas excepto Adeudos */}
+          {view !== 'adeudos' && (
+            <div className="no-print" style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--white)', border: '1px solid var(--sand-100)', borderRadius: 'var(--radius-lg)', padding: '6px 14px' }}>
+              <Calendar size={14} color="var(--teal-500)" />
+              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-500)' }}>
+                {view === 'reporte' ? 'Período:' : 'Corte:'}
+              </span>
+              <div className="period-nav" style={{ gap: 2 }}>
+                <button
+                  className="period-nav-btn"
+                  onClick={() => setCutoff(prevPeriod(cutoff))}
+                  disabled={!!startPeriod && cutoff <= startPeriod}
+                  style={{ opacity: (!!startPeriod && cutoff <= startPeriod) ? 0.3 : 1, cursor: (!!startPeriod && cutoff <= startPeriod) ? 'not-allowed' : 'pointer' }}
+                >
+                  <ChevronLeft size={15} />
+                </button>
+                <input
+                  type="month"
+                  className="period-month-select"
+                  style={{ fontSize: 14, fontWeight: 700 }}
+                  value={cutoff}
+                  min={startPeriod || undefined}
+                  max={todayPeriod()}
+                  onChange={e => {
+                    const val = e.target.value;
+                    if (startPeriod && val < startPeriod) return;
+                    setCutoff(val);
+                  }}
+                />
+                <button
+                  className="period-nav-btn"
+                  onClick={() => { const next = nextPeriod(cutoff); if (next <= todayPeriod()) setCutoff(next); }}
+                  disabled={cutoff >= todayPeriod()}
+                  style={{ opacity: cutoff >= todayPeriod() ? 0.3 : 1, cursor: cutoff >= todayPeriod() ? 'not-allowed' : 'pointer' }}
+                >
+                  <ChevronRight size={15} />
+                </button>
+              </div>
+              {startPeriod && (
+                <span style={{ fontSize: 11, color: 'var(--ink-300)' }}>desde {periodLabel(startPeriod)}</span>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -461,7 +507,7 @@ export default function EstadoCuenta() {
           {/* ════════════════════════ UNIT LIST VIEW ════════════════════════ */}
           {view === 'units' && !isVecino && (
             <>
-              {/* Search + Cutoff */}
+              {/* Search */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
                 <div className="ec-search-bar">
                   <Search size={16} style={{ color: 'var(--ink-400)', flexShrink: 0 }} />
@@ -469,17 +515,6 @@ export default function EstadoCuenta() {
                     placeholder="Buscar unidad o residente..."
                     value={search}
                     onChange={e => { setSearch(e.target.value); setUnitsPage(1); }}
-                  />
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ fontSize: 12, color: 'var(--ink-500)' }}>Corte:</span>
-                  <input
-                    type="month"
-                    className="period-month-select"
-                    value={cutoff}
-                    onChange={e => setCutoff(e.target.value)}
-                    max={todayPeriod()}
-                    min={startPeriod}
                   />
                 </div>
               </div>
@@ -761,6 +796,7 @@ export default function EstadoCuenta() {
               setCutoff={setCutoff}
               startPeriod={startPeriod}
               periodAggregates={listMeta?.period_aggregates || []}
+              unitsCount={units.length}
             />
           )}
 
@@ -822,7 +858,7 @@ function payTotalIncome(pay) {
 /* ═══════════════════════════════════════════════════════════
    ESTADO GENERAL — per-period rows across all units
    ═══════════════════════════════════════════════════════════ */
-function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cutoff, setCutoff, startPeriod, periodAggregates }) {
+function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cutoff, setCutoff, startPeriod, periodAggregates, unitsCount }) {
   const [payments, setPayments] = useState([]);
   const [gastos, setGastos] = useState([]);
   // cajaChica ya no se incluye en el reporte general
@@ -830,7 +866,8 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
   const [ecLoading, setEcLoading] = useState(false);
   const [expandedPeriods, setExpandedPeriods] = useState({});
   const togglePeriod = (period) => setExpandedPeriods(prev => ({ ...prev, [period]: !prev[period] }));
-  const numUnits = generalData?.units?.length || 0;
+  // unitsCount viene del padre (units.length real); fallback a generalData.units si existiera
+  const numUnits = unitsCount || generalData?.units?.length || 0;
 
   // Fetch ALL payments (no period filter) + gastos for the tenant
   // Nota: cajaChica NO se incluye en el reporte general
@@ -964,13 +1001,13 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
     });
   }, [allPeriods, payments, gastos, unrecognizedIncome, chargePerUnit, numUnits, periodAggMap]);
 
-  // Grand totals
+  // Grand totals — KPI cards muestran únicamente cifras conciliadas bancariamente
   const totals = useMemo(() => {
     let grandCargo = 0, grandRecaudo = 0, grandGastos = 0;
     periodRows.forEach(r => {
-      grandCargo += r.totalCargo;
-      grandRecaudo += r.recaudo;
-      grandGastos += r.pGastos;
+      grandCargo   += r.totalCargo;
+      grandRecaudo += r.recaudoConciliado;   // ingresos conciliados banco
+      grandGastos  += r.gastosConciliado;    // gastos conciliados banco
     });
     return { grandCargo, grandRecaudo, grandGastos, balance: grandRecaudo - grandGastos };
   }, [periodRows]);
@@ -1111,23 +1148,17 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
         </div>
       </div>
 
-      {/* Controls bar */}
-      <div className="card" style={{ marginBottom: 20 }}>
-        <div className="card-body" style={{ padding: '16px 24px' }}>
+      {/* Controls bar — período gestionado por el navegador global */}
+      <div className="card no-print" style={{ marginBottom: 20 }}>
+        <div className="card-body" style={{ padding: '12px 24px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-600)' }}>Corte hasta:</span>
-            <input
-              type="month"
-              className="period-month-select"
-              value={cutoff}
-              onChange={e => setCutoff(e.target.value)}
-              min={startPeriod}
-              max={todayPeriod()}
-            />
             {startPeriod && (
-              <span style={{ fontSize: 12, color: 'var(--ink-400)' }}>Desde: {periodLabel(startPeriod)}</span>
+              <span style={{ fontSize: 12, color: 'var(--ink-400)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                <Calendar size={13} />
+                {periodLabel(startPeriod)} → {periodLabel(cutoff)} · {numUnits} unidades
+              </span>
             )}
-            <button className="btn btn-primary btn-sm no-print" style={{ marginLeft: 'auto' }} onClick={() => {
+            <button className="btn btn-primary btn-sm" style={{ marginLeft: 'auto' }} onClick={() => {
               const prev = document.title;
               document.title = `Estado General — ${tenantData?.name || ''} — Corte ${periodLabel(cutoff)}`;
               document.body.classList.add('printing-general');
@@ -1143,7 +1174,7 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
         </div>
       </div>
 
-      {/* KPI Strip */}
+      {/* KPI Strip — cifras conciliadas bancariamente */}
       <div className="cob-stats" style={{ marginBottom: 20, gridTemplateColumns: 'repeat(4, 1fr)' }}>
         <div className="cob-stat">
           <div className="cob-stat-icon" style={{ background: 'var(--blue-50)', color: 'var(--blue-500)' }}><Building size={18} /></div>
@@ -1155,14 +1186,14 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
         <div className="cob-stat">
           <div className="cob-stat-icon" style={{ background: 'var(--teal-50)', color: 'var(--teal-500)' }}><ArrowDown size={18} /></div>
           <div>
-            <div className="cob-stat-label">Recaudo Total</div>
+            <div className="cob-stat-label">Ingresos Conciliados</div>
             <div className="cob-stat-value">{fmt(totals.grandRecaudo)}</div>
           </div>
         </div>
         <div className="cob-stat">
           <div className="cob-stat-icon" style={{ background: 'var(--amber-50)', color: 'var(--amber-500)' }}><ShoppingBag size={18} /></div>
           <div>
-            <div className="cob-stat-label">Total Gastos</div>
+            <div className="cob-stat-label">Gastos Conciliados</div>
             <div className="cob-stat-value">{fmt(totals.grandGastos)}</div>
           </div>
         </div>
@@ -1171,7 +1202,7 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
             <DollarSign size={18} />
           </div>
           <div>
-            <div className="cob-stat-label">Balance Neto</div>
+            <div className="cob-stat-label">Balance Conciliado</div>
             <div className="cob-stat-value" style={{ color: totals.balance >= 0 ? 'var(--teal-600)' : 'var(--coral-500)' }}>{fmt(totals.balance)}</div>
           </div>
         </div>
@@ -1330,34 +1361,17 @@ function ReporteGeneralView({ tenantData, generalData, genLoading, cutoff, setCu
   const saldoFinal = generalData?.saldo_final ?? 0;
   const unitsCount = generalData?.units_count ?? 0;
 
-  const handlePrev = () => setCutoff(prevPeriod(cutoff));
-  const handleNext = () => {
-    const next = nextPeriod(cutoff);
-    if (next <= todayPeriod()) setCutoff(next);
-  };
-
   return (
     <div className="content-fade">
-      {/* Period controls — oculto al imprimir */}
+      {/* Controls bar — período gestionado por el navegador global */}
       <div className="card no-print" style={{ marginBottom: 20 }}>
-        <div className="card-body" style={{ padding: '16px 24px' }}>
+        <div className="card-body" style={{ padding: '12px 24px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-600)' }}>Período:</span>
-            <div className="period-nav" style={{ gap: 4 }}>
-              <button className="period-nav-btn" onClick={handlePrev}><ChevronLeft size={16} /></button>
-              <input
-                type="month"
-                className="period-month-select"
-                style={{ fontSize: 15, fontWeight: 700 }}
-                value={cutoff}
-                onChange={e => setCutoff(e.target.value)}
-                min={startPeriod}
-                max={todayPeriod()}
-              />
-              <button className="period-nav-btn" onClick={handleNext}><ChevronRight size={16} /></button>
-            </div>
             {startPeriod && (
-              <span style={{ fontSize: 12, color: 'var(--ink-400)' }}>Inicio: {periodLabel(startPeriod)}</span>
+              <span style={{ fontSize: 12, color: 'var(--ink-400)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                <Calendar size={13} />
+                Período: {periodLabel(cutoff)}
+              </span>
             )}
             <button className="btn btn-primary btn-sm" style={{ marginLeft: 'auto' }} onClick={() => window.print()}>
               <Printer size={14} /> Exportar PDF
