@@ -668,7 +668,7 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Committees */}
+          {/* Committees — activos vs históricos por período de cargo */}
           {committees.length > 0 && (
             <div className="card">
               <div className="card-head">
@@ -680,67 +680,153 @@ export default function Dashboard() {
               </div>
               <div style={{ padding: 0 }}>
                 {committees.map((cm, cmIdx) => {
-                  const activePositions = (cm.positions || []).filter(p => p.active).sort((a, b) => a.sort_order - b.sort_order);
-                  const inactivePositions = (cm.positions || []).filter(p => !p.active);
+                  const today = new Date().toISOString().slice(0, 10);
+                  const allPositions = cm.positions || [];
+
+                  // Vigentes: dentro del rango de fechas (o sin fechas) Y con titular
+                  const activePositions = allPositions.filter(p => {
+                    const started = !p.start_date || p.start_date <= today;
+                    const notEnded = !p.end_date   || p.end_date   >= today;
+                    return started && notEnded && p.holder_name;
+                  }).sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+
+                  // Vacantes vigentes: dentro del rango pero sin titular
+                  const vacantPositions = allPositions.filter(p => {
+                    const started = !p.start_date || p.start_date <= today;
+                    const notEnded = !p.end_date   || p.end_date   >= today;
+                    return started && notEnded && !p.holder_name;
+                  });
+
+                  // Históricos: end_date ya pasó Y tenían titular
+                  const historicPositions = allPositions.filter(p =>
+                    p.end_date && p.end_date < today && p.holder_name
+                  ).sort((a, b) => b.end_date.localeCompare(a.end_date));
+
                   const extraMembers = cm.members
                     ? cm.members.split(',').map(m => m.trim()).filter(Boolean) : [];
-                  const totalIntegrantes = activePositions.length + extraMembers.length;
+                  const totalActivos = activePositions.length + extraMembers.length;
+
+                  // Formatea un rango de fechas en español corto
+                  const fmtPeriod = (start, end) => {
+                    const f = d => d
+                      ? new Date(d + 'T12:00:00').toLocaleDateString('es-MX', { month: 'short', year: 'numeric' })
+                      : null;
+                    const s = f(start), e = f(end);
+                    if (s && e) return `${s} – ${e}`;
+                    if (s)     return `Desde ${s}`;
+                    if (e)     return `Hasta ${e}`;
+                    return null;
+                  };
 
                   return (
                     <div key={cm.id} style={{ borderBottom: cmIdx < committees.length - 1 ? '1px solid var(--sand-100)' : 'none' }}>
+
+                      {/* ── Encabezado del comité ── */}
                       <div style={{ padding: '14px 20px 10px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
                         <div style={{ flex: 1 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 3 }}>
                             <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--ink-800)' }}>{cm.name}</span>
                             {cm.exemption && <span className="badge badge-teal" style={{ fontSize: 10 }}>Exento</span>}
-                            {totalIntegrantes > 0 && (
-                              <span style={{ fontSize: 11, color: 'var(--ink-400)', marginLeft: 2 }}>
-                                · {totalIntegrantes} integrante{totalIntegrantes !== 1 ? 's' : ''}
+                            {totalActivos > 0 && (
+                              <span style={{ fontSize: 11, color: 'var(--teal-600)', fontWeight: 600 }}>
+                                · {totalActivos} activo{totalActivos !== 1 ? 's' : ''}
+                              </span>
+                            )}
+                            {historicPositions.length > 0 && (
+                              <span style={{ fontSize: 11, color: 'var(--ink-300)' }}>
+                                · {historicPositions.length} histórico{historicPositions.length !== 1 ? 's' : ''}
                               </span>
                             )}
                           </div>
-                          {cm.description && <div style={{ fontSize: 12, color: 'var(--ink-400)', marginBottom: 2 }}>{cm.description}</div>}
+                          {cm.description && <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>{cm.description}</div>}
                         </div>
-                        {inactivePositions.length > 0 && (
-                          <span style={{ fontSize: 10, color: 'var(--ink-300)', flexShrink: 0, marginTop: 2 }}>
-                            {inactivePositions.length} vacante{inactivePositions.length !== 1 ? 's' : ''}
+                        {vacantPositions.length > 0 && (
+                          <span style={{ fontSize: 10, color: 'var(--amber-600)', background: 'var(--amber-50)', border: '1px solid var(--amber-100)', borderRadius: 20, padding: '2px 8px', flexShrink: 0, marginTop: 2, fontWeight: 600 }}>
+                            {vacantPositions.length} vacante{vacantPositions.length !== 1 ? 's' : ''}
                           </span>
                         )}
                       </div>
 
+                      {/* ── Miembros ACTIVOS (vigentes por período) ── */}
                       {activePositions.length > 0 && (
-                        <div style={{ padding: '0 20px 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-                          {activePositions.map(pos => (
-                            <div key={pos.id} style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--sand-50)', borderRadius: 8, padding: '8px 12px' }}>
-                              <div style={{ width: 32, height: 32, borderRadius: '50%', flexShrink: 0, background: pos.holder_name ? 'var(--blue-100)' : 'var(--sand-100)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                <UserCheck size={15} style={{ color: pos.holder_name ? 'var(--blue-600)' : 'var(--ink-300)' }} />
-                              </div>
-                              <div style={{ flex: 1, minWidth: 0 }}>
-                                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-600)' }}>{pos.title}</div>
-                                <div style={{ fontSize: 13, fontWeight: 700, color: pos.holder_name ? 'var(--ink-800)' : 'var(--ink-300)', fontStyle: pos.holder_name ? 'normal' : 'italic' }}>
-                                  {pos.holder_name || 'Vacante'}
+                        <div style={{ padding: '0 20px 4px' }}>
+                          <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--teal-600)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
+                            Vigentes
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
+                            {activePositions.map(pos => {
+                              const period = fmtPeriod(pos.start_date, pos.end_date);
+                              return (
+                                <div key={pos.id} style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--teal-50)', border: '1px solid var(--teal-100)', borderRadius: 8, padding: '8px 12px' }}>
+                                  <div style={{ width: 32, height: 32, borderRadius: '50%', flexShrink: 0, background: 'var(--blue-100)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    <UserCheck size={15} color="var(--blue-600)" />
+                                  </div>
+                                  <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-500)' }}>{pos.title}</div>
+                                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink-800)' }}>{pos.holder_name}</div>
+                                    {period && (
+                                      <div style={{ fontSize: 10, color: 'var(--teal-600)', marginTop: 2, fontWeight: 500 }}>
+                                        📅 {period}
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                                    {pos.email && <a href={`mailto:${pos.email}`} style={{ color: 'var(--blue-500)', display: 'flex', alignItems: 'center' }} title={pos.email}><Mail size={13} /></a>}
+                                    {pos.phone && <a href={`tel:${pos.phone}`} style={{ color: 'var(--teal-500)', display: 'flex', alignItems: 'center' }} title={pos.phone}><Phone size={13} /></a>}
+                                  </div>
                                 </div>
-                              </div>
-                              <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-                                {pos.email && <a href={`mailto:${pos.email}`} style={{ color: 'var(--blue-500)', display: 'flex', alignItems: 'center' }} title={pos.email}><Mail size={13} /></a>}
-                                {pos.phone && <a href={`tel:${pos.phone}`} style={{ color: 'var(--teal-500)', display: 'flex', alignItems: 'center' }} title={pos.phone}><Phone size={13} /></a>}
-                              </div>
-                            </div>
-                          ))}
+                              );
+                            })}
+                          </div>
                         </div>
                       )}
 
+                      {/* ── Extra members texto libre ── */}
                       {extraMembers.length > 0 && (
-                        <div style={{ padding: '0 20px 12px', display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                        <div style={{ padding: '0 20px 10px', display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                           {extraMembers.map((m, i) => (
-                            <span key={i} style={{ fontSize: 12, padding: '3px 10px', borderRadius: 20, background: 'var(--sand-100)', color: 'var(--ink-600)', fontWeight: 500 }}>{m}</span>
+                            <span key={i} style={{ fontSize: 12, padding: '3px 10px', borderRadius: 20, background: 'var(--teal-50)', border: '1px solid var(--teal-100)', color: 'var(--teal-700)', fontWeight: 500 }}>{m}</span>
                           ))}
                         </div>
                       )}
 
+                      {/* Sin activos */}
                       {activePositions.length === 0 && extraMembers.length === 0 && (
-                        <div style={{ padding: '0 20px 12px', fontSize: 12, color: 'var(--ink-300)', fontStyle: 'italic' }}>Sin integrantes registrados</div>
+                        <div style={{ padding: '0 20px 8px', fontSize: 12, color: 'var(--ink-300)', fontStyle: 'italic' }}>
+                          Sin integrantes activos en este período
+                        </div>
                       )}
+
+                      {/* ── Miembros HISTÓRICOS (end_date ya pasó) ── */}
+                      {historicPositions.length > 0 && (
+                        <div style={{ padding: '0 20px 12px' }}>
+                          <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--ink-300)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span style={{ display: 'inline-block', width: 28, borderTop: '1px solid var(--sand-200)' }} />
+                            Histórico
+                            <span style={{ display: 'inline-block', flex: 1, borderTop: '1px solid var(--sand-200)' }} />
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                            {historicPositions.map(pos => {
+                              const period = fmtPeriod(pos.start_date, pos.end_date);
+                              return (
+                                <div key={pos.id} style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--sand-50)', borderRadius: 7, padding: '6px 10px' }}>
+                                  <div style={{ width: 26, height: 26, borderRadius: '50%', flexShrink: 0, background: 'var(--sand-100)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    <UserCheck size={12} color="var(--ink-300)" />
+                                  </div>
+                                  <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-400)' }}>{pos.title}</div>
+                                    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-500)' }}>{pos.holder_name}</div>
+                                    {period && (
+                                      <div style={{ fontSize: 10, color: 'var(--ink-300)', marginTop: 1 }}>{period}</div>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
                     </div>
                   );
                 })}
