@@ -53,13 +53,17 @@ function FieldView({ label, value, mono = false, children }) {
 function Modal({ title, large, onClose, onSave, saveLabel = 'Guardar', saving, children }) {
   return (
     <div className="modal-bg open" onClick={onClose}>
-      <div className={`modal${large ? ' lg' : ''}`} onClick={e => e.stopPropagation()}>
-        <div className="modal-head">
+      <div
+        className={`modal${large ? ' lg' : ''}`}
+        style={{ maxHeight:'92vh', display:'flex', flexDirection:'column' }}
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="modal-head" style={{ flexShrink:0 }}>
           <h3>{title}</h3>
           <button className="modal-close" onClick={onClose}><X size={16} /></button>
         </div>
-        <div className="modal-body">{children}</div>
-        <div className="modal-foot">
+        <div className="modal-body" style={{ overflowY:'auto', flex:1 }}>{children}</div>
+        <div className="modal-foot" style={{ flexShrink:0 }}>
           <button className="btn btn-secondary" onClick={onClose}>Cancelar</button>
           <button className="btn btn-primary" onClick={onSave} disabled={saving}>
             <Check size={14} /> {saving ? 'Guardando…' : saveLabel}
@@ -140,16 +144,15 @@ export default function Config() {
 
   const loadFields   = useCallback(() => { if (!tenantId) return; extraFieldsAPI.list(tenantId, { page_size: 9999 }).then(r => setFields(r.data.results || r.data)).catch(() => {}); }, [tenantId]);
   const loadUsers    = useCallback(() => { if (!tenantId) return; usersAPI.list(tenantId, { page_size: 9999 }).then(r => setTenantUsers(r.data.results || r.data)).catch(() => {}); }, [tenantId]);
-  const loadUnits    = useCallback((pageNum = 1, size) => {
+  const loadUnits    = useCallback(() => {
     if (!tenantId) return;
-    const sz = size ?? unitsPageSize;
-    unitsAPI.list(tenantId, { page: pageNum, page_size: sz }).then(r => {
+    // Carga todas las unidades; la paginación y búsqueda se manejan client-side
+    unitsAPI.list(tenantId, { page_size: 9999 }).then(r => {
       const data = r.data;
       const items = data.results ?? data;
       setUnits(Array.isArray(items) ? items : []);
-      setUnitsTotalCount(typeof data.count === 'number' ? data.count : items.length);
     }).catch(() => {});
-  }, [tenantId, unitsPageSize]);
+  }, [tenantId]);
   const loadAssembly = useCallback(() => {
     if (!tenantId) return;
     assemblyAPI.positions(tenantId).then(r => setPositions(r.data.results || r.data)).catch(() => {});
@@ -282,14 +285,14 @@ export default function Config() {
       }
       toast.success(unitModal === 'add' ? 'Unidad creada' : 'Unidad actualizada');
       setUnitModal(null);
-      if (unitModal === 'add') { setUnitsPage(1); loadUnits(1, unitsPageSize); }
-      else loadUnits(unitsPage, unitsPageSize);
+      if (unitModal === 'add') setUnitsPage(1);
+      loadUnits();
     } catch (e) { toast.error(e.response?.data?.unit_id_code?.[0] || 'Error guardando unidad'); }
   };
 
   const handleUnitDelete = async (id) => {
     if (!window.confirm('¿Eliminar esta unidad? Se perderán todos sus pagos asociados.')) return;
-    try { await unitsAPI.delete(tenantId, id); toast.success('Unidad eliminada'); loadUnits(unitsPage, unitsPageSize); }
+    try { await unitsAPI.delete(tenantId, id); toast.success('Unidad eliminada'); loadUnits(); }
     catch { toast.error('Error eliminando unidad'); }
   };
 
@@ -344,8 +347,9 @@ export default function Config() {
   const reqCobFields = fields.filter(f => f.enabled && f.required && (!f.field_type || f.field_type === 'normal'));
   const totalMonthly = parseFloat(t.maintenance_fee || 0) + reqCobFields.reduce((s, f) => s + parseFloat(f.default_amount || 0), 0);
   const filteredUnits = units.filter(u =>
-    `${u.unit_name} ${u.unit_id_code} ${u.owner_first_name} ${u.owner_last_name}`.toLowerCase().includes(unitSearch.toLowerCase())
+    `${u.unit_name} ${u.unit_id_code} ${u.owner_first_name} ${u.owner_last_name} ${u.tenant_first_name||''} ${u.tenant_last_name||''}`.toLowerCase().includes(unitSearch.toLowerCase())
   );
+  const pagedUnits = filteredUnits.slice((unitsPage - 1) * unitsPageSize, unitsPage * unitsPageSize);
 
   const tabs = [
     fiscal ? { key: 'fiscal', label: 'Datos Fiscales' } : { key: 'address', label: 'Datos Generales' },
@@ -566,16 +570,18 @@ export default function Config() {
         <div>
           <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:12, marginBottom:16 }}>
             <p style={{ fontSize:14, color:'var(--ink-400)' }}>
-              {unitsTotalCount > 0
-                ? `${(unitsPage - 1) * unitsPageSize + 1}-${Math.min(unitsPage * unitsPageSize, unitsTotalCount)} de ${unitsTotalCount} unidades`
-                : '0 unidades registradas'}
+              {units.length === 0
+                ? '0 unidades registradas'
+                : unitSearch
+                  ? `${filteredUnits.length} de ${units.length} unidades${filteredUnits.length > 0 ? ` · pág. ${(unitsPage - 1) * unitsPageSize + 1}–${Math.min(unitsPage * unitsPageSize, filteredUnits.length)}` : ''}`
+                  : `${(unitsPage - 1) * unitsPageSize + 1}–${Math.min(unitsPage * unitsPageSize, units.length)} de ${units.length} unidades`}
             </p>
             <div style={{ display:'flex', alignItems:'center', gap:10 }}>
               <div style={{ display:'flex', alignItems:'center', gap:8, background:'var(--white)', border:'1px solid var(--sand-200)', borderRadius:'var(--radius-full)', padding:'7px 14px', width:220 }}>
                 <Search size={14} color="var(--ink-400)" style={{ flexShrink:0 }} />
                 <input style={{ border:'none', background:'transparent', outline:'none', fontSize:13, width:'100%', fontFamily:'var(--font-body)', color:'var(--ink-800)' }}
                   placeholder="Buscar unidad..."
-                  value={unitSearch} onChange={e => setUnitSearch(e.target.value)} />
+                  value={unitSearch} onChange={e => { setUnitSearch(e.target.value); setUnitsPage(1); }} />
               </div>
               {isAdmin && (
                 <button className="btn btn-primary" onClick={() => {
@@ -609,7 +615,7 @@ export default function Config() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredUnits.map(u => {
+                    {pagedUnits.map(u => {
                       const pd = parseFloat(u.previous_debt || 0);
                       return (
                       <tr key={u.id}>
@@ -671,7 +677,14 @@ export default function Config() {
                           <td>
                             <div style={{ display:'flex', gap:4 }}>
                               <button className="btn-ghost" onClick={async () => {
-                                setUnitForm({...u, previous_debt_evidence: ''});
+                                // Defaults antes del spread para garantizar campos controlados (inquilino puede no venir en u)
+                                setUnitForm({
+                                  tenant_first_name: '', tenant_last_name: '', tenant_email: '', tenant_phone: '',
+                                  owner_first_name: '', owner_last_name: '', owner_email: '', owner_phone: '',
+                                  previous_debt: 0, credit_balance: 0, admin_exempt: false,
+                                  ...u,
+                                  previous_debt_evidence: '',
+                                });
                                 setUnitModal('edit');
                                 if (u.has_evidence) {
                                   try {
@@ -692,30 +705,44 @@ export default function Config() {
               </div>
             )}
 
-            {/* Paginación (HTML original) */}
-            {unitsTotalCount > 0 && (() => {
-              const totalPages = Math.max(1, Math.ceil(unitsTotalCount / unitsPageSize));
+            {/* Paginación client-side con ventana deslizante */}
+            {filteredUnits.length > unitsPageSize && (() => {
+              const totalPages = Math.max(1, Math.ceil(filteredUnits.length / unitsPageSize));
               const start = (unitsPage - 1) * unitsPageSize + 1;
-              const end = Math.min(unitsPage * unitsPageSize, unitsTotalCount);
+              const end   = Math.min(unitsPage * unitsPageSize, filteredUnits.length);
+              // Ventana deslizante ±2 alrededor de la página actual
+              const pageNums = (() => {
+                if (totalPages <= 7) return Array.from({ length: totalPages }, (_, i) => i + 1);
+                const lo = Math.max(2, unitsPage - 2);
+                const hi = Math.min(totalPages - 1, unitsPage + 2);
+                const arr = [1];
+                if (lo > 2) arr.push('…');
+                for (let p = lo; p <= hi; p++) arr.push(p);
+                if (hi < totalPages - 1) arr.push('…');
+                arr.push(totalPages);
+                return arr;
+              })();
               return (
                 <div className="pag-bar">
-                  <span className="pag-left">Mostrando {start}-{end} de {unitsTotalCount}</span>
+                  <span className="pag-left">Mostrando {start}–{end} de {filteredUnits.length}</span>
                   <div className="pag-right">
                     <div className="pag-per-page">
                       Mostrar
-                      <select value={unitsPageSize} onChange={e => { const v = Number(e.target.value); setUnitsPageSize(v); setUnitsPage(1); loadUnits(1, v); }}>
+                      <select value={unitsPageSize} onChange={e => { setUnitsPageSize(Number(e.target.value)); setUnitsPage(1); }}>
                         {UNITS_PAGE_OPTIONS.map(n => <option key={n} value={n}>{n}</option>)}
                       </select>
                       por página
                     </div>
                     <div className="pag-btns">
-                      <button className="pag-btn" disabled={unitsPage <= 1} onClick={() => { setUnitsPage(1); loadUnits(1, unitsPageSize); }} title="Primera página">«</button>
-                      <button className="pag-btn" disabled={unitsPage <= 1} onClick={() => { setUnitsPage(p => p - 1); loadUnits(unitsPage - 1, unitsPageSize); }} title="Anterior">‹</button>
-                      {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => i + 1).map(p => (
-                        <button key={p} className={`pag-btn ${p === unitsPage ? 'active' : ''}`} onClick={() => { setUnitsPage(p); loadUnits(p, unitsPageSize); }}>{p}</button>
-                      ))}
-                      <button className="pag-btn" disabled={unitsPage >= totalPages} onClick={() => { setUnitsPage(p => p + 1); loadUnits(unitsPage + 1, unitsPageSize); }} title="Siguiente">›</button>
-                      <button className="pag-btn" disabled={unitsPage >= totalPages} onClick={() => { setUnitsPage(totalPages); loadUnits(totalPages, unitsPageSize); }} title="Última página">»</button>
+                      <button className="pag-btn" disabled={unitsPage <= 1} onClick={() => setUnitsPage(1)} title="Primera página">«</button>
+                      <button className="pag-btn" disabled={unitsPage <= 1} onClick={() => setUnitsPage(p => p - 1)} title="Anterior">‹</button>
+                      {pageNums.map((p, i) =>
+                        p === '…'
+                          ? <span key={`el-${i}`} style={{ padding:'0 4px', color:'var(--ink-300)', lineHeight:'28px' }}>…</span>
+                          : <button key={p} className={`pag-btn ${p === unitsPage ? 'active' : ''}`} onClick={() => setUnitsPage(p)}>{p}</button>
+                      )}
+                      <button className="pag-btn" disabled={unitsPage >= totalPages} onClick={() => setUnitsPage(p => p + 1)} title="Siguiente">›</button>
+                      <button className="pag-btn" disabled={unitsPage >= totalPages} onClick={() => setUnitsPage(totalPages)} title="Última página">»</button>
                     </div>
                   </div>
                 </div>
