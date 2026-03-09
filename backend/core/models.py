@@ -153,11 +153,12 @@ class TenantUser(models.Model):
     Maps from: tenant.users[] with role field
     """
     ROLE_CHOICES = [
-        ('admin', 'Administrador'),
-        ('tesorero', 'Tesorero'),
-        ('contador', 'Contador'),
-        ('auditor', 'Auditor'),
-        ('vecino', 'Vecino / Residente'),
+        ('admin',      'Administrador'),
+        ('tesorero',   'Tesorero'),
+        ('contador',   'Contador'),
+        ('auditor',    'Auditor'),
+        ('vecino',     'Vecino / Residente'),
+        ('vigilante',  'Vigilante'),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

@@ -161,7 +161,7 @@ class TenantsForEmailView(APIView):
     Returns the list of tenants the email can log into, plus a flag indicating
     whether the user is a superadmin (who sees all tenants).
     Response: { is_super_admin: bool, tenants: [{id, name}] }
-    Returns { is_super_admin: false, tenants: [] } when email is unknown (don't leak existence).
+    Returns { is_super_admin: false, tenants: [] } when email is unknown (never leak existence).
     """
     permission_classes = [permissions.AllowAny]
 
@@ -169,21 +169,51 @@ class TenantsForEmailView(APIView):
         email = (request.data.get('email') or '').strip().lower()
         if not email:
             return Response({'is_super_admin': False, 'tenants': []})
+
         try:
             user = User.objects.get(email=email)
         except User.DoesNotExist:
+            # Don't reveal whether the email exists
             return Response({'is_super_admin': False, 'tenants': []})
+
+        # Inactive account — return empty to avoid leaking existence
+        if not user.is_active:
+            return Response({'is_super_admin': False, 'tenants': []})
+
+        # Super admin — can access every tenant in the system
         if user.is_super_admin:
-            tenants = Tenant.objects.all().order_by('name').values('id', 'name')
-            return Response({
-                'is_super_admin': True,
-                'tenants': [{'id': str(t['id']), 'name': t['name']} for t in tenants],
-            })
-        qs = TenantUser.objects.filter(user=user).select_related('tenant').order_by('tenant__name')
-        return Response({
-            'is_super_admin': False,
-            'tenants': [{'id': str(tu.tenant.id), 'name': tu.tenant.name} for tu in qs],
-        })
+            try:
+                tenants = list(
+                    Tenant.objects.all().order_by('name').values('id', 'name')
+                )
+                return Response({
+                    'is_super_admin': True,
+                    'tenants': [{'id': str(t['id']), 'name': t['name']} for t in tenants],
+                })
+            except Exception:
+                return Response(
+                    {'detail': 'Error al obtener los condominios.'},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
+
+        # Regular user — only their assigned tenants
+        try:
+            qs = (
+                TenantUser.objects
+                .filter(user=user)
+                .select_related('tenant')
+                .order_by('tenant__name')
+            )
+            tenants = [
+                {'id': str(tu.tenant.id), 'name': tu.tenant.name}
+                for tu in qs
+            ]
+            return Response({'is_super_admin': False, 'tenants': tenants})
+        except Exception:
+            return Response(
+                {'detail': 'Error al obtener los condominios.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
 
 # ═══════════════════════════════════════════════════════════

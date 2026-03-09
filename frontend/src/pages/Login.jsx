@@ -159,25 +159,39 @@ export default function Login() {
     setLookingUp(true);
     try {
       const { data } = await authAPI.getTenantsForEmail(email.trim());
-      const list = data.tenants || [];
+
+      // Handle both response formats:
+      //   New: { is_super_admin: bool, tenants: [{id, name}] }
+      //   Old: [{id, name}]  (array — backward compatibility with older backend)
+      let list, isSuperAdmin;
+      if (Array.isArray(data)) {
+        list         = data;
+        isSuperAdmin = false;
+      } else {
+        list         = data.tenants     || [];
+        isSuperAdmin = data.is_super_admin || false;
+      }
 
       if (list.length === 0) {
-        // Email not found or has no tenants assigned — don't reveal which
         setError('No se encontró ningún condominio asociado a este correo.');
         setLookingUp(false);
         return;
       }
 
-      setIsSuperAdminEmail(data.is_super_admin || false);
+      setIsSuperAdminEmail(isSuperAdmin);
       setTenants(list);
-      // Auto-select first when there's only one (and not superadmin — they should always choose)
-      if (list.length === 1 && !data.is_super_admin) {
+      // Auto-select the only tenant for regular users (no choice needed)
+      if (list.length === 1 && !isSuperAdmin) {
         setTenantId(list[0].id);
       } else {
         setTenantId('');
       }
-    } catch {
-      setError('Error al consultar los condominios. Intenta de nuevo.');
+    } catch (err) {
+      const msg =
+        err.response?.data?.detail ||
+        err.response?.data?.non_field_errors?.[0] ||
+        'Error al consultar los condominios. Verifica tu conexión e intenta de nuevo.';
+      setError(msg);
     } finally {
       setLookingUp(false);
     }
@@ -199,11 +213,12 @@ export default function Login() {
         navigate(savedPath && savedPath.startsWith('/app') ? savedPath : '/app');
       }
     } catch (err) {
-      setError(
+      const msg =
         err.response?.data?.non_field_errors?.[0] ||
         err.response?.data?.detail ||
-        'Credenciales inválidas.'
-      );
+        (Array.isArray(err.response?.data) ? err.response.data[0] : null) ||
+        'Credenciales inválidas.';
+      setError(msg);
     } finally {
       setLoading(false);
     }

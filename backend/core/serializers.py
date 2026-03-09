@@ -42,7 +42,7 @@ class LoginSerializer(serializers.Serializer):
             tenant = None
             if tenant_id:
                 try:
-                    tenant = Tenant.objects.get(id=tenant_id)
+                    tenant = Tenant.objects.get(id=str(tenant_id))
                 except Tenant.DoesNotExist:
                     raise serializers.ValidationError('Condominio no encontrado.')
             data['user']   = user
@@ -50,16 +50,20 @@ class LoginSerializer(serializers.Serializer):
             data['tenant'] = tenant
             return data
 
-        # Regular user — use selected tenant_id, or auto-select the first one
+        # Regular user — use the selected tenant_id, or fall back to first assigned
         user_tenants = TenantUser.objects.select_related('tenant').filter(user=user)
         if not user_tenants.exists():
-            raise serializers.ValidationError('Este usuario no tiene acceso a ningún condominio.')
+            raise serializers.ValidationError(
+                'Este usuario no tiene acceso a ningún condominio.'
+            )
 
         if tenant_id:
             try:
-                tenant_user = user_tenants.get(tenant_id=tenant_id)
+                tenant_user = user_tenants.get(tenant_id=str(tenant_id))
             except TenantUser.DoesNotExist:
-                raise serializers.ValidationError('No tienes acceso a este condominio.')
+                raise serializers.ValidationError(
+                    'No tienes acceso a este condominio.'
+                )
         else:
             tenant_user = user_tenants.first()
 
