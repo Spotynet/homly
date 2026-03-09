@@ -184,16 +184,51 @@ export function getStatesForCountry(country) {
   return states[country] || [];
 }
 
-// Homly logo SVG
+// Homly logo — icon only (used in sidebar, login, etc.)
 export const HOMLY_LOGO = (
-  <svg viewBox="0 0 56 58" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <path d="M14 31 V46 Q14 52 20 52 L23 52 Q23 44.5 28 44.5 Q33 44.5 33 52 L36 52 Q42 52 42 46 V31"
-      stroke="#E85D43" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"/>
-    <path d="M10 34 L27 15" stroke="#E85D43" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"/>
-    <path d="M46 34 L38 25" stroke="#E85D43" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"/>
-    <path d="M27 15 C29 11 32.5 9.5 35 12 C37.5 9.5 41 11 41 14.5 C41 18.5 35 23 35 23 C35 23 32 20 30 17"
-      stroke="#E85D43" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round"/>
+  <svg viewBox="0 0 60 60" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <g transform="translate(5, 4)">
+      <path
+        d="M12,52 L12,32 L30,14 L48,32 L48,52 L12,52 Z"
+        fill="none"
+        stroke="#E85D43"
+        strokeWidth="4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M30,18 C24,24 20,28 20,33 C20,38 24,42 30,38 C36,42 40,38 40,33 C40,28 36,24 30,18 Z"
+        fill="none"
+        stroke="#E85D43"
+        strokeWidth="4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </g>
   </svg>
+);
+
+// Homly full logo — icon + logotype (used on landing page hero / large displays)
+export const HOMLY_LOGO_FULL = (
+  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+    <svg viewBox="0 0 60 60" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ width: 52, height: 52, flexShrink: 0 }}>
+      <g transform="translate(5, 4)">
+        <path
+          d="M12,52 L12,32 L30,14 L48,32 L48,52 L12,52 Z"
+          fill="none" stroke="#E85D43" strokeWidth="4"
+          strokeLinecap="round" strokeLinejoin="round"
+        />
+        <path
+          d="M30,18 C24,24 20,28 20,33 C20,38 24,42 30,38 C36,42 40,38 40,33 C40,28 36,24 30,18 Z"
+          fill="none" stroke="#E85D43" strokeWidth="4"
+          strokeLinecap="round" strokeLinejoin="round"
+        />
+      </g>
+    </svg>
+    <span style={{ fontSize: 36, fontWeight: 800, color: '#124A36', letterSpacing: '-0.5px', lineHeight: 1 }}>
+      homly<span style={{ color: '#E85D43' }}>.</span>
+    </span>
+  </div>
 );
 
 export const APP_VERSION = '10.1.0';
