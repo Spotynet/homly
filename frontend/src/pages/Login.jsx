@@ -172,7 +172,8 @@ export default function Login() {
         isSuperAdmin = data.is_super_admin || false;
       }
 
-      if (list.length === 0) {
+      // Super admin advances without a tenant; regular users need at least one
+      if (list.length === 0 && !isSuperAdmin) {
         setError('No se encontró ningún condominio asociado a este correo.');
         setLookingUp(false);
         return;
@@ -180,7 +181,7 @@ export default function Login() {
 
       setIsSuperAdminEmail(isSuperAdmin);
       setTenants(list);
-      // Auto-select the only tenant for regular users (no choice needed)
+      // Auto-select the only tenant for regular users with exactly one tenant
       if (list.length === 1 && !isSuperAdmin) {
         setTenantId(list[0].id);
       } else {
@@ -200,11 +201,16 @@ export default function Login() {
   // ── Step 2: submit login ─────────────────────────────────────────────────
   const handleLogin = async (e) => {
     e.preventDefault();
-    if (!tenantId) { setError('Selecciona un condominio.'); return; }
+    // Super admin logs in without a tenant; regular users must select one
+    if (!isSuperAdminEmail && !tenantId) {
+      setError('Selecciona un condominio.');
+      return;
+    }
     setError('');
     setLoading(true);
     try {
-      const data = await login(email.trim(), password, tenantId);
+      // Pass tenantId only for regular users; superadmin enters with no tenant
+      const data = await login(email.trim(), password, isSuperAdminEmail ? null : tenantId);
       if (data.must_change_password) {
         navigate('/change-password');
       } else {
@@ -254,7 +260,11 @@ export default function Login() {
 
           <h2 className="text-xl font-bold text-ink-800 mb-1">Bienvenido</h2>
           <p className="text-sm text-ink-400 mb-6">
-            {step2 ? 'Selecciona tu condominio e ingresa tu contraseña.' : 'Ingresa tu correo para continuar.'}
+            {!step2
+              ? 'Ingresa tu correo para continuar.'
+              : isSuperAdminEmail
+                ? 'Ingresa tu contraseña para acceder al sistema.'
+                : 'Selecciona tu condominio e ingresa tu contraseña.'}
           </p>
 
           {error && (
@@ -310,44 +320,37 @@ export default function Login() {
                 </div>
               </div>
 
-              {/* Tenant picker */}
-              <div>
-                <label className="field-label">
-                  Condominio
-                  {isSuperAdminEmail && (
-                    <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700,
-                      color: 'var(--teal-600)', textTransform: 'uppercase',
-                      letterSpacing: '0.05em' }}>
-                      · Super Admin
-                    </span>
-                  )}
-                </label>
-                {tenants.length === 1 && !isSuperAdminEmail ? (
-                  /* Single tenant — show as static pill */
-                  <div style={{
-                    display: 'flex', alignItems: 'center', gap: 10,
-                    padding: '10px 14px', background: 'var(--teal-50)',
-                    border: '1.5px solid var(--teal-100)', borderRadius: 12,
-                  }}>
+              {/* Tenant picker — only for regular users */}
+              {!isSuperAdminEmail && (
+                <div>
+                  <label className="field-label">Condominio</label>
+                  {tenants.length === 1 ? (
+                    /* Single tenant — static pill, no choice needed */
                     <div style={{
-                      width: 28, height: 28, borderRadius: 6, background: 'var(--teal-500)',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: 12, fontWeight: 800, color: 'white', flexShrink: 0,
+                      display: 'flex', alignItems: 'center', gap: 10,
+                      padding: '10px 14px', background: 'var(--teal-50)',
+                      border: '1.5px solid var(--teal-100)', borderRadius: 12,
                     }}>
-                      {tenants[0].name[0].toUpperCase()}
+                      <div style={{
+                        width: 28, height: 28, borderRadius: 6, background: 'var(--teal-500)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: 12, fontWeight: 800, color: 'white', flexShrink: 0,
+                      }}>
+                        {tenants[0].name[0].toUpperCase()}
+                      </div>
+                      <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--teal-800)' }}>
+                        {tenants[0].name}
+                      </span>
                     </div>
-                    <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--teal-800)' }}>
-                      {tenants[0].name}
-                    </span>
-                  </div>
-                ) : (
-                  <TenantPicker
-                    tenants={tenants}
-                    value={tenantId}
-                    onChange={setTenantId}
-                  />
-                )}
-              </div>
+                  ) : (
+                    <TenantPicker
+                      tenants={tenants}
+                      value={tenantId}
+                      onChange={setTenantId}
+                    />
+                  )}
+                </div>
+              )}
 
               {/* Password */}
               <div>
@@ -361,8 +364,11 @@ export default function Login() {
                 />
               </div>
 
-              <button type="submit" disabled={loading || !password || !tenantId}
-                className="w-full btn btn-coral justify-center py-3 text-base">
+              <button
+                type="submit"
+                disabled={loading || !password || (!isSuperAdminEmail && !tenantId)}
+                className="w-full btn btn-coral justify-center py-3 text-base"
+              >
                 {loading ? 'Ingresando...' : 'Iniciar Sesión'}
               </button>
             </form>
