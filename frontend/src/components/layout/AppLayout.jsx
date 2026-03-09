@@ -100,7 +100,7 @@ function TenantSwitcher({ tenantId, tenantName, userTenants, onSwitch }) {
     return () => document.removeEventListener('mousedown', handle);
   }, [open]);
 
-  const hasMultiple = userTenants.length > 1;
+  const hasMultiple = userTenants.length > 0;
 
   const handleSelect = async (t) => {
     if (t.id === tenantId) { setOpen(false); return; }
@@ -131,24 +131,26 @@ function TenantSwitcher({ tenantId, tenantName, userTenants, onSwitch }) {
         {/* Avatar */}
         <div style={{
           width: 32, height: 32, borderRadius: 8, flexShrink: 0,
-          background: 'var(--teal-500)',
+          background: tenantName ? 'var(--teal-500)' : 'var(--sand-200)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           fontSize: 14, fontWeight: 800, color: 'white',
         }}>
-          {tenantName?.[0]?.toUpperCase() || '?'}
+          {tenantName?.[0]?.toUpperCase() || <Building2 size={16} color="var(--ink-400)" />}
         </div>
 
         {/* Name */}
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{
-            fontSize: 13, fontWeight: 700, color: 'var(--ink-800)',
+            fontSize: 13, fontWeight: 700,
+            color: tenantName ? 'var(--ink-800)' : 'var(--ink-400)',
             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            fontStyle: tenantName ? 'normal' : 'italic',
           }}>
-            {switching ? 'Cambiando…' : tenantName}
+            {switching ? 'Cambiando…' : (tenantName || 'Seleccionar condominio…')}
           </div>
           {hasMultiple && (
             <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 1 }}>
-              {userTenants.length} condominios
+              {userTenants.length} condominio{userTenants.length !== 1 ? 's' : ''}
             </div>
           )}
         </div>
@@ -252,7 +254,7 @@ export default function AppLayout() {
   const pageTitle = getPageTitle(location.pathname);
 
   // Show tenant switcher when the user belongs to multiple tenants OR is superadmin
-  const showTenantSwitcher = tenantName && (userTenants.length > 1 || isSuperAdmin);
+  const showTenantSwitcher = isSuperAdmin || (tenantName && userTenants.length > 1);
 
   return (
     <div className="app">
@@ -274,15 +276,15 @@ export default function AppLayout() {
         </div>
 
         {/* Tenant section */}
-        {tenantName && (
-          showTenantSwitcher
-            ? <TenantSwitcher
-                tenantId={tenantId}
-                tenantName={tenantName}
-                userTenants={userTenants}
-                onSwitch={handleSwitchTenant}
-              />
-            : (
+        {showTenantSwitcher
+          ? <TenantSwitcher
+              tenantId={tenantId}
+              tenantName={tenantName}
+              userTenants={userTenants}
+              onSwitch={handleSwitchTenant}
+            />
+          : tenantName
+            ? (
               /* Single tenant — static display */
               <div className="sidebar-tenant">
                 <div className="sidebar-tenant-avatar">{tenantName?.[0]}</div>
@@ -291,7 +293,8 @@ export default function AppLayout() {
                 </div>
               </div>
             )
-        )}
+            : null
+        }
 
         {/* Navigation */}
         <nav className="sidebar-nav">
