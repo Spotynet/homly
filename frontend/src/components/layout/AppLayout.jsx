@@ -100,7 +100,8 @@ function TenantSwitcher({ tenantId, tenantName, userTenants, onSwitch }) {
     return () => document.removeEventListener('mousedown', handle);
   }, [open]);
 
-  const hasMultiple = userTenants.length > 0;
+  // Dropdown is available once tenants have loaded
+  const canSwitch = userTenants.length > 1;
 
   const handleSelect = async (t) => {
     if (t.id === tenantId) { setOpen(false); return; }
@@ -118,13 +119,13 @@ function TenantSwitcher({ tenantId, tenantName, userTenants, onSwitch }) {
   return (
     <div ref={ref} style={{ position: 'relative', margin: '8px 12px' }}>
       <button
-        onClick={() => hasMultiple && setOpen(o => !o)}
+        onClick={() => canSwitch && setOpen(o => !o)}
         style={{
           width: '100%', display: 'flex', alignItems: 'center', gap: 10,
           padding: '10px 12px',
           background: open ? 'var(--teal-50)' : 'rgba(255,255,255,0.06)',
           border: `1px solid ${open ? 'var(--teal-200)' : 'rgba(255,255,255,0.10)'}`,
-          borderRadius: 10, cursor: hasMultiple ? 'pointer' : 'default',
+          borderRadius: 10, cursor: canSwitch ? 'pointer' : 'default',
           transition: 'all 0.15s', textAlign: 'left',
         }}
       >
@@ -148,7 +149,7 @@ function TenantSwitcher({ tenantId, tenantName, userTenants, onSwitch }) {
           }}>
             {switching ? 'Cambiando…' : (tenantName || 'Seleccionar condominio…')}
           </div>
-          {hasMultiple && (
+          {userTenants.length > 0 && (
             <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 1 }}>
               {userTenants.length} condominio{userTenants.length !== 1 ? 's' : ''}
             </div>
@@ -156,7 +157,7 @@ function TenantSwitcher({ tenantId, tenantName, userTenants, onSwitch }) {
         </div>
 
         {/* Chevron */}
-        {hasMultiple && (
+        {canSwitch && (
           <ChevronDown size={14} style={{
             color: 'var(--ink-400)', flexShrink: 0,
             transform: open ? 'rotate(180deg)' : 'none',
@@ -166,7 +167,7 @@ function TenantSwitcher({ tenantId, tenantName, userTenants, onSwitch }) {
       </button>
 
       {/* Dropdown */}
-      {open && hasMultiple && (
+      {open && canSwitch && (
         <div style={{
           position: 'absolute', top: 'calc(100% + 6px)', left: 0, right: 0, zIndex: 200,
           background: 'var(--white)', border: '1px solid var(--sand-100)',
@@ -241,6 +242,14 @@ export default function AppLayout() {
   // Load the user's tenant list once on mount
   useEffect(() => { loadUserTenants(); }, [loadUserTenants]);
 
+  // For superadmin: auto-select the first available tenant if none is currently selected.
+  // This mirrors how regular admin users always land with a tenant pre-selected on login.
+  useEffect(() => {
+    if (isSuperAdmin && !tenantId && userTenants.length > 0) {
+      switchTenant(userTenants[0].id).catch(() => {});
+    }
+  }, [userTenants, isSuperAdmin, tenantId, switchTenant]);
+
   const handleLogout = () => { logout(); navigate('/'); };
 
   // Switch tenant + navigate to dashboard
@@ -253,8 +262,10 @@ export default function AppLayout() {
   const initials  = user?.name?.split(' ').map(w => w[0]).join('').slice(0, 2) || '?';
   const pageTitle = getPageTitle(location.pathname);
 
-  // Show tenant switcher when the user belongs to multiple tenants OR is superadmin
-  const showTenantSwitcher = isSuperAdmin || (tenantName && userTenants.length > 1);
+  // Show tenant switcher:
+  //   • superadmin always (they can switch across all tenants)
+  //   • regular users only when assigned to more than one tenant
+  const showTenantSwitcher = isSuperAdmin || userTenants.length > 1;
 
   return (
     <div className="app">
