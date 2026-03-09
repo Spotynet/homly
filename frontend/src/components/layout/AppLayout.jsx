@@ -100,8 +100,8 @@ function TenantSwitcher({ tenantId, tenantName, userTenants, onSwitch }) {
     return () => document.removeEventListener('mousedown', handle);
   }, [open]);
 
-  // Dropdown is available once tenants have loaded
-  const canSwitch = userTenants.length > 1;
+  // Dropdown available as long as there's at least one tenant to pick
+  const canSwitch = userTenants.length > 0;
 
   const handleSelect = async (t) => {
     if (t.id === tenantId) { setOpen(false); return; }
