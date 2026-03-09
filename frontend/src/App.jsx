@@ -17,6 +17,7 @@ import Config from './pages/Config';
 import Units from './pages/Units';
 import Users from './pages/Users';
 import MyUnit from './pages/MyUnit';
+import Reservas from './pages/Reservas';
 
 const LOADER = (
   <div className="flex items-center justify-center h-screen bg-white">
@@ -65,13 +66,17 @@ function AppRoutes() {
           index
           element={
             <Navigate
-              to={isSuperAdmin ? '/app/tenants' : isVecino ? '/app/my-unit' : '/app/dashboard'}
+              to={isSuperAdmin ? '/app/sistema/tenants' : isVecino ? '/app/my-unit' : '/app/dashboard'}
               replace
             />
           }
         />
         <Route path="dashboard" element={<Dashboard />} />
-        {isSuperAdmin && <Route path="tenants" element={<Tenants />} />}
+        {isSuperAdmin && (
+          <Route path="sistema">
+            <Route path="tenants" element={<Tenants />} />
+          </Route>
+        )}
         <Route path="cobranza" element={<Cobranza />} />
         <Route path="gastos" element={<Gastos />} />
         <Route path="estado-cuenta" element={<EstadoCuenta />} />
@@ -79,6 +84,7 @@ function AppRoutes() {
         <Route path="units" element={<Units />} />
         <Route path="users" element={<Users />} />
         <Route path="my-unit" element={<MyUnit />} />
+        <Route path="reservas" element={<Reservas />} />
       </Route>
 
       {/* Fallback */}

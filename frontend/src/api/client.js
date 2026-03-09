@@ -44,9 +44,13 @@ api.interceptors.response.use(
 
 // ─── Auth ───────────────────────────────────────
 export const authAPI = {
-  login: (data) => api.post('/auth/login/', data),
-  changePassword: (data) => api.post('/auth/change-password/', data),
-  getTenants: () => api.get('/auth/tenants/'),
+  login:               (data)     => api.post('/auth/login/', data),
+  changePassword:      (data)     => api.post('/auth/change-password/', data),
+  getTenants:          ()         => api.get('/auth/tenants/'),
+  getTenantsForEmail:  (email)    => api.post('/auth/tenants-for-email/', { email }),
+  checkEmail:          (email)    => api.get('/auth/check-email/', { params: { email } }),
+  getMyTenants:        ()         => api.get('/auth/my-tenants/'),
+  switchTenant:        (tenantId) => api.post('/auth/switch-tenant/', { tenant_id: tenantId }),
 };
 
 // ─── Tenants ────────────────────────────────────
@@ -69,8 +73,9 @@ export const unitsAPI = {
 
 // ─── Users ──────────────────────────────────────
 export const usersAPI = {
-  list: (tenantId, params) => api.get(`/tenants/${tenantId}/users/`, { params: params || {} }),
+  list:   (tenantId, params) => api.get(`/tenants/${tenantId}/users/`, { params: params || {} }),
   create: (data) => api.post('/users/', data),
+  update: (tenantId, id, data) => api.patch(`/tenants/${tenantId}/users/${id}/`, data),
   delete: (tenantId, id) => api.delete(`/tenants/${tenantId}/users/${id}/`),
 };
 
@@ -142,6 +147,17 @@ export const assemblyAPI = {
   createCommittee: (tenantId, data) => api.post(`/tenants/${tenantId}/committees/`, data),
   updateCommittee: (tenantId, id, data) => api.patch(`/tenants/${tenantId}/committees/${id}/`, data),
   deleteCommittee: (tenantId, id) => api.delete(`/tenants/${tenantId}/committees/${id}/`),
+};
+
+// ─── Amenity Reservations ────────────────────────
+export const reservationsAPI = {
+  list:    (tenantId, params)      => api.get(`/tenants/${tenantId}/amenity-reservations/`, { params: params || {} }),
+  create:  (tenantId, data)        => api.post(`/tenants/${tenantId}/amenity-reservations/`, data),
+  update:  (tenantId, id, data)    => api.patch(`/tenants/${tenantId}/amenity-reservations/${id}/`, data),
+  delete:  (tenantId, id)          => api.delete(`/tenants/${tenantId}/amenity-reservations/${id}/`),
+  approve: (tenantId, id)          => api.post(`/tenants/${tenantId}/amenity-reservations/${id}/approve/`),
+  reject:  (tenantId, id, reason)  => api.post(`/tenants/${tenantId}/amenity-reservations/${id}/reject/`, { reason }),
+  cancel:  (tenantId, id)          => api.post(`/tenants/${tenantId}/amenity-reservations/${id}/cancel/`),
 };
 
 // ─── Super Admins ────────────────────────────────

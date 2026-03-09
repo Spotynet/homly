@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { tenantsAPI, extraFieldsAPI, assemblyAPI, usersAPI, unitsAPI, superAdminAPI } from '../api/client';
+import { tenantsAPI, extraFieldsAPI, assemblyAPI, usersAPI, unitsAPI, superAdminAPI, authAPI } from '../api/client';
 import { CURRENCIES, getStatesForCountry, COUNTRIES } from '../utils/helpers';
 import {
   Settings, Plus, Trash2, Check, X, Upload, Users,
-  Building2, RefreshCw, Edit2, Search, Home, Lock,
+  Building2, RefreshCw, Edit2, Search, Home, Lock, Pencil, UserCheck, Loader,
   Calendar, DollarSign, ShieldCheck, Receipt, ShoppingBag,
   AlertCircle, Shield, FileText, Globe, ChevronRight, TrendingUp,
 } from 'lucide-react';
@@ -78,7 +78,7 @@ export default function Config() {
   const { tenantId, isAdmin, isSuperAdmin, user } = useAuth();
 
   // ── Core state ────────────────────────────────────────────────────────────
-  const [tab, setTab] = useState('fiscal');
+  const [tab, setTab] = useState('general');
   const [tenant, setTenant] = useState(null);
   const [loadError, setLoadError] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -114,14 +114,38 @@ export default function Config() {
   const [unitsTotalCount, setUnitsTotalCount] = useState(0);
   const UNITS_PAGE_OPTIONS = [10, 25, 50, 100];
 
+  // Users pagination
+  const [usersPage, setUsersPage] = useState(1);
+  const [usersPageSize, setUsersPageSize] = useState(25);
+  const USERS_PAGE_OPTIONS = [25, 50, 100];
+
   // Field modal
   const [fieldForm, setFieldForm] = useState(null);
   const [cobCollapsed, setCobCollapsed] = useState(false);
   const [gasCollapsed, setGasCollapsed] = useState(false);
 
-  // User modal
-  const [addUserOpen, setAddUserOpen] = useState(false);
-  const [addUserForm, setAddUserForm] = useState({});
+  // Área Común modal
+  const [areaModalOpen, setAreaModalOpen] = useState(false);
+  const [areaForm,      setAreaForm]      = useState({});
+  const [areaSaving,    setAreaSaving]    = useState(false);
+
+  // General tab collapse state
+  const [genCollapsed,    setGenCollapsed]    = useState(false);
+  const [fiscalCollapsed, setFiscalCollapsed] = useState(false);
+  const [areasCollapsed,  setAreasCollapsed]  = useState(false);
+  const [logoCollapsed,   setLogoCollapsed]   = useState(false);
+
+  // User modal — create
+  const [addUserOpen,      setAddUserOpen]      = useState(false);
+  const [addUserForm,      setAddUserForm]       = useState({});
+  const [addUserExisting,  setAddUserExisting]   = useState(null); // null|false|{id,name,email}
+  const [addUserChecking,  setAddUserChecking]   = useState(false);
+  const addUserEmailTimer = useRef(null);
+
+  // User modal — edit
+  const [editUserOpen, setEditUserOpen] = useState(false);
+  const [editUserId,   setEditUserId]   = useState(null);
+  const [editUserForm, setEditUserForm] = useState({});
 
   // Org modals
   const [cmtForm, setCmtForm] = useState(null);
@@ -244,6 +268,56 @@ export default function Config() {
     } catch { toast.error('Error'); }
   };
 
+  // ── Área Común helpers ───────────────────────────────────────────────────
+  const openNewArea = () => {
+    setAreaForm({
+      id: crypto.randomUUID(),
+      name: '',
+      active: true,
+      reservations_enabled: false,
+      charge_enabled: false,
+      charge_amount: 0,
+      usage_policy: '',
+      reservation_policy: '',
+      _isNew: true,
+    });
+    setAreaModalOpen(true);
+  };
+
+  const openEditArea = (area) => {
+    setAreaForm({ ...area, _isNew: false });
+    setAreaModalOpen(true);
+  };
+
+  const saveArea = async () => {
+    if (!areaForm.name?.trim()) return toast.error('El nombre del área es obligatorio');
+    setAreaSaving(true);
+    try {
+      const current = Array.isArray(tenant?.common_areas) ? tenant.common_areas : [];
+      let updated;
+      if (areaForm._isNew) {
+        const { _isNew, ...clean } = areaForm;
+        updated = [...current, clean];
+      } else {
+        const { _isNew, ...clean } = areaForm;
+        updated = current.map(a => a.id === clean.id ? clean : a);
+      }
+      await savePatch({ common_areas: updated });
+      setAreaModalOpen(false);
+    } finally { setAreaSaving(false); }
+  };
+
+  const deleteArea = async (areaId) => {
+    if (!window.confirm('¿Eliminar esta área común?')) return;
+    const current = Array.isArray(tenant?.common_areas) ? tenant.common_areas : [];
+    await savePatch({ common_areas: current.filter(a => a.id !== areaId) });
+  };
+
+  const toggleAreaField = async (areaId, field, value) => {
+    const current = Array.isArray(tenant?.common_areas) ? tenant.common_areas : [];
+    await savePatch({ common_areas: current.map(a => a.id === areaId ? { ...a, [field]: value } : a) });
+  };
+
   const saveSuperAdmin = async () => {
     if (!addSAForm.name || !addSAForm.email || !addSAForm.password) return toast.error('Todos los campos son obligatorios');
     try {
@@ -296,26 +370,70 @@ export default function Config() {
     catch { toast.error('Error eliminando unidad'); }
   };
 
+  const handleAddUserEmailChange = (val) => {
+    setAddUserForm(f => ({ ...f, email: val }));
+    setAddUserExisting(null);
+    clearTimeout(addUserEmailTimer.current);
+    if (!val || !val.includes('@')) return;
+    addUserEmailTimer.current = setTimeout(async () => {
+      setAddUserChecking(true);
+      try {
+        const { data } = await authAPI.checkEmail(val.trim());
+        setAddUserExisting(data.exists ? data : false);
+      } catch { setAddUserExisting(false); }
+      finally  { setAddUserChecking(false); }
+    }, 500);
+  };
+
   const saveUser = async () => {
-    if (!addUserForm.name || !addUserForm.email || !addUserForm.role || !addUserForm.password)
-      return toast.error('Todos los campos son obligatorios');
+    if (!addUserForm.email) return toast.error('El email es obligatorio');
+    if (addUserExisting === false && !addUserForm.name) return toast.error('El nombre es obligatorio');
+    if (addUserExisting === false && !addUserForm.password) return toast.error('La contraseña es obligatoria');
     if (addUserForm.role === 'vecino' && !addUserForm.unit_id)
       return toast.error('Los vecinos deben tener una unidad asignada');
     try {
       const payload = {
-        name: addUserForm.name,
-        email: addUserForm.email,
-        role: addUserForm.role,
-        password: addUserForm.password,
+        email:     addUserForm.email,
+        role:      addUserForm.role,
         tenant_id: tenantId,
-        unit_id: addUserForm.role === 'vecino' && addUserForm.unit_id ? addUserForm.unit_id : null,
+        unit_id:   addUserForm.role === 'vecino' && addUserForm.unit_id ? addUserForm.unit_id : null,
       };
+      if (addUserExisting === false) {
+        payload.name     = addUserForm.name;
+        payload.password = addUserForm.password;
+      }
       await usersAPI.create(payload);
-      toast.success('Usuario creado');
+      toast.success(addUserExisting ? `${addUserExisting.name} agregado al condominio` : 'Usuario creado');
       setAddUserOpen(false);
       setAddUserForm({});
+      setAddUserExisting(null);
       loadUsers();
-    } catch (e) { toast.error(e.response?.data?.detail || e.response?.data?.email?.[0] || 'Error al crear usuario'); }
+    } catch (e) { toast.error(e.response?.data?.detail || e.response?.data?.non_field_errors?.[0] || e.response?.data?.email?.[0] || 'Error al guardar usuario'); }
+  };
+
+  const openEditUser = (u) => {
+    setEditUserId(u.id);
+    setEditUserForm({ name: u.user_name || '', role: u.role || 'vecino', unit_id: u.unit || '' });
+    setEditUserOpen(true);
+  };
+
+  const saveEditUser = async () => {
+    if (!editUserForm.name?.trim())
+      return toast.error('El nombre es obligatorio');
+    if (editUserForm.role === 'vecino' && !editUserForm.unit_id)
+      return toast.error('Los vecinos deben tener una unidad asignada');
+    try {
+      await usersAPI.update(tenantId, editUserId, {
+        name: editUserForm.name.trim(),
+        role: editUserForm.role,
+        unit: editUserForm.role === 'vecino' ? (editUserForm.unit_id || null) : null,
+      });
+      toast.success('Usuario actualizado');
+      setEditUserOpen(false);
+      setEditUserId(null);
+      setEditUserForm({});
+      loadUsers();
+    } catch (e) { toast.error(e.response?.data?.detail || 'Error al actualizar usuario'); }
   };
 
   // ── Guards ────────────────────────────────────────────────────────────────
@@ -352,11 +470,9 @@ export default function Config() {
   const pagedUnits = filteredUnits.slice((unitsPage - 1) * unitsPageSize, unitsPage * unitsPageSize);
 
   const tabs = [
-    fiscal ? { key: 'fiscal', label: 'Datos Fiscales' } : { key: 'address', label: 'Datos Generales' },
-    { key: 'logo',    label: 'Logo' },
     { key: 'general', label: 'General' },
     { key: 'units',   label: 'Unidades' },
-    { key: 'fields',  label: 'Config. Pagos' },
+    { key: 'fields',  label: 'Gastos y Cobranza' },
     { key: 'users',   label: 'Usuarios' },
     { key: 'roles',   label: 'Roles y Perfiles' },
     { key: 'org',     label: 'Organización' },
@@ -373,195 +489,325 @@ export default function Config() {
         ))}
       </div>
 
-      {/* ════ DATOS FISCALES ════ */}
-      {tab === 'fiscal' && fiscal && (
-        <div className="card">
-          <div className="card-head">
-            <h3>Datos Fiscales del Condominio</h3>
-            {isAdmin && (
-              <button className="btn btn-primary btn-sm" onClick={() => {
-                setEditInfoForm({
-                  razon_social: t.razon_social || '',
-                  rfc: t.rfc || '',
-                  info_calle: t.info_calle || '',
-                  info_num_externo: t.info_num_externo || '',
-                  info_colonia: t.info_colonia || '',
-                  info_delegacion: t.info_delegacion || '',
-                  info_ciudad: t.info_ciudad || '',
-                  info_codigo_postal: t.info_codigo_postal || '',
-                });
-                setEditInfoOpen(true);
-              }}>
-                <Edit2 size={13} /> Editar
-              </button>
-            )}
-          </div>
-          <div className="card-body">
-            <div className="form-grid">
-              <FieldView label="Razón Social" value={t.razon_social} />
-              <FieldView label="RFC" value={t.rfc} mono />
-              <FieldView label="Calle" value={t.info_calle} />
-              <FieldView label="No. Externo" value={t.info_num_externo} />
-              <FieldView label="Colonia" value={t.info_colonia} />
-              <FieldView label="Delegación" value={t.info_delegacion} />
-              <FieldView label="Ciudad" value={t.info_ciudad} />
-              <FieldView label="C.P." value={t.info_codigo_postal} />
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ════ DATOS GENERALES (non-fiscal) ════ */}
-      {tab === 'address' && !fiscal && (
-        <div className="card">
-          <div className="card-head">
-            <h3>Datos Generales del Condominio</h3>
-            <span className="badge badge-teal">{t.country || 'Sin país'}</span>
-            {isAdmin && (
-              <button className="btn btn-primary btn-sm" onClick={() => {
-                setEditAddrForm({
-                  addr_nombre: t.addr_nombre || '',
-                  addr_calle: t.addr_calle || '',
-                  addr_num_externo: t.addr_num_externo || '',
-                  addr_colonia: t.addr_colonia || '',
-                  addr_delegacion: t.addr_delegacion || '',
-                  addr_ciudad: t.addr_ciudad || '',
-                  addr_codigo_postal: t.addr_codigo_postal || '',
-                });
-                setEditAddrOpen(true);
-              }}>
-                <Edit2 size={13} /> Editar
-              </button>
-            )}
-          </div>
-          <div className="card-body">
-            <div className="form-grid">
-              <FieldView label="Nombre" value={t.addr_nombre} />
-              <FieldView label="Calle" value={t.addr_calle} />
-              <FieldView label="No. Externo" value={t.addr_num_externo} />
-              {(t.country === 'México' || t.country === 'Mexico' || !t.country) && <>
-                <FieldView label="Colonia" value={t.addr_colonia} />
-                <FieldView label="Delegación" value={t.addr_delegacion} />
-                <FieldView label="Ciudad" value={t.addr_ciudad} />
-                <FieldView label="C.P." value={t.addr_codigo_postal} />
-              </>}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ════ LOGO ════ */}
-      {tab === 'logo' && (
-        <div className="card">
-          <div className="card-head"><h3>Logo del Condominio</h3></div>
-          <div className="card-body" style={{ display: 'flex', alignItems: 'flex-start', gap: 32, flexWrap: 'wrap' }}>
-            {isAdmin ? (
-              <label className="logo-box" style={{ width: 180, height: 180, cursor: 'pointer', position: 'relative' }}>
-                {t.logo
-                  ? <img src={t.logo} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-                  : <><Upload size={28} color="var(--ink-300)" /><span>Haz clic para subir</span></>
-                }
-                <input ref={logoRef} type="file" accept="image/*"
-                  style={{ position: 'absolute', width: '100%', height: '100%', opacity: 0, cursor: 'pointer', top: 0, left: 0 }}
-                  onChange={handleLogoUpload} />
-              </label>
-            ) : (
-              <div className="logo-box" style={{ width: 180, height: 180, cursor: 'default' }}>
-                {t.logo
-                  ? <img src={t.logo} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-                  : <><Building2 size={28} color="var(--ink-300)" /><span>Sin logo</span></>
-                }
-              </div>
-            )}
-            <div>
-              <div style={{ fontWeight: 600, marginBottom: 6 }}>Imagen de logo</div>
-              <div style={{ fontSize: 13, color: 'var(--ink-400)', lineHeight: 1.7, maxWidth: 300 }}>
-                PNG o JPG recomendado. Máx 2 MB.<br />
-                El logo aparece en el sidebar y en reportes.
-              </div>
-              {isAdmin && t.logo && (
-                <button className="btn btn-danger btn-sm" style={{ marginTop: 14 }} onClick={() => savePatch({ logo: '' })}>
-                  <Trash2 size={13} /> Eliminar logo
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ════ GENERAL ════ */}
+      {/* ════ GENERAL (con secciones colapsables) ════ */}
       {tab === 'general' && (
-        <div className="card">
-          <div className="card-head">
-            <h3>Configuración General</h3>
-            {isAdmin && (
-              <button className="btn btn-primary btn-sm" onClick={() => {
-                setEditGenForm({
-                  name: t.name || '',
-                  units_count: t.units_count || units.length || 0,
-                  maintenance_fee: t.maintenance_fee || 0,
-                  currency: t.currency || 'MXN',
-                  operation_start_date: t.operation_start_date || '',
-                  operation_type: t.operation_type || 'fiscal',
-                  bank_initial_balance: t.bank_initial_balance || 0,
-                  country: t.country || '',
-                  state: t.state || '',
-                  admin_type: t.admin_type || 'mesa_directiva',
-                  common_areas: Array.isArray(t.common_areas) ? t.common_areas.join(', ') : (t.common_areas || ''),
-                });
-                setEditGenOpen(true);
-              }}>
-                <Edit2 size={13} /> Editar
-              </button>
-            )}
-          </div>
-          <div className="card-body">
-            <div className="form-grid">
-              <FieldView label="Nombre" value={t.name} />
-              <FieldView label="Unidades">
-                <span style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 600, color: 'var(--ink-700)' }}>
-                  {units.length}
-                </span>
-                <span style={{ fontSize: 13, color: 'var(--ink-400)', marginLeft: 6 }}>registradas</span>
-              </FieldView>
-              <FieldView label="Mantenimiento">
-                <span style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 600, color: 'var(--ink-700)' }}>
-                  {fmt(t.maintenance_fee)} {t.currency}
-                </span>
-              </FieldView>
-              <FieldView label="Moneda" value={CURRENCIES[t.currency]?.name || t.currency || '—'} />
-              <FieldView label="Inicio de Operaciones">
-                <span style={{ display:'inline-flex', alignItems:'center', gap:6, padding:'4px 12px', background:'var(--teal-50)', border:'1px solid var(--teal-100)', borderRadius:'var(--radius-full)', fontSize:13, fontWeight:600, color:'var(--teal-700)' }}>
-                  <Calendar size={13} />
-                  {t.operation_start_date ? periodLabel(t.operation_start_date) : 'No configurado'}
-                </span>
-              </FieldView>
-              <FieldView label="Saldo Inicial de Banco">
-                <span style={{ fontFamily:'var(--font-display)', fontSize:16, fontWeight:600, color: parseFloat(t.bank_initial_balance||0)>0 ? 'var(--teal-600)' : 'var(--ink-500)' }}>
-                  {fmt(t.bank_initial_balance)} {t.currency}
-                </span>
-              </FieldView>
-              <FieldView label="Tipo de Operación">
-                <span className={`badge ${fiscal ? 'badge-blue' : 'badge-teal'}`}>
-                  <span className="badge-dot" style={{ background: fiscal ? 'var(--blue-500)' : 'var(--teal-500)' }} />
-                  {fiscal ? 'Operación Fiscal' : 'Operación Libre'}
-                </span>
-              </FieldView>
-              <FieldView label="País" value={t.country || '—'} />
-              <FieldView label="Estado / Provincia" value={t.state || '—'} />
-              <FieldView label="Tipo de Administración">
-                <span className={`badge ${t.admin_type === 'administrador' ? 'badge-amber' : 'badge-teal'}`}>
-                  {t.admin_type === 'administrador' ? 'Administración Externa' : 'Mesa Directiva Interna'}
-                </span>
-              </FieldView>
-              <div className="field field-full">
-                <div className="field-label">Áreas Comunes</div>
-                <div className={`field-value${!t.common_areas ? ' empty' : ''}`}>
-                  {Array.isArray(t.common_areas) ? t.common_areas.join(', ') : (t.common_areas || '—')}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+
+          {/* ── Sección: Configuración General ── */}
+          <div className="card">
+            <div
+              className="card-head"
+              style={{ cursor: 'pointer', userSelect: 'none' }}
+              onClick={() => setGenCollapsed(v => !v)}
+            >
+              <h3>Configuración General</h3>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {isAdmin && (
+                  <button className="btn btn-primary btn-sm" onClick={e => {
+                    e.stopPropagation();
+                    setEditGenForm({
+                      name: t.name || '',
+                      units_count: t.units_count || units.length || 0,
+                      maintenance_fee: t.maintenance_fee || 0,
+                      currency: t.currency || 'MXN',
+                      operation_start_date: t.operation_start_date || '',
+                      operation_type: t.operation_type || 'fiscal',
+                      bank_initial_balance: t.bank_initial_balance || 0,
+                      country: t.country || '',
+                      state: t.state || '',
+                      admin_type: t.admin_type || 'mesa_directiva',
+                    });
+                    setEditGenOpen(true);
+                  }}>
+                    <Edit2 size={13} /> Editar
+                  </button>
+                )}
+                <ChevronRight size={16} color="var(--ink-400)"
+                  style={{ transform: genCollapsed ? 'rotate(0deg)' : 'rotate(90deg)', transition: 'transform 0.2s' }} />
+              </div>
+            </div>
+            {!genCollapsed && (
+              <div className="card-body">
+                <div className="form-grid">
+                  <FieldView label="Nombre" value={t.name} />
+                  <FieldView label="Unidades">
+                    <span style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 600, color: 'var(--ink-700)' }}>
+                      {units.length}
+                    </span>
+                    <span style={{ fontSize: 13, color: 'var(--ink-400)', marginLeft: 6 }}>registradas</span>
+                  </FieldView>
+                  <FieldView label="Mantenimiento">
+                    <span style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 600, color: 'var(--ink-700)' }}>
+                      {fmt(t.maintenance_fee)} {t.currency}
+                    </span>
+                  </FieldView>
+                  <FieldView label="Moneda" value={CURRENCIES[t.currency]?.name || t.currency || '—'} />
+                  <FieldView label="Inicio de Operaciones">
+                    <span style={{ display:'inline-flex', alignItems:'center', gap:6, padding:'4px 12px', background:'var(--teal-50)', border:'1px solid var(--teal-100)', borderRadius:'var(--radius-full)', fontSize:13, fontWeight:600, color:'var(--teal-700)' }}>
+                      <Calendar size={13} />
+                      {t.operation_start_date ? periodLabel(t.operation_start_date) : 'No configurado'}
+                    </span>
+                  </FieldView>
+                  <FieldView label="Saldo Inicial de Banco">
+                    <span style={{ fontFamily:'var(--font-display)', fontSize:16, fontWeight:600, color: parseFloat(t.bank_initial_balance||0)>0 ? 'var(--teal-600)' : 'var(--ink-500)' }}>
+                      {fmt(t.bank_initial_balance)} {t.currency}
+                    </span>
+                  </FieldView>
+                  <FieldView label="Tipo de Operación">
+                    <span className={`badge ${fiscal ? 'badge-blue' : 'badge-teal'}`}>
+                      <span className="badge-dot" style={{ background: fiscal ? 'var(--blue-500)' : 'var(--teal-500)' }} />
+                      {fiscal ? 'Operación Fiscal' : 'Operación Libre'}
+                    </span>
+                  </FieldView>
+                  <FieldView label="País" value={t.country || '—'} />
+                  <FieldView label="Estado / Provincia" value={t.state || '—'} />
+                  <FieldView label="Tipo de Administración">
+                    <span className={`badge ${t.admin_type === 'administrador' ? 'badge-amber' : 'badge-teal'}`}>
+                      {t.admin_type === 'administrador' ? 'Administración Externa' : 'Mesa Directiva Interna'}
+                    </span>
+                  </FieldView>
                 </div>
               </div>
-            </div>
+            )}
           </div>
+
+          {/* ── Sección: Áreas Comunes ── */}
+          {(() => {
+            const areas = Array.isArray(t.common_areas) ? t.common_areas : [];
+            return (
+              <div className="card">
+                <div
+                  className="card-head"
+                  style={{ cursor: 'pointer', userSelect: 'none' }}
+                  onClick={() => setAreasCollapsed(v => !v)}
+                >
+                  <h3>
+                    Áreas Comunes
+                    {areas.length > 0 && (
+                      <span className="badge badge-teal" style={{ marginLeft: 8, fontSize: 11 }}>{areas.length}</span>
+                    )}
+                  </h3>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    {isAdmin && (
+                      <button className="btn btn-primary btn-sm" onClick={e => { e.stopPropagation(); openNewArea(); }}>
+                        <Plus size={13} /> Nueva Área
+                      </button>
+                    )}
+                    <ChevronRight size={16} color="var(--ink-400)"
+                      style={{ transform: areasCollapsed ? 'rotate(0deg)' : 'rotate(90deg)', transition: 'transform 0.2s' }} />
+                  </div>
+                </div>
+
+                {!areasCollapsed && (
+                  <div className="card-body" style={{ padding: areas.length ? 0 : undefined }}>
+                    {areas.length === 0 ? (
+                      <div style={{ textAlign: 'center', padding: '32px 16px', color: 'var(--ink-300)', fontSize: 13 }}>
+                        <Building2 size={32} color="var(--sand-200)" style={{ marginBottom: 8, display: 'block', margin: '0 auto 8px' }} />
+                        Sin áreas comunes registradas.
+                        {isAdmin && <div style={{ marginTop: 8 }}><button className="btn btn-primary btn-sm" onClick={openNewArea}><Plus size={13} /> Agregar primera área</button></div>}
+                      </div>
+                    ) : (
+                      <div className="table-wrap">
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>Nombre</th>
+                              <th style={{ textAlign: 'center', width: 80 }}>Activa</th>
+                              <th style={{ textAlign: 'center', width: 100 }}>Reservas</th>
+                              <th style={{ textAlign: 'center', width: 80 }}>Cobro</th>
+                              <th style={{ width: 110 }}>Monto/Reserva</th>
+                              {isAdmin && <th style={{ width: 80, textAlign: 'center' }}>Acciones</th>}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {areas.map(area => (
+                              <tr key={area.id}>
+                                <td>
+                                  <div style={{ fontWeight: 600, fontSize: 13 }}>{area.name}</div>
+                                  {(area.usage_policy || area.reservation_policy) && (
+                                    <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 2 }}>
+                                      {[area.usage_policy && 'Política de uso', area.reservation_policy && 'Política de reserva'].filter(Boolean).join(' · ')}
+                                    </div>
+                                  )}
+                                </td>
+                                <td style={{ textAlign: 'center' }}>
+                                  <button
+                                    className={`badge ${area.active ? 'badge-teal' : 'badge-amber'}`}
+                                    style={{ cursor: isAdmin ? 'pointer' : 'default', border: 'none', fontSize: 11 }}
+                                    onClick={() => isAdmin && toggleAreaField(area.id, 'active', !area.active)}
+                                    title={area.active ? 'Activa — clic para desactivar' : 'Inactiva — clic para activar'}
+                                  >
+                                    {area.active ? 'Activa' : 'Inactiva'}
+                                  </button>
+                                </td>
+                                <td style={{ textAlign: 'center' }}>
+                                  <button
+                                    className={`badge ${area.reservations_enabled ? 'badge-blue' : ''}`}
+                                    style={{ cursor: isAdmin ? 'pointer' : 'default', border: 'none', fontSize: 11, background: area.reservations_enabled ? undefined : 'var(--sand-100)', color: area.reservations_enabled ? undefined : 'var(--ink-400)' }}
+                                    onClick={() => isAdmin && toggleAreaField(area.id, 'reservations_enabled', !area.reservations_enabled)}
+                                    title={area.reservations_enabled ? 'Habilitada — clic para deshabilitar' : 'Deshabilitada — clic para habilitar'}
+                                  >
+                                    {area.reservations_enabled ? 'Habilitada' : 'Deshabilitada'}
+                                  </button>
+                                </td>
+                                <td style={{ textAlign: 'center' }}>
+                                  {area.reservations_enabled ? (
+                                    <button
+                                      className={`badge ${area.charge_enabled ? 'badge-amber' : ''}`}
+                                      style={{ cursor: isAdmin ? 'pointer' : 'default', border: 'none', fontSize: 11, background: area.charge_enabled ? undefined : 'var(--sand-100)', color: area.charge_enabled ? undefined : 'var(--ink-400)' }}
+                                      onClick={() => isAdmin && toggleAreaField(area.id, 'charge_enabled', !area.charge_enabled)}
+                                    >
+                                      {area.charge_enabled ? 'Con cobro' : 'Sin cobro'}
+                                    </button>
+                                  ) : <span style={{ fontSize: 11, color: 'var(--ink-300)' }}>—</span>}
+                                </td>
+                                <td>
+                                  {area.reservations_enabled && area.charge_enabled
+                                    ? <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 13 }}>
+                                        {new Intl.NumberFormat('es-MX', { style: 'currency', currency: t.currency || 'MXN', maximumFractionDigits: 0 }).format(area.charge_amount || 0)}
+                                      </span>
+                                    : <span style={{ fontSize: 11, color: 'var(--ink-300)' }}>—</span>}
+                                </td>
+                                {isAdmin && (
+                                  <td style={{ textAlign: 'center' }}>
+                                    <div style={{ display: 'flex', gap: 4, justifyContent: 'center' }}>
+                                      <button className="btn-ghost" title="Editar" onClick={() => openEditArea(area)}><Edit2 size={13} /></button>
+                                      <button className="btn-ghost" style={{ color: 'var(--coral-500)' }} title="Eliminar" onClick={() => deleteArea(area.id)}><Trash2 size={13} /></button>
+                                    </div>
+                                  </td>
+                                )}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* ── Sección: Datos Fiscales / Datos Generales ── */}
+          <div className="card">
+            <div
+              className="card-head"
+              style={{ cursor: 'pointer', userSelect: 'none' }}
+              onClick={() => setFiscalCollapsed(v => !v)}
+            >
+              <h3>{fiscal ? 'Datos Fiscales' : 'Datos Generales'}</h3>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {!fiscal && <span className="badge badge-teal" onClick={e => e.stopPropagation()}>{t.country || 'Sin país'}</span>}
+                {isAdmin && (
+                  <button className="btn btn-primary btn-sm" onClick={e => {
+                    e.stopPropagation();
+                    if (fiscal) {
+                      setEditInfoForm({
+                        razon_social: t.razon_social || '',
+                        rfc: t.rfc || '',
+                        info_calle: t.info_calle || '',
+                        info_num_externo: t.info_num_externo || '',
+                        info_colonia: t.info_colonia || '',
+                        info_delegacion: t.info_delegacion || '',
+                        info_ciudad: t.info_ciudad || '',
+                        info_codigo_postal: t.info_codigo_postal || '',
+                      });
+                      setEditInfoOpen(true);
+                    } else {
+                      setEditAddrForm({
+                        addr_nombre: t.addr_nombre || '',
+                        addr_calle: t.addr_calle || '',
+                        addr_num_externo: t.addr_num_externo || '',
+                        addr_colonia: t.addr_colonia || '',
+                        addr_delegacion: t.addr_delegacion || '',
+                        addr_ciudad: t.addr_ciudad || '',
+                        addr_codigo_postal: t.addr_codigo_postal || '',
+                      });
+                      setEditAddrOpen(true);
+                    }
+                  }}>
+                    <Edit2 size={13} /> Editar
+                  </button>
+                )}
+                <ChevronRight size={16} color="var(--ink-400)"
+                  style={{ transform: fiscalCollapsed ? 'rotate(0deg)' : 'rotate(90deg)', transition: 'transform 0.2s' }} />
+              </div>
+            </div>
+            {!fiscalCollapsed && (
+              <div className="card-body">
+                <div className="form-grid">
+                  {fiscal ? (<>
+                    <FieldView label="Razón Social" value={t.razon_social} />
+                    <FieldView label="RFC" value={t.rfc} mono />
+                    <FieldView label="Calle" value={t.info_calle} />
+                    <FieldView label="No. Externo" value={t.info_num_externo} />
+                    <FieldView label="Colonia" value={t.info_colonia} />
+                    <FieldView label="Delegación" value={t.info_delegacion} />
+                    <FieldView label="Ciudad" value={t.info_ciudad} />
+                    <FieldView label="C.P." value={t.info_codigo_postal} />
+                  </>) : (<>
+                    <FieldView label="Nombre" value={t.addr_nombre} />
+                    <FieldView label="Calle" value={t.addr_calle} />
+                    <FieldView label="No. Externo" value={t.addr_num_externo} />
+                    {(t.country === 'México' || t.country === 'Mexico' || !t.country) && <>
+                      <FieldView label="Colonia" value={t.addr_colonia} />
+                      <FieldView label="Delegación" value={t.addr_delegacion} />
+                      <FieldView label="Ciudad" value={t.addr_ciudad} />
+                      <FieldView label="C.P." value={t.addr_codigo_postal} />
+                    </>}
+                  </>)}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* ── Sección: Logo ── */}
+          <div className="card">
+            <div
+              className="card-head"
+              style={{ cursor: 'pointer', userSelect: 'none' }}
+              onClick={() => setLogoCollapsed(v => !v)}
+            >
+              <h3>Logo del Condominio</h3>
+              <ChevronRight size={16} color="var(--ink-400)"
+                style={{ transform: logoCollapsed ? 'rotate(0deg)' : 'rotate(90deg)', transition: 'transform 0.2s' }} />
+            </div>
+            {!logoCollapsed && (
+              <div className="card-body" style={{ display: 'flex', alignItems: 'flex-start', gap: 32, flexWrap: 'wrap' }}>
+                {isAdmin ? (
+                  <label className="logo-box" style={{ width: 180, height: 180, cursor: 'pointer', position: 'relative' }}>
+                    {t.logo
+                      ? <img src={t.logo} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                      : <><Upload size={28} color="var(--ink-300)" /><span>Haz clic para subir</span></>
+                    }
+                    <input ref={logoRef} type="file" accept="image/*"
+                      style={{ position: 'absolute', width: '100%', height: '100%', opacity: 0, cursor: 'pointer', top: 0, left: 0 }}
+                      onChange={handleLogoUpload} />
+                  </label>
+                ) : (
+                  <div className="logo-box" style={{ width: 180, height: 180, cursor: 'default' }}>
+                    {t.logo
+                      ? <img src={t.logo} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                      : <><Building2 size={28} color="var(--ink-300)" /><span>Sin logo</span></>
+                    }
+                  </div>
+                )}
+                <div>
+                  <div style={{ fontWeight: 600, marginBottom: 6 }}>Imagen de logo</div>
+                  <div style={{ fontSize: 13, color: 'var(--ink-400)', lineHeight: 1.7, maxWidth: 300 }}>
+                    PNG o JPG recomendado. Máx 2 MB.<br />
+                    El logo aparece en el sidebar y en reportes.
+                  </div>
+                  {isAdmin && t.logo && (
+                    <button className="btn btn-danger btn-sm" style={{ marginTop: 14 }} onClick={() => savePatch({ logo: '' })}>
+                      <Trash2 size={13} /> Eliminar logo
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
         </div>
       )}
 
@@ -963,67 +1209,133 @@ export default function Config() {
       })()}
 
       {/* ════ USUARIOS ════ */}
-      {tab === 'users' && (
-        <div>
-          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16, flexWrap:'wrap', gap:12 }}>
-            <p style={{ fontSize:14, color:'var(--ink-400)' }}>{tenantUsers.length} usuario{tenantUsers.length!==1?'s':''}</p>
-            {isAdmin && (
-              <button className="btn btn-primary" onClick={() => { setAddUserForm({ role:'admin' }); setAddUserOpen(true); }}>
-                <Plus size={14} /> Nuevo Usuario
-              </button>
-            )}
-          </div>
-          <div className="card">
-            {tenantUsers.length === 0
-              ? <div className="card-body" style={{ color:'var(--ink-300)', fontSize:13 }}>Sin usuarios registrados.</div>
-              : (
-                <div className="table-wrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Nombre</th><th>Email</th><th>Rol</th><th>Contraseña</th>
-                        {isAdmin && <th style={{ width:80 }}>Acciones</th>}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {tenantUsers.map(u => {
-                        const name = u.user_name || u.name || u.user_email || '—';
-                        const email = u.user_email || u.email || '—';
-                        const meta = ROLE_META[u.role] || { label: u.role, color:'var(--ink-500)', bg:'var(--sand-100)' };
-                        return (
-                          <tr key={u.id}>
-                            <td style={{ fontWeight:600, fontSize:13 }}>{name}</td>
-                            <td style={{ fontSize:13, color:'var(--ink-500)' }}>{email}</td>
-                            <td>
-                              <span className="badge" style={{ background:meta.bg, color:meta.color, fontSize:11 }}>
-                                <span className="badge-dot" style={{ background:meta.color }} />
-                                {meta.label}
-                              </span>
-                            </td>
-                            <td>{u.must_change_password?<span className="badge badge-amber">Cambio pendiente</span>:<span className="badge badge-teal">Activa</span>}</td>
-                            {isAdmin && (
-                              <td>
-                                {u.user !== user?.id && (
-                                  <button className="btn-ghost" style={{ color:'var(--coral-500)' }} onClick={async () => {
-                                    if (window.confirm(`¿Eliminar usuario ${email}?`)) {
-                                      await usersAPI.delete(tenantId, u.id);
-                                      loadUsers(); toast.success('Usuario eliminado');
-                                    }
-                                  }}><Trash2 size={13}/></button>
-                                )}
-                              </td>
-                            )}
+      {tab === 'users' && (() => {
+        const pagedUsers = tenantUsers.slice((usersPage - 1) * usersPageSize, usersPage * usersPageSize);
+        const totalUserPages = Math.max(1, Math.ceil(tenantUsers.length / usersPageSize));
+        const userPageNums = (() => {
+          if (totalUserPages <= 7) return Array.from({ length: totalUserPages }, (_, i) => i + 1);
+          const lo = Math.max(2, usersPage - 2);
+          const hi = Math.min(totalUserPages - 1, usersPage + 2);
+          const arr = [1];
+          if (lo > 2) arr.push('…');
+          for (let p = lo; p <= hi; p++) arr.push(p);
+          if (hi < totalUserPages - 1) arr.push('…');
+          arr.push(totalUserPages);
+          return arr;
+        })();
+        const uStart = (usersPage - 1) * usersPageSize + 1;
+        const uEnd   = Math.min(usersPage * usersPageSize, tenantUsers.length);
+        return (
+          <div>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16, flexWrap:'wrap', gap:12 }}>
+              <p style={{ fontSize:14, color:'var(--ink-400)' }}>
+                {tenantUsers.length === 0
+                  ? '0 usuarios'
+                  : `${uStart}–${uEnd} de ${tenantUsers.length} usuario${tenantUsers.length !== 1 ? 's' : ''}`}
+              </p>
+              {isAdmin && (
+                <button className="btn btn-primary" onClick={() => { setAddUserForm({ role:'admin' }); setAddUserExisting(null); setAddUserOpen(true); }}>
+                  <Plus size={14} /> Nuevo Usuario
+                </button>
+              )}
+            </div>
+            <div className="card">
+              {tenantUsers.length === 0
+                ? <div className="card-body" style={{ color:'var(--ink-300)', fontSize:13 }}>Sin usuarios registrados.</div>
+                : (
+                  <>
+                    <div className="table-wrap">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Nombre</th><th>Email</th><th>Rol</th><th>Unidad</th><th>Contraseña</th>
+                            {isAdmin && <th style={{ width:100, textAlign:'center' }}>Acciones</th>}
                           </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )
-            }
+                        </thead>
+                        <tbody>
+                          {pagedUsers.map(u => {
+                            const name = u.user_name || u.name || u.user_email || '—';
+                            const email = u.user_email || u.email || '—';
+                            const meta = ROLE_META[u.role] || { label: u.role, color:'var(--ink-500)', bg:'var(--sand-100)' };
+                            return (
+                              <tr key={u.id}>
+                                <td style={{ fontWeight:600, fontSize:13 }}>{name}</td>
+                                <td style={{ fontSize:13, color:'var(--ink-500)' }}>{email}</td>
+                                <td>
+                                  <span className="badge" style={{ background:meta.bg, color:meta.color, fontSize:11 }}>
+                                    <span className="badge-dot" style={{ background:meta.color }} />
+                                    {meta.label}
+                                  </span>
+                                </td>
+                                <td style={{ fontSize:13 }}>
+                                  {u.role === 'vecino'
+                                    ? (() => {
+                                        const unit = units.find(x => String(x.id) === String(u.unit));
+                                        return unit
+                                          ? [unit.unit_id_code, unit.unit_name].filter(Boolean).join(' — ')
+                                          : (u.unit_code || <span style={{ color:'var(--coral-400)' }}>Sin unidad</span>);
+                                      })()
+                                    : <span style={{ color:'var(--ink-300)' }}>—</span>
+                                  }
+                                </td>
+                                <td>{u.must_change_password?<span className="badge badge-amber">Cambio pendiente</span>:<span className="badge badge-teal">Activa</span>}</td>
+                                {isAdmin && (
+                                  <td>
+                                    <div style={{ display:'flex', gap:4, justifyContent:'center' }}>
+                                      <button className="btn-ghost" style={{ color:'var(--teal-600)' }} title="Editar"
+                                        onClick={() => openEditUser(u)}>
+                                        <Pencil size={13}/>
+                                      </button>
+                                      {u.user !== user?.id && (
+                                        <button className="btn-ghost" style={{ color:'var(--coral-500)' }} title="Eliminar" onClick={async () => {
+                                          if (window.confirm(`¿Eliminar usuario ${email}?`)) {
+                                            await usersAPI.delete(tenantId, u.id);
+                                            loadUsers(); toast.success('Usuario eliminado');
+                                          }
+                                        }}><Trash2 size={13}/></button>
+                                      )}
+                                    </div>
+                                  </td>
+                                )}
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {tenantUsers.length > usersPageSize && (
+                      <div className="pag-bar">
+                        <span className="pag-left">Mostrando {uStart}–{uEnd} de {tenantUsers.length}</span>
+                        <div className="pag-right">
+                          <div className="pag-per-page">
+                            Mostrar
+                            <select value={usersPageSize} onChange={e => { setUsersPageSize(Number(e.target.value)); setUsersPage(1); }}>
+                              {USERS_PAGE_OPTIONS.map(n => <option key={n} value={n}>{n}</option>)}
+                            </select>
+                            por página
+                          </div>
+                          <div className="pag-btns">
+                            <button className="pag-btn" disabled={usersPage <= 1} onClick={() => setUsersPage(1)} title="Primera página">«</button>
+                            <button className="pag-btn" disabled={usersPage <= 1} onClick={() => setUsersPage(p => p - 1)} title="Anterior">‹</button>
+                            {userPageNums.map((p, i) =>
+                              p === '…'
+                                ? <span key={`el-${i}`} style={{ padding:'0 4px', color:'var(--ink-300)', lineHeight:'28px' }}>…</span>
+                                : <button key={p} className={`pag-btn ${p === usersPage ? 'active' : ''}`} onClick={() => setUsersPage(p)}>{p}</button>
+                            )}
+                            <button className="pag-btn" disabled={usersPage >= totalUserPages} onClick={() => setUsersPage(p => p + 1)} title="Siguiente">›</button>
+                            <button className="pag-btn" disabled={usersPage >= totalUserPages} onClick={() => setUsersPage(totalUserPages)} title="Última página">»</button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )
+              }
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ════ ROLES ════ */}
       {tab === 'roles' && (
@@ -1284,6 +1596,101 @@ export default function Config() {
            MODALS
       ══════════════════════════════════════════════════════════ */}
 
+      {/* Modal: Área Común */}
+      {areaModalOpen && (
+        <Modal
+          title={areaForm._isNew ? 'Nueva Área Común' : 'Editar Área Común'}
+          onClose={() => setAreaModalOpen(false)}
+          onSave={saveArea}
+          saving={areaSaving}
+        >
+          <div className="form-grid">
+            {/* Nombre */}
+            <div className="field field-full">
+              <label className="field-label">Nombre del Área *</label>
+              <input className="field-input" placeholder="Ej: Alberca, Gimnasio, Salón de eventos..."
+                value={areaForm.name || ''}
+                onChange={e => setAreaForm(f => ({ ...f, name: e.target.value }))} />
+            </div>
+
+            {/* Toggles */}
+            <div className="field">
+              <label className="field-label">Estado</label>
+              <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                <button
+                  className={`badge ${areaForm.active ? 'badge-teal' : 'badge-amber'}`}
+                  style={{ cursor: 'pointer', border: 'none', padding: '6px 14px', fontSize: 12 }}
+                  onClick={() => setAreaForm(f => ({ ...f, active: !f.active }))}
+                >
+                  {areaForm.active ? '✓ Activa' : '✗ Inactiva'}
+                </button>
+              </div>
+            </div>
+
+            <div className="field">
+              <label className="field-label">Permitir Reservas</label>
+              <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                <button
+                  className={`badge ${areaForm.reservations_enabled ? 'badge-blue' : ''}`}
+                  style={{ cursor: 'pointer', border: '1px solid var(--sand-200)', padding: '6px 14px', fontSize: 12,
+                    background: areaForm.reservations_enabled ? undefined : 'var(--sand-50)', color: areaForm.reservations_enabled ? undefined : 'var(--ink-500)' }}
+                  onClick={() => setAreaForm(f => ({ ...f, reservations_enabled: !f.reservations_enabled, charge_enabled: !f.reservations_enabled ? f.charge_enabled : false }))}
+                >
+                  {areaForm.reservations_enabled ? '✓ Habilitado' : '✗ Deshabilitado'}
+                </button>
+              </div>
+            </div>
+
+            {areaForm.reservations_enabled && (<>
+              <div className="field">
+                <label className="field-label">Cobrar por Reserva</label>
+                <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                  <button
+                    className={`badge ${areaForm.charge_enabled ? 'badge-amber' : ''}`}
+                    style={{ cursor: 'pointer', border: '1px solid var(--sand-200)', padding: '6px 14px', fontSize: 12,
+                      background: areaForm.charge_enabled ? undefined : 'var(--sand-50)', color: areaForm.charge_enabled ? undefined : 'var(--ink-500)' }}
+                    onClick={() => setAreaForm(f => ({ ...f, charge_enabled: !f.charge_enabled, charge_amount: !f.charge_enabled ? f.charge_amount : 0 }))}
+                  >
+                    {areaForm.charge_enabled ? '✓ Con cobro' : '✗ Sin cobro'}
+                  </button>
+                </div>
+              </div>
+
+              {areaForm.charge_enabled && (
+                <div className="field">
+                  <label className="field-label">Monto por Reserva ({t.currency || 'MXN'})</label>
+                  <input className="field-input" type="number" min="0" step="1"
+                    placeholder="0"
+                    value={areaForm.charge_amount || ''}
+                    onChange={e => setAreaForm(f => ({ ...f, charge_amount: parseFloat(e.target.value) || 0 }))} />
+                </div>
+              )}
+            </>)}
+
+            {/* Políticas */}
+            <div className="field field-full">
+              <label className="field-label">Política de Uso</label>
+              <textarea className="field-input" rows={3}
+                placeholder="Horario permitido, reglas de uso, aforo máximo..."
+                style={{ resize: 'vertical', fontFamily: 'var(--font-body)', fontSize: 13 }}
+                value={areaForm.usage_policy || ''}
+                onChange={e => setAreaForm(f => ({ ...f, usage_policy: e.target.value }))} />
+            </div>
+
+            {areaForm.reservations_enabled && (
+              <div className="field field-full">
+                <label className="field-label">Política de Reservas</label>
+                <textarea className="field-input" rows={3}
+                  placeholder="Tiempo de anticipación, duración máxima, cancelaciones..."
+                  style={{ resize: 'vertical', fontFamily: 'var(--font-body)', fontSize: 13 }}
+                  value={areaForm.reservation_policy || ''}
+                  onChange={e => setAreaForm(f => ({ ...f, reservation_policy: e.target.value }))} />
+              </div>
+            )}
+          </div>
+        </Modal>
+      )}
+
       {/* Edit Datos Fiscales */}
       {editInfoOpen && (
         <Modal title="Editar Datos Fiscales" large
@@ -1416,10 +1823,6 @@ export default function Config() {
               <div style={{ fontSize:11, color:'var(--ink-400)', marginTop:4 }}>
                 {editGenForm.admin_type==='administrador'?'Administración profesional externa':'Administración por vecinos del condominio'}
               </div>
-            </div>
-            <div className="field field-full">
-              <label className="field-label">Áreas Comunes</label>
-              <input className="field-input" placeholder="Alberca, Gimnasio, Salón de eventos..." value={editGenForm.common_areas||''} onChange={e=>setEditGenForm(f=>({...f,common_areas:e.target.value}))} />
             </div>
             <div className="field">
               <label className="field-label">Saldo Inicial de Banco</label>
@@ -1667,46 +2070,136 @@ export default function Config() {
 
       {/* Add User */}
       {addUserOpen && (
-        <Modal title="Nuevo Usuario" large
-          onClose={() => { setAddUserOpen(false); setAddUserForm({}); }}
+        <Modal title="Agregar Usuario" large
+          onClose={() => { setAddUserOpen(false); setAddUserForm({}); setAddUserExisting(null); }}
           onSave={saveUser}
-          saveLabel="Crear Usuario"
+          saveLabel={addUserExisting ? 'Agregar al Condominio' : 'Crear Usuario'}
           saving={saving}>
           <div className="form-grid">
-            <div className="field">
-              <label className="field-label">Nombre Completo</label>
-              <input className="field-input" value={addUserForm.name||''} onChange={e=>setAddUserForm(f=>({...f,name:e.target.value}))} />
+
+            {/* Email + lookup */}
+            <div className="field field-full">
+              <label className="field-label">Email *</label>
+              <div style={{ position:'relative' }}>
+                <input type="email" className="field-input"
+                  value={addUserForm.email||''}
+                  onChange={e => handleAddUserEmailChange(e.target.value)}
+                  placeholder="usuario@email.com"
+                  style={{ paddingRight: 34 }} />
+                {addUserChecking && (
+                  <Loader size={14} style={{ position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', color:'var(--ink-400)', animation:'spin 0.8s linear infinite' }} />
+                )}
+              </div>
             </div>
-            <div className="field">
-              <label className="field-label">Email</label>
-              <input type="email" className="field-input" value={addUserForm.email||''} onChange={e=>setAddUserForm(f=>({...f,email:e.target.value}))} />
+
+            {/* Existing user notice */}
+            {addUserExisting && (
+              <div className="field field-full">
+                <div style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 14px', background:'var(--teal-50)', border:'1px solid var(--teal-100)', borderRadius:10 }}>
+                  <UserCheck size={18} color="var(--teal-500)" style={{ flexShrink:0 }} />
+                  <div>
+                    <div style={{ fontWeight:700, fontSize:13, color:'var(--teal-700)' }}>
+                      Usuario existente: {addUserExisting.name}
+                    </div>
+                    <div style={{ fontSize:12, color:'var(--teal-600)', marginTop:2 }}>
+                      Se agregará a este condominio con el rol y unidad que selecciones.
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Name — only for new users */}
+            {addUserExisting === false && (
+              <div className="field">
+                <label className="field-label">Nombre Completo *</label>
+                <input className="field-input" value={addUserForm.name||''} onChange={e=>setAddUserForm(f=>({...f,name:e.target.value}))} />
+              </div>
+            )}
+
+            {/* Role — shown once email is checked */}
+            {addUserExisting !== null && (
+              <div className="field">
+                <label className="field-label">Rol</label>
+                <select className="field-select" value={addUserForm.role||'admin'}
+                  onChange={e=>setAddUserForm(f=>({...f,role:e.target.value,unit_id:e.target.value!=='vecino'?'':f.unit_id}))}>
+                  {TENANT_ROLES.map(r => {
+                    const m = ROLE_META[r];
+                    return <option key={r} value={r}>{m?.label||r} — {m?.desc||''}</option>;
+                  })}
+                </select>
+              </div>
+            )}
+
+            {/* Password — only for new users */}
+            {addUserExisting === false && (
+              <div className="field">
+                <label className="field-label">Contraseña Inicial *</label>
+                <input type="text" className="field-input" placeholder="Mínimo 8 caracteres"
+                  value={addUserForm.password||''} onChange={e=>setAddUserForm(f=>({...f,password:e.target.value}))} />
+              </div>
+            )}
+
+            {/* Unit — only if role is vecino */}
+            {addUserExisting !== null && addUserForm.role==='vecino' && (
+              <div className="field field-full">
+                <label className="field-label">Unidad Asignada *</label>
+                <select className="field-select" value={addUserForm.unit_id||''} onChange={e=>setAddUserForm(f=>({...f,unit_id:e.target.value}))}>
+                  <option value="">— Seleccione una unidad —</option>
+                  {units.map(u=><option key={u.id} value={u.id}>{[u.unit_id_code,u.unit_name].filter(Boolean).join(' — ')}</option>)}
+                </select>
+              </div>
+            )}
+          </div>
+
+          {/* Password notice — only for new users */}
+          {addUserExisting === false && (
+            <div style={{ marginTop:16, padding:14, background:'var(--amber-50)', border:'1px solid var(--amber-100)', borderRadius:'var(--radius-md)', fontSize:13, color:'var(--ink-600)', display:'flex', alignItems:'flex-start', gap:10 }}>
+              <Lock size={16} color="var(--amber-500)" style={{ flexShrink:0, marginTop:1 }} />
+              <div><strong>Cambio obligatorio:</strong> El usuario deberá cambiar su contraseña en el primer inicio de sesión.</div>
+            </div>
+          )}
+        </Modal>
+      )}
+
+      {/* Edit User */}
+      {editUserOpen && (
+        <Modal title="Editar Usuario" large
+          onClose={() => { setEditUserOpen(false); setEditUserId(null); setEditUserForm({}); }}
+          onSave={saveEditUser}
+          saveLabel="Guardar Cambios"
+          saving={saving}>
+          <div className="form-grid">
+            <div className="field field-full">
+              <label className="field-label">Nombre Completo *</label>
+              <input className="field-input" value={editUserForm.name||''}
+                onChange={e => setEditUserForm(f => ({ ...f, name: e.target.value }))} />
             </div>
             <div className="field">
               <label className="field-label">Rol</label>
-              <select className="field-select" value={addUserForm.role||'admin'} onChange={e=>setAddUserForm(f=>({...f,role:e.target.value}))}>
+              <select className="field-select" value={editUserForm.role||'vecino'}
+                onChange={e => setEditUserForm(f => ({ ...f, role: e.target.value, unit_id: e.target.value !== 'vecino' ? '' : f.unit_id }))}>
                 {TENANT_ROLES.map(r => {
                   const m = ROLE_META[r];
                   return <option key={r} value={r}>{m?.label||r} — {m?.desc||''}</option>;
                 })}
               </select>
             </div>
-            <div className="field">
-              <label className="field-label">Contraseña Inicial</label>
-              <input type="text" className="field-input" placeholder="Mínimo 8 caracteres" value={addUserForm.password||''} onChange={e=>setAddUserForm(f=>({...f,password:e.target.value}))} />
-            </div>
-            {addUserForm.role==='vecino' && (
+            {editUserForm.role === 'vecino' && (
               <div className="field field-full">
-                <label className="field-label">Unidad Asignada</label>
-                <select className="field-select" value={addUserForm.unit_id||''} onChange={e=>setAddUserForm(f=>({...f,unit_id:e.target.value}))}>
-                  <option value="">— Sin asignar —</option>
-                  {units.map(u=><option key={u.id} value={u.id}>{u.unit_id_code} - {u.unit_name}</option>)}
+                <label className="field-label">Unidad Asignada *</label>
+                <select className="field-select" value={editUserForm.unit_id||''}
+                  onChange={e => setEditUserForm(f => ({ ...f, unit_id: e.target.value }))}>
+                  <option value="">— Seleccione una unidad —</option>
+                  {units.map(u => (
+                    <option key={u.id} value={u.id}>
+                      {[u.unit_id_code, u.unit_name].filter(Boolean).join(' — ')}
+                      {u.owner_name ? ` · ${u.owner_name}` : ''}
+                    </option>
+                  ))}
                 </select>
               </div>
             )}
-          </div>
-          <div style={{ marginTop:16, padding:14, background:'var(--amber-50)', border:'1px solid var(--amber-100)', borderRadius:'var(--radius-md)', fontSize:13, color:'var(--ink-600)', display:'flex', alignItems:'flex-start', gap:10 }}>
-            <Lock size={16} color="var(--amber-500)" style={{ flexShrink:0, marginTop:1 }} />
-            <div><strong>Cambio obligatorio:</strong> El usuario deberá cambiar su contraseña en el primer inicio de sesión.</div>
           </div>
         </Modal>
       )}

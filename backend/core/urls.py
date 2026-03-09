@@ -23,12 +23,17 @@ tenant_router.register(r'reopen-requests', views.ReopenRequestViewSet, basename=
 tenant_router.register(r'assembly-positions', views.AssemblyPositionViewSet, basename='assembly-positions')
 tenant_router.register(r'committees', views.CommitteeViewSet, basename='committees')
 tenant_router.register(r'unrecognized-income', views.UnrecognizedIncomeViewSet, basename='unrecognized-income')
+tenant_router.register(r'amenity-reservations', views.AmenityReservationViewSet, basename='amenity-reservations')
 
 urlpatterns = [
     # Auth
     path('auth/login/', views.LoginView.as_view(), name='login'),
     path('auth/change-password/', views.ChangePasswordView.as_view(), name='change-password'),
     path('auth/tenants/', views.TenantListForLoginView.as_view(), name='login-tenants'),
+    path('auth/tenants-for-email/', views.TenantsForEmailView.as_view(), name='tenants-for-email'),
+    path('auth/check-email/', views.CheckEmailView.as_view(), name='check-email'),
+    path('auth/my-tenants/', views.UserTenantsView.as_view(), name='my-tenants'),
+    path('auth/switch-tenant/', views.SwitchTenantView.as_view(), name='switch-tenant'),
 
     # Users
     path('users/', views.UserCreateView.as_view(), name='user-create'),

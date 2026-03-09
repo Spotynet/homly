@@ -1,12 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { reportsAPI, tenantsAPI, assemblyAPI } from '../api/client';
+import { reportsAPI, tenantsAPI, assemblyAPI, reservationsAPI } from '../api/client';
 import {
   Globe, Building2, DollarSign, Receipt, ShoppingBag,
   ChevronLeft, ChevronRight, RefreshCw, TrendingDown, TrendingUp,
   Users, UserCheck, Mail, Phone, Wallet, Activity,
-  CheckCircle, AlertCircle, Clock, BarChart2,
+  CheckCircle, AlertCircle, Clock, BarChart2, Calendar, X, Check,
 } from 'lucide-react';
 
 // ─── Formatters ────────────────────────────────────────────────────────────
@@ -238,7 +238,7 @@ function GaugeCard({ title, pct, color, value, max, subLeft, subRight, icon: Ico
 
 // ─── Main ──────────────────────────────────────────────────────────────────
 export default function Dashboard() {
-  const { user, tenantId, tenantName, isSuperAdmin } = useAuth();
+  const { user, tenantId, tenantName, isSuperAdmin, isAdmin, role } = useAuth();
   const navigate = useNavigate();
 
   const [activeTab, setActiveTab] = useState('general');
@@ -250,6 +250,33 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [generalReport, setGeneralReport] = useState(null);
+
+  // ── Reservas tab state ──────────────────────────────────
+  const today = new Date();
+  const [calYear,  setCalYear]  = useState(today.getFullYear());
+  const [calMonth, setCalMonth] = useState(today.getMonth()); // 0-indexed
+  const [selectedDay,      setSelectedDay]      = useState(null); // 'YYYY-MM-DD' | null
+  const [reservations,     setReservations]     = useState([]);
+  const [resLoading,       setResLoading]       = useState(false);
+  const [resStatusFilter,  setResStatusFilter]  = useState('all');
+  const [rejectModalOpen,  setRejectModalOpen]  = useState(false);
+  const [rejectReason,     setRejectReason]     = useState('');
+  const [rejectTargetId,   setRejectTargetId]   = useState(null);
+
+  const loadReservations = useCallback(async () => {
+    if (!tenantId) return;
+    setResLoading(true);
+    try {
+      const firstDay = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-01`;
+      const lastDay  = new Date(calYear, calMonth + 1, 0);
+      const lastStr  = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(lastDay.getDate()).padStart(2, '0')}`;
+      const res = await reservationsAPI.list(tenantId, { date_from: firstDay, date_to: lastStr });
+      const data = res.data;
+      setReservations(Array.isArray(data) ? data : (data?.results || []));
+    } catch { setReservations([]); }
+    finally { setResLoading(false); }
+  }, [tenantId, calYear, calMonth]);
+
 
   const load = useCallback(async () => {
     if (!tenantId) return;
@@ -276,6 +303,7 @@ export default function Dashboard() {
   }, [tenantId, period]);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { if (activeTab === 'reservas') loadReservations(); }, [activeTab, loadReservations]);
 
   useEffect(() => {
     if (isSuperAdmin) {
@@ -295,7 +323,7 @@ export default function Dashboard() {
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px,1fr))', gap: 16 }}>
           {tenants.map(t => (
-            <button key={t.id} onClick={() => navigate('/app/tenants')}
+            <button key={t.id} onClick={() => navigate('/app/sistema/tenants')}
               style={{ background: 'var(--white)', border: '1px solid var(--sand-100)', borderRadius: 'var(--radius-lg)', padding: 24, cursor: 'pointer', textAlign: 'left', transition: 'all 0.2s' }}
               onMouseEnter={e => { e.currentTarget.style.boxShadow = 'var(--shadow-md)'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
               onMouseLeave={e => { e.currentTarget.style.boxShadow = ''; e.currentTarget.style.transform = ''; }}
@@ -304,7 +332,7 @@ export default function Dashboard() {
               <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>{t.units_count ?? 0} unidades · {fmt(t.maintenance_fee)}/mes</div>
             </button>
           ))}
-          <button onClick={() => navigate('/app/tenants')}
+          <button onClick={() => navigate('/app/sistema/tenants')}
             style={{ background: 'var(--teal-50)', border: '2px dashed var(--teal-200)', borderRadius: 'var(--radius-lg)', padding: 24, cursor: 'pointer', color: 'var(--teal-700)', fontWeight: 600, fontSize: 14 }}>
             + Ver todos los condominios
           </button>
@@ -411,9 +439,13 @@ export default function Dashboard() {
   const address      = [t.info_calle, t.info_num_externo, t.info_colonia, t.info_ciudad].filter(Boolean).join(', ') || '';
   const adminTypeBadge = t.admin_type === 'administrador' ? 'badge-amber' : 'badge-teal';
   const adminTypeLabel = t.admin_type === 'administrador' ? 'Administración Externa' : 'Mesa Directiva';
-  const commonAreas    = typeof t.common_areas === 'string'
-    ? t.common_areas.split(',').map(a => a.trim()).filter(Boolean)
-    : (Array.isArray(t.common_areas) ? t.common_areas : []);
+  // common_areas is now a JSONField array of area objects {id, name, active, reservations_enabled, ...}
+  const commonAreas = Array.isArray(t.common_areas)
+    ? t.common_areas.filter(a => typeof a === 'object' && a !== null)
+    : (typeof t.common_areas === 'string'
+        ? t.common_areas.split(',').map(a => a.trim()).filter(Boolean).map(name => ({ id: name, name, active: true }))
+        : []);
+  const activeAreas = commonAreas.filter(a => a.active !== false);
 
   // Barras de estatus
   const totalUnits = registered || 1;
@@ -464,6 +496,9 @@ export default function Dashboard() {
           </button>
           <button className={`tab ${activeTab === 'economic' ? 'active' : ''}`} onClick={() => setActiveTab('economic')}>
             Económicos
+          </button>
+          <button className={`tab ${activeTab === 'reservas' ? 'active' : ''}`} onClick={() => setActiveTab('reservas')}>
+            Reservas
           </button>
         </div>
 
@@ -624,19 +659,22 @@ export default function Dashboard() {
             <div className="card">
               <div className="card-head">
                 <h3>Áreas Comunes</h3>
-                {commonAreas.length > 0 && (
-                  <span className="badge badge-teal">{commonAreas.length} área{commonAreas.length !== 1 ? 's' : ''}</span>
+                {activeAreas.length > 0 && (
+                  <span className="badge badge-teal">{activeAreas.length} área{activeAreas.length !== 1 ? 's' : ''}</span>
                 )}
               </div>
               <div className="card-body">
-                {commonAreas.length === 0 ? (
-                  <div style={{ fontSize: 13, color: 'var(--ink-300)', fontStyle: 'italic' }}>Sin áreas comunes registradas</div>
+                {activeAreas.length === 0 ? (
+                  <div style={{ fontSize: 13, color: 'var(--ink-300)', fontStyle: 'italic' }}>Sin áreas comunes activas registradas</div>
                 ) : (
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                    {commonAreas.map(a => (
-                      <span key={a} className="badge badge-teal"
-                        style={{ padding: '5px 12px', fontSize: 12, borderRadius: 20 }}>
-                        {a}
+                    {activeAreas.map(a => (
+                      <span key={a.id || a.name} className="badge badge-teal"
+                        style={{ padding: '5px 12px', fontSize: 12, borderRadius: 20, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                        {a.name}
+                        {a.reservations_enabled && (
+                          <Calendar size={11} style={{ opacity: 0.7 }} />
+                        )}
                       </span>
                     ))}
                   </div>
@@ -850,7 +888,7 @@ export default function Dashboard() {
                     </thead>
                     <tbody>
                       {tenants.map(tt => (
-                        <tr key={tt.id} style={{ cursor: 'pointer' }} onClick={() => navigate('/app/tenants')}>
+                        <tr key={tt.id} style={{ cursor: 'pointer' }} onClick={() => navigate('/app/sistema/tenants')}>
                           <td style={{ fontWeight: 600 }}>{tt.name}</td>
                           <td><span className="badge badge-teal">{tt.units_actual ?? tt.units_count ?? 0}/{tt.units_count ?? 0}</span></td>
                           <td>{new Intl.NumberFormat('es-MX').format(tt.maintenance_fee ?? 0)}</td>
@@ -1186,6 +1224,263 @@ export default function Dashboard() {
           )}
         </div>
       )}
+
+      {/* ══════ TAB: RESERVAS ══════ */}
+      {activeTab === 'reservas' && (() => {
+        // ── helpers ─────────────────────────────────────────────────
+        const DAYS_ES   = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+        const MONTHS_ES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+
+        const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
+        const firstDOW    = new Date(calYear, calMonth, 1).getDay(); // 0=Sun
+
+        // index reservations by date
+        const resByDate = {};
+        reservations.forEach(r => {
+          if (!resByDate[r.date]) resByDate[r.date] = [];
+          resByDate[r.date].push(r);
+        });
+
+        const pad = n => String(n).padStart(2, '0');
+        const makeDateStr = d => `${calYear}-${pad(calMonth + 1)}-${pad(d)}`;
+
+        // filtered list for right panel
+        const visibleRes = reservations.filter(r => {
+          if (selectedDay && r.date !== selectedDay) return false;
+          if (resStatusFilter !== 'all' && r.status !== resStatusFilter) return false;
+          return true;
+        });
+
+        const STATUS_CFG = {
+          pending:   { label: 'Pendiente',  cls: 'badge-amber' },
+          approved:  { label: 'Aprobada',   cls: 'badge-teal'  },
+          rejected:  { label: 'Rechazada',  cls: 'badge-coral' },
+          cancelled: { label: 'Cancelada',  cls: ''            },
+        };
+
+        const handleApprove = async (id) => {
+          await reservationsAPI.approve(tenantId, id);
+          loadReservations();
+        };
+        const openReject = (id) => {
+          setRejectTargetId(id); setRejectReason(''); setRejectModalOpen(true);
+        };
+        const confirmReject = async () => {
+          await reservationsAPI.reject(tenantId, rejectTargetId, rejectReason);
+          setRejectModalOpen(false);
+          loadReservations();
+        };
+        const handleCancel = async (id) => {
+          if (!window.confirm('¿Cancelar esta reserva?')) return;
+          await reservationsAPI.cancel(tenantId, id);
+          loadReservations();
+        };
+
+        // pending count badge
+        const pendingCount = reservations.filter(r => r.status === 'pending').length;
+
+        return (
+          <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+
+            {/* ── Calendario ─────────────────────────────── */}
+            <div className="card" style={{ flex: '0 0 320px', minWidth: 280 }}>
+              {/* Month nav */}
+              <div className="card-head" style={{ justifyContent: 'space-between' }}>
+                <button className="btn-ghost" onClick={() => {
+                  if (calMonth === 0) { setCalYear(y => y - 1); setCalMonth(11); }
+                  else setCalMonth(m => m - 1);
+                  setSelectedDay(null);
+                }}><ChevronLeft size={16} /></button>
+                <span style={{ fontWeight: 700, fontSize: 14 }}>{MONTHS_ES[calMonth]} {calYear}</span>
+                <button className="btn-ghost" onClick={() => {
+                  if (calMonth === 11) { setCalYear(y => y + 1); setCalMonth(0); }
+                  else setCalMonth(m => m + 1);
+                  setSelectedDay(null);
+                }}><ChevronRight size={16} /></button>
+              </div>
+              <div className="card-body" style={{ padding: '8px 12px 16px' }}>
+                {/* Day-of-week headers */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2, marginBottom: 4 }}>
+                  {DAYS_ES.map(d => (
+                    <div key={d} style={{ textAlign: 'center', fontSize: 10, fontWeight: 700, color: 'var(--ink-400)', padding: '2px 0' }}>{d}</div>
+                  ))}
+                </div>
+                {/* Day cells */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2 }}>
+                  {/* empty cells for first week offset */}
+                  {Array.from({ length: firstDOW }, (_, i) => <div key={`e${i}`} />)}
+                  {Array.from({ length: daysInMonth }, (_, i) => {
+                    const d = i + 1;
+                    const ds = makeDateStr(d);
+                    const recs = resByDate[ds] || [];
+                    const hasPending  = recs.some(r => r.status === 'pending');
+                    const hasApproved = recs.some(r => r.status === 'approved');
+                    const isSelected  = selectedDay === ds;
+                    const isToday     = ds === `${today.getFullYear()}-${pad(today.getMonth()+1)}-${pad(today.getDate())}`;
+                    return (
+                      <button
+                        key={d}
+                        onClick={() => setSelectedDay(isSelected ? null : ds)}
+                        style={{
+                          position: 'relative', aspectRatio: '1', borderRadius: 8, border: 'none',
+                          background: isSelected ? 'var(--teal-500)' : isToday ? 'var(--teal-50)' : 'transparent',
+                          color: isSelected ? 'white' : isToday ? 'var(--teal-700)' : 'var(--ink-700)',
+                          fontWeight: isToday ? 800 : 500, fontSize: 12, cursor: 'pointer',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          transition: 'background 0.15s',
+                        }}
+                      >
+                        {d}
+                        {recs.length > 0 && (
+                          <span style={{
+                            position: 'absolute', bottom: 2, right: 2,
+                            width: 6, height: 6, borderRadius: '50%',
+                            background: hasPending ? 'var(--amber-400)' : hasApproved ? 'var(--teal-400)' : 'var(--ink-300)',
+                          }} />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+                {/* Legend */}
+                <div style={{ display: 'flex', gap: 12, marginTop: 12, fontSize: 10, color: 'var(--ink-400)' }}>
+                  <span><span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: 'var(--amber-400)', marginRight: 3, verticalAlign: 'middle' }} />Pendiente</span>
+                  <span><span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: 'var(--teal-400)', marginRight: 3, verticalAlign: 'middle' }} />Aprobada</span>
+                  <span><span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: 'var(--ink-300)', marginRight: 3, verticalAlign: 'middle' }} />Otra</span>
+                </div>
+              </div>
+            </div>
+
+            {/* ── Lista de reservas ──────────────────────── */}
+            <div style={{ flex: '1 1 400px', minWidth: 300, display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {/* Filter bar */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {[['all','Todas'],['pending','Pendientes'],['approved','Aprobadas'],['rejected','Rechazadas'],['cancelled','Canceladas']].map(([v,l]) => (
+                    <button
+                      key={v}
+                      className={`tab ${resStatusFilter === v ? 'active' : ''}`}
+                      style={{ padding: '4px 10px', fontSize: 12 }}
+                      onClick={() => setResStatusFilter(v)}
+                    >
+                      {l}
+                      {v === 'pending' && pendingCount > 0 && (
+                        <span className="badge badge-amber" style={{ marginLeft: 5, fontSize: 10, padding: '1px 5px' }}>{pendingCount}</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+                {selectedDay && (
+                  <button className="btn btn-secondary btn-sm" onClick={() => setSelectedDay(null)}>
+                    <X size={12} /> Quitar filtro fecha
+                  </button>
+                )}
+              </div>
+
+              {resLoading ? (
+                <div style={{ textAlign: 'center', padding: 32, color: 'var(--ink-400)', fontSize: 13 }}>Cargando reservas…</div>
+              ) : visibleRes.length === 0 ? (
+                <div className="card">
+                  <div className="card-body" style={{ textAlign: 'center', padding: '40px 16px', color: 'var(--ink-300)' }}>
+                    <Calendar size={36} color="var(--sand-200)" style={{ marginBottom: 8, display: 'block', margin: '0 auto 8px' }} />
+                    <div style={{ fontSize: 13 }}>
+                      {selectedDay ? `Sin reservas para el ${selectedDay}` : 'Sin reservas este mes'}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="card">
+                  <div className="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Área</th>
+                          <th>Fecha</th>
+                          <th>Horario</th>
+                          <th>Unidad</th>
+                          <th>Estado</th>
+                          {(isAdmin || role === 'admin') && <th style={{ width: 120, textAlign: 'center' }}>Acciones</th>}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {visibleRes.map(r => {
+                          const sc = STATUS_CFG[r.status] || { label: r.status, cls: '' };
+                          return (
+                            <tr key={r.id}>
+                              <td>
+                                <div style={{ fontWeight: 600, fontSize: 13 }}>{r.area_name}</div>
+                                {r.notes && <div style={{ fontSize: 11, color: 'var(--ink-400)' }}>{r.notes}</div>}
+                              </td>
+                              <td style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
+                                {new Date(r.date + 'T00:00').toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' })}
+                              </td>
+                              <td style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
+                                {r.start_time?.slice(0, 5)} – {r.end_time?.slice(0, 5)}
+                              </td>
+                              <td style={{ fontSize: 12 }}>
+                                {r.unit_id_code || r.unit_name || <span style={{ color: 'var(--ink-300)' }}>—</span>}
+                              </td>
+                              <td>
+                                <span className={`badge ${sc.cls}`} style={{ fontSize: 11 }}>{sc.label}</span>
+                              </td>
+                              {(isAdmin || role === 'admin') && (
+                                <td style={{ textAlign: 'center' }}>
+                                  <div style={{ display: 'flex', gap: 4, justifyContent: 'center' }}>
+                                    {r.status === 'pending' && (<>
+                                      <button className="btn btn-primary btn-sm" style={{ padding: '2px 8px' }}
+                                        onClick={() => handleApprove(r.id)} title="Aprobar">
+                                        <Check size={11} />
+                                      </button>
+                                      <button className="btn btn-secondary btn-sm" style={{ padding: '2px 8px', color: 'var(--coral-500)' }}
+                                        onClick={() => openReject(r.id)} title="Rechazar">
+                                        <X size={11} />
+                                      </button>
+                                    </>)}
+                                    {r.status === 'approved' && (
+                                      <button className="btn btn-secondary btn-sm" style={{ padding: '2px 8px', fontSize: 11 }}
+                                        onClick={() => handleCancel(r.id)}>
+                                        Cancelar
+                                      </button>
+                                    )}
+                                  </div>
+                                </td>
+                              )}
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Modal rechazo */}
+            {rejectModalOpen && (
+              <div className="modal-bg open" onClick={() => setRejectModalOpen(false)}>
+                <div className="modal" onClick={e => e.stopPropagation()}>
+                  <div className="modal-head">
+                    <h3>Rechazar Reserva</h3>
+                    <button className="modal-close" onClick={() => setRejectModalOpen(false)}><X size={16} /></button>
+                  </div>
+                  <div className="modal-body">
+                    <label className="field-label">Motivo del rechazo (opcional)</label>
+                    <textarea className="field-input" rows={3}
+                      style={{ resize: 'vertical', fontFamily: 'var(--font-body)', fontSize: 13, marginTop: 6 }}
+                      placeholder="Área no disponible, mantenimiento programado..."
+                      value={rejectReason}
+                      onChange={e => setRejectReason(e.target.value)} />
+                  </div>
+                  <div className="modal-foot">
+                    <button className="btn btn-secondary" onClick={() => setRejectModalOpen(false)}>Cancelar</button>
+                    <button className="btn btn-danger" onClick={confirmReject}>Confirmar rechazo</button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 }

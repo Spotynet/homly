@@ -1,0 +1,657 @@
+import { useState, useEffect, useCallback } from 'react';
+import { useAuth } from '../context/AuthContext';
+import { reservationsAPI, tenantsAPI, unitsAPI } from '../api/client';
+import {
+  Calendar, ChevronLeft, ChevronRight, Plus, X, Check,
+  Clock, CheckCircle, AlertCircle, Ban, RefreshCw,
+} from 'lucide-react';
+import toast from 'react-hot-toast';
+
+// ─── Constantes ────────────────────────────────────────────────────────────
+const DAYS_ES   = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+const MONTHS_ES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
+                   'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+
+const STATUS_CFG = {
+  pending:   { label: 'Pendiente',  cls: 'badge-amber',  icon: Clock,        color: 'var(--amber-400)' },
+  approved:  { label: 'Aprobada',   cls: 'badge-teal',   icon: CheckCircle,  color: 'var(--teal-400)'  },
+  rejected:  { label: 'Rechazada',  cls: 'badge-coral',  icon: AlertCircle,  color: 'var(--coral-400)' },
+  cancelled: { label: 'Cancelada',  cls: '',             icon: Ban,          color: 'var(--ink-300)'   },
+};
+
+const pad = n => String(n).padStart(2, '0');
+
+// ─── Helpers ───────────────────────────────────────────────────────────────
+function makeDateStr(y, m, d) { return `${y}-${pad(m + 1)}-${pad(d)}`; }
+function fmtDate(ds) {
+  if (!ds) return '—';
+  return new Date(ds + 'T12:00:00').toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+// ─── Componente área-card ──────────────────────────────────────────────────
+function AreaCard({ area, reservations, selected, onSelect }) {
+  const areaRes = reservations.filter(r => r.area_id === area.id);
+  const pending  = areaRes.filter(r => r.status === 'pending').length;
+  const approved = areaRes.filter(r => r.status === 'approved').length;
+
+  return (
+    <button
+      onClick={onSelect}
+      style={{
+        background: selected ? 'var(--teal-500)' : 'var(--white)',
+        border: `2px solid ${selected ? 'var(--teal-500)' : 'var(--sand-100)'}`,
+        borderRadius: 'var(--radius-lg)', padding: '14px 16px',
+        cursor: 'pointer', textAlign: 'left', transition: 'all 0.2s',
+        color: selected ? 'white' : 'inherit',
+      }}
+    >
+      <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>{area.name}</div>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        {pending > 0 && (
+          <span style={{
+            fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 20,
+            background: selected ? 'rgba(255,255,255,0.25)' : 'var(--amber-50)',
+            color: selected ? 'white' : 'var(--amber-700)',
+          }}>
+            {pending} pendiente{pending !== 1 ? 's' : ''}
+          </span>
+        )}
+        {approved > 0 && (
+          <span style={{
+            fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 20,
+            background: selected ? 'rgba(255,255,255,0.25)' : 'var(--teal-50)',
+            color: selected ? 'white' : 'var(--teal-700)',
+          }}>
+            {approved} aprobada{approved !== 1 ? 's' : ''}
+          </span>
+        )}
+        {pending === 0 && approved === 0 && (
+          <span style={{
+            fontSize: 11, padding: '2px 8px', borderRadius: 20,
+            background: selected ? 'rgba(255,255,255,0.15)' : 'var(--sand-50)',
+            color: selected ? 'rgba(255,255,255,0.8)' : 'var(--ink-400)',
+          }}>
+            Sin reservas
+          </span>
+        )}
+        {area.charge_enabled && (
+          <span style={{
+            fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 20,
+            background: selected ? 'rgba(255,255,255,0.2)' : 'var(--blue-50)',
+            color: selected ? 'white' : 'var(--blue-600)',
+          }}>
+            ${Number(area.charge_amount || 0).toLocaleString('es-MX')}
+          </span>
+        )}
+      </div>
+    </button>
+  );
+}
+
+// ─── Main ──────────────────────────────────────────────────────────────────
+export default function Reservas() {
+  const { tenantId, isAdmin, isVecino, role } = useAuth();
+  const autoApproveRoles = ['admin', 'tesorero', 'superadmin'];
+  const isAutoApprover   = autoApproveRoles.includes(role);
+  const canManage        = isAdmin || role === 'tesorero'; // admin, superadmin, tesorero can approve/reject
+  const needsUnitSelector = !isVecino; // admins / tesoreros / vigilante pick the unit manually
+
+  const today = new Date();
+  const [calYear,  setCalYear]  = useState(today.getFullYear());
+  const [calMonth, setCalMonth] = useState(today.getMonth());
+  const [selectedDay,  setSelectedDay]  = useState(null);
+  const [selectedArea, setSelectedArea] = useState(null); // area.id | null
+
+  const [areas,        setAreas]        = useState([]);
+  const [units,        setUnits]        = useState([]);
+  const [reservations, setReservations] = useState([]);
+  const [loading,      setLoading]      = useState(false);
+  const [resStatusFilter, setResStatusFilter] = useState('all');
+
+  // New reservation modal
+  const [modalOpen, setModalOpen] = useState(false);
+  const [form,      setForm]      = useState({ area_id: '', unit_id: '', date: '', start_time: '', end_time: '', notes: '' });
+  const [saving,    setSaving]    = useState(false);
+
+  // Reject modal
+  const [rejectOpen,    setRejectOpen]    = useState(false);
+  const [rejectId,      setRejectId]      = useState(null);
+  const [rejectReason,  setRejectReason]  = useState('');
+
+  // ── Load areas ─────────────────────────────────────────────────────────
+  const loadAreas = useCallback(async () => {
+    if (!tenantId) return;
+    try {
+      const res = await tenantsAPI.get(tenantId);
+      const raw = res.data?.common_areas;
+      const all = Array.isArray(raw)
+        ? raw.filter(a => typeof a === 'object' && a !== null)
+        : [];
+      setAreas(all.filter(a => a.active !== false && a.reservations_enabled));
+    } catch { setAreas([]); }
+  }, [tenantId]);
+
+  // ── Load units (only for admin/tesorero) ───────────────────────────────
+  const loadUnits = useCallback(async () => {
+    if (!tenantId || isVecino) return;
+    try {
+      const res = await unitsAPI.list(tenantId, { page_size: 500 });
+      const d = res.data;
+      setUnits(Array.isArray(d) ? d : (d?.results || []));
+    } catch { setUnits([]); }
+  }, [tenantId, isVecino]);
+
+  // ── Load reservations ─────────────────────────────────────────────────
+  const loadReservations = useCallback(async () => {
+    if (!tenantId) return;
+    setLoading(true);
+    try {
+      const firstDay = `${calYear}-${pad(calMonth + 1)}-01`;
+      const lastDate = new Date(calYear, calMonth + 1, 0);
+      const lastDay  = `${calYear}-${pad(calMonth + 1)}-${pad(lastDate.getDate())}`;
+      const params   = { date_from: firstDay, date_to: lastDay };
+      if (selectedArea) params.area_id = selectedArea;
+      const res  = await reservationsAPI.list(tenantId, params);
+      const data = res.data;
+      setReservations(Array.isArray(data) ? data : (data?.results || []));
+    } catch { setReservations([]); }
+    finally  { setLoading(false); }
+  }, [tenantId, calYear, calMonth, selectedArea]);
+
+  useEffect(() => { loadAreas(); }, [loadAreas]);
+  useEffect(() => { loadUnits(); }, [loadUnits]);
+  useEffect(() => { loadReservations(); }, [loadReservations]);
+
+  // ── Calendar ────────────────────────────────────────────────────────────
+  const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
+  const firstDOW    = new Date(calYear, calMonth, 1).getDay();
+
+  const resByDate = {};
+  reservations.forEach(r => {
+    if (!resByDate[r.date]) resByDate[r.date] = [];
+    resByDate[r.date].push(r);
+  });
+
+  // ── Filtered list ─────────────────────────────────────────────────────
+  const visibleRes = reservations.filter(r => {
+    if (selectedDay  && r.date   !== selectedDay)      return false;
+    if (resStatusFilter !== 'all' && r.status !== resStatusFilter) return false;
+    return true;
+  });
+
+  // ── Actions ───────────────────────────────────────────────────────────
+  const handleApprove = async (id) => {
+    try {
+      await reservationsAPI.approve(tenantId, id);
+      toast.success('Reserva aprobada');
+      loadReservations();
+    } catch { toast.error('Error al aprobar'); }
+  };
+
+  const openReject = (id) => { setRejectId(id); setRejectReason(''); setRejectOpen(true); };
+  const confirmReject = async () => {
+    try {
+      await reservationsAPI.reject(tenantId, rejectId, rejectReason);
+      toast.success('Reserva rechazada');
+      setRejectOpen(false);
+      loadReservations();
+    } catch { toast.error('Error al rechazar'); }
+  };
+
+  const handleCancel = async (id) => {
+    if (!window.confirm('¿Cancelar esta reserva?')) return;
+    try {
+      await reservationsAPI.cancel(tenantId, id);
+      toast.success('Reserva cancelada');
+      loadReservations();
+    } catch { toast.error('Error al cancelar'); }
+  };
+
+  // ── Create reservation ─────────────────────────────────────────────────
+  const openNew = () => {
+    const preArea = areas.find(a => a.id === selectedArea);
+    setForm({
+      area_id:    preArea?.id || (areas[0]?.id || ''),
+      unit_id:    '',
+      date:       selectedDay || '',
+      start_time: '',
+      end_time:   '',
+      notes:      '',
+    });
+    setModalOpen(true);
+  };
+
+  const handleSave = async () => {
+    if (!form.area_id)    return toast.error('Selecciona un área');
+    if (needsUnitSelector && !form.unit_id) return toast.error('Selecciona la unidad que solicita la reserva');
+    if (!form.date)       return toast.error('Selecciona una fecha');
+    if (!form.start_time) return toast.error('Indica hora de inicio');
+    if (!form.end_time)   return toast.error('Indica hora de fin');
+    if (form.start_time >= form.end_time) return toast.error('La hora de fin debe ser mayor a la de inicio');
+    setSaving(true);
+    try {
+      const area = areas.find(a => a.id === form.area_id);
+      const payload = {
+        area_id:       form.area_id,
+        area_name:     area?.name || '',
+        date:          form.date,
+        start_time:    form.start_time,
+        end_time:      form.end_time,
+        notes:         form.notes,
+        charge_amount: area?.charge_enabled ? (area.charge_amount || 0) : 0,
+      };
+      if (needsUnitSelector && form.unit_id) payload.unit_id = form.unit_id;
+      await reservationsAPI.create(tenantId, payload);
+      toast.success(isAutoApprover ? 'Reserva aprobada' : 'Reserva solicitada');
+      setModalOpen(false);
+      loadReservations();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Error al crear la reserva');
+    } finally { setSaving(false); }
+  };
+
+  // ── Selected area object ───────────────────────────────────────────────
+  const selectedAreaObj = areas.find(a => a.id === form.area_id);
+  const pendingCount = reservations.filter(r => r.status === 'pending').length;
+
+  // ── Render ─────────────────────────────────────────────────────────────
+  return (
+    <div className="content-fade">
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .res-table th, .res-table td { padding: 10px 14px; }
+      `}</style>
+
+      {/* ── Header ─────────────────────────────────────────────────────── */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
+        <div>
+          <h2 style={{ fontSize: 20, fontWeight: 800, color: 'var(--ink-800)', margin: 0 }}>Reservas de Áreas Comunes</h2>
+          <p style={{ fontSize: 13, color: 'var(--ink-400)', margin: '4px 0 0' }}>
+            {MONTHS_ES[calMonth]} {calYear}
+            {pendingCount > 0 && canManage && (
+              <span style={{ marginLeft: 8, background: 'var(--amber-50)', color: 'var(--amber-700)', border: '1px solid var(--amber-100)', borderRadius: 20, padding: '1px 8px', fontSize: 11, fontWeight: 700 }}>
+                {pendingCount} pendiente{pendingCount !== 1 ? 's' : ''} de revisión
+              </span>
+            )}
+          </p>
+        </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <button className="btn btn-secondary btn-sm" onClick={loadReservations}>
+            <RefreshCw size={14} style={loading ? { animation: 'spin 0.8s linear infinite' } : {}} />
+            Actualizar
+          </button>
+          {areas.length > 0 && (
+            <button className="btn btn-primary" onClick={openNew}>
+              <Plus size={15} /> Nueva Reserva
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* ── Area cards ─────────────────────────────────────────────────── */}
+      {areas.length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px,1fr))', gap: 10, marginBottom: 20 }}>
+          <button
+            onClick={() => setSelectedArea(null)}
+            style={{
+              background: !selectedArea ? 'var(--ink-800)' : 'var(--white)',
+              border: `2px solid ${!selectedArea ? 'var(--ink-800)' : 'var(--sand-100)'}`,
+              borderRadius: 'var(--radius-lg)', padding: '14px 16px',
+              cursor: 'pointer', textAlign: 'left', transition: 'all 0.2s',
+              color: !selectedArea ? 'white' : 'inherit',
+            }}
+          >
+            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>Todas las áreas</div>
+            <div style={{ fontSize: 11, opacity: 0.8 }}>{reservations.length} reserva{reservations.length !== 1 ? 's' : ''} este mes</div>
+          </button>
+          {areas.map(area => (
+            <AreaCard
+              key={area.id}
+              area={area}
+              reservations={reservations}
+              selected={selectedArea === area.id}
+              onSelect={() => setSelectedArea(selectedArea === area.id ? null : area.id)}
+            />
+          ))}
+        </div>
+      )}
+
+      {areas.length === 0 && (
+        <div className="card" style={{ marginBottom: 20 }}>
+          <div className="card-body" style={{ textAlign: 'center', padding: '40px 16px', color: 'var(--ink-400)' }}>
+            <Calendar size={40} color="var(--sand-200)" style={{ display: 'block', margin: '0 auto 12px' }} />
+            <div style={{ fontWeight: 700, marginBottom: 4 }}>Sin áreas con reservas habilitadas</div>
+            <div style={{ fontSize: 13 }}>Activa la opción de reservas en Configuración → General → Áreas Comunes</div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Calendario + Lista ─────────────────────────────────────────── */}
+      <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+
+        {/* Calendario */}
+        <div className="card" style={{ flex: '0 0 300px', minWidth: 260 }}>
+          <div className="card-head" style={{ justifyContent: 'space-between' }}>
+            <button className="btn-ghost" onClick={() => {
+              if (calMonth === 0) { setCalYear(y => y - 1); setCalMonth(11); }
+              else setCalMonth(m => m - 1);
+              setSelectedDay(null);
+            }}><ChevronLeft size={16} /></button>
+            <span style={{ fontWeight: 700, fontSize: 14 }}>{MONTHS_ES[calMonth]} {calYear}</span>
+            <button className="btn-ghost" onClick={() => {
+              if (calMonth === 11) { setCalYear(y => y + 1); setCalMonth(0); }
+              else setCalMonth(m => m + 1);
+              setSelectedDay(null);
+            }}><ChevronRight size={16} /></button>
+          </div>
+          <div className="card-body" style={{ padding: '8px 12px 16px' }}>
+            {/* Encabezados días */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2, marginBottom: 4 }}>
+              {DAYS_ES.map(d => (
+                <div key={d} style={{ textAlign: 'center', fontSize: 10, fontWeight: 700, color: 'var(--ink-400)', padding: '2px 0' }}>{d}</div>
+              ))}
+            </div>
+            {/* Celdas */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2 }}>
+              {Array.from({ length: firstDOW }, (_, i) => <div key={`e${i}`} />)}
+              {Array.from({ length: daysInMonth }, (_, i) => {
+                const d   = i + 1;
+                const ds  = makeDateStr(calYear, calMonth, d);
+                const recs = resByDate[ds] || [];
+                const hasPending  = recs.some(r => r.status === 'pending');
+                const hasApproved = recs.some(r => r.status === 'approved');
+                const isSelected  = selectedDay === ds;
+                const isTodayDate = ds === makeDateStr(today.getFullYear(), today.getMonth(), today.getDate());
+                return (
+                  <button
+                    key={d}
+                    onClick={() => setSelectedDay(isSelected ? null : ds)}
+                    style={{
+                      position: 'relative', aspectRatio: '1', borderRadius: 8, border: 'none',
+                      background: isSelected ? 'var(--teal-500)' : isTodayDate ? 'var(--teal-50)' : 'transparent',
+                      color: isSelected ? 'white' : isTodayDate ? 'var(--teal-700)' : 'var(--ink-700)',
+                      fontWeight: isTodayDate ? 800 : 500, fontSize: 12, cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      transition: 'background 0.15s',
+                    }}
+                  >
+                    {d}
+                    {recs.length > 0 && (
+                      <span style={{
+                        position: 'absolute', bottom: 2, right: 2,
+                        width: 6, height: 6, borderRadius: '50%',
+                        background: hasPending ? 'var(--amber-400)' : hasApproved ? 'var(--teal-400)' : 'var(--ink-300)',
+                      }} />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            {/* Leyenda */}
+            <div style={{ display: 'flex', gap: 12, marginTop: 12, fontSize: 10, color: 'var(--ink-400)' }}>
+              {[
+                { color: 'var(--amber-400)', label: 'Pendiente' },
+                { color: 'var(--teal-400)',  label: 'Aprobada'  },
+                { color: 'var(--ink-300)',   label: 'Otra'      },
+              ].map(l => (
+                <span key={l.label} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: l.color, flexShrink: 0 }} />
+                  {l.label}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Lista de reservas */}
+        <div style={{ flex: '1 1 380px', minWidth: 280 }}>
+          {/* Filtros */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, flexWrap: 'wrap', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {[['all','Todas'],['pending','Pendientes'],['approved','Aprobadas'],['rejected','Rechazadas'],['cancelled','Canceladas']].map(([v,l]) => (
+                <button key={v} className={`tab ${resStatusFilter === v ? 'active' : ''}`}
+                  style={{ padding: '4px 10px', fontSize: 12 }}
+                  onClick={() => setResStatusFilter(v)}>
+                  {l}
+                  {v === 'pending' && pendingCount > 0 && canManage && (
+                    <span className="badge badge-amber" style={{ marginLeft: 5, fontSize: 10, padding: '1px 5px' }}>{pendingCount}</span>
+                  )}
+                </button>
+              ))}
+            </div>
+            {selectedDay && (
+              <button className="btn btn-secondary btn-sm" onClick={() => setSelectedDay(null)}>
+                <X size={12} /> {fmtDate(selectedDay)}
+              </button>
+            )}
+          </div>
+
+          {/* Tabla / vacío */}
+          {loading ? (
+            <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--ink-400)', fontSize: 13 }}>
+              <div style={{ width: 28, height: 28, borderRadius: '50%', border: '3px solid var(--sand-100)', borderTopColor: 'var(--teal-400)', animation: 'spin 0.8s linear infinite', margin: '0 auto 10px' }} />
+              Cargando reservas…
+            </div>
+          ) : visibleRes.length === 0 ? (
+            <div className="card">
+              <div className="card-body" style={{ textAlign: 'center', padding: '40px 16px', color: 'var(--ink-300)' }}>
+                <Calendar size={36} color="var(--sand-200)" style={{ display: 'block', margin: '0 auto 10px' }} />
+                <div style={{ fontSize: 13 }}>
+                  {selectedDay
+                    ? `Sin reservas para el ${fmtDate(selectedDay)}`
+                    : resStatusFilter !== 'all'
+                      ? `Sin reservas con estado "${STATUS_CFG[resStatusFilter]?.label || resStatusFilter}"`
+                      : 'Sin reservas este mes'}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="card">
+              <div className="table-wrap">
+                <table className="res-table">
+                  <thead>
+                    <tr>
+                      <th>Área</th>
+                      <th>Fecha</th>
+                      <th>Horario</th>
+                      <th>Unidad / Solicitante</th>
+                      <th>Estado</th>
+                      {canManage && <th style={{ width: 130, textAlign: 'center' }}>Acciones</th>}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visibleRes.map(r => {
+                      const sc = STATUS_CFG[r.status] || { label: r.status, cls: '' };
+                      const Ico = sc.icon;
+                      return (
+                        <tr key={r.id}>
+                          <td>
+                            <div style={{ fontWeight: 600, fontSize: 13 }}>{r.area_name}</div>
+                            {r.notes && (
+                              <div style={{ fontSize: 11, color: 'var(--ink-400)', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {r.notes}
+                              </div>
+                            )}
+                          </td>
+                          <td style={{ fontSize: 12, whiteSpace: 'nowrap' }}>{fmtDate(r.date)}</td>
+                          <td style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
+                            {r.start_time?.slice(0, 5)} – {r.end_time?.slice(0, 5)}
+                          </td>
+                          <td style={{ fontSize: 12 }}>
+                            <div>{r.unit_id_code || r.unit_name || <span style={{ color: 'var(--ink-300)' }}>—</span>}</div>
+                            {r.requested_by_name && (
+                              <div style={{ fontSize: 11, color: 'var(--ink-400)' }}>{r.requested_by_name}</div>
+                            )}
+                          </td>
+                          <td>
+                            <span className={`badge ${sc.cls}`}
+                              style={{ fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                              {Ico && <Ico size={10} />}
+                              {sc.label}
+                            </span>
+                            {r.rejection_reason && (
+                              <div style={{ fontSize: 10, color: 'var(--ink-400)', marginTop: 2, maxWidth: 120 }} title={r.rejection_reason}>
+                                {r.rejection_reason.slice(0, 40)}{r.rejection_reason.length > 40 ? '…' : ''}
+                              </div>
+                            )}
+                          </td>
+                          {canManage && (
+                            <td style={{ textAlign: 'center' }}>
+                              <div style={{ display: 'flex', gap: 4, justifyContent: 'center', flexWrap: 'wrap' }}>
+                                {r.status === 'pending' && (
+                                  <>
+                                    <button className="btn btn-primary btn-sm" style={{ padding: '3px 10px', fontSize: 11 }}
+                                      onClick={() => handleApprove(r.id)}>
+                                      <Check size={11} /> Aprobar
+                                    </button>
+                                    <button className="btn btn-secondary btn-sm" style={{ padding: '3px 10px', fontSize: 11, color: 'var(--coral-500)' }}
+                                      onClick={() => openReject(r.id)}>
+                                      <X size={11} /> Rechazar
+                                    </button>
+                                  </>
+                                )}
+                                {r.status === 'approved' && (
+                                  <button className="btn btn-secondary btn-sm" style={{ padding: '3px 10px', fontSize: 11 }}
+                                    onClick={() => handleCancel(r.id)}>
+                                    Cancelar
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ══ Modal: Nueva Reserva ════════════════════════════════════════════ */}
+      {modalOpen && (
+        <div className="modal-bg open" onClick={() => setModalOpen(false)}>
+          <div className="modal" style={{ maxWidth: 500 }} onClick={e => e.stopPropagation()}>
+            <div className="modal-head">
+              <h3><Calendar size={16} style={{ marginRight: 6 }} />Nueva Reserva</h3>
+              <button className="modal-close" onClick={() => setModalOpen(false)}><X size={16} /></button>
+            </div>
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+              {/* Área */}
+              <div>
+                <label className="field-label">Área *</label>
+                <select className="field-input" value={form.area_id}
+                  onChange={e => setForm(f => ({ ...f, area_id: e.target.value }))}>
+                  <option value="">Selecciona un área</option>
+                  {areas.map(a => (
+                    <option key={a.id} value={a.id}>
+                      {a.name}{a.charge_enabled ? ` — $${Number(a.charge_amount || 0).toLocaleString('es-MX')}` : ''}
+                    </option>
+                  ))}
+                </select>
+                {selectedAreaObj?.reservation_policy && (
+                  <div style={{ fontSize: 11, color: 'var(--ink-500)', marginTop: 6, padding: '8px 10px', background: 'var(--sand-50)', borderRadius: 8, border: '1px solid var(--sand-100)', lineHeight: 1.5 }}>
+                    <strong>Política de reserva:</strong> {selectedAreaObj.reservation_policy}
+                  </div>
+                )}
+              </div>
+
+              {/* Unidad — solo para admin/tesorero */}
+              {needsUnitSelector && (
+                <div>
+                  <label className="field-label">Unidad solicitante *</label>
+                  <select className="field-input" value={form.unit_id}
+                    onChange={e => setForm(f => ({ ...f, unit_id: e.target.value }))}>
+                    <option value="">Selecciona una unidad</option>
+                    {units.map(u => (
+                      <option key={u.id} value={u.id}>
+                        {u.unit_id_code ? `${u.unit_id_code}` : ''}{u.unit_name ? ` — ${u.unit_name}` : ''}
+                        {u.owner_name ? ` (${u.owner_name})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Fecha */}
+              <div>
+                <label className="field-label">Fecha *</label>
+                <input type="date" className="field-input"
+                  value={form.date}
+                  min={new Date().toISOString().slice(0, 10)}
+                  onChange={e => setForm(f => ({ ...f, date: e.target.value }))} />
+              </div>
+
+              {/* Horario */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
+                  <label className="field-label">Hora inicio *</label>
+                  <input type="time" className="field-input"
+                    value={form.start_time}
+                    onChange={e => setForm(f => ({ ...f, start_time: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="field-label">Hora fin *</label>
+                  <input type="time" className="field-input"
+                    value={form.end_time}
+                    onChange={e => setForm(f => ({ ...f, end_time: e.target.value }))} />
+                </div>
+              </div>
+
+              {/* Notas */}
+              <div>
+                <label className="field-label">Notas (opcional)</label>
+                <textarea className="field-input" rows={2}
+                  style={{ resize: 'vertical', fontFamily: 'var(--font-body)', fontSize: 13 }}
+                  placeholder="Descripción del evento, número de personas, etc."
+                  value={form.notes}
+                  onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
+              </div>
+
+              {/* Cargo */}
+              {selectedAreaObj?.charge_enabled && (
+                <div style={{ padding: '10px 14px', background: 'var(--blue-50)', border: '1px solid var(--blue-100)', borderRadius: 10, fontSize: 13, color: 'var(--blue-700)', display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <span style={{ fontWeight: 700 }}>Cargo por reserva:</span>
+                  ${Number(selectedAreaObj.charge_amount || 0).toLocaleString('es-MX')} MXN
+                </div>
+              )}
+            </div>
+            <div className="modal-foot">
+              <button className="btn btn-secondary" onClick={() => setModalOpen(false)}>Cancelar</button>
+              <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
+                {saving ? 'Guardando…' : isAutoApprover ? 'Crear Reserva' : 'Solicitar Reserva'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══ Modal: Rechazar ═════════════════════════════════════════════════ */}
+      {rejectOpen && (
+        <div className="modal-bg open" onClick={() => setRejectOpen(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-head">
+              <h3>Rechazar Reserva</h3>
+              <button className="modal-close" onClick={() => setRejectOpen(false)}><X size={16} /></button>
+            </div>
+            <div className="modal-body">
+              <label className="field-label">Motivo del rechazo (opcional)</label>
+              <textarea className="field-input" rows={3}
+                style={{ resize: 'vertical', fontFamily: 'var(--font-body)', fontSize: 13, marginTop: 6 }}
+                placeholder="Área no disponible, mantenimiento programado..."
+                value={rejectReason}
+                onChange={e => setRejectReason(e.target.value)} />
+            </div>
+            <div className="modal-foot">
+              <button className="btn btn-secondary" onClick={() => setRejectOpen(false)}>Cancelar</button>
+              <button className="btn btn-danger" onClick={confirmReject}>Confirmar rechazo</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

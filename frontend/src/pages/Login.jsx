@@ -1,37 +1,23 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { authAPI } from '../api/client';
 import { HOMLY_LOGO, APP_VERSION } from '../utils/helpers';
 
 export default function Login() {
-  const [tenants, setTenants] = useState([]);
-  const [selectedTenant, setSelectedTenant] = useState('__super');
-  const [email, setEmail] = useState('');
+  const [email,    setEmail]    = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-  const { login } = useAuth();
-  const navigate = useNavigate();
+  const [error,    setError]    = useState('');
+  const [loading,  setLoading]  = useState(false);
 
-  useEffect(() => {
-    authAPI.getTenants().then(r => {
-      const list = r.data || [];
-      setTenants(list);
-      // Pre-select the tenant automatically when there is only one
-      if (list.length === 1) {
-        setSelectedTenant(list[0].id);
-      }
-    }).catch(() => {});
-  }, []);
+  const { login }  = useAuth();
+  const navigate   = useNavigate();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setLoading(true);
     try {
-      const tenantId = selectedTenant === '__super' ? null : selectedTenant;
-      const data = await login(email, password, tenantId);
+      const data = await login(email.trim(), password);
       if (data.must_change_password) {
         navigate('/change-password');
       } else {
@@ -40,7 +26,11 @@ export default function Login() {
         navigate(savedPath && savedPath.startsWith('/app') ? savedPath : '/app');
       }
     } catch (err) {
-      setError(err.response?.data?.non_field_errors?.[0] || err.response?.data?.detail || 'Credenciales inválidas.');
+      setError(
+        err.response?.data?.non_field_errors?.[0] ||
+        err.response?.data?.detail ||
+        'Credenciales inválidas.'
+      );
     } finally {
       setLoading(false);
     }
@@ -48,9 +38,10 @@ export default function Login() {
 
   return (
     <div className="min-h-screen flex">
-      {/* Left: Form */}
+      {/* ── Left: Form ───────────────────────────────────────────────────── */}
       <div className="flex-1 flex items-center justify-center p-8">
         <div className="w-full max-w-md">
+
           {/* Brand */}
           <div className="flex items-center gap-4 mb-8">
             <div className="w-12 h-12">{HOMLY_LOGO}</div>
@@ -74,17 +65,24 @@ export default function Login() {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="field-label">Correo Electrónico</label>
-              <input type="email" className="field-input" placeholder="usuario@email.com"
-                value={email} onChange={e => setEmail(e.target.value)} required />
+              <input
+                type="email" className="field-input"
+                placeholder="usuario@email.com"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                autoFocus required
+              />
             </div>
-
             <div>
               <label className="field-label">Contraseña</label>
-              <input type="password" className="field-input" placeholder="••••••••"
-                value={password} onChange={e => setPassword(e.target.value)} required
-                onKeyDown={e => e.key === 'Enter' && handleSubmit(e)} />
+              <input
+                type="password" className="field-input"
+                placeholder="••••••••"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                required
+              />
             </div>
-
             <button type="submit" disabled={loading}
               className="w-full btn btn-coral justify-center py-3 text-base">
               {loading ? 'Ingresando...' : 'Iniciar Sesión'}
@@ -96,7 +94,6 @@ export default function Login() {
               ← Volver a Homly
             </Link>
           </div>
-
           <div className="mt-4 text-center">
             <span className="badge badge-gray">Homly v{APP_VERSION}</span>
           </div>
@@ -104,7 +101,7 @@ export default function Login() {
         </div>
       </div>
 
-      {/* Right: Feature panel */}
+      {/* ── Right: Feature panel ─────────────────────────────────────────── */}
       <div className="hidden lg:flex flex-1 bg-gradient-to-b from-teal-800 to-teal-600 items-center justify-center p-12">
         <div className="max-w-md text-white">
           <h2 className="text-3xl font-extrabold mb-4">

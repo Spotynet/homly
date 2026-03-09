@@ -62,9 +62,10 @@ export const ROLES = {
   super_admin: { label: 'Super Administrador', color: '#6D28D9', bg: '#F5F3FF' },
   admin: { label: 'Administrador', color: '#1F7D5B', bg: '#EDFDF7' },
   tesorero: { label: 'Tesorero', color: '#D97706', bg: '#FFFBEB' },
-  contador: { label: 'Contador', color: '#2563EB', bg: '#EFF6FF' },
-  auditor: { label: 'Auditor', color: '#64748B', bg: '#F1F5F9' },
-  vecino: { label: 'Vecino / Residente', color: '#E85D43', bg: '#FFF5F3' },
+  contador:  { label: 'Contador',   color: '#2563EB', bg: '#EFF6FF' },
+  auditor:   { label: 'Auditor',    color: '#64748B', bg: '#F1F5F9' },
+  vigilante: { label: 'Vigilante',  color: '#7C3AED', bg: '#F5F3FF' },
+  vecino:    { label: 'Vecino / Residente', color: '#E85D43', bg: '#FFF5F3' },
 };
 
 // Payment type labels

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { paymentsAPI, unitsAPI, extraFieldsAPI, tenantsAPI, unrecognizedIncomeAPI } from '../api/client';
+import { paymentsAPI, unitsAPI, extraFieldsAPI, tenantsAPI, unrecognizedIncomeAPI, reservationsAPI } from '../api/client';
 import PaginationBar from '../components/PaginationBar';
 import { todayPeriod, periodLabel, prevPeriod, nextPeriod, tenantStartPeriod, fmtCurrency, statusClass, statusLabel, PAYMENT_TYPES, fmtDate, ROLES, CURRENCIES, APP_VERSION } from '../utils/helpers';
 import { ChevronLeft, ChevronRight, Search, Receipt, X, Users, CheckCircle, Clock, AlertCircle, DollarSign, Calendar, Building2, Upload, FileText, Check, Printer, Plus, Edit, Edit2, Trash2, Banknote } from 'lucide-react';
@@ -87,6 +87,7 @@ export default function Cobranza() {
   const [captureForm, setCaptureForm] = useState({});
   const [saving, setSaving] = useState(false);
   const [showReceipt, setShowReceipt] = useState(null); // { unit, pay }
+  const [receiptReservations, setReceiptReservations] = useState([]); // approved reservations for receipt unit+period
   const [unrecognizedIncome, setUnrecognizedIncome] = useState([]);
   const [showUnidentModal, setShowUnidentModal] = useState(null); // { editId } or true for new
   const [unidentForm, setUnidentForm] = useState({ concept: '', amount: '', payment_type: '', payment_date: '', notes: '', bank_reconciled: false });
@@ -120,6 +121,25 @@ export default function Cobranza() {
   };
 
   useEffect(() => { load(); }, [tenantId, period]);
+
+  // Load approved reservations with charge when receipt opens
+  useEffect(() => {
+    if (!showReceipt || !tenantId) { setReceiptReservations([]); return; }
+    const { unit, pay } = showReceipt;
+    if (!unit?.id || !pay?.period) { setReceiptReservations([]); return; }
+    const [y, m] = pay.period.split('-');
+    const firstDay = `${y}-${m}-01`;
+    const lastDate = new Date(parseInt(y), parseInt(m), 0);
+    const lastDay  = `${y}-${m}-${String(lastDate.getDate()).padStart(2, '0')}`;
+    reservationsAPI.list(tenantId, {
+      unit_id: unit.id, status: 'approved',
+      date_from: firstDay, date_to: lastDay,
+    }).then(res => {
+      const data = res.data;
+      const all = Array.isArray(data) ? data : (data?.results || []);
+      setReceiptReservations(all.filter(r => parseFloat(r.charge_amount) > 0));
+    }).catch(() => setReceiptReservations([]));
+  }, [showReceipt, tenantId]);
 
   const paymentMap = useMemo(() => {
     const m = {};
@@ -1381,7 +1401,8 @@ export default function Cobranza() {
             }
           });
         });
-        const grandTotal = totReqAbono + totOptAbono + totalAdelanto + totalAdeudo;
+        const totalReservations = receiptReservations.reduce((s, r) => s + (parseFloat(r.charge_amount) || 0), 0);
+        const grandTotal = totReqAbono + totOptAbono + totalAdelanto + totalAdeudo + totalReservations;
         const ptLabel = pay?.payment_type ? (PAYMENT_TYPES[pay.payment_type]?.label || pay.payment_type) : 'No especificado';
         const pdLabel = pay?.payment_date ? new Date(pay.payment_date + 'T12:00:00').toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric' }) : 'No registrada';
         const condominioName = tc?.razon_social || tc?.name || '';
@@ -1515,6 +1536,31 @@ export default function Cobranza() {
                           </>
                         );
                       })()}
+                      {receiptReservations.length > 0 && (
+                        <>
+                          <tr className="receipt-section-header">
+                            <td colSpan={4} style={{ color: 'var(--teal-700)', background: 'var(--teal-50)' }}>
+                              📅 RESERVAS DE ÁREAS COMUNES ({receiptReservations.length})
+                            </td>
+                          </tr>
+                          {receiptReservations.map(r => {
+                            const resDate = new Date(r.date + 'T12:00:00').toLocaleDateString('es-MX', { day: '2-digit', month: 'short' });
+                            const horario = `${r.start_time?.slice(0,5)} – ${r.end_time?.slice(0,5)}`;
+                            return (
+                              <tr key={r.id}>
+                                <td>
+                                  {r.area_name}
+                                  <br />
+                                  <small style={{ color: 'var(--teal-600)' }}>{resDate} · {horario}</small>
+                                </td>
+                                <td style={{ textAlign: 'right' }}>{rfmt(r.charge_amount)}</td>
+                                <td style={{ textAlign: 'right', color: 'var(--teal-600)', fontWeight: 700 }}>{rfmt(r.charge_amount)}</td>
+                                <td style={{ textAlign: 'right', color: 'var(--ink-300)' }}>—</td>
+                              </tr>
+                            );
+                          })}
+                        </>
+                      )}
                     </tbody>
                     <tfoot>
                       <tr className="receipt-total">
@@ -1525,6 +1571,7 @@ export default function Cobranza() {
                       </tr>
                       {totalAdelanto > 0 && <tr><td colSpan={4} style={{ textAlign: 'right', fontSize: 11, color: 'var(--blue-600)', padding: '4px 12px' }}>Incluye {rfmt(totalAdelanto)} en pagos adelantados</td></tr>}
                       {totalAdeudo > 0 && <tr><td colSpan={4} style={{ textAlign: 'right', fontSize: 11, color: 'var(--coral-500)', padding: '4px 12px' }}>Incluye {rfmt(totalAdeudo)} en abonos a adeudo</td></tr>}
+                      {totalReservations > 0 && <tr><td colSpan={4} style={{ textAlign: 'right', fontSize: 11, color: 'var(--teal-600)', padding: '4px 12px' }}>Incluye {rfmt(totalReservations)} en reservas de áreas comunes</td></tr>}
                       {(pay?.additional_payments || []).length > 0 && (() => {
                         let t = 0;
                         (pay.additional_payments || []).forEach(ap => {

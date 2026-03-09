@@ -100,7 +100,7 @@ class Tenant(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=300, db_index=True)
     units_count = models.PositiveIntegerField(default=0, help_text='Planned number of units')
-    common_areas = models.TextField(blank=True, default='')
+    common_areas = models.JSONField(default=list, blank=True)
     maintenance_fee = models.DecimalField(max_digits=12, decimal_places=2, default=0,
                                           validators=[MinValueValidator(0)])
     currency = models.CharField(max_length=3, choices=CURRENCY_CHOICES, default='MXN')
@@ -597,3 +597,56 @@ class UnrecognizedIncome(models.Model):
 
     def __str__(self):
         return f'Unrecognized: {self.amount} — {self.period}'
+
+
+# ═══════════════════════════════════════════════════════════
+#  AMENITY RESERVATION
+# ═══════════════════════════════════════════════════════════
+
+class AmenityReservation(models.Model):
+    """
+    Reservation of a common area (amenity) by a unit resident.
+    common_areas on Tenant is now a JSONField array of area objects.
+    """
+    STATUS_CHOICES = [
+        ('pending',   'Pendiente'),
+        ('approved',  'Aprobada'),
+        ('rejected',  'Rechazada'),
+        ('cancelled', 'Cancelada'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE,
+                                related_name='amenity_reservations')
+    unit = models.ForeignKey('Unit', on_delete=models.CASCADE,
+                              related_name='amenity_reservations',
+                              null=True, blank=True)
+    area_id   = models.CharField(max_length=100, db_index=True)
+    area_name = models.CharField(max_length=200)
+    date       = models.DateField(db_index=True)
+    start_time = models.TimeField()
+    end_time   = models.TimeField()
+    status     = models.CharField(max_length=20, choices=STATUS_CHOICES,
+                                   default='pending', db_index=True)
+    notes           = models.TextField(blank=True, default='')
+    charge_amount   = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    requested_by    = models.ForeignKey(User, on_delete=models.SET_NULL,
+                                         null=True, blank=True,
+                                         related_name='requested_reservations')
+    reviewed_by     = models.ForeignKey(User, on_delete=models.SET_NULL,
+                                         null=True, blank=True,
+                                         related_name='reviewed_reservations')
+    rejection_reason = models.TextField(blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'amenity_reservations'
+        ordering = ['-date', 'start_time']
+        indexes = [
+            models.Index(fields=['tenant', 'date']),
+            models.Index(fields=['tenant', 'status']),
+        ]
+
+    def __str__(self):
+        return f'{self.area_name} — {self.date} {self.start_time}'

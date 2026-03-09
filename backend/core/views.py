@@ -17,6 +17,7 @@ from .models import (
     Payment, FieldPayment, GastoEntry, CajaChicaEntry,
     BankStatement, ClosedPeriod, ReopenRequest,
     AssemblyPosition, Committee, UnrecognizedIncome,
+    AmenityReservation,
 )
 from .serializers import (
     LoginSerializer, ChangePasswordSerializer, UserSerializer, UserCreateSerializer,
@@ -26,7 +27,7 @@ from .serializers import (
     GastoEntrySerializer, CajaChicaEntrySerializer,
     BankStatementSerializer, ClosedPeriodSerializer, ReopenRequestSerializer,
     AssemblyPositionSerializer, CommitteeSerializer, UnrecognizedIncomeSerializer,
-    DashboardSerializer,
+    DashboardSerializer, AmenityReservationSerializer,
 )
 from .permissions import IsSuperAdmin, IsTenantAdmin, IsTenantMember, IsAdminOrTesorero
 
@@ -77,13 +78,104 @@ class ChangePasswordView(APIView):
         return Response({'detail': 'Contraseña actualizada.'})
 
 
+class CheckEmailView(APIView):
+    """GET /api/auth/check-email/?email=...
+    Returns whether the email belongs to an existing user and their basic info.
+    Used by the admin form to decide between creating vs. associating a user.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        email = (request.query_params.get('email') or '').strip().lower()
+        if not email:
+            return Response({'exists': False})
+        try:
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            return Response({'exists': False})
+        return Response({'exists': True, 'id': str(user.id), 'name': user.name, 'email': user.email})
+
+
+class SwitchTenantView(APIView):
+    """POST /api/auth/switch-tenant/ — Issue a new JWT for a different tenant."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        tenant_id = request.data.get('tenant_id')
+        if not tenant_id:
+            return Response({'detail': 'tenant_id requerido.'}, status=400)
+        user = request.user
+        if user.is_super_admin:
+            try:
+                tenant = Tenant.objects.get(id=tenant_id)
+            except Tenant.DoesNotExist:
+                return Response({'detail': 'Tenant no encontrado.'}, status=404)
+            role = 'superadmin'
+        else:
+            try:
+                tu = TenantUser.objects.select_related('tenant').get(
+                    user=user, tenant_id=tenant_id
+                )
+            except TenantUser.DoesNotExist:
+                return Response({'detail': 'No tienes acceso a este condominio.'}, status=403)
+            tenant = tu.tenant
+            role   = tu.role
+        refresh = RefreshToken.for_user(user)
+        refresh['role']      = role
+        refresh['tenant_id'] = str(tenant.id)
+        return Response({
+            'access':               str(refresh.access_token),
+            'refresh':              str(refresh),
+            'user':                 UserSerializer(user).data,
+            'role':                 role,
+            'tenant_id':            str(tenant.id),
+            'tenant_name':          tenant.name,
+            'must_change_password': user.must_change_password,
+        })
+
+
+class UserTenantsView(APIView):
+    """GET /api/auth/my-tenants/ — Return all tenants the authenticated user belongs to."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        if user.is_super_admin:
+            tenants = Tenant.objects.all().values('id', 'name')
+            return Response([{'id': str(t['id']), 'name': t['name']} for t in tenants])
+        qs = TenantUser.objects.filter(user=user).select_related('tenant')
+        return Response([{'id': str(tu.tenant.id), 'name': tu.tenant.name} for tu in qs])
+
+
 class TenantListForLoginView(APIView):
-    """GET /api/auth/tenants/ — List tenants for login dropdown"""
+    """GET /api/auth/tenants/ — List tenants for login dropdown (legacy)"""
     permission_classes = [permissions.AllowAny]
 
     def get(self, request):
         tenants = Tenant.objects.all().values('id', 'name')
         return Response(list(tenants))
+
+
+class TenantsForEmailView(APIView):
+    """POST /api/auth/tenants-for-email/ — Return tenants for a given email address."""
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        email = (request.data.get('email') or '').strip().lower()
+        if not email:
+            return Response([])
+        try:
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            # Don't leak whether the email exists; return empty list
+            return Response([])
+        if user.is_super_admin:
+            # Superadmins log in without a tenant
+            return Response([])
+        tenant_ids = TenantUser.objects.filter(
+            user=user
+        ).select_related('tenant').values_list('tenant_id', 'tenant__name')
+        return Response([{'id': str(tid), 'name': name} for tid, name in tenant_ids])
 
 
 # ═══════════════════════════════════════════════════════════
@@ -146,6 +238,14 @@ class TenantUserViewSet(viewsets.ModelViewSet):
         return TenantUser.objects.filter(
             tenant_id=self.kwargs['tenant_id']
         ).select_related('user', 'unit')
+
+    def perform_update(self, serializer):
+        """Also update the related User.name if provided in request data."""
+        instance = serializer.save()
+        name = self.request.data.get('name')
+        if name and name.strip():
+            instance.user.name = name.strip()
+            instance.user.save(update_fields=['name'])
 
 
 class UserCreateView(generics.CreateAPIView):
@@ -590,6 +690,122 @@ class UnrecognizedIncomeViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(tenant_id=self.kwargs['tenant_id'])
+
+
+# ═══════════════════════════════════════════════════════════
+#  AMENITY RESERVATIONS
+# ═══════════════════════════════════════════════════════════
+
+class AmenityReservationViewSet(viewsets.ModelViewSet):
+    """CRUD + approve/reject for amenity reservations."""
+    serializer_class = AmenityReservationSerializer
+
+    def get_permissions(self):
+        if self.action in ['approve', 'reject']:
+            return [IsTenantAdmin()]
+        if self.action in ['list', 'retrieve']:
+            return [IsTenantMember()]
+        return [IsTenantMember()]
+
+    def get_queryset(self):
+        qs = AmenityReservation.objects.filter(
+            tenant_id=self.kwargs['tenant_id']
+        ).select_related('unit', 'requested_by', 'reviewed_by')
+
+        status_filter = self.request.query_params.get('status')
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+
+        date_from = self.request.query_params.get('date_from')
+        date_to   = self.request.query_params.get('date_to')
+        if date_from:
+            qs = qs.filter(date__gte=date_from)
+        if date_to:
+            qs = qs.filter(date__lte=date_to)
+
+        area_id = self.request.query_params.get('area_id')
+        if area_id:
+            qs = qs.filter(area_id=area_id)
+
+        unit_id = self.request.query_params.get('unit_id')
+        if unit_id:
+            qs = qs.filter(unit_id=unit_id)
+
+        # vecinos only see their own unit's reservations
+        user = self.request.user
+        if not user.is_super_admin:
+            from .models import TenantUser as TU
+            try:
+                tu = TU.objects.get(user=user, tenant_id=self.kwargs['tenant_id'])
+                if tu.role == 'vecino' and tu.unit_id:
+                    qs = qs.filter(unit_id=tu.unit_id)
+            except TU.DoesNotExist:
+                pass
+
+        return qs
+
+    def perform_create(self, serializer):
+        from .models import TenantUser as TU, Unit
+        user = self.request.user
+        unit = None
+        role = None
+
+        if user.is_super_admin:
+            role = 'superadmin'
+        else:
+            try:
+                tu = TU.objects.get(user=user, tenant_id=self.kwargs['tenant_id'])
+                role = tu.role
+                # Vecino → auto-assign their linked unit
+                if tu.role == 'vecino' and tu.unit_id:
+                    unit = tu.unit
+            except TU.DoesNotExist:
+                pass
+
+        # Admin / tesorero / superadmin → accept unit_id from request body
+        if unit is None:
+            unit_id = self.request.data.get('unit_id')
+            if unit_id:
+                unit = Unit.objects.filter(
+                    id=unit_id, tenant_id=self.kwargs['tenant_id']
+                ).first()
+
+        # Admins, tesoreros and superadmins create reservations already approved
+        admin_roles = ('admin', 'tesorero', 'superadmin')
+        status = 'approved' if role in admin_roles else 'pending'
+
+        serializer.save(
+            tenant_id=self.kwargs['tenant_id'],
+            requested_by=user,
+            unit=unit,
+            status=status,
+            reviewed_by=user if status == 'approved' else None,
+        )
+
+    @action(detail=True, methods=['post'])
+    def approve(self, request, tenant_id=None, pk=None):
+        res = self.get_object()
+        res.status = 'approved'
+        res.reviewed_by = request.user
+        res.rejection_reason = ''
+        res.save()
+        return Response(self.get_serializer(res).data)
+
+    @action(detail=True, methods=['post'])
+    def reject(self, request, tenant_id=None, pk=None):
+        res = self.get_object()
+        res.status = 'rejected'
+        res.reviewed_by = request.user
+        res.rejection_reason = request.data.get('reason', '')
+        res.save()
+        return Response(self.get_serializer(res).data)
+
+    @action(detail=True, methods=['post'])
+    def cancel(self, request, tenant_id=None, pk=None):
+        res = self.get_object()
+        res.status = 'cancelled'
+        res.save()
+        return Response(self.get_serializer(res).data)
 
 
 # ═══════════════════════════════════════════════════════════

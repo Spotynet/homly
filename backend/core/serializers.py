@@ -8,6 +8,7 @@ from .models import (
     Payment, FieldPayment, GastoEntry, CajaChicaEntry,
     BankStatement, ClosedPeriod, ReopenRequest,
     AssemblyPosition, Committee, UnrecognizedIncome,
+    AmenityReservation,
 )
 
 
@@ -16,14 +17,12 @@ from .models import (
 # ═══════════════════════════════════════════════════════════
 
 class LoginSerializer(serializers.Serializer):
-    email = serializers.EmailField()
+    email    = serializers.EmailField()
     password = serializers.CharField(write_only=True)
-    tenant_id = serializers.UUIDField(required=False, allow_null=True)
 
     def validate(self, data):
-        email = data['email'].lower()
+        email    = data['email'].lower()
         password = data['password']
-        tenant_id = data.get('tenant_id')
 
         try:
             user = User.objects.get(email=email)
@@ -36,27 +35,22 @@ class LoginSerializer(serializers.Serializer):
         if not user.is_active:
             raise serializers.ValidationError('Cuenta desactivada.')
 
-        # Super admin can log in without tenant
+        # Super admin — no tenant required
         if user.is_super_admin:
-            data['user'] = user
-            data['role'] = 'superadmin'
+            data['user']   = user
+            data['role']   = 'superadmin'
             data['tenant'] = None
             return data
 
-        # Tenant-scoped login
-        if not tenant_id:
-            raise serializers.ValidationError('Seleccione un condominio.')
+        # Regular user — auto-select the first assigned tenant
+        user_tenants = TenantUser.objects.select_related('tenant').filter(user=user)
+        if not user_tenants.exists():
+            raise serializers.ValidationError('Este usuario no tiene acceso a ningún condominio.')
 
-        try:
-            tenant_user = TenantUser.objects.select_related('tenant').get(
-                user=user, tenant_id=tenant_id
-            )
-        except TenantUser.DoesNotExist:
-            raise serializers.ValidationError('No tiene acceso a este condominio.')
-
-        data['user'] = user
-        data['role'] = tenant_user.role
-        data['tenant'] = tenant_user.tenant
+        tenant_user = user_tenants.first()
+        data['user']        = user
+        data['role']        = tenant_user.role
+        data['tenant']      = tenant_user.tenant
         data['tenant_user'] = tenant_user
         return data
 
@@ -80,25 +74,48 @@ class UserSerializer(serializers.ModelSerializer):
 
 
 class UserCreateSerializer(serializers.ModelSerializer):
-    password = serializers.CharField(write_only=True, min_length=6)
-    role = serializers.ChoiceField(choices=TenantUser.ROLE_CHOICES, write_only=True)
+    # validators=[] removes the auto-generated UniqueValidator on email so we can
+    # handle "existing user → just add to tenant" logic inside create().
+    email     = serializers.EmailField(validators=[])
+    password  = serializers.CharField(write_only=True, min_length=6, required=False, allow_blank=True)
+    role      = serializers.ChoiceField(choices=TenantUser.ROLE_CHOICES, write_only=True)
     tenant_id = serializers.UUIDField(write_only=True)
-    unit_id = serializers.UUIDField(required=False, allow_null=True, write_only=True)
+    unit_id   = serializers.UUIDField(required=False, allow_null=True, write_only=True)
 
     class Meta:
         model = User
         fields = ['id', 'email', 'name', 'password', 'role', 'tenant_id', 'unit_id']
         read_only_fields = ['id']
+        extra_kwargs = {'name': {'required': False, 'allow_blank': True}}
 
     def create(self, validated_data):
-        role = validated_data.pop('role')
+        role      = validated_data.pop('role')
         tenant_id = validated_data.pop('tenant_id')
-        unit_id = validated_data.pop('unit_id', None)
-        password = validated_data.pop('password')
+        unit_id   = validated_data.pop('unit_id', None)
+        password  = validated_data.pop('password', None)
+        email     = validated_data.get('email', '').lower()
 
-        user = User.objects.create_user(password=password, **validated_data)
-        user.must_change_password = True
-        user.save()
+        # ── Existing user: just associate with the tenant ─────────────────
+        try:
+            user = User.objects.get(email=email)
+            if TenantUser.objects.filter(user=user, tenant_id=tenant_id).exists():
+                raise serializers.ValidationError(
+                    'Este usuario ya tiene acceso a este condominio.'
+                )
+        except User.DoesNotExist:
+            # ── New user: require name + password ────────────────────────
+            if not password:
+                raise serializers.ValidationError(
+                    {'password': 'La contraseña es obligatoria para nuevos usuarios.'}
+                )
+            if not validated_data.get('name'):
+                raise serializers.ValidationError(
+                    {'name': 'El nombre es obligatorio para nuevos usuarios.'}
+                )
+            validated_data['email'] = email
+            user = User.objects.create_user(password=password, **validated_data)
+            user.must_change_password = True
+            user.save()
 
         TenantUser.objects.create(
             user=user,
@@ -377,3 +394,35 @@ class EstadoCuentaSerializer(serializers.Serializer):
     total_charges = serializers.DecimalField(max_digits=14, decimal_places=2)
     total_payments = serializers.DecimalField(max_digits=14, decimal_places=2)
     balance = serializers.DecimalField(max_digits=14, decimal_places=2)
+
+
+# ═══════════════════════════════════════════════════════════
+#  AMENITY RESERVATION
+# ═══════════════════════════════════════════════════════════
+
+class AmenityReservationSerializer(serializers.ModelSerializer):
+    unit_name         = serializers.SerializerMethodField()
+    unit_id_code      = serializers.SerializerMethodField()
+    requested_by_name = serializers.SerializerMethodField()
+    reviewed_by_name  = serializers.SerializerMethodField()
+
+    class Meta:
+        model  = AmenityReservation
+        fields = '__all__'
+        read_only_fields = ['id', 'tenant', 'unit', 'status',
+                             'created_at', 'updated_at',
+                             'requested_by', 'reviewed_by',
+                             'unit_name', 'unit_id_code',
+                             'requested_by_name', 'reviewed_by_name']
+
+    def get_unit_name(self, obj):
+        return obj.unit.unit_name if obj.unit else None
+
+    def get_unit_id_code(self, obj):
+        return obj.unit.unit_id_code if obj.unit else None
+
+    def get_requested_by_name(self, obj):
+        return obj.requested_by.name if obj.requested_by else None
+
+    def get_reviewed_by_name(self, obj):
+        return obj.reviewed_by.name if obj.reviewed_by else None
