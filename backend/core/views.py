@@ -157,25 +157,33 @@ class TenantListForLoginView(APIView):
 
 
 class TenantsForEmailView(APIView):
-    """POST /api/auth/tenants-for-email/ — Return tenants for a given email address."""
+    """POST /api/auth/tenants-for-email/
+    Returns the list of tenants the email can log into, plus a flag indicating
+    whether the user is a superadmin (who sees all tenants).
+    Response: { is_super_admin: bool, tenants: [{id, name}] }
+    Returns { is_super_admin: false, tenants: [] } when email is unknown (don't leak existence).
+    """
     permission_classes = [permissions.AllowAny]
 
     def post(self, request):
         email = (request.data.get('email') or '').strip().lower()
         if not email:
-            return Response([])
+            return Response({'is_super_admin': False, 'tenants': []})
         try:
             user = User.objects.get(email=email)
         except User.DoesNotExist:
-            # Don't leak whether the email exists; return empty list
-            return Response([])
+            return Response({'is_super_admin': False, 'tenants': []})
         if user.is_super_admin:
-            # Superadmins log in without a tenant
-            return Response([])
-        tenant_ids = TenantUser.objects.filter(
-            user=user
-        ).select_related('tenant').values_list('tenant_id', 'tenant__name')
-        return Response([{'id': str(tid), 'name': name} for tid, name in tenant_ids])
+            tenants = Tenant.objects.all().order_by('name').values('id', 'name')
+            return Response({
+                'is_super_admin': True,
+                'tenants': [{'id': str(t['id']), 'name': t['name']} for t in tenants],
+            })
+        qs = TenantUser.objects.filter(user=user).select_related('tenant').order_by('tenant__name')
+        return Response({
+            'is_super_admin': False,
+            'tenants': [{'id': str(tu.tenant.id), 'name': tu.tenant.name} for tu in qs],
+        })
 
 
 # ═══════════════════════════════════════════════════════════

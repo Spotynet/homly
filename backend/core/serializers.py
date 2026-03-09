@@ -17,12 +17,14 @@ from .models import (
 # ═══════════════════════════════════════════════════════════
 
 class LoginSerializer(serializers.Serializer):
-    email    = serializers.EmailField()
-    password = serializers.CharField(write_only=True)
+    email     = serializers.EmailField()
+    password  = serializers.CharField(write_only=True)
+    tenant_id = serializers.UUIDField(required=False, allow_null=True)
 
     def validate(self, data):
-        email    = data['email'].lower()
-        password = data['password']
+        email     = data['email'].lower()
+        password  = data['password']
+        tenant_id = data.get('tenant_id')
 
         try:
             user = User.objects.get(email=email)
@@ -35,19 +37,32 @@ class LoginSerializer(serializers.Serializer):
         if not user.is_active:
             raise serializers.ValidationError('Cuenta desactivada.')
 
-        # Super admin — no tenant required
+        # Super admin — can log into any tenant (or none)
         if user.is_super_admin:
+            tenant = None
+            if tenant_id:
+                try:
+                    tenant = Tenant.objects.get(id=tenant_id)
+                except Tenant.DoesNotExist:
+                    raise serializers.ValidationError('Condominio no encontrado.')
             data['user']   = user
             data['role']   = 'superadmin'
-            data['tenant'] = None
+            data['tenant'] = tenant
             return data
 
-        # Regular user — auto-select the first assigned tenant
+        # Regular user — use selected tenant_id, or auto-select the first one
         user_tenants = TenantUser.objects.select_related('tenant').filter(user=user)
         if not user_tenants.exists():
             raise serializers.ValidationError('Este usuario no tiene acceso a ningún condominio.')
 
-        tenant_user = user_tenants.first()
+        if tenant_id:
+            try:
+                tenant_user = user_tenants.get(tenant_id=tenant_id)
+            except TenantUser.DoesNotExist:
+                raise serializers.ValidationError('No tienes acceso a este condominio.')
+        else:
+            tenant_user = user_tenants.first()
+
         data['user']        = user
         data['role']        = tenant_user.role
         data['tenant']      = tenant_user.tenant

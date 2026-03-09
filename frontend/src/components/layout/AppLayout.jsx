@@ -239,16 +239,8 @@ export default function AppLayout() {
   const effectiveNav = NAV_ITEMS[role] || NAV_ITEMS.vecino;
   const isVecino     = role === 'vecino' || role === 'vigilante';
 
-  // Load the user's tenant list once on mount
+  // Load the user's tenant list once on mount (needed for sidebar switcher)
   useEffect(() => { loadUserTenants(); }, [loadUserTenants]);
-
-  // For superadmin: auto-select the first available tenant if none is currently selected.
-  // This mirrors how regular admin users always land with a tenant pre-selected on login.
-  useEffect(() => {
-    if (isSuperAdmin && !tenantId && userTenants.length > 0) {
-      switchTenant(userTenants[0].id).catch(() => {});
-    }
-  }, [userTenants, isSuperAdmin, tenantId, switchTenant]);
 
   const handleLogout = () => { logout(); navigate('/'); };
 

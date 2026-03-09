@@ -45,8 +45,10 @@ export function AuthProvider({ children }) {
   };
 
   // ── Login ─────────────────────────────────────────────────────────────────
-  const login = useCallback(async (email, password) => {
-    const { data } = await authAPI.login({ email, password });
+  const login = useCallback(async (email, password, tenantId = null) => {
+    const payload = { email, password };
+    if (tenantId) payload.tenant_id = tenantId;
+    const { data } = await authAPI.login(payload);
     _persist(data);
     setUser(data.user);
     setRole(data.role);
