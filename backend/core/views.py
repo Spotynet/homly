@@ -17,7 +17,7 @@ from .models import (
     Payment, FieldPayment, GastoEntry, CajaChicaEntry,
     BankStatement, ClosedPeriod, ReopenRequest,
     AssemblyPosition, Committee, UnrecognizedIncome,
-    AmenityReservation,
+    AmenityReservation, CondominioRequest,
 )
 from .serializers import (
     LoginSerializer, ChangePasswordSerializer, UserSerializer, UserCreateSerializer,
@@ -27,7 +27,8 @@ from .serializers import (
     GastoEntrySerializer, CajaChicaEntrySerializer,
     BankStatementSerializer, ClosedPeriodSerializer, ReopenRequestSerializer,
     AssemblyPositionSerializer, CommitteeSerializer, UnrecognizedIncomeSerializer,
-    DashboardSerializer, AmenityReservationSerializer,
+    DashboardSerializer, AmenityReservationSerializer, CondominioRequestSerializer,
+    ResetUserPasswordSerializer,
 )
 from .permissions import IsSuperAdmin, IsTenantAdmin, IsTenantMember, IsAdminOrTesorero
 
@@ -284,6 +285,27 @@ class TenantUserViewSet(viewsets.ModelViewSet):
         if name and name.strip():
             instance.user.name = name.strip()
             instance.user.save(update_fields=['name'])
+
+    @action(detail=True, methods=['post'], url_path='reset-password')
+    def reset_password(self, request, tenant_id=None, pk=None):
+        """
+        POST /api/tenants/{tenant_id}/users/{id}/reset-password/
+        Admin sets a temporary password for a user.
+        The user will be forced to change it on next login.
+        """
+        tenant_user = self.get_object()
+        serializer = ResetUserPasswordSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        user = tenant_user.user
+        user.set_password(serializer.validated_data['new_password'])
+        user.must_change_password = True
+        user.save(update_fields=['password', 'must_change_password'])
+
+        return Response(
+            {'detail': f'Contraseña restablecida para {user.name or user.email}. El usuario deberá crear una nueva contraseña al iniciar sesión.'},
+            status=status.HTTP_200_OK,
+        )
 
 
 class UserCreateView(generics.CreateAPIView):
@@ -2062,3 +2084,26 @@ class EstadoPorUnidadPDFView(APIView):
         response = HttpResponse(buffer.read(), content_type='application/pdf')
         response['Content-Disposition'] = f'attachment; filename="{filename}"'
         return response
+
+
+# ═══════════════════════════════════════════════════════════
+#  CONDOMINIO REQUEST (Landing page — public endpoint)
+# ═══════════════════════════════════════════════════════════
+
+class CondominioRequestView(APIView):
+    """
+    Public endpoint — no authentication required.
+    POST: submit a new condominium registration request from the landing page.
+    """
+    permission_classes = [permissions.AllowAny]
+    throttle_scope = 'anon'   # optional: rate-limit anonymous submissions
+
+    def post(self, request):
+        serializer = CondominioRequestSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(
+                {'message': 'Solicitud recibida. Nos pondremos en contacto pronto.'},
+                status=status.HTTP_201_CREATED,
+            )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

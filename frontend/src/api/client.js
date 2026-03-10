@@ -73,10 +73,11 @@ export const unitsAPI = {
 
 // ─── Users ──────────────────────────────────────
 export const usersAPI = {
-  list:   (tenantId, params) => api.get(`/tenants/${tenantId}/users/`, { params: params || {} }),
-  create: (data) => api.post('/users/', data),
-  update: (tenantId, id, data) => api.patch(`/tenants/${tenantId}/users/${id}/`, data),
-  delete: (tenantId, id) => api.delete(`/tenants/${tenantId}/users/${id}/`),
+  list:          (tenantId, params)       => api.get(`/tenants/${tenantId}/users/`, { params: params || {} }),
+  create:        (data)                   => api.post('/users/', data),
+  update:        (tenantId, id, data)     => api.patch(`/tenants/${tenantId}/users/${id}/`, data),
+  delete:        (tenantId, id)           => api.delete(`/tenants/${tenantId}/users/${id}/`),
+  resetPassword: (tenantId, id, data)     => api.post(`/tenants/${tenantId}/users/${id}/reset-password/`, data),
 };
 
 // ─── Payments ───────────────────────────────────

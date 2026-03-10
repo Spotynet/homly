@@ -108,7 +108,7 @@ export default function Landing() {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }} className="hidden-mobile">
             <Link to="/login" style={btnOutlineStyle}>Iniciar sesión</Link>
-            <Link to="/login" style={btnCoralStyle}>
+            <Link to="/registro" style={btnCoralStyle}>
               Empezar gratis <IconArrow />
             </Link>
           </div>
@@ -134,7 +134,7 @@ export default function Landing() {
             <a href="#beneficios" onClick={() => setMobileOpen(false)} style={{ ...navLinkStyle, fontSize: 16 }}>Beneficios</a>
             <a href="#como-funciona" onClick={() => setMobileOpen(false)} style={{ ...navLinkStyle, fontSize: 16 }}>Cómo funciona</a>
             <a href="#contacto" onClick={() => setMobileOpen(false)} style={{ ...navLinkStyle, fontSize: 16 }}>Contacto</a>
-            <Link to="/login" style={{ ...btnCoralStyle, justifyContent: 'center' }} onClick={() => setMobileOpen(false)}>
+            <Link to="/registro" style={{ ...btnCoralStyle, justifyContent: 'center' }} onClick={() => setMobileOpen(false)}>
               Empezar gratis <IconArrow />
             </Link>
           </div>
@@ -165,7 +165,7 @@ export default function Landing() {
               Transparente, simple y pensado para la comunidad.
             </p>
             <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-              <Link to="/login" style={btnCoralLargeStyle}>
+              <Link to="/registro" style={btnCoralLargeStyle}>
                 Comenzar ahora <IconArrow />
               </Link>
             </div>
@@ -406,7 +406,7 @@ export default function Landing() {
           <p style={{ color: 'rgba(253,251,247,0.65)', fontSize: 17, marginBottom: 40, lineHeight: 1.65 }}>
             Únete a los condominios que ya administran con claridad y confianza.
           </p>
-          <Link to="/login" style={{
+          <Link to="/registro" style={{
             display: 'inline-flex', alignItems: 'center', gap: 10,
             background: '#E85D43', color: '#fff',
             padding: '16px 36px', borderRadius: 999,

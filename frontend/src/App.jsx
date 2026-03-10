@@ -18,6 +18,7 @@ import Units from './pages/Units';
 import Users from './pages/Users';
 import MyUnit from './pages/MyUnit';
 import Reservas from './pages/Reservas';
+import Registro from './pages/Registro';
 
 const LOADER = (
   <div className="flex items-center justify-center h-screen bg-white">
@@ -54,6 +55,7 @@ function AppRoutes() {
     <Routes>
       {/* Public */}
       <Route path="/" element={<Landing />} />
+      <Route path="/registro" element={<Registro />} />
       <Route
         path="/login"
         element={isAuthenticated ? <Navigate to="/app" replace /> : <Login />}

@@ -651,3 +651,64 @@ class AmenityReservation(models.Model):
 
     def __str__(self):
         return f'{self.area_name} — {self.date} {self.start_time}'
+
+
+# ═══════════════════════════════════════════════════════════
+#  CONDOMINIO REQUEST (Landing page registration leads)
+# ═══════════════════════════════════════════════════════════
+
+class CondominioRequest(models.Model):
+    """
+    Stores registration requests submitted through the landing page.
+    Each record represents a potential new condominium/tenant.
+    """
+    STATUS_CHOICES = [
+        ('pending',   'Pendiente'),
+        ('contacted', 'Contactado'),
+        ('enrolled',  'Inscrito'),
+        ('rejected',  'Rechazado'),
+    ]
+    ADMIN_TYPE_CHOICES = [
+        ('mesa_directiva',   'Mesa Directiva'),
+        ('administrador',    'Administrador Externo'),
+        ('comite',           'Comité'),
+    ]
+    CURRENCY_CHOICES = [
+        ('MXN', 'Peso Mexicano'),
+        ('USD', 'US Dollar'),
+        ('EUR', 'Euro'),
+        ('COP', 'Peso Colombiano'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    # Condominium info
+    condominio_nombre    = models.CharField(max_length=300)
+    condominio_pais      = models.CharField(max_length=100, blank=True, default='')
+    condominio_estado    = models.CharField(max_length=100, blank=True, default='')
+    condominio_ciudad    = models.CharField(max_length=200, blank=True, default='')
+    condominio_unidades  = models.PositiveIntegerField(default=0)
+    condominio_tipo_admin = models.CharField(max_length=20, choices=ADMIN_TYPE_CHOICES, default='mesa_directiva')
+    condominio_currency  = models.CharField(max_length=3, choices=CURRENCY_CHOICES, default='MXN')
+
+    # Responsible admin info
+    admin_nombre    = models.CharField(max_length=200)
+    admin_apellido  = models.CharField(max_length=200)
+    admin_email     = models.EmailField(db_index=True)
+    admin_telefono  = models.CharField(max_length=30, blank=True, default='')
+    admin_cargo     = models.CharField(max_length=200, blank=True, default='')
+
+    # Additional
+    mensaje = models.TextField(blank=True, default='')
+
+    # Internal tracking
+    status     = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending', db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'condominio_requests'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.condominio_nombre} — {self.admin_email}'

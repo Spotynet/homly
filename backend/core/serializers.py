@@ -8,7 +8,7 @@ from .models import (
     Payment, FieldPayment, GastoEntry, CajaChicaEntry,
     BankStatement, ClosedPeriod, ReopenRequest,
     AssemblyPosition, Committee, UnrecognizedIncome,
-    AmenityReservation,
+    AmenityReservation, CondominioRequest,
 )
 
 
@@ -75,13 +75,24 @@ class LoginSerializer(serializers.Serializer):
 
 
 class ChangePasswordSerializer(serializers.Serializer):
-    current_password = serializers.CharField(write_only=True)
+    current_password = serializers.CharField(write_only=True, required=False, allow_blank=True)
     new_password = serializers.CharField(write_only=True, min_length=6)
 
-    def validate_current_password(self, value):
-        if not self.context['request'].user.check_password(value):
-            raise serializers.ValidationError('Contraseña actual incorrecta.')
-        return value
+    def validate(self, data):
+        user = self.context['request'].user
+        # If the user is in a forced-change-password flow, skip current_password check.
+        if not user.must_change_password:
+            current = data.get('current_password', '')
+            if not current:
+                raise serializers.ValidationError({'current_password': 'Este campo es requerido.'})
+            if not user.check_password(current):
+                raise serializers.ValidationError({'current_password': 'Contraseña actual incorrecta.'})
+        return data
+
+
+class ResetUserPasswordSerializer(serializers.Serializer):
+    """Used by admins to set a temporary password for another user."""
+    new_password = serializers.CharField(write_only=True, min_length=6)
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -167,15 +178,15 @@ class TenantDetailSerializer(serializers.ModelSerializer):
 
 
 class TenantUserSerializer(serializers.ModelSerializer):
-    user_name = serializers.CharField(source='user.name', read_only=True)
-    user_email = serializers.CharField(source='user.email', read_only=True)
-    unit_code = serializers.CharField(source='unit.unit_id_code', read_only=True,
-                                       default=None)
+    user_name             = serializers.CharField(source='user.name',                 read_only=True)
+    user_email            = serializers.CharField(source='user.email',                read_only=True)
+    unit_code             = serializers.CharField(source='unit.unit_id_code',         read_only=True, default=None)
+    must_change_password  = serializers.BooleanField(source='user.must_change_password', read_only=True)
 
     class Meta:
         model = TenantUser
         fields = ['id', 'user', 'user_name', 'user_email', 'role', 'unit',
-                  'unit_code', 'created_at']
+                  'unit_code', 'must_change_password', 'created_at']
         read_only_fields = ['id', 'created_at']
 
 
@@ -445,3 +456,31 @@ class AmenityReservationSerializer(serializers.ModelSerializer):
 
     def get_reviewed_by_name(self, obj):
         return obj.reviewed_by.name if obj.reviewed_by else None
+
+
+# ═══════════════════════════════════════════════════════════
+#  CONDOMINIO REQUEST (Landing page lead form)
+# ═══════════════════════════════════════════════════════════
+
+class CondominioRequestSerializer(serializers.ModelSerializer):
+    class Meta:
+        model  = CondominioRequest
+        fields = [
+            'id',
+            'condominio_nombre', 'condominio_pais', 'condominio_estado',
+            'condominio_ciudad', 'condominio_unidades', 'condominio_tipo_admin',
+            'condominio_currency',
+            'admin_nombre', 'admin_apellido', 'admin_email',
+            'admin_telefono', 'admin_cargo',
+            'mensaje',
+            'status', 'created_at',
+        ]
+        read_only_fields = ['id', 'status', 'created_at']
+
+    def validate_admin_email(self, value):
+        return value.lower().strip()
+
+    def validate_condominio_nombre(self, value):
+        if not value.strip():
+            raise serializers.ValidationError('El nombre del condominio es requerido.')
+        return value.strip()

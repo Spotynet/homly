@@ -2,24 +2,39 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { usersAPI, unitsAPI, authAPI } from '../api/client';
 import { ROLES } from '../utils/helpers';
-import { Plus, Trash2, X, Pencil, UserCheck, UserPlus, Loader } from 'lucide-react';
+import { Plus, Trash2, X, Pencil, UserCheck, Loader, KeyRound, Eye, EyeOff, RefreshCw, ShieldAlert } from 'lucide-react';
 import toast from 'react-hot-toast';
+
+/* ── Generate a random readable password ──────────────────────────── */
+function generatePassword() {
+  const words = ['Casa', 'Hogar', 'Llave', 'Torre', 'Plaza', 'Verde', 'Cielo'];
+  const nums  = Math.floor(100 + Math.random() * 900);
+  const syms  = ['!', '#', '@', '*'];
+  const word  = words[Math.floor(Math.random() * words.length)];
+  const sym   = syms[Math.floor(Math.random() * syms.length)];
+  return `${word}${nums}${sym}`;
+}
 
 export default function Users() {
   const { tenantId, isAdmin } = useAuth();
   const [users,   setUsers]   = useState([]);
   const [units,   setUnits]   = useState([]);
   const [loading, setLoading] = useState(true);
-  const [modal,   setModal]   = useState(false);
-  const [editId,  setEditId]  = useState(null); // TenantUser ID when editing
+  const [modal,   setModal]   = useState(false);   // 'edit' | 'reset' | false
+  const [editId,  setEditId]  = useState(null);
   const [saving,  setSaving]  = useState(false);
   const [form,    setForm]    = useState({});
 
-  // ── Email lookup state (create mode) ───────────────────────────────────
-  const [emailChecking, setEmailChecking]   = useState(false);
-  const [existingUser,  setExistingUser]    = useState(null); // {id, name, email} | null | false
-  // null = not checked yet, false = checked and does not exist, object = exists
+  // ── Email lookup (create mode) ──────────────────────────────────────────
+  const [emailChecking, setEmailChecking] = useState(false);
+  const [existingUser,  setExistingUser]  = useState(null);
   const emailCheckTimer = useRef(null);
+
+  // ── Reset password modal state ──────────────────────────────────────────
+  const [resetTarget, setResetTarget] = useState(null);
+  const [resetPw,     setResetPw]     = useState('');
+  const [resetPwShow, setResetPwShow] = useState(false);
+  const [resetSaving, setResetSaving] = useState(false);
 
   // ── Load ──────────────────────────────────────────────────────────────────
   const load = async () => {
@@ -36,12 +51,12 @@ export default function Users() {
 
   useEffect(() => { if (tenantId) load(); }, [tenantId]);
 
-  // ── Open modal ────────────────────────────────────────────────────────────
+  // ── Open modals ───────────────────────────────────────────────────────────
   const openAdd = () => {
     setEditId(null);
     setExistingUser(null);
     setForm({ name: '', email: '', password: '', role: 'vecino', unit_id: '' });
-    setModal(true);
+    setModal('edit');
   };
 
   const openEdit = (tu) => {
@@ -53,13 +68,27 @@ export default function Users() {
       role:    tu.role       || 'vecino',
       unit_id: tu.unit       || '',
     });
-    setModal(true);
+    setModal('edit');
   };
 
-  // ── Email check (debounced, create mode only) ─────────────────────────────
+  const openReset = (tu) => {
+    setResetTarget(tu);
+    setResetPw(generatePassword());
+    setResetPwShow(true);
+    setModal('reset');
+  };
+
+  const closeModal = () => {
+    setModal(false);
+    setResetTarget(null);
+    setResetPw('');
+    setResetPwShow(false);
+  };
+
+  // ── Email check (debounced) ───────────────────────────────────────────────
   const handleEmailChange = (val) => {
     setField('email', val);
-    setExistingUser(null); // reset
+    setExistingUser(null);
     clearTimeout(emailCheckTimer.current);
     if (!val || !val.includes('@')) return;
     emailCheckTimer.current = setTimeout(async () => {
@@ -72,12 +101,11 @@ export default function Users() {
     }, 500);
   };
 
-  // ── Save ──────────────────────────────────────────────────────────────────
+  // ── Save (create / edit) ──────────────────────────────────────────────────
   const handleSave = async () => {
     setSaving(true);
     try {
       if (editId) {
-        // Edit mode
         if (!form.name?.trim()) { toast.error('El nombre es obligatorio'); setSaving(false); return; }
         if (form.role === 'vecino' && !form.unit_id) { toast.error('Seleccione una unidad para el vecino'); setSaving(false); return; }
         await usersAPI.update(tenantId, editId, {
@@ -87,7 +115,6 @@ export default function Users() {
         });
         toast.success('Usuario actualizado');
       } else {
-        // Create / associate mode
         if (!form.email) { toast.error('El email es obligatorio'); setSaving(false); return; }
         if (existingUser === false && !form.name) { toast.error('El nombre es obligatorio'); setSaving(false); return; }
         if (existingUser === false && !form.password) { toast.error('La contraseña es obligatoria'); setSaving(false); return; }
@@ -106,7 +133,7 @@ export default function Users() {
         await usersAPI.create(payload);
         toast.success(existingUser ? `${existingUser.name} agregado al condominio` : 'Usuario creado');
       }
-      setModal(false);
+      closeModal();
       load();
     } catch (e) {
       toast.error(
@@ -118,6 +145,23 @@ export default function Users() {
     } finally { setSaving(false); }
   };
 
+  // ── Reset password ─────────────────────────────────────────────────────────
+  const handleResetPassword = async () => {
+    if (!resetPw || resetPw.length < 6) {
+      toast.error('La contraseña debe tener al menos 6 caracteres');
+      return;
+    }
+    setResetSaving(true);
+    try {
+      await usersAPI.resetPassword(tenantId, resetTarget.id, { new_password: resetPw });
+      toast.success(`Contraseña restablecida. ${resetTarget.user_name} deberá crear una nueva al ingresar.`);
+      closeModal();
+      load();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || e.response?.data?.new_password?.[0] || 'Error al restablecer contraseña');
+    } finally { setResetSaving(false); }
+  };
+
   const handleDelete = async (tu) => {
     if (!window.confirm(`¿Eliminar el acceso de ${tu.user_name} a este condominio?`)) return;
     try {
@@ -127,10 +171,9 @@ export default function Users() {
     } catch { toast.error('Error eliminando acceso'); }
   };
 
-  const setField = (k, v) => setForm(f => ({ ...f, [k]: v }));
-
-  const unitLabel = (u) => [u.unit_id_code, u.unit_name].filter(Boolean).join(' — ');
-  const unitById  = (id) => units.find(u => String(u.id) === String(id));
+  const setField    = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const unitLabel   = (u) => [u.unit_id_code, u.unit_name].filter(Boolean).join(' — ');
+  const unitById    = (id) => units.find(u => String(u.id) === String(id));
 
   if (loading) return (
     <div style={{ padding: 32, textAlign: 'center', color: 'var(--ink-400)' }}>Cargando usuarios...</div>
@@ -138,6 +181,7 @@ export default function Users() {
 
   return (
     <div className="content-fade">
+
       {/* ── Header ──────────────────────────────────────────────────────── */}
       <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 16, marginBottom: 20 }}>
         <p style={{ fontSize: 14, color: 'var(--ink-400)', margin: 0 }}>
@@ -160,7 +204,7 @@ export default function Users() {
                 <th>Email</th>
                 <th>Rol</th>
                 <th>Unidad</th>
-                {isAdmin && <th style={{ width: 90, textAlign: 'center' }}>Acciones</th>}
+                {isAdmin && <th style={{ width: 120, textAlign: 'center' }}>Acciones</th>}
               </tr>
             </thead>
             <tbody>
@@ -169,7 +213,23 @@ export default function Users() {
                 const unit     = unitById(tu.unit);
                 return (
                   <tr key={tu.id}>
-                    <td style={{ fontWeight: 600 }}>{tu.user_name}</td>
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        <span style={{ fontWeight: 600 }}>{tu.user_name}</span>
+                        {tu.must_change_password && (
+                          <span title="Tiene contraseña temporal — debe cambiarla al ingresar"
+                            style={{
+                              display: 'inline-flex', alignItems: 'center', gap: 3,
+                              fontSize: 11, fontWeight: 600,
+                              color: 'var(--amber-700)', background: 'var(--amber-50)',
+                              border: '1px solid var(--amber-200)',
+                              borderRadius: 20, padding: '2px 8px',
+                            }}>
+                            <ShieldAlert size={10} /> Clave temporal
+                          </span>
+                        )}
+                      </div>
+                    </td>
                     <td style={{ fontSize: 13, color: 'var(--ink-500)' }}>{tu.user_email}</td>
                     <td>
                       <span className="badge" style={{ background: roleInfo.bg, color: roleInfo.color }}>
@@ -182,10 +242,13 @@ export default function Users() {
                     {isAdmin && (
                       <td>
                         <div style={{ display: 'flex', gap: 4, justifyContent: 'center' }}>
-                          <button onClick={() => openEdit(tu)} className="btn-icon" style={{ color: 'var(--teal-600)' }} title="Editar">
+                          <button onClick={() => openEdit(tu)} className="btn-icon" style={{ color: 'var(--teal-600)' }} title="Editar usuario">
                             <Pencil size={15} />
                           </button>
-                          <button onClick={() => handleDelete(tu)} className="btn-icon" style={{ color: 'var(--coral-500)' }} title="Eliminar">
+                          <button onClick={() => openReset(tu)} className="btn-icon" style={{ color: 'var(--amber-600)' }} title="Restablecer contraseña">
+                            <KeyRound size={15} />
+                          </button>
+                          <button onClick={() => handleDelete(tu)} className="btn-icon" style={{ color: 'var(--coral-500)' }} title="Eliminar acceso">
                             <Trash2 size={15} />
                           </button>
                         </div>
@@ -195,7 +258,9 @@ export default function Users() {
                 );
               })}
               {users.length === 0 && (
-                <tr><td colSpan={5} style={{ textAlign: 'center', padding: '32px 20px', color: 'var(--ink-400)' }}>Sin usuarios</td></tr>
+                <tr>
+                  <td colSpan={5} style={{ textAlign: 'center', padding: '32px 20px', color: 'var(--ink-400)' }}>Sin usuarios</td>
+                </tr>
               )}
             </tbody>
           </table>
@@ -203,18 +268,18 @@ export default function Users() {
       </div>
 
       {/* ══ Modal: Crear / Editar ══════════════════════════════════════════ */}
-      {modal && (
-        <div className="modal-bg open" onClick={() => setModal(false)}>
+      {modal === 'edit' && (
+        <div className="modal-bg open" onClick={closeModal}>
           <div className="modal lg" onClick={e => e.stopPropagation()}>
             <div className="modal-head">
               <h3>{editId ? 'Editar Usuario' : 'Agregar Usuario'}</h3>
-              <button onClick={() => setModal(false)} className="modal-close"><X size={16} /></button>
+              <button onClick={closeModal} className="modal-close"><X size={16} /></button>
             </div>
 
             <div className="modal-body">
               <div className="form-grid">
 
-                {/* ── EMAIL (+ lookup indicator) ──────────────────────── */}
+                {/* EMAIL */}
                 <div className="field field-full">
                   <label className="field-label">Email *</label>
                   <div style={{ position: 'relative' }}>
@@ -223,13 +288,9 @@ export default function Users() {
                         {form.email}
                       </div>
                     ) : (
-                      <input
-                        type="email" className="field-input"
-                        value={form.email}
+                      <input type="email" className="field-input" value={form.email}
                         onChange={e => handleEmailChange(e.target.value)}
-                        placeholder="usuario@email.com"
-                        style={{ paddingRight: 36 }}
-                      />
+                        placeholder="usuario@email.com" style={{ paddingRight: 36 }} />
                     )}
                     {!editId && emailChecking && (
                       <Loader size={14} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--ink-400)', animation: 'spin 0.8s linear infinite' }} />
@@ -237,7 +298,7 @@ export default function Users() {
                   </div>
                 </div>
 
-                {/* ── EXISTING USER NOTICE ─────────────────────────────── */}
+                {/* EXISTING USER NOTICE */}
                 {!editId && existingUser && (
                   <div className="field field-full">
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: 'var(--teal-50)', border: '1px solid var(--teal-100)', borderRadius: 10 }}>
@@ -254,7 +315,7 @@ export default function Users() {
                   </div>
                 )}
 
-                {/* ── NOMBRE — solo para usuarios nuevos ───────────────── */}
+                {/* NOMBRE */}
                 {(editId || (!editId && existingUser === false)) && (
                   <div className="field">
                     <label className="field-label">Nombre Completo *</label>
@@ -263,7 +324,7 @@ export default function Users() {
                   </div>
                 )}
 
-                {/* ── CONTRASEÑA — solo para usuarios nuevos ────────────── */}
+                {/* CONTRASEÑA — solo usuarios nuevos */}
                 {!editId && existingUser === false && (
                   <div className="field">
                     <label className="field-label">Contraseña *</label>
@@ -272,7 +333,7 @@ export default function Users() {
                   </div>
                 )}
 
-                {/* ── ROL ─────────────────────────────────────────────── */}
+                {/* ROL */}
                 {(editId || existingUser !== null) && (
                   <div className="field">
                     <label className="field-label">Rol</label>
@@ -288,7 +349,7 @@ export default function Users() {
                   </div>
                 )}
 
-                {/* ── UNIDAD — solo si rol vecino ───────────────────────── */}
+                {/* UNIDAD */}
                 {(editId || existingUser !== null) && form.role === 'vecino' && (
                   <div className="field field-full">
                     <label className="field-label">Unidad Asignada *</label>
@@ -304,26 +365,102 @@ export default function Users() {
                   </div>
                 )}
 
-                {/* ── HINT cuando email aún no verificado ──────────────── */}
                 {!editId && existingUser === null && !emailChecking && form.email && !form.email.includes('@') && (
                   <div className="field field-full">
-                    <p style={{ fontSize: 12, color: 'var(--ink-400)', margin: 0 }}>
-                      Ingresa un email válido para continuar.
-                    </p>
+                    <p style={{ fontSize: 12, color: 'var(--ink-400)', margin: 0 }}>Ingresa un email válido para continuar.</p>
                   </div>
                 )}
-
               </div>
             </div>
 
             <div className="modal-foot">
-              <button onClick={() => setModal(false)} className="btn btn-outline">Cancelar</button>
-              <button
-                onClick={handleSave}
-                className="btn btn-primary"
-                disabled={saving || (!editId && existingUser === null && !emailChecking)}
-              >
+              <button onClick={closeModal} className="btn btn-outline">Cancelar</button>
+              <button onClick={handleSave} className="btn btn-primary"
+                disabled={saving || (!editId && existingUser === null && !emailChecking)}>
                 {saving ? 'Guardando…' : editId ? 'Guardar Cambios' : existingUser ? 'Agregar al Condominio' : 'Crear Usuario'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══ Modal: Restablecer Contraseña ══════════════════════════════════ */}
+      {modal === 'reset' && resetTarget && (
+        <div className="modal-bg open" onClick={closeModal}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 460 }}>
+            <div className="modal-head">
+              <h3 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <KeyRound size={17} color="var(--amber-600)" />
+                Restablecer contraseña
+              </h3>
+              <button onClick={closeModal} className="modal-close"><X size={16} /></button>
+            </div>
+
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+              {/* User pill */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', background: 'var(--sand-50)', border: '1px solid var(--sand-200)', borderRadius: 10 }}>
+                <div style={{ width: 38, height: 38, borderRadius: '50%', background: 'var(--teal-100)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 15, color: 'var(--teal-700)', flexShrink: 0 }}>
+                  {(resetTarget.user_name || '?')[0].toUpperCase()}
+                </div>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--ink-800)' }}>{resetTarget.user_name}</div>
+                  <div style={{ fontSize: 12, color: 'var(--ink-400)', marginTop: 2 }}>{resetTarget.user_email}</div>
+                </div>
+              </div>
+
+              {/* Warning */}
+              <div style={{ display: 'flex', gap: 10, padding: '10px 14px', background: 'var(--amber-50)', border: '1px solid var(--amber-200)', borderRadius: 10 }}>
+                <ShieldAlert size={18} color="var(--amber-600)" style={{ flexShrink: 0, marginTop: 1 }} />
+                <p style={{ fontSize: 13, color: 'var(--amber-700)', margin: 0, lineHeight: 1.55 }}>
+                  Se asignará una <strong>contraseña temporal</strong>. El usuario deberá crear una contraseña personalizada la próxima vez que inicie sesión.
+                </p>
+              </div>
+
+              {/* Password input */}
+              <div>
+                <label className="field-label">Contraseña temporal *</label>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <div style={{ position: 'relative', flex: 1 }}>
+                    <input
+                      type={resetPwShow ? 'text' : 'password'}
+                      className="field-input"
+                      value={resetPw}
+                      onChange={e => setResetPw(e.target.value)}
+                      placeholder="Mínimo 6 caracteres"
+                      style={{
+                        paddingRight: 40,
+                        fontFamily: resetPwShow ? 'inherit' : 'monospace',
+                        letterSpacing: resetPwShow ? 'normal' : '0.1em',
+                      }}
+                    />
+                    <button type="button" onClick={() => setResetPwShow(v => !v)}
+                      style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-400)', padding: 0 }}>
+                      {resetPwShow ? <EyeOff size={15} /> : <Eye size={15} />}
+                    </button>
+                  </div>
+                  <button type="button"
+                    onClick={() => { setResetPw(generatePassword()); setResetPwShow(true); }}
+                    className="btn btn-outline" title="Generar contraseña sugerida"
+                    style={{ flexShrink: 0, padding: '0 12px', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <RefreshCw size={14} /> Generar
+                  </button>
+                </div>
+                <p style={{ fontSize: 12, color: 'var(--ink-400)', marginTop: 6, lineHeight: 1.4 }}>
+                  Comparte esta contraseña con el usuario por un canal seguro (WhatsApp, llamada, etc).
+                </p>
+              </div>
+            </div>
+
+            <div className="modal-foot">
+              <button onClick={closeModal} className="btn btn-outline">Cancelar</button>
+              <button
+                onClick={handleResetPassword}
+                disabled={resetSaving || !resetPw || resetPw.length < 6}
+                className="btn"
+                style={{ background: 'var(--amber-500)', color: '#fff', border: 'none', opacity: (resetSaving || !resetPw || resetPw.length < 6) ? 0.6 : 1 }}
+              >
+                {resetSaving ? 'Guardando…' : 'Restablecer contraseña'}
               </button>
             </div>
           </div>

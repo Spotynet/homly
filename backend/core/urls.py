@@ -38,6 +38,9 @@ urlpatterns = [
     # Users
     path('users/', views.UserCreateView.as_view(), name='user-create'),
 
+    # Landing page — public registration request (no auth)
+    path('public/registro/', views.CondominioRequestView.as_view(), name='condominio-request'),
+
     # Top-level routes
     path('', include(router.urls)),
 
