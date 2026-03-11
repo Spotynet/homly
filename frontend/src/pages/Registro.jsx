@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { COUNTRIES, getStatesForCountry } from '../utils/helpers';
+import { COUNTRIES, getStatesForCountry, HomlyBrand } from '../utils/helpers';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
@@ -24,28 +24,8 @@ const C = {
   ink3:      '#B8B0A5',
 };
 
-/* ─── Inline logo ─── */
-const LogoIcon = ({ size = 36 }) => (
-  <svg viewBox="0 0 60 60" fill="none" xmlns="http://www.w3.org/2000/svg"
-    style={{ width: size, height: size, flexShrink: 0 }}>
-    <g transform="translate(5, 4)">
-      <path d="M12,52 L12,32 L30,14 L48,32 L48,52 L12,52 Z"
-        fill="none" stroke={C.coral} strokeWidth="4"
-        strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M30,18 C24,24 20,28 20,33 C20,38 24,42 30,38 C36,42 40,38 40,33 C40,28 36,24 30,18 Z"
-        fill="none" stroke={C.coral} strokeWidth="4"
-        strokeLinecap="round" strokeLinejoin="round" />
-    </g>
-  </svg>
-);
-const LogoFull = () => (
-  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-    <LogoIcon size={32} />
-    <span style={{ fontSize: 22, fontWeight: 800, color: C.green, letterSpacing: '-0.5px', lineHeight: 1 }}>
-      homly<span style={{ color: C.coral }}>.</span>
-    </span>
-  </div>
-);
+/* ─── Logo brand using real SVG assets ─── */
+const LogoFull = () => <HomlyBrand iconSize={36} nameHeight={24} />;
 
 /* ─── Small icons ─── */
 const IconCheck = ({ size = 16, color = C.greenMid }) => (

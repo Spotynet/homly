@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { HOMLY_LOGO, APP_VERSION, ROLES } from '../../utils/helpers';
+import { HomlyIsotipo, HomlyBrandDark, APP_VERSION, ROLES } from '../../utils/helpers';
 import {
   Home, Globe, FileText, ShoppingBag, Receipt, Settings,
   Users, Building, Shield, LogOut, Menu, X, Search, Calendar,
@@ -270,11 +270,15 @@ export default function AppLayout() {
       {/* Sidebar */}
       <aside className={`sidebar${sidebarOpen ? ' open' : ''}`}>
         {/* Brand */}
-        <div className="brand">
-          <div className="brand-logo">{HOMLY_LOGO}</div>
+        <div className="brand" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 16px 12px' }}>
+          <HomlyIsotipo size={42} style={{ borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.18)' }} />
           <div className="brand-text">
-            <h1>homly<span className="brand-dot">.</span></h1>
-            <span>Property Management</span>
+            <h1 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: '#fff', letterSpacing: '-0.3px', lineHeight: 1.1 }}>
+              homly<span className="brand-dot" style={{ color: '#ed765e' }}>.</span>
+            </h1>
+            <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.55)', fontWeight: 500, letterSpacing: '0.04em' }}>
+              Property Management
+            </span>
           </div>
         </div>
 

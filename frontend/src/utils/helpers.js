@@ -184,50 +184,81 @@ export function getStatesForCountry(country) {
   return states[country] || [];
 }
 
-// Homly logo — icon only (used in sidebar, login, etc.)
+// ── Homly brand assets ────────────────────────────────────────────────────────
+// isotipo-homly.svg  → square icon with cream background (283×279)
+// nombre-homly.svg   → "homly" logotype text (631×215)
+// logo-homly.svg     → full combined lockup (2816×1536)
+
+/** Isotipo only — square icon badge. Works on any background (has built-in bg). */
 export const HOMLY_LOGO = (
-  <svg viewBox="0 0 60 60" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <g transform="translate(5, 4)">
-      <path
-        d="M12,52 L12,32 L30,14 L48,32 L48,52 L12,52 Z"
-        fill="none"
-        stroke="#E85D43"
-        strokeWidth="4"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M30,18 C24,24 20,28 20,33 C20,38 24,42 30,38 C36,42 40,38 40,33 C40,28 36,24 30,18 Z"
-        fill="none"
-        stroke="#E85D43"
-        strokeWidth="4"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </g>
-  </svg>
+  <img
+    src="/img/isotipo-homly.svg"
+    alt="Homly"
+    style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
+  />
 );
 
-// Homly full logo — icon + logotype (used on landing page hero / large displays)
+/** Small reusable isotipo component with controllable size */
+export function HomlyIsotipo({ size = 44, style = {} }) {
+  return (
+    <img
+      src="/img/isotipo-homly.svg"
+      alt="Homly"
+      style={{ width: size, height: size, objectFit: 'contain', flexShrink: 0, ...style }}
+    />
+  );
+}
+
+/** Full brand lockup: isotipo + nombre side by side. Best on light backgrounds. */
+export function HomlyBrand({ iconSize = 44, nameHeight = 32, style = {} }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, ...style }}>
+      <img
+        src="/img/isotipo-homly.svg"
+        alt="Homly"
+        style={{ width: iconSize, height: iconSize, objectFit: 'contain', flexShrink: 0 }}
+      />
+      <img
+        src="/img/nombre-homly.svg"
+        alt="homly"
+        style={{ height: nameHeight, width: 'auto', objectFit: 'contain', flexShrink: 0 }}
+      />
+    </div>
+  );
+}
+
+/** Full brand lockup for dark backgrounds: isotipo + white CSS text */
+export function HomlyBrandDark({ iconSize = 44, fontSize = 26, style = {} }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, ...style }}>
+      <img
+        src="/img/isotipo-homly.svg"
+        alt="Homly"
+        style={{ width: iconSize, height: iconSize, objectFit: 'contain', flexShrink: 0, borderRadius: 8 }}
+      />
+      <span style={{
+        fontSize, fontWeight: 800, color: '#FFFFFF',
+        letterSpacing: '-0.5px', lineHeight: 1,
+      }}>
+        homly<span style={{ color: '#ed765e' }}>.</span>
+      </span>
+    </div>
+  );
+}
+
+// Legacy alias — kept for backward compatibility with AppLayout/Login
 export const HOMLY_LOGO_FULL = (
-  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-    <svg viewBox="0 0 60 60" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ width: 52, height: 52, flexShrink: 0 }}>
-      <g transform="translate(5, 4)">
-        <path
-          d="M12,52 L12,32 L30,14 L48,32 L48,52 L12,52 Z"
-          fill="none" stroke="#E85D43" strokeWidth="4"
-          strokeLinecap="round" strokeLinejoin="round"
-        />
-        <path
-          d="M30,18 C24,24 20,28 20,33 C20,38 24,42 30,38 C36,42 40,38 40,33 C40,28 36,24 30,18 Z"
-          fill="none" stroke="#E85D43" strokeWidth="4"
-          strokeLinecap="round" strokeLinejoin="round"
-        />
-      </g>
-    </svg>
-    <span style={{ fontSize: 36, fontWeight: 800, color: '#124A36', letterSpacing: '-0.5px', lineHeight: 1 }}>
-      homly<span style={{ color: '#E85D43' }}>.</span>
-    </span>
+  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+    <img
+      src="/img/isotipo-homly.svg"
+      alt="Homly"
+      style={{ width: 52, height: 52, objectFit: 'contain', flexShrink: 0 }}
+    />
+    <img
+      src="/img/nombre-homly.svg"
+      alt="homly"
+      style={{ height: 36, width: 'auto', objectFit: 'contain', flexShrink: 0 }}
+    />
   </div>
 );
 

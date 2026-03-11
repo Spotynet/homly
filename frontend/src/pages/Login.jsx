@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { authAPI } from '../api/client';
-import { HOMLY_LOGO, APP_VERSION } from '../utils/helpers';
+import { HomlyBrand, HomlyBrandDark, APP_VERSION } from '../utils/helpers';
 import { Building2, ChevronDown, Check, ArrowLeft } from 'lucide-react';
 
 // ── Tenant picker dropdown ──────────────────────────────────────────────────
@@ -248,14 +248,11 @@ export default function Login() {
         <div className="w-full max-w-md">
 
           {/* Brand */}
-          <div className="flex items-center gap-4 mb-8">
-            <div className="w-12 h-12">{HOMLY_LOGO}</div>
-            <div>
-              <h1 className="text-2xl font-extrabold text-teal-800">
-                homly<span className="brand-dot">.</span>
-              </h1>
-              <span className="text-xs text-ink-400 font-semibold">Property Management</span>
-            </div>
+          <div className="mb-8">
+            <HomlyBrand iconSize={52} nameHeight={34} />
+            <p style={{ marginTop: 6, fontSize: 11, color: 'var(--ink-400)', fontWeight: 500, letterSpacing: '0.04em' }}>
+              Property Management
+            </p>
           </div>
 
           <h2 className="text-xl font-bold text-ink-800 mb-1">Bienvenido</h2>
@@ -389,6 +386,9 @@ export default function Login() {
       {/* ── Right: Feature panel ─────────────────────────────────────────── */}
       <div className="hidden lg:flex flex-1 bg-gradient-to-b from-teal-800 to-teal-600 items-center justify-center p-12">
         <div className="max-w-md text-white">
+          <div style={{ marginBottom: 32 }}>
+            <HomlyBrandDark iconSize={56} fontSize={32} />
+          </div>
           <h2 className="text-3xl font-extrabold mb-4">
             La administración que tu hogar se merece
           </h2>

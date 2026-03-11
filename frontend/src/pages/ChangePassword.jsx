@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { authAPI } from '../api/client';
-import { HOMLY_LOGO } from '../utils/helpers';
+import { HomlyBrand } from '../utils/helpers';
 import { Eye, EyeOff, ShieldAlert, KeyRound, CheckCircle2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -145,11 +145,8 @@ export default function ChangePassword() {
       <div style={{ width: '100%', maxWidth: 420 }}>
 
         {/* Logo */}
-        <div className="flex items-center gap-3 mb-8 justify-center">
-          <div className="w-10 h-10">{HOMLY_LOGO}</div>
-          <h1 className="text-2xl font-extrabold text-teal-800">
-            homly<span className="brand-dot">.</span>
-          </h1>
+        <div className="flex justify-center mb-8">
+          <HomlyBrand iconSize={48} nameHeight={30} />
         </div>
 
         {/* Card */}

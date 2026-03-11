@@ -1,34 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { HOMLY_LOGO } from '../utils/helpers';
+import { HomlyBrand, HomlyBrandDark, HomlyIsotipo } from '../utils/helpers';
 
-/* ─── Inline SVG logo — icon only ─── */
-const LogoIcon = ({ size = 44 }) => (
-  <svg viewBox="0 0 60 60" fill="none" xmlns="http://www.w3.org/2000/svg"
-    style={{ width: size, height: size, flexShrink: 0 }}>
-    <g transform="translate(5, 4)">
-      <path d="M12,52 L12,32 L30,14 L48,32 L48,52 L12,52 Z"
-        fill="none" stroke="#E85D43" strokeWidth="4"
-        strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M30,18 C24,24 20,28 20,33 C20,38 24,42 30,38 C36,42 40,38 40,33 C40,28 36,24 30,18 Z"
-        fill="none" stroke="#E85D43" strokeWidth="4"
-        strokeLinecap="round" strokeLinejoin="round" />
-    </g>
-  </svg>
+/* ─── Brand shorthands for Landing ─── */
+/* Light bg (nav on scroll, footer light areas) */
+const LogoFull = ({ iconSize = 38, nameHeight = 26 }) => (
+  <HomlyBrand iconSize={iconSize} nameHeight={nameHeight} />
 );
-
-/* ─── Full logotype ─── */
-const LogoFull = ({ iconSize = 38, fontSize = 28 }) => (
-  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-    <LogoIcon size={iconSize} />
-    <span style={{
-      fontSize, fontWeight: 800, color: '#124A36',
-      letterSpacing: '-0.5px', lineHeight: 1,
-      fontFamily: "'Plus Jakarta Sans', sans-serif"
-    }}>
-      homly<span style={{ color: '#E85D43' }}>.</span>
-    </span>
-  </div>
+/* Dark bg (hero, dark sections, footer) */
+const LogoFullDark = ({ iconSize = 38, fontSize = 26 }) => (
+  <HomlyBrandDark iconSize={iconSize} fontSize={fontSize} />
 );
 
 /* ─── Feature icons (inline SVG, no emoji) ─── */
@@ -98,7 +79,10 @@ export default function Landing() {
         transition: 'all 0.3s ease',
       }}>
         <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 32px', height: 72, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <LogoFull iconSize={36} fontSize={24} />
+          {scrolled
+            ? <LogoFull iconSize={36} nameHeight={22} />
+            : <LogoFullDark iconSize={36} fontSize={22} />
+          }
 
           {/* Desktop nav */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 36 }} className="hidden-mobile">
@@ -320,7 +304,7 @@ export default function Landing() {
               desc: 'Registro de entradas y salidas para vigilantes. Historial completo y acceso seguro.',
             },
             {
-              icon: <LogoIcon size={28} />,
+              icon: <HomlyIsotipo size={28} />,
               title: 'Multi-condominio',
               desc: 'Administra varios condominios desde una sola cuenta. Ideal para administradoras profesionales.',
             },
@@ -373,7 +357,7 @@ export default function Landing() {
 
       {/* ── TESTIMONIAL QUOTE ── */}
       <section style={{ maxWidth: 900, margin: '0 auto', padding: '100px 32px', textAlign: 'center' }}>
-        <LogoIcon size={48} />
+        <HomlyIsotipo size={64} style={{ margin: '0 auto 8px', display: 'block', borderRadius: 16, boxShadow: '0 4px 20px rgba(18,74,54,0.15)' }} />
         <blockquote style={{
           fontSize: 'clamp(20px, 3vw, 32px)',
           fontWeight: 700,
@@ -392,7 +376,7 @@ export default function Landing() {
       {/* ── CTA FINAL ── */}
       <section id="contacto" style={{ background: '#124A36', padding: '100px 32px' }}>
         <div style={{ maxWidth: 700, margin: '0 auto', textAlign: 'center' }}>
-          <LogoFull iconSize={48} fontSize={36} />
+          <LogoFullDark iconSize={56} fontSize={38} />
           <h2 style={{
             fontSize: 'clamp(28px, 4vw, 48px)',
             fontWeight: 800,
@@ -434,7 +418,7 @@ export default function Landing() {
       {/* ── FOOTER ── */}
       <footer style={{ background: '#0E3829', padding: '40px 32px' }}>
         <div style={{ maxWidth: 1200, margin: '0 auto', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, textAlign: 'center' }}>
-          <LogoFull iconSize={28} fontSize={18} />
+          <LogoFullDark iconSize={32} fontSize={20} />
           <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap', justifyContent: 'center' }}>
             {['Beneficios', 'Cómo funciona', 'Iniciar sesión'].map((l, i) => (
               <a key={i} href={i === 2 ? '/login' : `#${['beneficios', 'como-funciona'][i]}`}
