@@ -106,6 +106,7 @@ export default function ChangePassword() {
         new_password:     newPw,
       });
       setMustChangePassword(false);
+      localStorage.setItem('must_change_password', 'false');
       setDone(true);
       toast.success('¡Contraseña actualizada exitosamente!');
       setTimeout(() => navigate('/app'), 1800);

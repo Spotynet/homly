@@ -19,12 +19,14 @@ export function AuthProvider({ children }) {
     const savedRole      = localStorage.getItem('role');
     const savedTenant    = localStorage.getItem('tenant_id');
     const savedTenantName= localStorage.getItem('tenant_name');
+    const savedMustChange= localStorage.getItem('must_change_password');
 
     if (token && savedUser) {
       setUser(JSON.parse(savedUser));
       setRole(savedRole);
       setTenantId(savedTenant && savedTenant !== 'null' ? savedTenant : null);
       setTenantName(savedTenantName && savedTenantName !== 'null' ? savedTenantName : null);
+      setMustChangePassword(savedMustChange === 'true');
     }
     setLoading(false);
   }, []);
@@ -34,7 +36,8 @@ export function AuthProvider({ children }) {
     localStorage.setItem('access_token',  data.access);
     localStorage.setItem('refresh_token', data.refresh);
     localStorage.setItem('user',          JSON.stringify(data.user));
-    localStorage.setItem('role',          data.role);
+    localStorage.setItem('role',                data.role);
+    localStorage.setItem('must_change_password', data.must_change_password ? 'true' : 'false');
     if (data.tenant_id) {
       localStorage.setItem('tenant_id',   data.tenant_id);
       localStorage.setItem('tenant_name', data.tenant_name);
