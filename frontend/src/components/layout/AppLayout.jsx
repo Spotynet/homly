@@ -342,16 +342,24 @@ export default function AppLayout() {
         {/* Header */}
         <header className="header">
           <div className="header-left">
-            <button className="mobile-toggle" onClick={() => setSidebarOpen(true)}>
-              <Menu size={20} />
+            <button className="mobile-toggle" onClick={() => setSidebarOpen(true)} aria-label="Abrir menú">
+              <Menu size={22} />
             </button>
-            <div>
+            {/* Mobile brand (only visible when sidebar is closed on mobile) */}
+            <div className="show-mobile" style={{ alignItems: 'center' }}>
+              <HomlyIsotipo size={32} style={{ borderRadius: 6, marginRight: 8 }} />
+              <span style={{ fontSize: 16, fontWeight: 800, color: 'var(--teal-800)', letterSpacing: '-0.3px' }}>
+                homly<span style={{ color: 'var(--coral-500)' }}>.</span>
+              </span>
+            </div>
+            {/* Desktop: page title */}
+            <div className="hidden-mobile">
               <div className="header-title">{pageTitle}</div>
               {tenantName && <div className="header-subtitle">{tenantName}</div>}
             </div>
           </div>
           {!isVecino && (
-            <div className="search-bar">
+            <div className="search-bar hidden-mobile">
               <Search size={16} />
               <input type="text" placeholder="Buscar..." />
             </div>

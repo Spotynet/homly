@@ -78,7 +78,7 @@ export default function Landing() {
         borderBottom: scrolled ? '1px solid rgba(232,221,209,0.6)' : '1px solid transparent',
         transition: 'all 0.3s ease',
       }}>
-        <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 32px', height: 72, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div className="landing-nav-inner">
           {scrolled
             ? <LogoFull iconSize={36} nameHeight={22} />
             : <LogoFullDark iconSize={36} fontSize={22} />
@@ -101,7 +101,7 @@ export default function Landing() {
           <button
             onClick={() => setMobileOpen(v => !v)}
             className="show-mobile"
-            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 8, color: '#124A36' }}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 8, color: scrolled ? '#124A36' : '#fff' }}
           >
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
               {mobileOpen
@@ -114,7 +114,7 @@ export default function Landing() {
 
         {/* Mobile dropdown */}
         {mobileOpen && (
-          <div style={{ background: '#FDFBF7', borderTop: '1px solid #E8DFD1', padding: '20px 32px 28px', display: 'flex', flexDirection: 'column', gap: 20 }}>
+          <div style={{ background: '#FDFBF7', borderTop: '1px solid #E8DFD1', padding: '20px 20px 28px', display: 'flex', flexDirection: 'column', gap: 20 }}>
             <a href="#beneficios" onClick={() => setMobileOpen(false)} style={{ ...navLinkStyle, fontSize: 16 }}>Beneficios</a>
             <a href="#como-funciona" onClick={() => setMobileOpen(false)} style={{ ...navLinkStyle, fontSize: 16 }}>Cómo funciona</a>
             <a href="#contacto" onClick={() => setMobileOpen(false)} style={{ ...navLinkStyle, fontSize: 16 }}>Contacto</a>
@@ -126,8 +126,9 @@ export default function Landing() {
       </nav>
 
       {/* ── HERO ── */}
-      <section style={{ paddingTop: 140, paddingBottom: 80, maxWidth: 1200, margin: '0 auto', padding: '140px 32px 80px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 64, alignItems: 'center' }}>
+      <section>
+        <div className="landing-hero">
+        <div className="landing-hero-grid">
 
           {/* Left — copy */}
           <div>
@@ -169,7 +170,7 @@ export default function Landing() {
           </div>
 
           {/* Right — product card mockup */}
-          <div style={{ position: 'relative' }}>
+          <div className="landing-hero-mockup" style={{ position: 'relative' }}>
             {/* Decorative blobs */}
             <div style={{
               position: 'absolute', top: -40, right: -40, width: 280, height: 280,
@@ -244,11 +245,12 @@ export default function Landing() {
             </div>
           </div>
         </div>
+        </div>
       </section>
 
       {/* ── STATS BAR ── */}
-      <section style={{ background: '#124A36', padding: '40px 32px' }}>
-        <div style={{ maxWidth: 1200, margin: '0 auto', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 32, textAlign: 'center' }}>
+      <section className="landing-stats-bar">
+        <div className="landing-stats-grid">
           {[
             { num: '+500', label: 'Unidades gestionadas' },
             { num: '98%', label: 'Satisfacción de usuarios' },
@@ -264,8 +266,9 @@ export default function Landing() {
       </section>
 
       {/* ── FEATURES ── */}
-      <section id="beneficios" style={{ maxWidth: 1200, margin: '0 auto', padding: '100px 32px' }}>
-        <div style={{ textAlign: 'center', marginBottom: 64 }}>
+      <section id="beneficios" className="landing-section">
+        <div className="landing-section-inner">
+        <div style={{ textAlign: 'center', marginBottom: 48 }}>
           <div style={tagStyle}>Funcionalidades</div>
           <h2 style={{ fontSize: 'clamp(28px, 4vw, 44px)', fontWeight: 800, color: '#124A36', marginTop: 16, letterSpacing: '-1px' }}>
             Todo lo que necesitas,<br />nada que no necesitas
@@ -275,7 +278,7 @@ export default function Landing() {
           </p>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 24 }}>
+        <div className="landing-features-grid">
           {[
             {
               icon: <IconChart />,
@@ -326,19 +329,20 @@ export default function Landing() {
             </div>
           ))}
         </div>
+        </div>
       </section>
 
       {/* ── HOW IT WORKS ── */}
-      <section id="como-funciona" style={{ background: '#F3EDE4', padding: '100px 32px' }}>
-        <div style={{ maxWidth: 1200, margin: '0 auto' }}>
-          <div style={{ textAlign: 'center', marginBottom: 64 }}>
+      <section id="como-funciona" style={{ background: '#F3EDE4' }} className="landing-section">
+        <div className="landing-section-inner">
+          <div style={{ textAlign: 'center', marginBottom: 48 }}>
             <div style={tagStyle}>Proceso</div>
             <h2 style={{ fontSize: 'clamp(28px, 4vw, 44px)', fontWeight: 800, color: '#124A36', marginTop: 16, letterSpacing: '-1px' }}>
               Empieza en minutos
             </h2>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 32 }}>
+          <div className="landing-steps-grid">
             {[
               { step: '01', title: 'Crea tu condominio', desc: 'Configura el perfil de tu condominio: nombre, unidades, cuota de mantenimiento y moneda.' },
               { step: '02', title: 'Agrega a tu equipo', desc: 'Invita a tu tesorero, contador o vecinos. Cada rol tiene acceso exacto a lo que necesita.' },
@@ -356,7 +360,7 @@ export default function Landing() {
       </section>
 
       {/* ── TESTIMONIAL QUOTE ── */}
-      <section style={{ maxWidth: 900, margin: '0 auto', padding: '100px 32px', textAlign: 'center' }}>
+      <section className="landing-section" style={{ maxWidth: 900, margin: '0 auto', textAlign: 'center' }}>
         <HomlyIsotipo size={64} style={{ margin: '0 auto 8px', display: 'block', borderRadius: 16, boxShadow: '0 4px 20px rgba(18,74,54,0.15)' }} />
         <blockquote style={{
           fontSize: 'clamp(20px, 3vw, 32px)',
@@ -374,7 +378,7 @@ export default function Landing() {
       </section>
 
       {/* ── CTA FINAL ── */}
-      <section id="contacto" style={{ background: '#124A36', padding: '100px 32px' }}>
+      <section id="contacto" className="landing-section" style={{ background: '#124A36' }}>
         <div style={{ maxWidth: 700, margin: '0 auto', textAlign: 'center' }}>
           <LogoFullDark iconSize={56} fontSize={38} />
           <h2 style={{
@@ -416,8 +420,8 @@ export default function Landing() {
       </section>
 
       {/* ── FOOTER ── */}
-      <footer style={{ background: '#0E3829', padding: '40px 32px' }}>
-        <div style={{ maxWidth: 1200, margin: '0 auto', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, textAlign: 'center' }}>
+      <footer style={{ background: '#0E3829', padding: '32px 20px' }}>
+        <div className="landing-footer-inner">
           <LogoFullDark iconSize={32} fontSize={20} />
           <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap', justifyContent: 'center' }}>
             {['Beneficios', 'Cómo funciona', 'Iniciar sesión'].map((l, i) => (
