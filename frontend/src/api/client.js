@@ -78,6 +78,7 @@ export const usersAPI = {
   update:        (tenantId, id, data)     => api.patch(`/tenants/${tenantId}/users/${id}/`, data),
   delete:        (tenantId, id)           => api.delete(`/tenants/${tenantId}/users/${id}/`),
   resetPassword: (tenantId, id, data)     => api.post(`/tenants/${tenantId}/users/${id}/reset-password/`, data),
+  toggleActive:  (tenantId, id)           => api.post(`/tenants/${tenantId}/users/${id}/toggle-active/`),
 };
 
 // ─── Payments ───────────────────────────────────

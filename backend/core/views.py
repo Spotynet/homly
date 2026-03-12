@@ -255,7 +255,44 @@ class UnitViewSet(viewsets.ModelViewSet):
         return Unit.objects.filter(tenant_id=self.kwargs['tenant_id'])
 
     def perform_create(self, serializer):
-        serializer.save(tenant_id=self.kwargs['tenant_id'])
+        unit = serializer.save(tenant_id=self.kwargs['tenant_id'])
+        # Auto-create an inactive vecino user when the unit has an owner email
+        self._auto_create_vecino(unit)
+
+    def _auto_create_vecino(self, unit):
+        """
+        If the unit has an owner_email, create (or associate) a vecino User
+        with is_active=False and link it to this unit via TenantUser.
+        Silently skips if email is blank or user already has access.
+        """
+        email = (unit.owner_email or '').strip().lower()
+        if not email:
+            return
+        owner_name = f'{unit.owner_first_name or ""} {unit.owner_last_name or ""}'.strip() or email
+
+        try:
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            import secrets, string
+            alphabet = string.ascii_letters + string.digits
+            tmp_pw = ''.join(secrets.choice(alphabet) for _ in range(16))
+            user = User.objects.create_user(
+                email=email,
+                name=owner_name,
+                password=tmp_pw,
+            )
+            user.is_active = False
+            user.must_change_password = True
+            user.save(update_fields=['is_active', 'must_change_password'])
+
+        # Associate with tenant as vecino (skip if already a member)
+        if not TenantUser.objects.filter(user=user, tenant_id=unit.tenant_id).exists():
+            TenantUser.objects.create(
+                user=user,
+                tenant_id=unit.tenant_id,
+                role='vecino',
+                unit=unit,
+            )
 
     @action(detail=True, methods=['get'], url_path='evidence')
     def evidence(self, request, tenant_id=None, pk=None):
@@ -304,6 +341,22 @@ class TenantUserViewSet(viewsets.ModelViewSet):
 
         return Response(
             {'detail': f'Contraseña restablecida para {user.name or user.email}. El usuario deberá crear una nueva contraseña al iniciar sesión.'},
+            status=status.HTTP_200_OK,
+        )
+
+    @action(detail=True, methods=['post'], url_path='toggle-active')
+    def toggle_active(self, request, tenant_id=None, pk=None):
+        """
+        POST /api/tenants/{tenant_id}/users/{id}/toggle-active/
+        Activates or deactivates the user's account (is_active toggle).
+        """
+        tenant_user = self.get_object()
+        user = tenant_user.user
+        user.is_active = not user.is_active
+        user.save(update_fields=['is_active'])
+        state = 'activado' if user.is_active else 'desactivado'
+        return Response(
+            {'detail': f'Usuario {state}.', 'is_active': user.is_active},
             status=status.HTTP_200_OK,
         )
 
@@ -1216,6 +1269,17 @@ class EstadoCuentaView(APIView):
         period_from = request.query_params.get('from')
         period_to = request.query_params.get('to')
         cutoff_param = request.query_params.get('cutoff')  # for units list
+
+        # Resolve 'me' → the unit assigned to the requesting vecino
+        if unit_id == 'me':
+            try:
+                tu = TenantUser.objects.get(user=request.user, tenant_id=tenant_id)
+                if tu.unit_id:
+                    unit_id = str(tu.unit_id)
+                else:
+                    return Response({'detail': 'No tienes una unidad asignada. Contacta al administrador.'}, status=404)
+            except TenantUser.DoesNotExist:
+                return Response({'detail': 'Usuario no encontrado en este condominio.'}, status=404)
 
         tenant = Tenant.objects.get(id=tenant_id)
         start_period = period_from or tenant.operation_start_date or '2024-01'

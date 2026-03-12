@@ -182,11 +182,12 @@ class TenantUserSerializer(serializers.ModelSerializer):
     user_email            = serializers.CharField(source='user.email',                read_only=True)
     unit_code             = serializers.CharField(source='unit.unit_id_code',         read_only=True, default=None)
     must_change_password  = serializers.BooleanField(source='user.must_change_password', read_only=True)
+    is_active             = serializers.BooleanField(source='user.is_active',         read_only=True)
 
     class Meta:
         model = TenantUser
         fields = ['id', 'user', 'user_name', 'user_email', 'role', 'unit',
-                  'unit_code', 'must_change_password', 'created_at']
+                  'unit_code', 'must_change_password', 'is_active', 'created_at']
         read_only_fields = ['id', 'created_at']
 
 

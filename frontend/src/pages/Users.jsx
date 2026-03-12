@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { usersAPI, unitsAPI, authAPI } from '../api/client';
 import { ROLES } from '../utils/helpers';
-import { Plus, Trash2, X, Pencil, UserCheck, Loader, KeyRound, Eye, EyeOff, RefreshCw, ShieldAlert } from 'lucide-react';
+import { Plus, Trash2, X, Pencil, UserCheck, Loader, KeyRound, Eye, EyeOff, RefreshCw, ShieldAlert, ToggleLeft, ToggleRight } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 /* ── Generate a random readable password ──────────────────────────── */
@@ -171,6 +171,16 @@ export default function Users() {
     } catch { toast.error('Error eliminando acceso'); }
   };
 
+  const handleToggleActive = async (tu) => {
+    const action = tu.is_active ? 'desactivar' : 'activar';
+    if (!window.confirm(`¿${action.charAt(0).toUpperCase() + action.slice(1)} el acceso de ${tu.user_name}?`)) return;
+    try {
+      await usersAPI.toggleActive(tenantId, tu.id);
+      toast.success(tu.is_active ? 'Usuario desactivado' : 'Usuario activado');
+      load();
+    } catch { toast.error('Error al cambiar estado del usuario'); }
+  };
+
   const setField    = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const unitLabel   = (u) => [u.unit_id_code, u.unit_name].filter(Boolean).join(' — ');
   const unitById    = (id) => units.find(u => String(u.id) === String(id));
@@ -212,11 +222,23 @@ export default function Users() {
                 const roleInfo = ROLES[tu.role] || { label: tu.role, color: '#64748B', bg: '#F1F5F9' };
                 const unit     = unitById(tu.unit);
                 return (
-                  <tr key={tu.id}>
+                  <tr key={tu.id} style={{ opacity: tu.is_active === false ? 0.65 : 1 }}>
                     <td>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                         <span style={{ fontWeight: 600 }}>{tu.user_name}</span>
-                        {tu.must_change_password && (
+                        {tu.is_active === false && (
+                          <span title="Cuenta inactiva — el usuario no puede iniciar sesión"
+                            style={{
+                              display: 'inline-flex', alignItems: 'center', gap: 3,
+                              fontSize: 11, fontWeight: 600,
+                              color: 'var(--ink-400)', background: 'var(--sand-100)',
+                              border: '1px solid var(--sand-200)',
+                              borderRadius: 20, padding: '2px 8px',
+                            }}>
+                            <ToggleLeft size={10} /> Inactivo
+                          </span>
+                        )}
+                        {tu.must_change_password && tu.is_active !== false && (
                           <span title="Tiene contraseña temporal — debe cambiarla al ingresar"
                             style={{
                               display: 'inline-flex', alignItems: 'center', gap: 3,
@@ -242,6 +264,13 @@ export default function Users() {
                     {isAdmin && (
                       <td>
                         <div style={{ display: 'flex', gap: 4, justifyContent: 'center' }}>
+                          <button
+                            onClick={() => handleToggleActive(tu)}
+                            className="btn-icon"
+                            style={{ color: tu.is_active === false ? 'var(--teal-600)' : 'var(--ink-400)' }}
+                            title={tu.is_active === false ? 'Activar usuario' : 'Desactivar usuario'}>
+                            {tu.is_active === false ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}
+                          </button>
                           <button onClick={() => openEdit(tu)} className="btn-icon" style={{ color: 'var(--teal-600)' }} title="Editar usuario">
                             <Pencil size={15} />
                           </button>
@@ -334,23 +363,21 @@ export default function Users() {
                 )}
 
                 {/* ROL */}
-                {(editId || existingUser !== null) && (
-                  <div className="field">
-                    <label className="field-label">Rol</label>
-                    <select className="field-select" value={form.role}
-                      onChange={e => {
-                        setField('role', e.target.value);
-                        if (e.target.value !== 'vecino') setField('unit_id', '');
-                      }}>
-                      {Object.entries(ROLES)
-                        .filter(([k]) => k !== 'superadmin')
-                        .map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-                    </select>
-                  </div>
-                )}
+                <div className="field">
+                  <label className="field-label">Rol</label>
+                  <select className="field-select" value={form.role}
+                    onChange={e => {
+                      setField('role', e.target.value);
+                      if (e.target.value !== 'vecino') setField('unit_id', '');
+                    }}>
+                    {Object.entries(ROLES)
+                      .filter(([k]) => k !== 'superadmin')
+                      .map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                  </select>
+                </div>
 
                 {/* UNIDAD */}
-                {(editId || existingUser !== null) && form.role === 'vecino' && (
+                {form.role === 'vecino' && (
                   <div className="field field-full">
                     <label className="field-label">Unidad Asignada *</label>
                     <select className="field-select" value={form.unit_id}
