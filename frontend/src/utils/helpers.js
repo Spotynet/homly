@@ -227,7 +227,7 @@ export function HomlyBrand({ iconSize = 44, nameHeight = 32, style = {} }) {
   );
 }
 
-/** Full brand lockup for dark backgrounds: isotipo + white CSS text */
+/** Full brand for dark backgrounds — logo image only (no text) */
 export function HomlyBrandDark({ iconSize = 44, fontSize = 26, style = {} }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, ...style }}>
@@ -236,12 +236,6 @@ export function HomlyBrandDark({ iconSize = 44, fontSize = 26, style = {} }) {
         alt="Homly"
         style={{ width: iconSize, height: iconSize, objectFit: 'contain', flexShrink: 0, borderRadius: 8 }}
       />
-      <span style={{
-        fontSize, fontWeight: 800, color: '#FFFFFF',
-        letterSpacing: '-0.5px', lineHeight: 1,
-      }}>
-        homly<span style={{ color: '#ed765e' }}>.</span>
-      </span>
     </div>
   );
 }

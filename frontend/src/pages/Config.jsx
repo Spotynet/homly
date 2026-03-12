@@ -813,7 +813,7 @@ export default function Config() {
                   <label className="logo-box" style={{ width: 180, height: 180, cursor: 'pointer', position: 'relative' }}>
                     {t.logo
                       ? <img src={t.logo} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-                      : <><Upload size={28} color="var(--ink-300)" /><span>Haz clic para subir</span></>
+                      : <Upload size={28} color="var(--ink-300)" />
                     }
                     <input ref={logoRef} type="file" accept="image/*"
                       style={{ position: 'absolute', width: '100%', height: '100%', opacity: 0, cursor: 'pointer', top: 0, left: 0 }}
@@ -823,7 +823,7 @@ export default function Config() {
                   <div className="logo-box" style={{ width: 180, height: 180, cursor: 'default' }}>
                     {t.logo
                       ? <img src={t.logo} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-                      : <><Building2 size={28} color="var(--ink-300)" /><span>Sin logo</span></>
+                      : <Building2 size={28} color="var(--ink-300)" />
                     }
                   </div>
                 )}

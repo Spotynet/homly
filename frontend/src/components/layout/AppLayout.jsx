@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { HomlyIsotipo, HomlyBrandDark, APP_VERSION, ROLES } from '../../utils/helpers';
+import { HomlyIsotipo, APP_VERSION, ROLES } from '../../utils/helpers';
 import {
   Home, Globe, FileText, ShoppingBag, Receipt, Settings,
   Users, Building, Shield, LogOut, Menu, X, Search, Calendar,
@@ -129,14 +129,13 @@ function TenantSwitcher({ tenantId, tenantName, userTenants, onSwitch }) {
           transition: 'all 0.15s', textAlign: 'left',
         }}
       >
-        {/* Avatar */}
+        {/* Avatar — image/icon only, no text */}
         <div style={{
           width: 32, height: 32, borderRadius: 8, flexShrink: 0,
-          background: tenantName ? 'var(--teal-500)' : 'var(--sand-200)',
+          background: 'var(--sand-200)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 14, fontWeight: 800, color: 'white',
         }}>
-          {tenantName?.[0]?.toUpperCase() || <Building2 size={16} color="var(--ink-400)" />}
+          <Building2 size={16} color="var(--ink-400)" />
         </div>
 
         {/* Name */}
@@ -201,10 +200,8 @@ function TenantSwitcher({ tenantId, tenantName, userTenants, onSwitch }) {
                   width: 28, height: 28, borderRadius: 6, flexShrink: 0,
                   background: active ? 'var(--teal-500)' : 'var(--sand-100)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 12, fontWeight: 800,
-                  color: active ? 'white' : 'var(--ink-500)',
                 }}>
-                  {t.name[0]?.toUpperCase()}
+                  <Building2 size={14} color={active ? 'white' : 'var(--ink-500)'} />
                 </div>
                 <span style={{
                   flex: 1, fontSize: 13, fontWeight: active ? 700 : 500,
@@ -269,17 +266,9 @@ export default function AppLayout() {
 
       {/* Sidebar */}
       <aside className={`sidebar${sidebarOpen ? ' open' : ''}`}>
-        {/* Brand */}
-        <div className="brand" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 16px 12px' }}>
+        {/* Brand — logo image only */}
+        <div className="brand" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px 16px 12px' }}>
           <HomlyIsotipo size={42} style={{ borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.18)' }} />
-          <div className="brand-text">
-            <h1 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: '#fff', letterSpacing: '-0.3px', lineHeight: 1.1 }}>
-              homly<span className="brand-dot" style={{ color: '#ed765e' }}>.</span>
-            </h1>
-            <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.55)', fontWeight: 500, letterSpacing: '0.04em' }}>
-              Property Management
-            </span>
-          </div>
         </div>
 
         {/* Tenant section */}
@@ -292,9 +281,11 @@ export default function AppLayout() {
             />
           : tenantName
             ? (
-              /* Single tenant — static display */
+              /* Single tenant — static display (icon only, no text in avatar) */
               <div className="sidebar-tenant">
-                <div className="sidebar-tenant-avatar">{tenantName?.[0]}</div>
+                <div className="sidebar-tenant-avatar">
+                  <Building2 size={18} color="var(--ink-500)" />
+                </div>
                 <div className="sidebar-tenant-info">
                   <div className="sidebar-tenant-name">{tenantName}</div>
                 </div>
