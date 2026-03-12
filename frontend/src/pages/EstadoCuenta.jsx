@@ -32,6 +32,8 @@ export default function EstadoCuenta() {
   const [unitsPage, setUnitsPage] = useState(1);
   const [unitsPerPage, setUnitsPerPage] = useState(25);
   const UNITS_PAGE_OPTIONS = [10, 25, 50, 100];
+  // vecino-specific: which tab is active ('cuenta' | 'reporte')
+  const [vecinoView, setVecinoView] = useState('cuenta');
   const handlePrintUnits = useCallback(() => {
     const prev = document.title;
     document.title = `Estado por Unidad — ${cutoff}`;
@@ -46,19 +48,22 @@ export default function EstadoCuenta() {
   // Load units + tenant info
   useEffect(() => {
     if (!tenantId) return;
-    unitsAPI.list(tenantId, { page_size: 9999 }).then(r => {
-      const list = r.data.results || r.data;
-      setUnits(list);
-      if (isVecino && user?.unit_id) {
-        setSelectedUnit(user.unit_id);
-      }
-    });
+    // Vecinos: resolve their assigned unit via 'me' — no need to list all units
+    if (isVecino) {
+      reportsAPI.estadoCuenta(tenantId, { unit_id: 'me' })
+        .then(r => { if (r.data?.unit?.id) setSelectedUnit(r.data.unit.id); })
+        .catch(() => {});
+    } else {
+      unitsAPI.list(tenantId, { page_size: 9999 }).then(r => {
+        setUnits(r.data.results || r.data);
+      });
+    }
     tenantsAPI.get(tenantId).then(r => {
       setTenantData(r.data);
       const start = r.data?.operation_start_date || r.data?.created_at?.slice(0, 7) || '';
       if (start) setDetailFrom(start);
     }).catch(() => {});
-  }, [tenantId, isVecino, user]);
+  }, [tenantId, isVecino]);
 
   const startPeriod = tenantData?.operation_start_date || tenantData?.created_at?.slice(0, 7) || '';
 
@@ -99,14 +104,17 @@ export default function EstadoCuenta() {
       .finally(() => setLoading(false));
   }, [selectedUnit, tenantId, detailFrom, detailTo]);
 
-  // Load general / reporte
+  // Load general / reporte (admins via view state; vecinos via vecinoView)
   useEffect(() => {
-    if ((view !== 'tenant' && view !== 'reporte') || !tenantId) return;
+    const shouldLoad = isVecino
+      ? vecinoView === 'reporte'
+      : (view === 'tenant' || view === 'reporte');
+    if (!shouldLoad || !tenantId) return;
     setGenLoading(true);
     reportsAPI.reporteGeneral(tenantId, cutoff).then(r => {
       setGeneralData(r.data);
     }).catch(() => {}).finally(() => setGenLoading(false));
-  }, [view, tenantId, cutoff]);
+  }, [view, vecinoView, tenantId, cutoff, isVecino]);
 
   // Load reporte de adeudos
   useEffect(() => {
@@ -195,7 +203,8 @@ export default function EstadoCuenta() {
     return filteredUnits.slice(start, start + unitsPerPage);
   }, [filteredUnits, unitsPage, unitsPerPage]);
 
-  const showDetail = isVecino ? true : !!selectedUnit;
+  // For vecino: show unit detail only when on 'cuenta' tab; 'reporte' falls to else branch
+  const showDetail = isVecino ? vecinoView === 'cuenta' : !!selectedUnit;
   const balance = data ? parseFloat(data.balance) : 0;
   const unitPrevDebt = data ? parseFloat(data.previous_debt ?? data.unit?.previous_debt ?? 0) : 0;
   const prevDebtAdeudo = data ? parseFloat(data.prev_debt_adeudo ?? 0) : 0;
@@ -209,7 +218,44 @@ export default function EstadoCuenta() {
 
   return (
     <div className="content-fade">
-      {/* ── Tabs + navegador de período global ── */}
+
+      {/* ── Vecino: tabs Mi Estado de Cuenta / Reporte General ── */}
+      {isVecino && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
+          <div className="ec-view-toggle" style={{ marginBottom: 0 }}>
+            <button
+              className={`ec-view-btn ${vecinoView === 'cuenta' ? 'active' : ''}`}
+              onClick={() => setVecinoView('cuenta')}
+            >
+              <FileText size={14} /> Mi Estado de Cuenta
+            </button>
+            <button
+              className={`ec-view-btn ${vecinoView === 'reporte' ? 'active' : ''}`}
+              onClick={() => setVecinoView('reporte')}
+            >
+              <Globe size={14} /> Reporte General
+            </button>
+          </div>
+          {/* Navegador de período — aplica al reporte general */}
+          {vecinoView === 'reporte' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--white)', border: '1px solid var(--sand-100)', borderRadius: 'var(--radius-lg)', padding: '6px 14px' }}>
+              <Calendar size={14} color="var(--teal-500)" />
+              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-500)' }}>Período:</span>
+              <div className="period-nav" style={{ gap: 2 }}>
+                <button className="period-nav-btn" onClick={() => setCutoff(prevPeriod(cutoff))} disabled={!!startPeriod && cutoff <= startPeriod} style={{ opacity: (!!startPeriod && cutoff <= startPeriod) ? 0.3 : 1 }}>
+                  <ChevronLeft size={15} />
+                </button>
+                <input type="month" className="period-month-select" style={{ fontSize: 14, fontWeight: 700 }} value={cutoff} min={startPeriod || undefined} max={todayPeriod()} onChange={e => { const v = e.target.value; if (!startPeriod || v >= startPeriod) setCutoff(v); }} />
+                <button className="period-nav-btn" onClick={() => { const n = nextPeriod(cutoff); if (n <= todayPeriod()) setCutoff(n); }} disabled={cutoff >= todayPeriod()} style={{ opacity: cutoff >= todayPeriod() ? 0.3 : 1 }}>
+                  <ChevronRight size={15} />
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Admin/other roles: Tabs + navegador de período global ── */}
       {!isVecino && !selectedUnit && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
           <div className="ec-view-toggle" style={{ marginBottom: 0 }}>
@@ -274,7 +320,7 @@ export default function EstadoCuenta() {
       )}
 
       {/* ════════════════════════ UNIT DETAIL VIEW ════════════════════════ */}
-      {showDetail && selectedUnit ? (
+      {(showDetail && selectedUnit) ? (
         <div>
           {!isVecino && (
             <div className="no-print" style={{ marginBottom: 16 }}>
@@ -825,8 +871,22 @@ export default function EstadoCuenta() {
             />
           )}
 
-          {/* Vecino without unit */}
-          {isVecino && !selectedUnit && (
+          {/* ════ Vecino: Reporte General (solo lectura) ════ */}
+          {isVecino && vecinoView === 'reporte' && (
+            <ReporteGeneralView
+              tenantData={tenantData}
+              generalData={generalData}
+              genLoading={genLoading}
+              cutoff={cutoff}
+              setCutoff={setCutoff}
+              startPeriod={startPeriod}
+              user={user} role={role}
+              readOnly
+            />
+          )}
+
+          {/* Vecino without unit assigned */}
+          {isVecino && vecinoView === 'cuenta' && !selectedUnit && (
             <div className="empty">
               <div className="empty-icon">📋</div>
               <h4>Sin unidad asignada</h4>
