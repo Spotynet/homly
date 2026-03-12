@@ -1410,26 +1410,303 @@ tr:hover td { background: rgba(59,185,144,0.02); }
   padding: 18px;
 }
 
-/* ─── Responsive ─── */
+/* ═══════════════════════════════════════════════════════
+   RESPONSIVE — Mobile-first breakpoints
+   • 1100px  tablet landscape
+   • 900px   tablet portrait / sidebar breakpoint
+   • 640px   large phone
+   • 480px   small phone
+   ═══════════════════════════════════════════════════════ */
+
+/* ─── Utility classes ─── */
+.hidden-mobile  { }                        /* shown by default */
+.show-mobile    { display: none !important; }
+
+/* ─── Tablet landscape ─── */
 @media (max-width: 1100px) {
   .cob-stats { grid-template-columns: repeat(3, 1fr) !important; }
+  .stats { grid-template-columns: repeat(2, 1fr); }
 }
+
+/* ─── Tablet portrait / mobile sidebar ─── */
 @media (max-width: 900px) {
-  .sidebar { transform: translateX(-100%); }
+  /* Sidebar: hidden off-screen, overlays on open */
+  .sidebar { transform: translateX(-100%); background: var(--teal-800); }
   .sidebar.open { transform: translateX(0); }
   .sidebar-overlay.show { display: block; }
   .main { margin-left: 0; }
-  .header { padding: 0 16px; }
-  .content { padding: 20px; }
   .mobile-toggle { display: flex; }
+
+  /* Sidebar brand on dark bg */
+  .brand { border-bottom-color: rgba(255,255,255,0.1); }
+  .sidebar-tenant { background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.1); }
+  .sidebar-tenant-name { color: rgba(255,255,255,0.9); }
+  .sidebar-tenant-sub  { color: rgba(255,255,255,0.4); }
+  .nav-group-label { color: rgba(255,255,255,0.4); }
+  .nav-item { color: rgba(255,255,255,0.7); }
+  .nav-item:hover { background: rgba(255,255,255,0.08); color: white; }
+  .nav-item.active { background: rgba(255,255,255,0.12); color: white; border-color: rgba(255,255,255,0.15); }
+  .nav-item.active::before { background: var(--coral-400); }
+  .sidebar-footer { border-top-color: rgba(255,255,255,0.1); }
+  .sidebar-footer-name { color: rgba(255,255,255,0.9); }
+  .sidebar-footer-role { color: rgba(255,255,255,0.6) !important; }
+  .logout-btn { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.15); color: rgba(255,255,255,0.6); }
+  .logout-btn:hover { background: rgba(232,93,67,0.25); color: var(--coral-400); border-color: rgba(232,93,67,0.3); }
+  .version-badge { color: rgba(255,255,255,0.3); }
+
+  /* Header */
+  .header { padding: 0 16px; gap: 12px; }
+  .header-title { font-size: 18px; }
+  .search-bar { display: none; }
+
+  /* Content */
+  .content { padding: 16px; max-width: 100%; }
+
+  /* Layout grids */
   .grid-2 { grid-template-columns: 1fr; }
-  .stats  { grid-template-columns: 1fr 1fr; }
-  .cob-stats { grid-template-columns: 1fr 1fr; }
+  .stats  { grid-template-columns: 1fr 1fr; gap: 12px; }
+  .cob-stats { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .gasto-stat-bar { grid-template-columns: 1fr 1fr; }
   .ec-unit-grid { grid-template-columns: 1fr; }
   .ec-summary-strip { grid-template-columns: 1fr 1fr; }
+  .info-grid { grid-template-columns: 1fr 1fr; }
+  .form-grid { grid-template-columns: 1fr; }
+  .roles-grid { grid-template-columns: 1fr 1fr; }
+
+  /* Card adjustments */
+  .card-head { padding: 14px 16px; gap: 8px; }
+  .card-head h3 { font-size: 14px; }
+  .card-body { padding: 16px; }
+
+  /* Tabs: horizontal scroll */
+  .tabs { width: 100%; overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; }
+  .tab { padding: 9px 14px; font-size: 12px; white-space: nowrap; }
+
+  /* Tables: horizontal scroll */
+  .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; max-height: none; }
+  th { padding: 12px 14px; font-size: 10px; }
+  td { padding: 12px 14px; font-size: 12px; }
+
+  /* Modals: slide-up sheet */
+  .modal-overlay,
+  .modal-bg { padding: 0; align-items: flex-end; }
+  .modal-content,
+  .modal {
+    max-width: 100%;
+    max-height: 92vh;
+    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+    animation: slideUp 0.3s var(--ease);
+  }
+  .modal-content.lg,
+  .modal.lg { max-width: 100%; }
+  .modal-header,
+  .modal-head { padding: 20px 20px 16px; }
+  .modal-body { padding: 16px 20px; }
+  .modal-footer,
+  .modal-foot { padding: 12px 20px; }
+
+  /* Period nav */
+  .ec-period-controls { flex-wrap: wrap; gap: 8px; padding: 12px 16px; }
+  .period-label { min-width: 120px; font-size: 14px; }
+
+  /* Section intro toolbar */
+  .section-intro { flex-direction: column; align-items: flex-start; gap: 10px; }
+  .section-intro .btn { width: 100%; justify-content: center; }
+
+  /* Welcome card */
+  .welcome-card { padding: 22px; }
+  .welcome-card h2 { font-size: 22px; }
+
+  /* Stat values */
+  .stat-value { font-size: 24px; }
+  .cob-stat-value { font-size: 18px; }
+
+  /* Pagination */
+  .pag-bar { flex-direction: column; align-items: flex-start; gap: 10px; padding: 12px 14px; }
+  .pag-bar .pag-right { width: 100%; justify-content: space-between; }
+
+  /* Utils */
+  .hidden-mobile { display: none !important; }
+  .show-mobile   { display: flex !important; }
 }
+
+/* ─── Large phone ─── */
+@media (max-width: 640px) {
+  .content { padding: 12px; }
+  .card-head { flex-direction: column; align-items: flex-start; }
+  .card-head .btn,
+  .card-head button { width: 100%; justify-content: center; }
+  .info-grid { grid-template-columns: 1fr; }
+  .roles-grid { grid-template-columns: 1fr; }
+  .gasto-stat-bar { grid-template-columns: 1fr; }
+  .ec-view-toggle { width: 100%; overflow-x: auto; flex-wrap: nowrap; }
+  .ec-view-btn { padding: 8px 14px; font-size: 12px; }
+  .ec-detail-header { padding: 16px; }
+  .ec-detail-title { font-size: 18px; }
+  .ec-detail-actions { flex-wrap: wrap; gap: 8px; }
+  .ec-detail-actions .btn { flex: 1; justify-content: center; }
+  .section-intro { margin-bottom: 14px; }
+  .cob-stat { padding: 14px; gap: 10px; }
+  .cob-stat-icon { width: 32px; height: 32px; }
+}
+
+/* ─── Small phone ─── */
 @media (max-width: 480px) {
-  .stats { grid-template-columns: 1fr; }
-  .cob-stats { grid-template-columns: 1fr; }
+  .content { padding: 10px; }
+  .stats { grid-template-columns: 1fr; gap: 10px; }
+  .cob-stats { grid-template-columns: 1fr 1fr; gap: 8px; }
   .ec-summary-strip { grid-template-columns: 1fr 1fr; }
+  .stat { padding: 16px; }
+  .stat-value { font-size: 22px; }
+
+  /* Tables: ultra compact on tiny screens */
+  th { padding: 10px 10px; font-size: 9px; }
+  td { padding: 10px 10px; font-size: 11px; }
+
+  /* Tabs full-width scroll */
+  .tabs { gap: 0; }
+
+  /* Buttons in card header always stack */
+  .card-head > div,
+  .card-head > button { width: 100%; }
+
+  /* Period nav: compact */
+  .period-label { min-width: 90px; font-size: 13px; }
+  .period-nav-btn { width: 30px; height: 30px; }
+
+  /* Modal: almost full screen */
+  .modal-content,
+  .modal { max-height: 96vh; }
+
+  /* Pagination: ultra compact */
+  .pag-per-page { display: none; }
+  .pag-bar .pag-left { display: none; }
+}
+
+/* ─── Slide-up animation for mobile modals ─── */
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(40px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ─── Touch-friendly tap targets ─── */
+@media (max-width: 900px) {
+  button, .btn, .nav-item, .tab, .pag-btn {
+    min-height: 44px;
+  }
+  .btn-icon, .btn-ghost, .modal-close, .logout-btn {
+    min-height: 40px;
+    min-width: 40px;
+  }
+}
+
+/* ─── Landing page responsive ─── */
+.landing-nav-inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 32px;
+  height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.landing-hero {
+  padding: 140px 32px 80px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+.landing-hero-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 64px;
+  align-items: center;
+}
+.landing-stats-bar {
+  background: #124A36;
+  padding: 40px 32px;
+}
+.landing-stats-grid {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 32px;
+  text-align: center;
+}
+.landing-section {
+  padding: 100px 32px;
+}
+.landing-section-inner {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+.landing-features-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 20px;
+}
+.landing-steps-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 32px;
+}
+.landing-footer-inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  text-align: center;
+}
+.landing-mobile-menu-btn {
+  display: none;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 8px;
+}
+
+@media (max-width: 900px) {
+  .landing-nav-inner { padding: 0 20px; height: 64px; }
+  .landing-hero { padding: 100px 20px 60px; }
+  .landing-hero-grid { grid-template-columns: 1fr; gap: 40px; }
+  .landing-hero-mockup { display: none; }  /* hide complex mockup on mobile */
+  .landing-stats-bar { padding: 32px 20px; }
+  .landing-stats-grid { gap: 24px; grid-template-columns: repeat(2, 1fr); }
+  .landing-section { padding: 64px 20px; }
+  .landing-features-grid { grid-template-columns: 1fr; gap: 14px; }
+  .landing-steps-grid { grid-template-columns: 1fr; gap: 24px; }
+  .landing-mobile-menu-btn { display: flex; }
+}
+
+@media (max-width: 480px) {
+  .landing-nav-inner { padding: 0 16px; }
+  .landing-hero { padding: 88px 16px 48px; }
+  .landing-stats-grid { grid-template-columns: repeat(2, 1fr); gap: 16px; }
+  .landing-section { padding: 48px 16px; }
+}
+
+/* ─── Auth pages (Login / Registro / ChangePassword) responsive ─── */
+/* The right decorative panel hides on mobile */
+@media (max-width: 900px) {
+  /* Login split layout */
+  .min-h-screen.flex > div:last-child {
+    display: none !important;
+  }
+  .min-h-screen.flex > div:first-child {
+    padding: 32px 20px;
+  }
+  /* Content max-width for auth forms */
+  .w-full.max-w-md {
+    max-width: 100%;
+  }
+}
+
+/* Registro page: header padding */
+@media (max-width: 640px) {
+  /* Inline styles can't be overridden easily, but we target known structures */
+  .space-y-4 > * + * {
+    margin-top: 14px;
+  }
 }

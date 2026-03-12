@@ -239,7 +239,7 @@ export default function Registro() {
   return (
     <PageShell>
       {/* ── Stepper ── */}
-      <div style={{ maxWidth: 560, margin: '0 auto', padding: '0 20px 40px' }}>
+      <div style={{ maxWidth: 560, margin: '0 auto', padding: '0 clamp(12px, 4vw, 20px) 40px' }}>
 
         <Stepper current={step} />
 
@@ -496,10 +496,10 @@ function PageShell({ children }) {
         background: 'rgba(253,251,247,0.95)',
         backdropFilter: 'blur(12px)',
         borderBottom: `1px solid ${C.sandBd}`,
-        padding: '0 32px',
+        padding: '0 clamp(16px, 4vw, 32px)',
         position: 'sticky', top: 0, zIndex: 100,
       }}>
-        <div style={{ maxWidth: 1200, margin: '0 auto', height: 68, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ maxWidth: 1200, margin: '0 auto', height: 64, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <Link to="/" style={{ textDecoration: 'none' }}>
             <LogoFull />
           </Link>
@@ -515,7 +515,7 @@ function PageShell({ children }) {
       </nav>
 
       {/* Hero header */}
-      <div style={{ background: C.green, padding: '52px 32px 56px', textAlign: 'center' }}>
+      <div style={{ background: C.green, padding: 'clamp(36px, 6vw, 52px) clamp(16px, 4vw, 32px) clamp(40px, 6vw, 56px)', textAlign: 'center' }}>
         <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'rgba(232,93,67,0.15)', border: '1px solid rgba(232,93,67,0.3)', borderRadius: 999, padding: '5px 14px', fontSize: 13, fontWeight: 700, color: C.coral, marginBottom: 20 }}>
           ✦ Registro de condominio
         </div>
