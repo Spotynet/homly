@@ -380,7 +380,7 @@ export default function EstadoCuenta() {
                 {unitPrevDebt > 0 && (
                   <div className="ec-sum-cell" style={{ background: 'var(--coral-50)' }}>
                     <div className="ec-sum-label" style={{ color: 'var(--coral-500)' }}>
-                      Adeudo Anterior
+                      Recaudo de adeudos
                       {prevDebtAdeudo > 0 && (
                         <span style={{ fontSize: 9, color: 'var(--teal-600)', fontWeight: 400, marginLeft: 4 }}>
                           (Abonado: {fmt(prevDebtAdeudo)})
@@ -390,7 +390,7 @@ export default function EstadoCuenta() {
                     <div className="ec-sum-val debt">-{fmt(netPrevDebt)}</div>
                     {data?.unit?.previous_debt_evidence && (
                       <button
-                        title="Ver evidencia de adeudo anterior"
+                        title="Ver evidencia de recaudo de adeudos"
                         onClick={() => {
                           const b64 = data.unit.previous_debt_evidence;
                           const bytes = atob(b64);
@@ -470,7 +470,7 @@ export default function EstadoCuenta() {
                       <tr style={{ background: 'var(--coral-50)', fontStyle: 'italic' }}>
                         <td style={{ fontWeight: 700, color: 'var(--coral-500)', whiteSpace: 'nowrap' }}>
                           <AlertCircle size={13} style={{ display: 'inline', verticalAlign: -2, marginRight: 6 }} />
-                          Adeudo Anterior
+                          Recaudo de adeudos
                         </td>
                         <td colSpan={2} style={{ textAlign: 'right', color: 'var(--coral-500)', fontSize: 12 }}>
                           Saldo previo
@@ -1957,7 +1957,7 @@ function ReporteAdeudosView({ tenantData, adeudosData, adeudosLoading, cutoff, s
               <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 700 }}>Código</th>
               <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 700 }}>Nombre / Unidad</th>
               <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 700 }}>Responsable</th>
-              <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 700 }}>Adeudo Anterior</th>
+              <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 700 }}>Recaudo de adeudos</th>
               <th style={{ padding: '6px 8px', textAlign: 'center', fontWeight: 700 }}>Períodos</th>
               <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 700 }}>Adeudo Total</th>
             </tr>
@@ -2038,7 +2038,7 @@ function ReporteAdeudosView({ tenantData, adeudosData, adeudosLoading, cutoff, s
                   <tr>
                     <th>Unidad</th>
                     <th>Responsable</th>
-                    <th style={{ textAlign: 'right' }}>Adeudo Anterior</th>
+                    <th style={{ textAlign: 'right' }}>Recaudo de adeudos</th>
                     <th style={{ textAlign: 'right' }}>Períodos con Deuda</th>
                     <th style={{ textAlign: 'right' }}>Adeudo Total</th>
                     <th style={{ width: 40 }}></th>
@@ -2114,7 +2114,7 @@ function ReporteAdeudosView({ tenantData, adeudosData, adeudosLoading, cutoff, s
                                       <tr style={{ background: 'var(--coral-50)' }}>
                                         <td style={{ padding: '6px 8px', color: 'var(--coral-600)', fontWeight: 600, fontStyle: 'italic' }}>
                                           <AlertCircle size={12} style={{ display: 'inline', verticalAlign: -1, marginRight: 4 }} />
-                                          Adeudo Anterior
+                                          Recaudo de adeudos
                                           {parseFloat(item.prev_debt_adeudo || 0) > 0 && (
                                             <span style={{ fontSize: 11, color: 'var(--teal-600)', fontStyle: 'normal', marginLeft: 6 }}>
                                               (Abonado: {fmt(item.prev_debt_adeudo)})

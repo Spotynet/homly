@@ -827,7 +827,7 @@ export default function Cobranza() {
         const reqEFs = extraFields.filter(f => f.required);
         const optEFs = extraFields.filter(f => !f.required);
         const allEFs = [...reqEFs, ...optEFs];
-        const getLabelForField = (fid) => fid === 'maintenance' ? 'Mantenimiento' : fid === 'prevDebt' ? 'Recaudo de Adeudo' : (extraFields.find(e => e.id === fid) || {}).label || fid;
+        const getLabelForField = (fid) => fid === 'maintenance' ? 'Mantenimiento' : fid === 'prevDebt' ? 'Recaudo de adeudos' : (extraFields.find(e => e.id === fid) || {}).label || fid;
         return (
           <div className="modal-bg open" onClick={() => { setShowAdditionalPaymentsModal(null); setEditingAdditional(null); }}>
             <div className="modal lg" onClick={e => e.stopPropagation()} style={{ maxWidth: 560 }}>
@@ -998,7 +998,7 @@ export default function Cobranza() {
         if (prevDebt > 0) {
           const existingPrev = captureForm.adeudo_payments?.__prevDebt;
           const existingPrevSum = existingPrev ? Object.values(existingPrev).reduce((a, v) => a + (parseFloat(v) || 0), 0) : 0;
-          periodsWithDebt.push({ period: '__prevDebt', saldoPeriodo: prevDebt, label: 'Adeudo Anterior al Inicio' });
+          periodsWithDebt.push({ period: '__prevDebt', saldoPeriodo: prevDebt, label: 'Recaudo de adeudos' });
         }
         const responsible = showCapture.occupancy === 'rentado'
           ? `${showCapture.tenant_first_name || ''} ${showCapture.tenant_last_name || ''}`.trim() || showCapture.responsible_name
@@ -1221,17 +1221,17 @@ export default function Cobranza() {
                                   {sel && <Check size={12} style={{ color: 'white' }} />}
                                 </div>
                                 <div style={{ flex: 1 }}>
-                                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink-800)' }}>{d.period === '__prevDebt' ? '⚠️ Adeudo Anterior al Inicio' : periodLabel(d.period)}</div>
+                                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink-800)' }}>{d.period === '__prevDebt' ? '⚠️ Recaudo de adeudos' : periodLabel(d.period)}</div>
                                   <div style={{ fontSize: 11, color: 'var(--coral-500)', fontWeight: 600 }}>Saldo pendiente: {fmt(d.saldoPeriodo)}{capturedTotal > 0 ? ` · Abonando: ${fmt(capturedTotal)}` : ''}</div>
                                 </div>
                                 <span style={{ fontSize: 11, color: 'var(--ink-400)' }}>{sel ? '▲ ocultar' : '▼ capturar'}</span>
                               </div>
                               {sel && (
                                 <div style={{ padding: '10px 16px 14px', background: 'var(--coral-50)' }}>
-                                  <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--coral-700)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>Abono por campo — período {d.period === '__prevDebt' ? 'Adeudo Anterior' : periodLabel(d.period)}:</div>
+                                  <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--coral-700)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>Abono por campo — período {d.period === '__prevDebt' ? 'Recaudo de adeudos' : periodLabel(d.period)}:</div>
                                   {d.period === '__prevDebt' ? (
                                     <div style={{ marginBottom: 8 }}>
-                                      <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-700)' }}>Adeudo Anterior (Pre-Inicio)</label>
+                                      <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-700)' }}>Recaudo de adeudos</label>
                                       <input type="number" className="field-input" min={0} step="0.01" style={{ marginTop: 4, maxWidth: 140 }}
                                         value={ds.prevDebt ?? ''}
                                         onChange={e => setAdeudoSelection(d.period, 'prevDebt', e.target.value)} />
@@ -1395,7 +1395,7 @@ export default function Cobranza() {
           Object.entries(fieldMap || {}).forEach(([fieldId, amt]) => {
             const a = parseFloat(amt) || 0;
             if (a > 0) {
-              const fLabel = fieldId === 'maintenance' ? 'Mantenimiento' : fieldId === 'prevDebt' ? 'Recaudo de Adeudo' : (extraFields.find(e => e.id === fieldId) || {}).label || fieldId;
+              const fLabel = fieldId === 'maintenance' ? 'Mantenimiento' : fieldId === 'prevDebt' ? 'Recaudo de adeudos' : (extraFields.find(e => e.id === fieldId) || {}).label || fieldId;
               adeudoRows.push({ fieldLabel: fLabel, targetPeriod, amount: a });
               totalAdeudo += a;
             }
@@ -1492,7 +1492,7 @@ export default function Cobranza() {
                           <tr className="receipt-section-header"><td colSpan={4} style={{ color: 'var(--coral-500)', background: 'var(--coral-50)' }}>◂ ABONOS A ADEUDO</td></tr>
                           {adeudoRows.map((ar, i) => (
                             <tr key={i}>
-                              <td>{ar.fieldLabel}<br /><small style={{ color: 'var(--coral-500)' }}>{ar.targetPeriod === '__prevDebt' ? 'Adeudo Anterior al Inicio' : `Abono a Adeudo → ${periodLabel(ar.targetPeriod)}`}</small></td>
+                              <td>{ar.fieldLabel}<br /><small style={{ color: 'var(--coral-500)' }}>{ar.targetPeriod === '__prevDebt' ? 'Recaudo de adeudos' : `Abono a Adeudo → ${periodLabel(ar.targetPeriod)}`}</small></td>
                               <td style={{ textAlign: 'right', color: 'var(--ink-300)' }}>—</td>
                               <td style={{ textAlign: 'right', color: 'var(--coral-500)', fontWeight: 700 }}>{rfmt(ar.amount)}</td>
                               <td style={{ textAlign: 'right', color: 'var(--ink-300)' }}>—</td>
@@ -1511,7 +1511,7 @@ export default function Cobranza() {
                           Object.entries(fpAP).forEach(([fid, fd2]) => {
                             const aAmt = parseFloat((fd2 && fd2.received) ?? fd2 ?? 0) || 0;
                             if (aAmt <= 0) return;
-                            const fLabel = fid === 'maintenance' ? 'Mantenimiento' : fid === 'prevDebt' ? 'Recaudo de Adeudo' : (extraFields.find(e => e.id === fid) || {}).label || fid;
+                            const fLabel = fid === 'maintenance' ? 'Mantenimiento' : fid === 'prevDebt' ? 'Recaudo de adeudos' : (extraFields.find(e => e.id === fid) || {}).label || fid;
                             const sublabel = ['Pago #' + (apIdx + 2), ptLabel, pdLabel].filter(Boolean).join(' · ') + (ap.bank_reconciled ? ' 🏦' : '');
                             rows.push({ fLabel, sublabel, amount: aAmt });
                           });
