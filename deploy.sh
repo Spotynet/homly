@@ -62,7 +62,20 @@ ssh -i "$PEM" "$EC2" << 'ENDSSH'
   # Merge conflicting branches (non-interactive; fixes EOFError over SSH)
   python manage.py makemigrations --merge --noinput 2>/dev/null || true
   # Apply migrations (non-interactive)
-  python manage.py migrate --noinput --run-syncdb
+  set +e
+  MIGRATE_OUT=$(python manage.py migrate --noinput --run-syncdb 2>&1)
+  MIGRATE_OK=$?
+  set -e
+  if [ "$MIGRATE_OK" -ne 0 ]; then
+    if echo "$MIGRATE_OUT" | grep -q "No index named amenity_tenant_date_idx"; then
+      echo "  → Fixing duplicate index rename (0018_merge vs 0018_rename)..."
+      python manage.py migrate core 0018_rename_amenity_tenant_date_idx_amenity_res_tenant__3e212d_idx_and_more --fake --noinput
+      python manage.py migrate --noinput --run-syncdb
+    else
+      echo "$MIGRATE_OUT"
+      exit 1
+    fi
+  fi
   deactivate
   cd ..
 
