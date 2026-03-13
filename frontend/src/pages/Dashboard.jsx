@@ -422,7 +422,10 @@ export default function Dashboard() {
   const pctCobVsCargos     = cargosFijos > 0 ? Math.round((cobranza / cargosFijos) * 100) : 0;
   const pctGastosVsIng     = totalIngresos > 0 ? Math.round((gastos / totalIngresos) * 100) : 0;
   const pctIngAdicional    = totalIngresos > 0 ? Math.round((ingAdicional / totalIngresos) * 100) : 0;
-  const pctDeudaRecuperada = deudaTotal > 0 ? Math.round((adeudoRecibido / deudaTotal) * 100) : 0;
+  // pct = adeudoRecibido / (adeudoRecibido + deudaTotal): fracción cobrada del total antes de este período
+  const pctDeudaRecuperada = (adeudoRecibido + deudaTotal) > 0
+    ? Math.round((adeudoRecibido / (adeudoRecibido + deudaTotal)) * 100)
+    : 0;
 
   // Colores dinámicos
   const effColor = pctCobVsCargos >= 90 ? 'var(--teal-400)'
@@ -1200,20 +1203,16 @@ export default function Dashboard() {
                     </div>
                     <div style={{ flex: 1 }}>
                       <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink-800)', marginBottom: 8 }}>
-                        Recuperado este período
+                        Cobrado al adeudo en el período
                       </div>
                       <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
                         <div>
-                          <div style={{ fontSize: 11, color: 'var(--ink-400)', marginBottom: 2 }}>Adeudo recibido</div>
+                          <div style={{ fontSize: 11, color: 'var(--ink-400)', marginBottom: 2 }}>Recibido en el período</div>
                           <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--amber-700)' }}>{fmtDec(adeudoRecibido)}</div>
                         </div>
                         <div>
-                          <div style={{ fontSize: 11, color: 'var(--ink-400)', marginBottom: 2 }}>Deuda total inicial</div>
-                          <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--ink-700)' }}>{fmtDec(deudaTotal)}</div>
-                        </div>
-                        <div>
-                          <div style={{ fontSize: 11, color: 'var(--ink-400)', marginBottom: 2 }}>Pendiente por recuperar</div>
-                          <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--coral-600)' }}>{fmtDec(Math.max(0, deudaTotal - adeudoRecibido))}</div>
+                          <div style={{ fontSize: 11, color: 'var(--ink-400)', marginBottom: 2 }}>Adeudo al corte</div>
+                          <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--coral-600)' }}>{fmtDec(deudaTotal)}</div>
                         </div>
                       </div>
                     </div>

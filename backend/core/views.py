@@ -1081,8 +1081,19 @@ class DashboardView(APIView):
                     for amt in period_debt.values():
                         total_adeudo_recibido += Decimal(str(amt or 0))
 
-        # Deuda total = suma de previous_debt de todas las unidades del tenant
-        deuda_total = units.aggregate(total=Sum('previous_debt'))['total'] or Decimal('0')
+        # Deuda total = suma del adeudo real por unidad al corte del período
+        # (misma lógica que ReporteAdeudosView para que coincida con el reporte)
+        start_period = tenant.operation_start_date or '2024-01'
+        deuda_total = Decimal('0')
+        for unit in units:
+            _, _, _, bal, prev_debt_adeudo = _compute_statement(
+                tenant, str(unit.id), start_period, period
+            )
+            previous_debt_u = Decimal(str(unit.previous_debt or 0))
+            credit_balance_u = Decimal(str(unit.credit_balance or 0))
+            prev_debt_adeudo_dec = Decimal(str(prev_debt_adeudo))
+            adj_bal = Decimal(str(bal)) + previous_debt_u - prev_debt_adeudo_dec - credit_balance_u
+            deuda_total += max(Decimal('0'), adj_bal)
 
         # Total ingresos = mantenimiento + campos adicionales (SIN adeudos)
         # total_collected = solo FieldPayments de mantenimiento fijo
