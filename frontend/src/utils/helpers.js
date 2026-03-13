@@ -209,40 +209,84 @@ export function HomlyIsotipo({ size = 44, style = {} }) {
   );
 }
 
-/** Full brand — logo image only (isotipo), no text */
+/** Full brand — imagen (casita) + "Homly" en verde para fondo crema/claro */
 export function HomlyBrand({ iconSize = 44, nameHeight = 32, style = {} }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, ...style }}>
       <img
         src="/img/isotipo-homly.svg"
         alt="Homly"
-        style={{ width: iconSize, height: iconSize, objectFit: 'contain', flexShrink: 0 }}
+        style={{
+          width: iconSize,
+          height: iconSize,
+          objectFit: 'contain',
+          flexShrink: 0,
+          filter: 'brightness(0) saturate(100%) invert(39%) sepia(42%) saturate(892%) hue-rotate(117deg) brightness(93%) contrast(88%)',
+        }}
       />
+      <span
+        style={{
+          fontFamily: 'var(--font-display)',
+          fontSize: nameHeight,
+          fontWeight: 600,
+          color: '#1F7D5B',
+          letterSpacing: '-0.02em',
+        }}
+      >
+        Homly
+      </span>
     </div>
   );
 }
 
-/** Full brand for dark backgrounds — logo image only (no text) */
+/** Full brand para fondos verdes/oscuros — imagen (casita) + "Homly" en crema */
 export function HomlyBrandDark({ iconSize = 44, fontSize = 26, style = {} }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, ...style }}>
       <img
         src="/img/isotipo-homly.svg"
         alt="Homly"
-        style={{ width: iconSize, height: iconSize, objectFit: 'contain', flexShrink: 0, borderRadius: 8 }}
+        style={{
+          width: iconSize,
+          height: iconSize,
+          objectFit: 'contain',
+          flexShrink: 0,
+          borderRadius: 8,
+          filter: 'brightness(0) saturate(100%) invert(1)',
+        }}
       />
+      <span
+        style={{
+          fontFamily: 'var(--font-display)',
+          fontSize,
+          fontWeight: 600,
+          color: '#FDFBF7',
+          letterSpacing: '-0.02em',
+        }}
+      >
+        Homly
+      </span>
     </div>
   );
 }
 
-// Legacy alias — logo image only (isotipo)
+/** Logo completo — imagen (casita) + nombre Homly, para fondo crema */
 export const HOMLY_LOGO_FULL = (
   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
     <img
       src="/img/isotipo-homly.svg"
       alt="Homly"
-      style={{ width: 52, height: 52, objectFit: 'contain', flexShrink: 0 }}
+      style={{
+        width: 52,
+        height: 52,
+        objectFit: 'contain',
+        flexShrink: 0,
+        filter: 'brightness(0) saturate(100%) invert(39%) sepia(42%) saturate(892%) hue-rotate(117deg) brightness(93%) contrast(88%)',
+      }}
     />
+    <span style={{ fontFamily: 'var(--font-display)', fontSize: 28, fontWeight: 600, color: '#1F7D5B', letterSpacing: '-0.02em' }}>
+      Homly
+    </span>
   </div>
 );
 

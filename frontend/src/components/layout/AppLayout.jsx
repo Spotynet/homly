@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { HomlyIsotipo, APP_VERSION, ROLES } from '../../utils/helpers';
+import { HomlyBrand, APP_VERSION, ROLES } from '../../utils/helpers';
 import {
   Home, Globe, FileText, ShoppingBag, Receipt, Settings,
   Users, Building, Shield, LogOut, Menu, X, Search, Calendar,
@@ -266,9 +266,9 @@ export default function AppLayout() {
 
       {/* Sidebar */}
       <aside className={`sidebar${sidebarOpen ? ' open' : ''}`}>
-        {/* Brand — logo image only */}
+        {/* Brand — casita + nombre en verde (fondo crema) */}
         <div className="brand" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px 16px 12px' }}>
-          <HomlyIsotipo size={42} style={{ borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.18)' }} />
+          <HomlyBrand iconSize={42} nameHeight={24} />
         </div>
 
         {/* Tenant section */}
@@ -345,11 +345,11 @@ export default function AppLayout() {
             <button className="mobile-toggle" onClick={() => setSidebarOpen(true)} aria-label="Abrir menú">
               <Menu size={22} />
             </button>
-            {/* Mobile brand — logo image only */}
-            <div className="show-mobile" style={{ alignItems: 'center' }}>
-              <HomlyIsotipo size={32} style={{ borderRadius: 6 }} />
+            {/* Logo (casita + Homly) en verde — siempre visible en móvil y desktop */}
+            <div style={{ display: 'flex', alignItems: 'center', marginRight: 16 }}>
+              <HomlyBrand iconSize={32} nameHeight={18} />
             </div>
-            {/* Desktop: page title */}
+            {/* Page title (desktop) */}
             <div className="hidden-mobile">
               <div className="header-title">{pageTitle}</div>
               {tenantName && <div className="header-subtitle">{tenantName}</div>}

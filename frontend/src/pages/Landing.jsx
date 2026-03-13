@@ -364,7 +364,9 @@ export default function Landing() {
 
       {/* ── TESTIMONIAL QUOTE ── */}
       <section className="landing-section" style={{ maxWidth: 900, margin: '0 auto', textAlign: 'center' }}>
-        <HomlyIsotipo size={64} style={{ margin: '0 auto 8px', display: 'block', borderRadius: 16, boxShadow: '0 4px 20px rgba(18,74,54,0.15)' }} />
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 8 }}>
+          <LogoFull iconSize={64} nameHeight={36} />
+        </div>
         <blockquote style={{
           fontSize: 'clamp(20px, 3vw, 32px)',
           fontWeight: 700,
