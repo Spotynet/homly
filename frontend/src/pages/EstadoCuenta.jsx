@@ -19,6 +19,7 @@ export default function EstadoCuenta() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
+  const [adeudosSearch, setAdeudosSearch] = useState('');
   const [view, setView] = useState('units');
   const [generalData, setGeneralData] = useState(null);
   const [genLoading, setGenLoading] = useState(false);
@@ -257,6 +258,7 @@ export default function EstadoCuenta() {
       {/* ── Admin/other roles: Tabs + navegador de período global ── */}
       {!isVecino && !selectedUnit && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', flex: 1 }}>
           <div className="ec-view-toggle" style={{ marginBottom: 0 }}>
             <button className={`ec-view-btn ${view === 'units' ? 'active' : ''}`} onClick={() => { setView('units'); setSelectedUnit(null); }}>
               <Building size={14} /> Estado por Unidad
@@ -270,6 +272,29 @@ export default function EstadoCuenta() {
             <button className={`ec-view-btn ${view === 'adeudos' ? 'active' : ''}`} onClick={() => { setView('adeudos'); setSelectedUnit(null); }}>
               <AlertCircle size={14} /> Reporte de Adeudos
             </button>
+          </div>
+
+          {/* Search bar — visible en units y adeudos */}
+          {view === 'units' && (
+            <div className="ec-search-bar" style={{ flex: '1 1 220px', maxWidth: 320 }}>
+              <Search size={16} style={{ color: 'var(--ink-400)', flexShrink: 0 }} />
+              <input
+                placeholder="Buscar unidad o residente..."
+                value={search}
+                onChange={e => { setSearch(e.target.value); setUnitsPage(1); }}
+              />
+            </div>
+          )}
+          {view === 'adeudos' && (
+            <div className="ec-search-bar" style={{ flex: '1 1 220px', maxWidth: 320 }}>
+              <Search size={16} style={{ color: 'var(--ink-400)', flexShrink: 0 }} />
+              <input
+                placeholder="Buscar unidad o residente..."
+                value={adeudosSearch}
+                onChange={e => setAdeudosSearch(e.target.value)}
+              />
+            </div>
+          )}
           </div>
 
           {/* Navegador de período — compartido para todas las vistas */}
@@ -550,18 +575,6 @@ export default function EstadoCuenta() {
           {/* ════════════════════════ UNIT LIST VIEW ════════════════════════ */}
           {view === 'units' && !isVecino && (
             <>
-              {/* Search */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
-                <div className="ec-search-bar">
-                  <Search size={16} style={{ color: 'var(--ink-400)', flexShrink: 0 }} />
-                  <input
-                    placeholder="Buscar unidad o residente..."
-                    value={search}
-                    onChange={e => { setSearch(e.target.value); setUnitsPage(1); }}
-                  />
-                </div>
-              </div>
-
               {/* KPI Stats */}
               <div className="cob-stats" style={{ marginBottom: 20 }}>
                 <div className="cob-stat">
@@ -579,13 +592,6 @@ export default function EstadoCuenta() {
                     {listMeta?.total_ingresos_no_identificados > 0 && (
                       <div style={{ fontSize: 10, color: 'var(--amber-600)', marginTop: 2 }}>incl. {fmt(listMeta.total_ingresos_no_identificados)} no identificados</div>
                     )}
-                  </div>
-                </div>
-                <div className="cob-stat">
-                  <div className="cob-stat-icon" style={{ background: 'var(--coral-50)', color: 'var(--coral-400)' }}><TrendingDown size={18} /></div>
-                  <div>
-                    <div className="cob-stat-label">Deuda Total</div>
-                    <div className="cob-stat-value">{fmt(summaryData.totalDeuda)}</div>
                   </div>
                 </div>
                 <div className="cob-stat">
@@ -865,6 +871,8 @@ export default function EstadoCuenta() {
               cutoff={cutoff}
               setCutoff={setCutoff}
               startPeriod={startPeriod}
+              search={adeudosSearch}
+              setSearch={setAdeudosSearch}
             />
           )}
 
@@ -1777,8 +1785,7 @@ function ReporteGeneralView({ tenantData, generalData, genLoading, cutoff, setCu
 /* ═══════════════════════════════════════════════════════════
    REPORTE DE ADEUDOS — deuda por unidad con corte de período
    ═══════════════════════════════════════════════════════════ */
-function ReporteAdeudosView({ tenantData, adeudosData, adeudosLoading, cutoff, setCutoff, startPeriod }) {
-  const [search, setSearch] = useState('');
+function ReporteAdeudosView({ tenantData, adeudosData, adeudosLoading, cutoff, setCutoff, startPeriod, search = '', setSearch }) {
   const [expanded, setExpanded] = useState({});
   const toggle = (id) => setExpanded(prev => ({ ...prev, [id]: !prev[id] }));
 
@@ -1811,19 +1818,10 @@ function ReporteAdeudosView({ tenantData, adeudosData, adeudosLoading, cutoff, s
 
   return (
     <div>
-      {/* Controls */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
-        <div className="ec-search-bar">
-          <Search size={16} style={{ color: 'var(--ink-400)', flexShrink: 0 }} />
-          <input
-            placeholder="Buscar unidad o residente..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-          />
-        </div>
+      {/* Print button */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
         <button
           className="btn btn-outline btn-sm no-print"
-          style={{ marginLeft: 'auto' }}
           onClick={handlePrint}
         >
           <Printer size={14} /> Imprimir / PDF
