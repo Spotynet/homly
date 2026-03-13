@@ -118,6 +118,9 @@ export default function Landing() {
             <a href="#beneficios" onClick={() => setMobileOpen(false)} style={{ ...navLinkStyle, fontSize: 16 }}>Beneficios</a>
             <a href="#como-funciona" onClick={() => setMobileOpen(false)} style={{ ...navLinkStyle, fontSize: 16 }}>Cómo funciona</a>
             <a href="#contacto" onClick={() => setMobileOpen(false)} style={{ ...navLinkStyle, fontSize: 16 }}>Contacto</a>
+            <Link to="/login" style={{ ...btnOutlineStyle, justifyContent: 'center' }} onClick={() => setMobileOpen(false)}>
+              Iniciar sesión
+            </Link>
             <Link to="/registro" style={{ ...btnCoralStyle, justifyContent: 'center' }} onClick={() => setMobileOpen(false)}>
               Empezar gratis <IconArrow />
             </Link>

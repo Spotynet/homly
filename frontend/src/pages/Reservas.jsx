@@ -260,6 +260,45 @@ export default function Reservas() {
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
         .res-table th, .res-table td { padding: 10px 14px; }
+        .reservas-area-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+          gap: 10px;
+          margin-bottom: 20px;
+        }
+        .reservas-layout {
+          display: flex;
+          gap: 16px;
+          align-items: flex-start;
+          flex-wrap: wrap;
+        }
+        .reservas-calendar {
+          flex: 0 0 300px;
+          min-width: 260px;
+        }
+        .reservas-list {
+          flex: 1 1 380px;
+          min-width: 0;
+        }
+        @media (max-width: 640px) {
+          .reservas-area-grid {
+            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            gap: 8px;
+          }
+          .reservas-layout {
+            flex-direction: column;
+          }
+          .reservas-calendar {
+            flex: 1 1 100%;
+            min-width: 0;
+            width: 100%;
+          }
+          .reservas-list {
+            flex: 1 1 100%;
+            min-width: 0;
+            width: 100%;
+          }
+        }
       `}</style>
 
       {/* ── Header ─────────────────────────────────────────────────────── */}
@@ -290,7 +329,7 @@ export default function Reservas() {
 
       {/* ── Area cards ─────────────────────────────────────────────────── */}
       {areas.length > 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px,1fr))', gap: 10, marginBottom: 20 }}>
+        <div className="reservas-area-grid">
           <button
             onClick={() => setSelectedArea(null)}
             style={{
@@ -327,10 +366,10 @@ export default function Reservas() {
       )}
 
       {/* ── Calendario + Lista ─────────────────────────────────────────── */}
-      <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+      <div className="reservas-layout">
 
         {/* Calendario */}
-        <div className="card" style={{ flex: '0 0 300px', minWidth: 260 }}>
+        <div className="card reservas-calendar">
           <div className="card-head" style={{ justifyContent: 'space-between' }}>
             <button className="btn-ghost" onClick={() => {
               if (calMonth === 0) { setCalYear(y => y - 1); setCalMonth(11); }
@@ -404,7 +443,7 @@ export default function Reservas() {
         </div>
 
         {/* Lista de reservas */}
-        <div style={{ flex: '1 1 380px', minWidth: 280 }}>
+        <div className="reservas-list">
           {/* Filtros */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, flexWrap: 'wrap', justifyContent: 'space-between' }}>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>

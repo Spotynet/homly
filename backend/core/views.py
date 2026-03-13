@@ -33,7 +33,7 @@ from .serializers import (
     DashboardSerializer, AmenityReservationSerializer, CondominioRequestSerializer,
     ResetUserPasswordSerializer,
 )
-from .permissions import IsSuperAdmin, IsTenantAdmin, IsTenantMember, IsAdminOrTesorero
+from .permissions import IsSuperAdmin, IsTenantAdmin, IsTenantMember, IsAdminOrTesorero, IsAdminOrTesOrAuditor
 
 
 # ═══════════════════════════════════════════════════════════
@@ -727,7 +727,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
 class GastoEntryViewSet(viewsets.ModelViewSet):
     """CRUD /api/tenants/{tenant_id}/gasto-entries/"""
     serializer_class = GastoEntrySerializer
-    permission_classes = [IsAdminOrTesorero]
+    permission_classes = [IsAdminOrTesOrAuditor]
 
     def get_queryset(self):
         qs = GastoEntry.objects.filter(
@@ -750,7 +750,7 @@ class GastoEntryViewSet(viewsets.ModelViewSet):
 class CajaChicaViewSet(viewsets.ModelViewSet):
     """CRUD /api/tenants/{tenant_id}/caja-chica/"""
     serializer_class = CajaChicaEntrySerializer
-    permission_classes = [IsAdminOrTesorero]
+    permission_classes = [IsAdminOrTesOrAuditor]
 
     def get_queryset(self):
         qs = CajaChicaEntry.objects.filter(tenant_id=self.kwargs['tenant_id'])

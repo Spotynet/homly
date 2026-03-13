@@ -24,7 +24,6 @@ export default function EstadoCuenta() {
   const [genLoading, setGenLoading] = useState(false);
   const [adeudosData, setAdeudosData] = useState(null);
   const [adeudosLoading, setAdeudosLoading] = useState(false);
-  const [adeudosCutoff, setAdeudosCutoff] = useState(todayPeriod());
   const [cutoff, setCutoff] = useState(todayPeriod());
   const [tenantData, setTenantData] = useState(null);
   const [detailFrom, setDetailFrom] = useState('');
@@ -120,11 +119,11 @@ export default function EstadoCuenta() {
   useEffect(() => {
     if (view !== 'adeudos' || !tenantId) return;
     setAdeudosLoading(true);
-    reportsAPI.reporteAdeudos(tenantId, { cutoff: adeudosCutoff })
+    reportsAPI.reporteAdeudos(tenantId, { cutoff })
       .then(r => setAdeudosData(r.data))
       .catch(() => {})
       .finally(() => setAdeudosLoading(false));
-  }, [view, tenantId, adeudosCutoff]);
+  }, [view, tenantId, cutoff]);
 
   // Marcar body para estilos de impresión (PDF = pantalla)
   useEffect(() => {
@@ -273,9 +272,8 @@ export default function EstadoCuenta() {
             </button>
           </div>
 
-          {/* Navegador de período — aplica a todas las vistas excepto Adeudos */}
-          {view !== 'adeudos' && (
-            <div className="no-print" style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--white)', border: '1px solid var(--sand-100)', borderRadius: 'var(--radius-lg)', padding: '6px 14px' }}>
+          {/* Navegador de período — compartido para todas las vistas */}
+          <div className="no-print" style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--white)', border: '1px solid var(--sand-100)', borderRadius: 'var(--radius-lg)', padding: '6px 14px' }}>
               <Calendar size={14} color="var(--teal-500)" />
               <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-500)' }}>
                 {view === 'reporte' ? 'Período:' : 'Corte:'}
@@ -315,7 +313,6 @@ export default function EstadoCuenta() {
                 <span style={{ fontSize: 11, color: 'var(--ink-300)' }}>desde {periodLabel(startPeriod)}</span>
               )}
             </div>
-          )}
         </div>
       )}
 
@@ -865,8 +862,8 @@ export default function EstadoCuenta() {
               tenantData={tenantData}
               adeudosData={adeudosData}
               adeudosLoading={adeudosLoading}
-              cutoff={adeudosCutoff}
-              setCutoff={setAdeudosCutoff}
+              cutoff={cutoff}
+              setCutoff={setCutoff}
               startPeriod={startPeriod}
             />
           )}
@@ -1822,17 +1819,6 @@ function ReporteAdeudosView({ tenantData, adeudosData, adeudosLoading, cutoff, s
             placeholder="Buscar unidad o residente..."
             value={search}
             onChange={e => setSearch(e.target.value)}
-          />
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ fontSize: 12, color: 'var(--ink-500)' }}>Corte:</span>
-          <input
-            type="month"
-            className="period-month-select"
-            value={cutoff}
-            onChange={e => setCutoff(e.target.value)}
-            max={todayPeriod()}
-            min={startPeriod}
           />
         </div>
         <button
