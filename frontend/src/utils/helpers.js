@@ -209,19 +209,19 @@ export function HomlyIsotipo({ size = 44, style = {} }) {
   );
 }
 
-/** Full brand — imagen (casita) + "Homly" en verde para fondo crema/claro */
+/** Full brand — casita en naranja + "Homly" en verde para fondo crema */
 export function HomlyBrand({ iconSize = 44, nameHeight = 32, style = {} }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, ...style }}>
       <img
         src="/img/isotipo-homly.svg"
-        alt="Homly"
+        alt=""
         style={{
           width: iconSize,
           height: iconSize,
           objectFit: 'contain',
           flexShrink: 0,
-          filter: 'brightness(0) saturate(100%) invert(39%) sepia(42%) saturate(892%) hue-rotate(117deg) brightness(93%) contrast(88%)',
+          filter: 'brightness(0) saturate(100%) invert(48%) sepia(79%) saturate(2476%) hue-rotate(346deg) brightness(95%) contrast(91%)',
         }}
       />
       <span
@@ -239,20 +239,20 @@ export function HomlyBrand({ iconSize = 44, nameHeight = 32, style = {} }) {
   );
 }
 
-/** Full brand para fondos verdes/oscuros — imagen (casita) + "Homly" en crema */
+/** Full brand para fondo verde — casita en naranja + "Homly" en crema */
 export function HomlyBrandDark({ iconSize = 44, fontSize = 26, style = {} }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, ...style }}>
       <img
         src="/img/isotipo-homly.svg"
-        alt="Homly"
+        alt=""
         style={{
           width: iconSize,
           height: iconSize,
           objectFit: 'contain',
           flexShrink: 0,
           borderRadius: 8,
-          filter: 'brightness(0) saturate(100%) invert(1)',
+          filter: 'brightness(0) saturate(100%) invert(48%) sepia(79%) saturate(2476%) hue-rotate(346deg) brightness(95%) contrast(91%)',
         }}
       />
       <span
@@ -270,18 +270,18 @@ export function HomlyBrandDark({ iconSize = 44, fontSize = 26, style = {} }) {
   );
 }
 
-/** Logo completo — imagen (casita) + nombre Homly, para fondo crema */
+/** Logo completo — casita en naranja + nombre Homly (verde), fondo crema */
 export const HOMLY_LOGO_FULL = (
   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
     <img
       src="/img/isotipo-homly.svg"
-      alt="Homly"
+      alt=""
       style={{
         width: 52,
         height: 52,
         objectFit: 'contain',
         flexShrink: 0,
-        filter: 'brightness(0) saturate(100%) invert(39%) sepia(42%) saturate(892%) hue-rotate(117deg) brightness(93%) contrast(88%)',
+        filter: 'brightness(0) saturate(100%) invert(48%) sepia(79%) saturate(2476%) hue-rotate(346deg) brightness(95%) contrast(91%)',
       }}
     />
     <span style={{ fontFamily: 'var(--font-display)', fontSize: 28, fontWeight: 600, color: '#1F7D5B', letterSpacing: '-0.02em' }}>
