@@ -738,6 +738,7 @@ tr:hover td { background: rgba(59,185,144,0.02); }
   body.printing-ec .table-wrap { overflow: visible !important; max-height: none !important; }
   body.printing-ec .table-wrap table thead { position: static !important; }
   body.printing-ec .ec-detail-actions,
+  body.printing-ec .ec-toolbar,
   body.printing-ec .ec-view-toggle,
   body.printing-ec .no-print { display: none !important; }
   /* Permitir flujo multi-página: las filas no se parten */
@@ -1086,6 +1087,47 @@ tr:hover td { background: rgba(59,185,144,0.02); }
   font-size: 13px;
   font-weight: 600;
   color: var(--ink-600);
+}
+
+/* ─── EC Toolbar: card contenedor de tabs + filtros ─── */
+.ec-toolbar {
+  background: var(--white);
+  border: 1px solid var(--sand-100);
+  border-radius: var(--radius-lg);
+  margin-bottom: 24px;
+  overflow: hidden;
+}
+.ec-toolbar-tabs {
+  display: flex;
+  align-items: center;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--sand-100);
+}
+.ec-toolbar-filters {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: var(--sand-50);
+  min-height: 54px;
+}
+.ec-period-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--white);
+  border: 1px solid var(--sand-100);
+  border-radius: var(--radius-lg);
+  padding: 6px 14px;
+  flex-shrink: 0;
+}
+.ec-period-pill .period-nav-btn {
+  background: var(--sand-50);
+  border-color: var(--sand-100);
+}
+.ec-period-pill .period-nav-btn:hover {
+  background: var(--sand-100);
+  border-color: var(--sand-200);
 }
 
 .ec-search-bar {
@@ -1541,6 +1583,9 @@ tr:hover td { background: rgba(59,185,144,0.02); }
   .gasto-stat-bar { grid-template-columns: 1fr; }
   .ec-view-toggle { width: 100%; overflow-x: auto; flex-wrap: nowrap; }
   .ec-view-btn { padding: 8px 14px; font-size: 12px; }
+  .ec-toolbar-tabs { padding: 8px 12px; overflow-x: auto; }
+  .ec-toolbar-filters { padding: 8px 12px; flex-wrap: wrap; gap: 8px; }
+  .ec-period-pill { flex-shrink: 0; }
   .ec-detail-header { padding: 16px; }
   .ec-detail-title { font-size: 18px; }
   .ec-detail-actions { flex-wrap: wrap; gap: 8px; }

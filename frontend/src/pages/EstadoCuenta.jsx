@@ -221,84 +221,95 @@ export default function EstadoCuenta() {
 
       {/* ── Vecino: tabs Mi Estado de Cuenta / Reporte General ── */}
       {isVecino && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
-          <div className="ec-view-toggle" style={{ marginBottom: 0 }}>
-            <button
-              className={`ec-view-btn ${vecinoView === 'cuenta' ? 'active' : ''}`}
-              onClick={() => setVecinoView('cuenta')}
-            >
-              <FileText size={14} /> Mi Estado de Cuenta
-            </button>
-            <button
-              className={`ec-view-btn ${vecinoView === 'reporte' ? 'active' : ''}`}
-              onClick={() => setVecinoView('reporte')}
-            >
-              <Globe size={14} /> Reporte General
-            </button>
+        <div className="ec-toolbar no-print">
+          <div className="ec-toolbar-tabs">
+            <div className="ec-view-toggle" style={{ marginBottom: 0 }}>
+              <button
+                className={`ec-view-btn ${vecinoView === 'cuenta' ? 'active' : ''}`}
+                onClick={() => setVecinoView('cuenta')}
+              >
+                <FileText size={14} /> Mi Estado de Cuenta
+              </button>
+              <button
+                className={`ec-view-btn ${vecinoView === 'reporte' ? 'active' : ''}`}
+                onClick={() => setVecinoView('reporte')}
+              >
+                <Globe size={14} /> Reporte General
+              </button>
+            </div>
           </div>
-          {/* Navegador de período — aplica al reporte general */}
           {vecinoView === 'reporte' && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--white)', border: '1px solid var(--sand-100)', borderRadius: 'var(--radius-lg)', padding: '6px 14px' }}>
-              <Calendar size={14} color="var(--teal-500)" />
-              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-500)' }}>Período:</span>
-              <div className="period-nav" style={{ gap: 2 }}>
-                <button className="period-nav-btn" onClick={() => setCutoff(prevPeriod(cutoff))} disabled={!!startPeriod && cutoff <= startPeriod} style={{ opacity: (!!startPeriod && cutoff <= startPeriod) ? 0.3 : 1 }}>
-                  <ChevronLeft size={15} />
-                </button>
-                <input type="month" className="period-month-select" style={{ fontSize: 14, fontWeight: 700 }} value={cutoff} min={startPeriod || undefined} max={todayPeriod()} onChange={e => { const v = e.target.value; if (!startPeriod || v >= startPeriod) setCutoff(v); }} />
-                <button className="period-nav-btn" onClick={() => { const n = nextPeriod(cutoff); if (n <= todayPeriod()) setCutoff(n); }} disabled={cutoff >= todayPeriod()} style={{ opacity: cutoff >= todayPeriod() ? 0.3 : 1 }}>
-                  <ChevronRight size={15} />
-                </button>
+            <div className="ec-toolbar-filters">
+              <div style={{ flex: 1 }} />
+              <div className="ec-period-pill">
+                <Calendar size={14} color="var(--teal-500)" />
+                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-500)' }}>Período:</span>
+                <div className="period-nav" style={{ gap: 2 }}>
+                  <button className="period-nav-btn" onClick={() => setCutoff(prevPeriod(cutoff))} disabled={!!startPeriod && cutoff <= startPeriod} style={{ opacity: (!!startPeriod && cutoff <= startPeriod) ? 0.3 : 1 }}>
+                    <ChevronLeft size={15} />
+                  </button>
+                  <input type="month" className="period-month-select" style={{ fontSize: 14, fontWeight: 700 }} value={cutoff} min={startPeriod || undefined} max={todayPeriod()} onChange={e => { const v = e.target.value; if (!startPeriod || v >= startPeriod) setCutoff(v); }} />
+                  <button className="period-nav-btn" onClick={() => { const n = nextPeriod(cutoff); if (n <= todayPeriod()) setCutoff(n); }} disabled={cutoff >= todayPeriod()} style={{ opacity: cutoff >= todayPeriod() ? 0.3 : 1 }}>
+                    <ChevronRight size={15} />
+                  </button>
+                </div>
               </div>
             </div>
           )}
         </div>
       )}
 
-      {/* ── Admin/other roles: Tabs + navegador de período global ── */}
+      {/* ── Admin/other roles: Toolbar con tabs (fila 1) + filtros (fila 2) ── */}
       {!isVecino && !selectedUnit && (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', flex: 1 }}>
-          <div className="ec-view-toggle" style={{ marginBottom: 0 }}>
-            <button className={`ec-view-btn ${view === 'units' ? 'active' : ''}`} onClick={() => { setView('units'); setSelectedUnit(null); }}>
-              <Building size={14} /> Estado por Unidad
-            </button>
-            <button className={`ec-view-btn ${view === 'tenant' ? 'active' : ''}`} onClick={() => { setView('tenant'); setSelectedUnit(null); }}>
-              <Globe size={14} /> Estado General
-            </button>
-            <button className={`ec-view-btn ${view === 'reporte' ? 'active' : ''}`} onClick={() => { setView('reporte'); setSelectedUnit(null); }}>
-              <DollarSign size={14} /> Reporte General
-            </button>
-            <button className={`ec-view-btn ${view === 'adeudos' ? 'active' : ''}`} onClick={() => { setView('adeudos'); setSelectedUnit(null); }}>
-              <AlertCircle size={14} /> Reporte de Adeudos
-            </button>
+        <div className="ec-toolbar no-print">
+
+          {/* Fila 1: Tabs de navegación */}
+          <div className="ec-toolbar-tabs">
+            <div className="ec-view-toggle" style={{ marginBottom: 0 }}>
+              <button className={`ec-view-btn ${view === 'units' ? 'active' : ''}`} onClick={() => { setView('units'); setSelectedUnit(null); }}>
+                <Building size={14} /> Estado por Unidad
+              </button>
+              <button className={`ec-view-btn ${view === 'tenant' ? 'active' : ''}`} onClick={() => { setView('tenant'); setSelectedUnit(null); }}>
+                <Globe size={14} /> Estado General
+              </button>
+              <button className={`ec-view-btn ${view === 'reporte' ? 'active' : ''}`} onClick={() => { setView('reporte'); setSelectedUnit(null); }}>
+                <DollarSign size={14} /> Reporte General
+              </button>
+              <button className={`ec-view-btn ${view === 'adeudos' ? 'active' : ''}`} onClick={() => { setView('adeudos'); setSelectedUnit(null); }}>
+                <AlertCircle size={14} /> Reporte de Adeudos
+              </button>
+            </div>
           </div>
 
-          {/* Search bar — visible en units y adeudos */}
-          {view === 'units' && (
-            <div className="ec-search-bar" style={{ flex: '1 1 220px', maxWidth: 320 }}>
-              <Search size={16} style={{ color: 'var(--ink-400)', flexShrink: 0 }} />
-              <input
-                placeholder="Buscar unidad o residente..."
-                value={search}
-                onChange={e => { setSearch(e.target.value); setUnitsPage(1); }}
-              />
-            </div>
-          )}
-          {view === 'adeudos' && (
-            <div className="ec-search-bar" style={{ flex: '1 1 220px', maxWidth: 320 }}>
-              <Search size={16} style={{ color: 'var(--ink-400)', flexShrink: 0 }} />
-              <input
-                placeholder="Buscar unidad o residente..."
-                value={adeudosSearch}
-                onChange={e => setAdeudosSearch(e.target.value)}
-              />
-            </div>
-          )}
-          </div>
+          {/* Fila 2: Buscador (condicional) + Filtro de período */}
+          <div className="ec-toolbar-filters">
 
-          {/* Navegador de período — compartido para todas las vistas */}
-          <div className="no-print" style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--white)', border: '1px solid var(--sand-100)', borderRadius: 'var(--radius-lg)', padding: '6px 14px' }}>
+            {/* Buscador — visible en Estado por Unidad y Reporte de Adeudos */}
+            {view === 'units' && (
+              <div className="ec-search-bar" style={{ flex: '1 1 0', maxWidth: 320 }}>
+                <Search size={16} style={{ color: 'var(--ink-400)', flexShrink: 0 }} />
+                <input
+                  placeholder="Buscar unidad o residente..."
+                  value={search}
+                  onChange={e => { setSearch(e.target.value); setUnitsPage(1); }}
+                />
+              </div>
+            )}
+            {view === 'adeudos' && (
+              <div className="ec-search-bar" style={{ flex: '1 1 0', maxWidth: 320 }}>
+                <Search size={16} style={{ color: 'var(--ink-400)', flexShrink: 0 }} />
+                <input
+                  placeholder="Buscar unidad o residente..."
+                  value={adeudosSearch}
+                  onChange={e => setAdeudosSearch(e.target.value)}
+                />
+              </div>
+            )}
+
+            <div style={{ flex: 1 }} />
+
+            {/* Navegador de período — compartido para todas las vistas */}
+            <div className="ec-period-pill">
               <Calendar size={14} color="var(--teal-500)" />
               <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-500)' }}>
                 {view === 'reporte' ? 'Período:' : 'Corte:'}
@@ -335,9 +346,11 @@ export default function EstadoCuenta() {
                 </button>
               </div>
               {startPeriod && (
-                <span style={{ fontSize: 11, color: 'var(--ink-300)' }}>desde {periodLabel(startPeriod)}</span>
+                <span style={{ fontSize: 11, color: 'var(--ink-300)', marginLeft: 4 }}>desde {periodLabel(startPeriod)}</span>
               )}
             </div>
+
+          </div>
         </div>
       )}
 
