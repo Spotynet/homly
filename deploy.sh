@@ -53,8 +53,10 @@ ssh -i "$PEM" "$EC2" << 'ENDSSH'
   set -e
   cd ~/homly
 
-  echo "  → git pull..."
-  git pull origin main
+  echo "  → git update (reset to origin/main)..."
+  git fetch origin
+  git reset --hard origin/main
+  git clean -fd
 
   echo "  → migrations..."
   source backend/venv/bin/activate
