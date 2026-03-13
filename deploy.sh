@@ -59,6 +59,7 @@ ssh -i "$PEM" "$EC2" << 'ENDSSH'
   echo "  → migrate..."
   source backend/venv/bin/activate
   cd backend
+  python manage.py makemigrations --merge
   python manage.py makemigrations
   python manage.py migrate --run-syncdb
   deactivate
