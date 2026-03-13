@@ -277,8 +277,10 @@ export default function MyUnit() {
   }
 
   // ── Computed: Tu Unidad ───────────────────────────────────────────────
-  const { unit, periods, total_charges, total_payments, balance } = data;
-  const balanceNum = parseFloat(balance) || 0;
+  const { unit, periods, total_charges, total_payments, balance, net_prev_debt, credit_balance } = data;
+  const balanceNum  = parseFloat(balance) || 0;
+  const netPrevDebt = parseFloat(net_prev_debt) || 0;
+  const creditBal   = parseFloat(credit_balance) || 0;
 
   // ── Computed: General + Económicos ───────────────────────────────────
   const s = stats || {};
@@ -463,12 +465,30 @@ export default function MyUnit() {
                     <span style={{ fontSize: 13, color: 'var(--ink-500)' }}>Total Cargos</span>
                     <span style={{ fontFamily: 'var(--font-display)', fontSize: 20, fontWeight: 500, color: 'var(--ink-800)' }}>{fmt(total_charges)}</span>
                   </div>
+                  {netPrevDebt > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid var(--sand-100)' }}>
+                      <div>
+                        <span style={{ fontSize: 13, color: 'var(--ink-500)' }}>Recaudo de adeudos</span>
+                        <div style={{ fontSize: 11, color: 'var(--ink-300)', marginTop: 2 }}>saldo pendiente de períodos anteriores</div>
+                      </div>
+                      <span style={{ fontFamily: 'var(--font-display)', fontSize: 20, fontWeight: 500, color: 'var(--coral-500)' }}>{fmt(netPrevDebt)}</span>
+                    </div>
+                  )}
+                  {creditBal > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid var(--sand-100)' }}>
+                      <div>
+                        <span style={{ fontSize: 13, color: 'var(--ink-500)' }}>Saldo a favor</span>
+                        <div style={{ fontSize: 11, color: 'var(--ink-300)', marginTop: 2 }}>crédito disponible en tu cuenta</div>
+                      </div>
+                      <span style={{ fontFamily: 'var(--font-display)', fontSize: 20, fontWeight: 500, color: 'var(--teal-600)' }}>{fmt(creditBal)}</span>
+                    </div>
+                  )}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid var(--sand-100)' }}>
                     <span style={{ fontSize: 13, color: 'var(--ink-500)' }}>Total Pagado</span>
                     <span style={{ fontFamily: 'var(--font-display)', fontSize: 20, fontWeight: 500, color: 'var(--teal-600)' }}>{fmt(total_payments)}</span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0' }}>
-                    <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink-700)' }}>Saldo</span>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink-700)' }}>Saldo Total</span>
                     <span style={{ fontFamily: 'var(--font-display)', fontSize: 24, fontWeight: 500, color: balanceNum > 0 ? 'var(--coral-500)' : 'var(--teal-600)' }}>
                       {fmt(balanceNum)}
                     </span>
