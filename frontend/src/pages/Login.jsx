@@ -143,13 +143,15 @@ export default function Login() {
   const [tenants,    setTenants]    = useState(null);   // null = not fetched yet
   const [isSuperAdminEmail, setIsSuperAdminEmail] = useState(false);
 
-  // Step 2: tenant + password
+  // Step 2: tenant + code
   const [tenantId,   setTenantId]   = useState('');
-  const [password,   setPassword]   = useState('');
+  const [code,       setCode]       = useState('');
+  const [codeSent,   setCodeSent]   = useState(false);
+  const [sendingCode, setSendingCode] = useState(false);
   const [error,      setError]      = useState('');
   const [loading,    setLoading]    = useState(false);
 
-  const { login }  = useAuth();
+  const { loginWithCode } = useAuth();
   const navigate   = useNavigate();
 
   // ── Step 1: look up tenants for the given email ──────────────────────────
@@ -198,32 +200,58 @@ export default function Login() {
     }
   };
 
-  // ── Step 2: submit login ─────────────────────────────────────────────────
-  const handleLogin = async (e) => {
+  // ── Step 2a: request code ────────────────────────────────────────────────
+  const handleRequestCode = async (e) => {
     e.preventDefault();
-    // Super admin logs in without a tenant; regular users must select one
     if (!isSuperAdminEmail && !tenantId) {
       setError('Selecciona un condominio.');
       return;
     }
     setError('');
-    setLoading(true);
+    setSendingCode(true);
     try {
-      // Pass tenantId only for regular users; superadmin enters with no tenant
-      const data = await login(email.trim(), password, isSuperAdminEmail ? null : tenantId);
-      if (data.must_change_password) {
-        navigate('/change-password');
-      } else {
-        const savedPath = sessionStorage.getItem('redirect_after_login');
-        sessionStorage.removeItem('redirect_after_login');
-        navigate(savedPath && savedPath.startsWith('/app') ? savedPath : '/app');
-      }
+      await authAPI.requestCode(email.trim());
+      setCodeSent(true);
+      setCode('');
     } catch (err) {
       const msg =
-        err.response?.data?.non_field_errors?.[0] ||
         err.response?.data?.detail ||
-        (Array.isArray(err.response?.data) ? err.response.data[0] : null) ||
-        'Credenciales inválidas.';
+        err.response?.data?.email?.[0] ||
+        'Error al enviar el código. Intenta de nuevo.';
+      setError(msg);
+    } finally {
+      setSendingCode(false);
+    }
+  };
+
+  // ── Step 2b: submit login with code ───────────────────────────────────────
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    if (!isSuperAdminEmail && !tenantId) {
+      setError('Selecciona un condominio.');
+      return;
+    }
+    if (!code.trim()) {
+      setError('Ingresa el código que recibiste por correo.');
+      return;
+    }
+    setError('');
+    setLoading(true);
+    try {
+      const data = await loginWithCode(
+        email.trim(),
+        code.trim(),
+        isSuperAdminEmail ? null : tenantId
+      );
+      const savedPath = sessionStorage.getItem('redirect_after_login');
+      sessionStorage.removeItem('redirect_after_login');
+      navigate(savedPath && savedPath.startsWith('/app') ? savedPath : '/app');
+    } catch (err) {
+      const msg =
+        err.response?.data?.code?.[0] ||
+        err.response?.data?.detail ||
+        err.response?.data?.non_field_errors?.[0] ||
+        'Código inválido o expirado. Solicita uno nuevo.';
       setError(msg);
     } finally {
       setLoading(false);
@@ -234,7 +262,8 @@ export default function Login() {
   const handleBack = () => {
     setTenants(null);
     setTenantId('');
-    setPassword('');
+    setCode('');
+    setCodeSent(false);
     setError('');
     setIsSuperAdminEmail(false);
   };
@@ -259,9 +288,11 @@ export default function Login() {
           <p className="text-sm text-ink-400 mb-6">
             {!step2
               ? 'Ingresa tu correo para continuar.'
-              : isSuperAdminEmail
-                ? 'Ingresa tu contraseña para acceder al sistema.'
-                : 'Selecciona tu condominio e ingresa tu contraseña.'}
+              : !codeSent
+                ? isSuperAdminEmail
+                  ? 'Solicita un código para acceder al sistema.'
+                  : 'Selecciona tu condominio y solicita un código por correo.'
+                : 'Ingresa el código que te enviamos a tu correo.'}
           </p>
 
           {error && (
@@ -290,9 +321,9 @@ export default function Login() {
             </form>
           )}
 
-          {/* ── Step 2: tenant + password ───────────────────────────────── */}
+          {/* ── Step 2: tenant + code ─────────────────────────────────────── */}
           {step2 && (
-            <form onSubmit={handleLogin} className="space-y-4">
+            <form onSubmit={codeSent ? handleLogin : handleRequestCode} className="space-y-4">
               {/* Email (read-only) */}
               <div>
                 <label className="field-label">Correo Electrónico</label>
@@ -322,7 +353,6 @@ export default function Login() {
                 <div>
                   <label className="field-label">Condominio</label>
                   {tenants.length === 1 ? (
-                    /* Single tenant — static pill, no choice needed */
                     <div style={{
                       display: 'flex', alignItems: 'center', gap: 10,
                       padding: '10px 14px', background: 'var(--teal-50)',
@@ -349,25 +379,57 @@ export default function Login() {
                 </div>
               )}
 
-              {/* Password */}
-              <div>
-                <label className="field-label">Contraseña</label>
-                <input
-                  type="password" className="field-input"
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  autoFocus required
-                />
-              </div>
-
-              <button
-                type="submit"
-                disabled={loading || !password || (!isSuperAdminEmail && !tenantId)}
-                className="w-full btn btn-coral justify-center py-3 text-base"
-              >
-                {loading ? 'Ingresando...' : 'Iniciar Sesión'}
-              </button>
+              {/* Code request or code input */}
+              {!codeSent ? (
+                <button
+                  type="button"
+                  onClick={handleRequestCode}
+                  disabled={sendingCode || (!isSuperAdminEmail && !tenantId)}
+                  className="w-full btn btn-coral justify-center py-3 text-base"
+                >
+                  {sendingCode ? 'Enviando código…' : 'Enviar código por correo'}
+                </button>
+              ) : (
+                <>
+                  <div>
+                    <label className="field-label">Código de verificación</label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      maxLength={8}
+                      className="field-input"
+                      placeholder="123456"
+                      value={code}
+                      onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 8))}
+                      autoFocus
+                      style={{ letterSpacing: 8, fontSize: 18, textAlign: 'center' }}
+                    />
+                    <p style={{ fontSize: 12, color: 'var(--ink-400)', marginTop: 6 }}>
+                      ¿No recibiste el código?{' '}
+                      <button
+                        type="button"
+                        onClick={handleRequestCode}
+                        disabled={sendingCode}
+                        style={{
+                          background: 'none', border: 'none', color: 'var(--teal-600)',
+                          fontWeight: 600, cursor: sendingCode ? 'default' : 'pointer',
+                          padding: 0, textDecoration: 'underline',
+                        }}
+                      >
+                        Reenviar
+                      </button>
+                    </p>
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={loading || !code.trim()}
+                    className="w-full btn btn-coral justify-center py-3 text-base"
+                  >
+                    {loading ? 'Ingresando...' : 'Iniciar Sesión'}
+                  </button>
+                </>
+              )}
             </form>
           )}
 

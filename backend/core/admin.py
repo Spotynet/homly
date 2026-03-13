@@ -3,7 +3,7 @@ from .models import (
     User, Tenant, TenantUser, Unit, ExtraField,
     Payment, FieldPayment, GastoEntry, CajaChicaEntry,
     BankStatement, ClosedPeriod, ReopenRequest,
-    AssemblyPosition, Committee,
+    AssemblyPosition, Committee, EmailVerificationCode,
 )
 
 @admin.register(User)
@@ -48,6 +48,13 @@ class GastoEntryAdmin(admin.ModelAdmin):
 class CajaChicaAdmin(admin.ModelAdmin):
     list_display = ['tenant', 'period', 'amount', 'description', 'payment_type']
     list_filter = ['tenant', 'period']
+
+@admin.register(EmailVerificationCode)
+class EmailVerificationCodeAdmin(admin.ModelAdmin):
+    list_display = ['email', 'code', 'used', 'expires_at', 'created_at']
+    list_filter = ['used']
+    search_fields = ['email']
+    readonly_fields = ['created_at']
 
 admin.site.register(FieldPayment)
 admin.site.register(BankStatement)

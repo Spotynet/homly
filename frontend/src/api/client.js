@@ -45,6 +45,8 @@ api.interceptors.response.use(
 // ─── Auth ───────────────────────────────────────
 export const authAPI = {
   login:               (data)     => api.post('/auth/login/', data),
+  requestCode:         (email)    => api.post('/auth/request-code/', { email }),
+  loginWithCode:       (data)     => api.post('/auth/login-with-code/', data),
   changePassword:      (data)     => api.post('/auth/change-password/', data),
   getTenants:          ()         => api.get('/auth/tenants/'),
   getTenantsForEmail:  (email)    => api.post('/auth/tenants-for-email/', { email }),

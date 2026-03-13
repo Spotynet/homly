@@ -47,11 +47,25 @@ export function AuthProvider({ children }) {
     }
   };
 
-  // ── Login ─────────────────────────────────────────────────────────────────
+  // ── Login (password) ─────────────────────────────────────────────────────
   const login = useCallback(async (email, password, tenantId = null) => {
     const payload = { email, password };
     if (tenantId) payload.tenant_id = tenantId;
     const { data } = await authAPI.login(payload);
+    _persist(data);
+    setUser(data.user);
+    setRole(data.role);
+    setTenantId(data.tenant_id);
+    setTenantName(data.tenant_name);
+    setMustChangePassword(data.must_change_password);
+    return data;
+  }, []);
+
+  // ── Login with email code (passwordless) ──────────────────────────────────
+  const loginWithCode = useCallback(async (email, code, tenantId = null) => {
+    const payload = { email, code };
+    if (tenantId) payload.tenant_id = tenantId;
+    const { data } = await authAPI.loginWithCode(payload);
     _persist(data);
     setUser(data.user);
     setRole(data.role);
@@ -97,7 +111,7 @@ export function AuthProvider({ children }) {
   const value = {
     user, role, tenantId, tenantName, userTenants, loading,
     mustChangePassword, setMustChangePassword,
-    login, logout, switchTenant, loadUserTenants,
+    login, loginWithCode, logout, switchTenant, loadUserTenants,
     isAuthenticated: !!user,
     isSuperAdmin: role === 'superadmin',
     isAdmin: role === 'admin' || role === 'superadmin',

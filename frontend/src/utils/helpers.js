@@ -209,7 +209,7 @@ export function HomlyIsotipo({ size = 44, style = {} }) {
   );
 }
 
-/** Full brand lockup: isotipo + nombre side by side. Best on light backgrounds. */
+/** Full brand — logo image only (isotipo), no text */
 export function HomlyBrand({ iconSize = 44, nameHeight = 32, style = {} }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, ...style }}>
@@ -217,11 +217,6 @@ export function HomlyBrand({ iconSize = 44, nameHeight = 32, style = {} }) {
         src="/img/isotipo-homly.svg"
         alt="Homly"
         style={{ width: iconSize, height: iconSize, objectFit: 'contain', flexShrink: 0 }}
-      />
-      <img
-        src="/img/nombre-homly.svg"
-        alt="homly"
-        style={{ height: nameHeight, width: 'auto', objectFit: 'contain', flexShrink: 0 }}
       />
     </div>
   );
@@ -240,18 +235,13 @@ export function HomlyBrandDark({ iconSize = 44, fontSize = 26, style = {} }) {
   );
 }
 
-// Legacy alias — kept for backward compatibility with AppLayout/Login
+// Legacy alias — logo image only (isotipo)
 export const HOMLY_LOGO_FULL = (
   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
     <img
       src="/img/isotipo-homly.svg"
       alt="Homly"
       style={{ width: 52, height: 52, objectFit: 'contain', flexShrink: 0 }}
-    />
-    <img
-      src="/img/nombre-homly.svg"
-      alt="homly"
-      style={{ height: 36, width: 'auto', objectFit: 'contain', flexShrink: 0 }}
     />
   </div>
 );

@@ -5,6 +5,7 @@ All endpoints for the property management system.
 import uuid
 from decimal import Decimal
 from django.db.models import Sum, Count, Q, F  # noqa: F401 - Q used in estado cuenta
+from datetime import timedelta
 from django.utils import timezone
 from rest_framework import viewsets, status, generics, permissions
 from rest_framework.decorators import api_view, permission_classes, action
@@ -17,10 +18,12 @@ from .models import (
     Payment, FieldPayment, GastoEntry, CajaChicaEntry,
     BankStatement, ClosedPeriod, ReopenRequest,
     AssemblyPosition, Committee, UnrecognizedIncome,
-    AmenityReservation, CondominioRequest,
+    AmenityReservation, CondominioRequest, EmailVerificationCode,
 )
+from .email_service import send_verification_email, CODE_EXPIRY_MINUTES
 from .serializers import (
-    LoginSerializer, ChangePasswordSerializer, UserSerializer, UserCreateSerializer,
+    LoginSerializer, RequestCodeSerializer, LoginWithCodeSerializer,
+    ChangePasswordSerializer, UserSerializer, UserCreateSerializer,
     TenantListSerializer, TenantDetailSerializer, TenantUserSerializer,
     UnitSerializer, UnitListSerializer, ExtraFieldSerializer,
     PaymentSerializer, PaymentCaptureSerializer, AddAdditionalPaymentSerializer, FieldPaymentSerializer,
@@ -63,6 +66,84 @@ class LoginView(APIView):
             'tenant_id': str(tenant.id) if tenant else None,
             'tenant_name': tenant.name if tenant else None,
             'must_change_password': user.must_change_password,
+        })
+
+
+class RequestCodeView(APIView):
+    """POST /api/auth/request-code/
+    Generates a 6-digit code, stores it, and sends it via email.
+    Implement send_verification_email() in core/email_service.py with your SMTP/variables.
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        serializer = RequestCodeSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        email = serializer.validated_data['email']
+
+        # Generate 6-digit code
+        import random
+        code = ''.join(str(random.randint(0, 9)) for _ in range(6))
+        expires_at = timezone.now() + timedelta(minutes=CODE_EXPIRY_MINUTES)
+
+        # Invalidate any previous unused codes for this email
+        EmailVerificationCode.objects.filter(
+            email=email, used=False
+        ).update(used=True)
+
+        # Create new code
+        EmailVerificationCode.objects.create(
+            email=email,
+            code=code,
+            expires_at=expires_at,
+        )
+
+        # Send email — implement in core/email_service.py
+        sent = send_verification_email(email, code)
+        if not sent:
+            return Response(
+                {'detail': 'No se pudo enviar el correo. Intenta de nuevo.'},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        return Response({
+            'detail': f'Código enviado a {email}. Válido por {CODE_EXPIRY_MINUTES} minutos.',
+            'expires_in_minutes': CODE_EXPIRY_MINUTES,
+        })
+
+
+class LoginWithCodeView(APIView):
+    """POST /api/auth/login-with-code/
+    Login using email + verification code. Returns same JWT payload as password login.
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        serializer = LoginWithCodeSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        user   = serializer.validated_data['user']
+        role   = serializer.validated_data['role']
+        tenant = serializer.validated_data.get('tenant')
+
+        # Code-only auth: no passwords. Clear must_change_password so we never prompt.
+        if user.must_change_password:
+            user.must_change_password = False
+            user.save(update_fields=['must_change_password'])
+
+        refresh = RefreshToken.for_user(user)
+        refresh['role'] = role
+        if tenant:
+            refresh['tenant_id'] = str(tenant.id)
+
+        return Response({
+            'access': str(refresh.access_token),
+            'refresh': str(refresh),
+            'user': UserSerializer(user).data,
+            'role': role,
+            'tenant_id': str(tenant.id) if tenant else None,
+            'tenant_name': tenant.name if tenant else None,
+            'must_change_password': False,  # Code-only: never prompt for password
         })
 
 

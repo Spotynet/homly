@@ -345,12 +345,9 @@ export default function AppLayout() {
             <button className="mobile-toggle" onClick={() => setSidebarOpen(true)} aria-label="Abrir menú">
               <Menu size={22} />
             </button>
-            {/* Mobile brand (only visible when sidebar is closed on mobile) */}
+            {/* Mobile brand — logo image only */}
             <div className="show-mobile" style={{ alignItems: 'center' }}>
-              <HomlyIsotipo size={32} style={{ borderRadius: 6, marginRight: 8 }} />
-              <span style={{ fontSize: 16, fontWeight: 800, color: 'var(--teal-800)', letterSpacing: '-0.3px' }}>
-                homly<span style={{ color: 'var(--coral-500)' }}>.</span>
-              </span>
+              <HomlyIsotipo size={32} style={{ borderRadius: 6 }} />
             </div>
             {/* Desktop: page title */}
             <div className="hidden-mobile">

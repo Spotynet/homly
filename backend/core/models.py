@@ -712,3 +712,27 @@ class CondominioRequest(models.Model):
 
     def __str__(self):
         return f'{self.condominio_nombre} — {self.admin_email}'
+
+
+# ═══════════════════════════════════════════════════════════
+#  EMAIL VERIFICATION CODE (magic link / OTP login)
+# ═══════════════════════════════════════════════════════════
+
+class EmailVerificationCode(models.Model):
+    """
+    Temporary verification codes for passwordless login.
+    Codes expire after CODE_EXPIRY_MINUTES (typically 10–15 min).
+    """
+    id        = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    email     = models.EmailField(db_index=True)
+    code      = models.CharField(max_length=8, db_index=True)  # 6-digit typical
+    used      = models.BooleanField(default=False, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField(db_index=True)
+
+    class Meta:
+        db_table = 'email_verification_codes'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.email} — {self.code[:3]}*** (exp: {self.expires_at})'

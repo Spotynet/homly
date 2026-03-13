@@ -74,6 +74,104 @@ class LoginSerializer(serializers.Serializer):
         return data
 
 
+class RequestCodeSerializer(serializers.Serializer):
+    """Request a verification code to be sent to the email."""
+    email = serializers.EmailField()
+
+    def validate_email(self, value):
+        email = value.strip().lower()
+        try:
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            raise serializers.ValidationError(
+                'No existe ninguna cuenta con este correo.'
+            )
+        if not user.is_active:
+            raise serializers.ValidationError('Cuenta desactivada.')
+        return email
+
+
+class LoginWithCodeSerializer(serializers.Serializer):
+    """Login using email + verification code instead of password."""
+    email     = serializers.EmailField()
+    code      = serializers.CharField(max_length=8, trim_whitespace=True)
+    tenant_id = serializers.UUIDField(required=False, allow_null=True)
+
+    def validate(self, data):
+        from django.utils import timezone
+        from .models import EmailVerificationCode
+        from .models import Tenant, TenantUser
+
+        email     = data['email'].strip().lower()
+        code      = (data['code'] or '').strip()
+        tenant_id = data.get('tenant_id')
+
+        if not code:
+            raise serializers.ValidationError({'code': 'Ingresa el código.'})
+
+        # Find valid, unused, non-expired code
+        now = timezone.now()
+        try:
+            rec = EmailVerificationCode.objects.get(
+                email=email,
+                code=code,
+                used=False,
+                expires_at__gt=now,
+            )
+        except EmailVerificationCode.DoesNotExist:
+            raise serializers.ValidationError(
+                {'code': 'Código inválido o expirado. Solicita uno nuevo.'}
+            )
+
+        rec.used = True
+        rec.save(update_fields=['used'])
+
+        try:
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            raise serializers.ValidationError('Usuario no encontrado.')
+
+        if not user.is_active:
+            raise serializers.ValidationError('Cuenta desactivada.')
+
+        # Same tenant logic as LoginSerializer
+        if user.is_super_admin:
+            tenant = None
+            if tenant_id:
+                try:
+                    tenant = Tenant.objects.get(id=str(tenant_id))
+                except Tenant.DoesNotExist:
+                    raise serializers.ValidationError(
+                        {'tenant_id': 'Condominio no encontrado.'}
+                    )
+            data['user']   = user
+            data['role']   = 'superadmin'
+            data['tenant'] = tenant
+            return data
+
+        user_tenants = TenantUser.objects.select_related('tenant').filter(user=user)
+        if not user_tenants.exists():
+            raise serializers.ValidationError(
+                'Este usuario no tiene acceso a ningún condominio.'
+            )
+
+        if tenant_id:
+            try:
+                tenant_user = user_tenants.get(tenant_id=str(tenant_id))
+            except TenantUser.DoesNotExist:
+                raise serializers.ValidationError(
+                    {'tenant_id': 'No tienes acceso a este condominio.'}
+                )
+        else:
+            tenant_user = user_tenants.first()
+
+        data['user']        = user
+        data['role']        = tenant_user.role
+        data['tenant']      = tenant_user.tenant
+        data['tenant_user'] = tenant_user
+        return data
+
+
 class ChangePasswordSerializer(serializers.Serializer):
     current_password = serializers.CharField(write_only=True, required=False, allow_blank=True)
     new_password = serializers.CharField(write_only=True, min_length=6)

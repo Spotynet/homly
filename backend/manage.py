@@ -3,6 +3,14 @@
 import os
 import sys
 
+# Fix SSL cert verification on macOS (CERTIFICATE_VERIFY_FAILED)
+try:
+    import certifi
+    os.environ.setdefault('SSL_CERT_FILE', certifi.where())
+    os.environ.setdefault('REQUESTS_CA_BUNDLE', certifi.where())
+except ImportError:
+    pass
+
 def main():
     os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'homly_project.settings')
     try:

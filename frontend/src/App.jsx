@@ -6,7 +6,6 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 // Pages
 import Landing from './pages/Landing';
 import Login from './pages/Login';
-import ChangePassword from './pages/ChangePassword';
 import AppLayout from './components/layout/AppLayout';
 import Dashboard from './pages/Dashboard';
 import Tenants from './pages/Tenants';
@@ -31,7 +30,7 @@ const LOADER = (
 
 // Protected route — saves intended path before redirecting to /login
 function PrivateRoute({ children }) {
-  const { isAuthenticated, loading, mustChangePassword } = useAuth();
+  const { isAuthenticated, loading } = useAuth();
   const location = useLocation();
 
   if (loading) return LOADER;
@@ -40,7 +39,6 @@ function PrivateRoute({ children }) {
     sessionStorage.setItem('redirect_after_login', location.pathname + location.search);
     return <Navigate to="/login" replace />;
   }
-  if (mustChangePassword) return <Navigate to="/change-password" replace />;
   return children;
 }
 
@@ -60,8 +58,6 @@ function AppRoutes() {
         path="/login"
         element={isAuthenticated ? <Navigate to="/app" replace /> : <Login />}
       />
-      <Route path="/change-password" element={<ChangePassword />} />
-
       {/* App — protected */}
       <Route path="/app" element={<PrivateRoute><AppLayout /></PrivateRoute>}>
         <Route
