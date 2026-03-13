@@ -23,7 +23,7 @@ echo "╚═══════════════════════�
 echo ""
 
 # ── Step 1: Git push ─────────────────────────────────────────
-echo "▶ [1/4] Pushing changes to git..."
+echo "▶ [1/5] Pushing changes to git..."
 cd "$PROJECT_DIR"
 git add -A
 git diff --cached --quiet && echo "  No changes to commit, skipping." || git commit -m "deploy: $(date '+%Y-%m-%d %H:%M')"
@@ -32,14 +32,14 @@ echo "  ✓ Git push done."
 echo ""
 
 # ── Step 2: Build frontend ───────────────────────────────────
-echo "▶ [2/4] Building frontend (Mac)..."
+echo "▶ [2/5] Building frontend (Mac)..."
 cd "$FRONTEND_DIR"
 REACT_APP_API_URL="$API_URL" GENERATE_SOURCEMAP=false npm run build
 echo "  ✓ Build done."
 echo ""
 
 # ── Step 3: Upload build to EC2 ──────────────────────────────
-echo "▶ [3/4] Uploading build to EC2..."
+echo "▶ [3/5] Uploading build to EC2..."
 chmod 400 "$PEM"
 rsync -az --delete -e "ssh -i $PEM" \
   "$FRONTEND_DIR/build/" \
@@ -48,7 +48,7 @@ echo "  ✓ Upload done."
 echo ""
 
 # ── Step 4: EC2 — pull, migrate, restart ─────────────────────
-echo "▶ [4/4] Updating EC2 (pull + migrate + reload)..."
+echo "▶ [4/5] Updating EC2 (pull + migrate + reload)..."
 ssh -i "$PEM" "$EC2" << 'ENDSSH'
   set -e
   cd ~/homly
@@ -56,12 +56,13 @@ ssh -i "$PEM" "$EC2" << 'ENDSSH'
   echo "  → git pull..."
   git pull origin main
 
-  echo "  → migrate..."
+  echo "  → migrations..."
   source backend/venv/bin/activate
   cd backend
-  python manage.py makemigrations --merge
-  python manage.py makemigrations
-  python manage.py migrate --run-syncdb
+  # Merge conflicting branches (non-interactive; fixes EOFError over SSH)
+  python manage.py makemigrations --merge --noinput 2>/dev/null || true
+  # Apply migrations (non-interactive)
+  python manage.py migrate --noinput --run-syncdb
   deactivate
   cd ..
 
@@ -73,6 +74,13 @@ ssh -i "$PEM" "$EC2" << 'ENDSSH'
 
   echo "  ✓ EC2 update done."
 ENDSSH
+
+# ── Step 5: Pull back merge migrations (if any) so they're in the repo ──
+echo "▶ [5/5] Syncing merge migrations to repo..."
+(rsync -az -e "ssh -i $PEM" "$EC2:~/homly/backend/core/migrations/" "$PROJECT_DIR/backend/core/migrations/" 2>/dev/null && \
+  cd "$PROJECT_DIR" && \
+  git status --short backend/core/migrations/ | grep -q . && \
+  (git add backend/core/migrations/ && git commit -m "chore: merge migrations from EC2 deploy" && git push origin main && echo "  ✓ Merge migrations pushed to repo.")) || true
 
 echo ""
 echo "╔══════════════════════════════════════╗"
