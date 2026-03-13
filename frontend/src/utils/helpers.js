@@ -209,7 +209,7 @@ export function HomlyIsotipo({ size = 44, style = {} }) {
   );
 }
 
-/** Full brand — casita en naranja + "Homly" en verde para fondo crema */
+/** Full brand — isotipo (imagen original) + "Homly" en verde para fondo crema */
 export function HomlyBrand({ iconSize = 44, nameHeight = 32, style = {} }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, ...style }}>
@@ -221,7 +221,6 @@ export function HomlyBrand({ iconSize = 44, nameHeight = 32, style = {} }) {
           height: iconSize,
           objectFit: 'contain',
           flexShrink: 0,
-          filter: 'brightness(0) saturate(100%) invert(48%) sepia(79%) saturate(2476%) hue-rotate(346deg) brightness(95%) contrast(91%)',
         }}
       />
       <span
@@ -239,7 +238,7 @@ export function HomlyBrand({ iconSize = 44, nameHeight = 32, style = {} }) {
   );
 }
 
-/** Full brand para fondo verde — casita en naranja + "Homly" en crema */
+/** Full brand para fondo verde — isotipo (imagen original) + "Homly" en crema */
 export function HomlyBrandDark({ iconSize = 44, fontSize = 26, style = {} }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, ...style }}>
@@ -252,7 +251,6 @@ export function HomlyBrandDark({ iconSize = 44, fontSize = 26, style = {} }) {
           objectFit: 'contain',
           flexShrink: 0,
           borderRadius: 8,
-          filter: 'brightness(0) saturate(100%) invert(48%) sepia(79%) saturate(2476%) hue-rotate(346deg) brightness(95%) contrast(91%)',
         }}
       />
       <span
@@ -270,7 +268,7 @@ export function HomlyBrandDark({ iconSize = 44, fontSize = 26, style = {} }) {
   );
 }
 
-/** Logo completo — casita en naranja + nombre Homly (verde), fondo crema */
+/** Logo completo — isotipo (imagen original) + nombre Homly */
 export const HOMLY_LOGO_FULL = (
   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
     <img
@@ -281,7 +279,6 @@ export const HOMLY_LOGO_FULL = (
         height: 52,
         objectFit: 'contain',
         flexShrink: 0,
-        filter: 'brightness(0) saturate(100%) invert(48%) sepia(79%) saturate(2476%) hue-rotate(346deg) brightness(95%) contrast(91%)',
       }}
     />
     <span style={{ fontFamily: 'var(--font-display)', fontSize: 28, fontWeight: 600, color: '#1F7D5B', letterSpacing: '-0.02em' }}>
