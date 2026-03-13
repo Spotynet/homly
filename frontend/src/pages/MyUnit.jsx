@@ -467,10 +467,7 @@ export default function MyUnit() {
                   </div>
                   {netPrevDebt > 0 && (
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid var(--sand-100)' }}>
-                      <div>
-                        <span style={{ fontSize: 13, color: 'var(--ink-500)' }}>Recaudo de adeudos</span>
-                        <div style={{ fontSize: 11, color: 'var(--ink-300)', marginTop: 2 }}>saldo pendiente de períodos anteriores</div>
-                      </div>
+                      <span style={{ fontSize: 13, color: 'var(--ink-500)' }}>Saldo pendiente de períodos anteriores</span>
                       <span style={{ fontFamily: 'var(--font-display)', fontSize: 20, fontWeight: 500, color: 'var(--coral-500)' }}>{fmt(netPrevDebt)}</span>
                     </div>
                   )}
@@ -511,7 +508,6 @@ export default function MyUnit() {
                 <InfoCard label="Nombre" value={`${unit.owner_first_name || ''} ${unit.owner_last_name || ''}`.trim()} />
                 <InfoCard label="Email" value={unit.owner_email} />
                 <InfoCard label="Teléfono" value={unit.owner_phone} />
-                <InfoCard label="RFC" value={unit.owner_rfc} />
               </div>
             </div>
           </div>
