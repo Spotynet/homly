@@ -417,13 +417,26 @@ export default function EstadoCuenta() {
                     <div className="ec-sum-label" style={{ color: 'var(--coral-600)' }}>
                       ⚠ Deuda Anterior
                       <div style={{ fontSize: 9, color: 'var(--coral-400)', fontWeight: 400, marginTop: 1 }}>Saldo acumulado previo al sistema</div>
-                      {prevDebtAdeudo > 0 && (
-                        <span style={{ fontSize: 9, color: 'var(--teal-600)', fontWeight: 600, display: 'block', marginTop: 2 }}>
-                          Abonado: {fmt(prevDebtAdeudo)} · Pendiente: {fmt(netPrevDebt)}
-                        </span>
-                      )}
                     </div>
-                    <div className="ec-sum-val debt">-{fmt(netPrevDebt)}</div>
+                    {/* Desglose: deuda inicial → abonado → pendiente */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginTop: 4 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                        <span style={{ fontSize: 10, color: 'var(--coral-500)', fontWeight: 500 }}>Deuda inicial</span>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--coral-600)', fontFamily: 'var(--font-display)' }}>-{fmt(unitPrevDebt)}</span>
+                      </div>
+                      {prevDebtAdeudo > 0 && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                          <span style={{ fontSize: 10, color: 'var(--teal-600)', fontWeight: 500 }}>Abonado</span>
+                          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--teal-600)', fontFamily: 'var(--font-display)' }}>+{fmt(prevDebtAdeudo)}</span>
+                        </div>
+                      )}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, borderTop: '1px solid var(--coral-200)', paddingTop: 3, marginTop: 1 }}>
+                        <span style={{ fontSize: 10, fontWeight: 700, color: netPrevDebt <= 0 ? 'var(--teal-600)' : 'var(--coral-700)' }}>Pendiente</span>
+                        <span className="ec-sum-val debt" style={{ fontSize: 15, marginTop: 0 }}>
+                          {netPrevDebt <= 0 ? <span style={{ color: 'var(--teal-600)' }}>✓ Liquidada</span> : `-${fmt(netPrevDebt)}`}
+                        </span>
+                      </div>
+                    </div>
                     {data?.unit?.previous_debt_evidence && (
                       <button
                         title="Ver evidencia de deuda anterior"
