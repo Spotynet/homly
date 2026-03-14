@@ -1399,26 +1399,6 @@ export default function Cobranza() {
                                           value={ds.maintenance ?? ''}
                                           onChange={e => setAdeudoSelection(d.period, 'maintenance', e.target.value)} />
                                       </div>
-                                      {reqEFs.map(ef => (
-                                        <div key={ef.id}>
-                                          <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-700)' }}>{ef.label}</label>
-                                          <input type="number" className="field-input" min={0} step="0.01"
-                                            style={{ marginTop: 4 }}
-                                            placeholder="0.00"
-                                            value={ds[ef.id] ?? ''}
-                                            onChange={e => setAdeudoSelection(d.period, ef.id, e.target.value)} />
-                                        </div>
-                                      ))}
-                                      {allEFs.filter(ef => !reqEFs.find(r => r.id === ef.id)).map(ef => (
-                                        <div key={ef.id}>
-                                          <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-700)' }}>{ef.label} <span style={{ fontSize: 10, color: 'var(--ink-400)' }}>(opc.)</span></label>
-                                          <input type="number" className="field-input" min={0} step="0.01"
-                                            style={{ marginTop: 4 }}
-                                            placeholder="0.00"
-                                            value={ds[ef.id] ?? ''}
-                                            onChange={e => setAdeudoSelection(d.period, ef.id, e.target.value)} />
-                                        </div>
-                                      ))}
                                     </div>
                                     {capturedTotal > 0 && (
                                       <div style={{ marginTop: 10, display: 'flex', justifyContent: 'space-between', padding: '8px 12px', background: 'white', border: '1px solid var(--amber-200)', borderRadius: 'var(--radius-sm)' }}>
