@@ -116,6 +116,30 @@ function TenantSwitcher({ tenantId, tenantName, userTenants, onSwitch }) {
     }
   };
 
+  // Helper: render avatar for a tenant (logo image or fallback icon)
+  const TenantAvatar = ({ logo, size = 32, active = false, radius = 8 }) => {
+    const logoSrc = logo
+      ? (logo.startsWith('data:') ? logo : `data:image/png;base64,${logo}`)
+      : null;
+    return (
+      <div style={{
+        width: size, height: size, borderRadius: radius, flexShrink: 0,
+        background: logoSrc ? 'white' : (active ? 'var(--teal-500)' : 'var(--sand-200)'),
+        border: logoSrc ? '1px solid var(--sand-100)' : 'none',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        overflow: 'hidden',
+      }}>
+        {logoSrc
+          ? <img src={logoSrc} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+          : <Building2 size={size * 0.5} color={active ? 'white' : 'var(--ink-400)'} />
+        }
+      </div>
+    );
+  };
+
+  // Logo del tenant activo (buscado dentro de userTenants)
+  const activeTenantLogo = userTenants.find(t => t.id === tenantId)?.logo || null;
+
   return (
     <div ref={ref} style={{ position: 'relative', margin: '8px 12px' }}>
       <button
@@ -129,14 +153,8 @@ function TenantSwitcher({ tenantId, tenantName, userTenants, onSwitch }) {
           transition: 'all 0.15s', textAlign: 'left',
         }}
       >
-        {/* Avatar — image/icon only, no text */}
-        <div style={{
-          width: 32, height: 32, borderRadius: 8, flexShrink: 0,
-          background: 'var(--sand-200)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>
-          <Building2 size={16} color="var(--ink-400)" />
-        </div>
+        {/* Avatar — logo del tenant activo o icono de fallback */}
+        <TenantAvatar logo={activeTenantLogo} size={32} radius={8} />
 
         {/* Name */}
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -196,13 +214,8 @@ function TenantSwitcher({ tenantId, tenantName, userTenants, onSwitch }) {
                 onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'var(--sand-50)'; }}
                 onMouseLeave={e => { e.currentTarget.style.background = active ? 'var(--teal-50)' : 'transparent'; }}
               >
-                <div style={{
-                  width: 28, height: 28, borderRadius: 6, flexShrink: 0,
-                  background: active ? 'var(--teal-500)' : 'var(--sand-100)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                }}>
-                  <Building2 size={14} color={active ? 'white' : 'var(--ink-500)'} />
-                </div>
+                {/* Logo del tenant en la opción del dropdown */}
+                <TenantAvatar logo={t.logo} size={28} active={active} radius={6} />
                 <span style={{
                   flex: 1, fontSize: 13, fontWeight: active ? 700 : 500,
                   color: active ? 'var(--teal-700)' : 'var(--ink-700)',
@@ -280,17 +293,26 @@ export default function AppLayout() {
               onSwitch={handleSwitchTenant}
             />
           : tenantName
-            ? (
-              /* Single tenant — static display (icon only, no text in avatar) */
-              <div className="sidebar-tenant">
-                <div className="sidebar-tenant-avatar">
-                  <Building2 size={18} color="var(--ink-500)" />
-                </div>
-                <div className="sidebar-tenant-info">
-                  <div className="sidebar-tenant-name">{tenantName}</div>
-                </div>
-              </div>
-            )
+            ? (() => {
+                const singleLogo = userTenants.find(t => t.id === tenantId)?.logo || null;
+                const singleLogoSrc = singleLogo
+                  ? (singleLogo.startsWith('data:') ? singleLogo : `data:image/png;base64,${singleLogo}`)
+                  : null;
+                return (
+                  /* Single tenant — static display */
+                  <div className="sidebar-tenant">
+                    <div className="sidebar-tenant-avatar" style={{ overflow: 'hidden', background: singleLogoSrc ? 'white' : undefined, border: singleLogoSrc ? '1px solid var(--sand-100)' : undefined, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      {singleLogoSrc
+                        ? <img src={singleLogoSrc} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                        : <Building2 size={18} color="var(--ink-500)" />
+                      }
+                    </div>
+                    <div className="sidebar-tenant-info">
+                      <div className="sidebar-tenant-name">{tenantName}</div>
+                    </div>
+                  </div>
+                );
+              })()
             : null
         }
 
@@ -345,12 +367,8 @@ export default function AppLayout() {
             <button className="mobile-toggle" onClick={() => setSidebarOpen(true)} aria-label="Abrir menú">
               <Menu size={22} />
             </button>
-            {/* Logo (casita + Homly) en verde — siempre visible en móvil y desktop */}
-            <div style={{ display: 'flex', alignItems: 'center', marginRight: 16 }}>
-              <HomlyBrand iconSize={32} nameHeight={18} />
-            </div>
-            {/* Page title (desktop) */}
-            <div className="hidden-mobile">
+            {/* Page title — módulo activo + nombre del tenant */}
+            <div>
               <div className="header-title">{pageTitle}</div>
               {tenantName && <div className="header-subtitle">{tenantName}</div>}
             </div>
