@@ -2,25 +2,15 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { usersAPI, unitsAPI, authAPI } from '../api/client';
 import { ROLES } from '../utils/helpers';
-import { Plus, Trash2, X, Pencil, UserCheck, Loader, KeyRound, Eye, EyeOff, RefreshCw, ShieldAlert, ToggleLeft, ToggleRight } from 'lucide-react';
+import { Plus, Trash2, X, Pencil, UserCheck, Loader, ShieldAlert, ToggleLeft, ToggleRight } from 'lucide-react';
 import toast from 'react-hot-toast';
-
-/* ── Generate a random readable password ──────────────────────────── */
-function generatePassword() {
-  const words = ['Casa', 'Hogar', 'Llave', 'Torre', 'Plaza', 'Verde', 'Cielo'];
-  const nums  = Math.floor(100 + Math.random() * 900);
-  const syms  = ['!', '#', '@', '*'];
-  const word  = words[Math.floor(Math.random() * words.length)];
-  const sym   = syms[Math.floor(Math.random() * syms.length)];
-  return `${word}${nums}${sym}`;
-}
 
 export default function Users() {
   const { tenantId, isAdmin } = useAuth();
   const [users,   setUsers]   = useState([]);
   const [units,   setUnits]   = useState([]);
   const [loading, setLoading] = useState(true);
-  const [modal,   setModal]   = useState(false);   // 'edit' | 'reset' | false
+  const [modal,   setModal]   = useState(false);   // 'edit' | false
   const [editId,  setEditId]  = useState(null);
   const [saving,  setSaving]  = useState(false);
   const [form,    setForm]    = useState({});
@@ -29,12 +19,6 @@ export default function Users() {
   const [emailChecking, setEmailChecking] = useState(false);
   const [existingUser,  setExistingUser]  = useState(null);
   const emailCheckTimer = useRef(null);
-
-  // ── Reset password modal state ──────────────────────────────────────────
-  const [resetTarget, setResetTarget] = useState(null);
-  const [resetPw,     setResetPw]     = useState('');
-  const [resetPwShow, setResetPwShow] = useState(false);
-  const [resetSaving, setResetSaving] = useState(false);
 
   // ── Load ──────────────────────────────────────────────────────────────────
   const load = async () => {
@@ -71,18 +55,8 @@ export default function Users() {
     setModal('edit');
   };
 
-  const openReset = (tu) => {
-    setResetTarget(tu);
-    setResetPw(generatePassword());
-    setResetPwShow(true);
-    setModal('reset');
-  };
-
   const closeModal = () => {
     setModal(false);
-    setResetTarget(null);
-    setResetPw('');
-    setResetPwShow(false);
   };
 
   // ── Email check (debounced) ───────────────────────────────────────────────
@@ -143,23 +117,6 @@ export default function Users() {
         (editId ? 'Error actualizando usuario' : 'Error al guardar usuario')
       );
     } finally { setSaving(false); }
-  };
-
-  // ── Reset password ─────────────────────────────────────────────────────────
-  const handleResetPassword = async () => {
-    if (!resetPw || resetPw.length < 6) {
-      toast.error('La contraseña debe tener al menos 6 caracteres');
-      return;
-    }
-    setResetSaving(true);
-    try {
-      await usersAPI.resetPassword(tenantId, resetTarget.id, { new_password: resetPw });
-      toast.success(`Contraseña restablecida. ${resetTarget.user_name} deberá crear una nueva al ingresar.`);
-      closeModal();
-      load();
-    } catch (e) {
-      toast.error(e.response?.data?.detail || e.response?.data?.new_password?.[0] || 'Error al restablecer contraseña');
-    } finally { setResetSaving(false); }
   };
 
   const handleDelete = async (tu) => {
@@ -273,9 +230,6 @@ export default function Users() {
                           </button>
                           <button onClick={() => openEdit(tu)} className="btn-icon" style={{ color: 'var(--teal-600)' }} title="Editar usuario">
                             <Pencil size={15} />
-                          </button>
-                          <button onClick={() => openReset(tu)} className="btn-icon" style={{ color: 'var(--amber-600)' }} title="Restablecer contraseña">
-                            <KeyRound size={15} />
                           </button>
                           <button onClick={() => handleDelete(tu)} className="btn-icon" style={{ color: 'var(--coral-500)' }} title="Eliminar acceso">
                             <Trash2 size={15} />
@@ -405,89 +359,6 @@ export default function Users() {
               <button onClick={handleSave} className="btn btn-primary"
                 disabled={saving || (!editId && existingUser === null && !emailChecking)}>
                 {saving ? 'Guardando…' : editId ? 'Guardar Cambios' : existingUser ? 'Agregar al Condominio' : 'Crear Usuario'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ══ Modal: Restablecer Contraseña ══════════════════════════════════ */}
-      {modal === 'reset' && resetTarget && (
-        <div className="modal-bg open" onClick={closeModal}>
-          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 460 }}>
-            <div className="modal-head">
-              <h3 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <KeyRound size={17} color="var(--amber-600)" />
-                Restablecer contraseña
-              </h3>
-              <button onClick={closeModal} className="modal-close"><X size={16} /></button>
-            </div>
-
-            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-
-              {/* User pill */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', background: 'var(--sand-50)', border: '1px solid var(--sand-200)', borderRadius: 10 }}>
-                <div style={{ width: 38, height: 38, borderRadius: '50%', background: 'var(--teal-100)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 15, color: 'var(--teal-700)', flexShrink: 0 }}>
-                  {(resetTarget.user_name || '?')[0].toUpperCase()}
-                </div>
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--ink-800)' }}>{resetTarget.user_name}</div>
-                  <div style={{ fontSize: 12, color: 'var(--ink-400)', marginTop: 2 }}>{resetTarget.user_email}</div>
-                </div>
-              </div>
-
-              {/* Warning */}
-              <div style={{ display: 'flex', gap: 10, padding: '10px 14px', background: 'var(--amber-50)', border: '1px solid var(--amber-200)', borderRadius: 10 }}>
-                <ShieldAlert size={18} color="var(--amber-600)" style={{ flexShrink: 0, marginTop: 1 }} />
-                <p style={{ fontSize: 13, color: 'var(--amber-700)', margin: 0, lineHeight: 1.55 }}>
-                  Se asignará una <strong>contraseña temporal</strong>. El usuario deberá crear una contraseña personalizada la próxima vez que inicie sesión.
-                </p>
-              </div>
-
-              {/* Password input */}
-              <div>
-                <label className="field-label">Contraseña temporal *</label>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <div style={{ position: 'relative', flex: 1 }}>
-                    <input
-                      type={resetPwShow ? 'text' : 'password'}
-                      className="field-input"
-                      value={resetPw}
-                      onChange={e => setResetPw(e.target.value)}
-                      placeholder="Mínimo 6 caracteres"
-                      style={{
-                        paddingRight: 40,
-                        fontFamily: resetPwShow ? 'inherit' : 'monospace',
-                        letterSpacing: resetPwShow ? 'normal' : '0.1em',
-                      }}
-                    />
-                    <button type="button" onClick={() => setResetPwShow(v => !v)}
-                      style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-400)', padding: 0 }}>
-                      {resetPwShow ? <EyeOff size={15} /> : <Eye size={15} />}
-                    </button>
-                  </div>
-                  <button type="button"
-                    onClick={() => { setResetPw(generatePassword()); setResetPwShow(true); }}
-                    className="btn btn-outline" title="Generar contraseña sugerida"
-                    style={{ flexShrink: 0, padding: '0 12px', display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <RefreshCw size={14} /> Generar
-                  </button>
-                </div>
-                <p style={{ fontSize: 12, color: 'var(--ink-400)', marginTop: 6, lineHeight: 1.4 }}>
-                  Comparte esta contraseña con el usuario por un canal seguro (WhatsApp, llamada, etc).
-                </p>
-              </div>
-            </div>
-
-            <div className="modal-foot">
-              <button onClick={closeModal} className="btn btn-outline">Cancelar</button>
-              <button
-                onClick={handleResetPassword}
-                disabled={resetSaving || !resetPw || resetPw.length < 6}
-                className="btn"
-                style={{ background: 'var(--amber-500)', color: '#fff', border: 'none', opacity: (resetSaving || !resetPw || resetPw.length < 6) ? 0.6 : 1 }}
-              >
-                {resetSaving ? 'Guardando…' : 'Restablecer contraseña'}
               </button>
             </div>
           </div>

@@ -23,7 +23,7 @@ from .models import (
 from .email_service import send_verification_email, CODE_EXPIRY_MINUTES
 from .serializers import (
     LoginSerializer, RequestCodeSerializer, LoginWithCodeSerializer,
-    ChangePasswordSerializer, UserSerializer, UserCreateSerializer,
+    UserSerializer, UserCreateSerializer,
     TenantListSerializer, TenantDetailSerializer, TenantUserSerializer,
     UnitSerializer, UnitListSerializer, ExtraFieldSerializer,
     PaymentSerializer, PaymentCaptureSerializer, AddAdditionalPaymentSerializer, FieldPaymentSerializer,
@@ -31,7 +31,6 @@ from .serializers import (
     BankStatementSerializer, ClosedPeriodSerializer, ReopenRequestSerializer,
     AssemblyPositionSerializer, CommitteeSerializer, UnrecognizedIncomeSerializer,
     DashboardSerializer, AmenityReservationSerializer, CondominioRequestSerializer,
-    ResetUserPasswordSerializer,
 )
 from .permissions import IsSuperAdmin, IsTenantAdmin, IsTenantMember, IsAdminOrTesorero, IsAdminOrTesOrAuditor
 
@@ -145,19 +144,6 @@ class LoginWithCodeView(APIView):
             'tenant_name': tenant.name if tenant else None,
             'must_change_password': False,  # Code-only: never prompt for password
         })
-
-
-class ChangePasswordView(APIView):
-    """POST /api/auth/change-password/"""
-
-    def post(self, request):
-        serializer = ChangePasswordSerializer(data=request.data,
-                                               context={'request': request})
-        serializer.is_valid(raise_exception=True)
-        request.user.set_password(serializer.validated_data['new_password'])
-        request.user.must_change_password = False
-        request.user.save()
-        return Response({'detail': 'Contraseña actualizada.'})
 
 
 class CheckEmailView(APIView):
@@ -403,27 +389,6 @@ class TenantUserViewSet(viewsets.ModelViewSet):
         if name and name.strip():
             instance.user.name = name.strip()
             instance.user.save(update_fields=['name'])
-
-    @action(detail=True, methods=['post'], url_path='reset-password')
-    def reset_password(self, request, tenant_id=None, pk=None):
-        """
-        POST /api/tenants/{tenant_id}/users/{id}/reset-password/
-        Admin sets a temporary password for a user.
-        The user will be forced to change it on next login.
-        """
-        tenant_user = self.get_object()
-        serializer = ResetUserPasswordSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-
-        user = tenant_user.user
-        user.set_password(serializer.validated_data['new_password'])
-        user.must_change_password = True
-        user.save(update_fields=['password', 'must_change_password'])
-
-        return Response(
-            {'detail': f'Contraseña restablecida para {user.name or user.email}. El usuario deberá crear una nueva contraseña al iniciar sesión.'},
-            status=status.HTTP_200_OK,
-        )
 
     @action(detail=True, methods=['post'], url_path='toggle-active')
     def toggle_active(self, request, tenant_id=None, pk=None):

@@ -172,27 +172,6 @@ class LoginWithCodeSerializer(serializers.Serializer):
         return data
 
 
-class ChangePasswordSerializer(serializers.Serializer):
-    current_password = serializers.CharField(write_only=True, required=False, allow_blank=True)
-    new_password = serializers.CharField(write_only=True, min_length=6)
-
-    def validate(self, data):
-        user = self.context['request'].user
-        # If the user is in a forced-change-password flow, skip current_password check.
-        if not user.must_change_password:
-            current = data.get('current_password', '')
-            if not current:
-                raise serializers.ValidationError({'current_password': 'Este campo es requerido.'})
-            if not user.check_password(current):
-                raise serializers.ValidationError({'current_password': 'Contraseña actual incorrecta.'})
-        return data
-
-
-class ResetUserPasswordSerializer(serializers.Serializer):
-    """Used by admins to set a temporary password for another user."""
-    new_password = serializers.CharField(write_only=True, min_length=6)
-
-
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User

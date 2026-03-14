@@ -125,19 +125,6 @@ class AuthTests(BaseTestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertTrue(resp.data['must_change_password'])
 
-    def test_change_password(self):
-        self.login_as('maria@email.com', 'Teso1234', self.tenant.id)
-        resp = self.client.post('/api/auth/change-password/', {
-            'current_password': 'Teso1234',
-            'new_password': 'NewPass123',
-        }, format='json')
-        self.assertEqual(resp.status_code, 200)
-        # Verify new password works
-        self.client.credentials()
-        resp2 = self.login_as('maria@email.com', 'NewPass123', self.tenant.id)
-        self.assertEqual(resp2.status_code, 200)
-        self.assertFalse(resp2.data['must_change_password'])
-
     def test_tenants_list_for_login(self):
         resp = self.client.get('/api/auth/tenants/')
         self.assertEqual(resp.status_code, 200)

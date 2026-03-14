@@ -7,7 +7,7 @@ import {
   Building2, RefreshCw, Edit2, Search, Home, Lock, Pencil, UserCheck, Loader,
   Calendar, DollarSign, ShieldCheck, Receipt, ShoppingBag,
   AlertCircle, Shield, FileText, Globe, ChevronRight, TrendingUp,
-  KeyRound, Eye, EyeOff, ShieldAlert,
+  ShieldAlert,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -147,13 +147,6 @@ export default function Config() {
   const [editUserOpen, setEditUserOpen] = useState(false);
   const [editUserId,   setEditUserId]   = useState(null);
   const [editUserForm, setEditUserForm] = useState({});
-
-  // User modal — reset password
-  const [resetUserOpen,   setResetUserOpen]   = useState(false);
-  const [resetUserTarget, setResetUserTarget] = useState(null);
-  const [resetUserPw,     setResetUserPw]     = useState('');
-  const [resetUserShow,   setResetUserShow]   = useState(false);
-  const [resetUserSaving, setResetUserSaving] = useState(false);
 
   // Org modals
   const [cmtForm, setCmtForm] = useState(null);
@@ -442,33 +435,6 @@ export default function Config() {
       setEditUserForm({});
       loadUsers();
     } catch (e) { toast.error(e.response?.data?.detail || 'Error al actualizar usuario'); }
-  };
-
-  const openResetUser = (u) => {
-    const words = ['Casa','Hogar','Llave','Torre','Plaza','Verde','Cielo'];
-    const nums  = Math.floor(100 + Math.random() * 900);
-    const syms  = ['!','#','@','*'];
-    const pw    = `${words[Math.floor(Math.random()*words.length)]}${nums}${syms[Math.floor(Math.random()*syms.length)]}`;
-    setResetUserTarget(u);
-    setResetUserPw(pw);
-    setResetUserShow(true);
-    setResetUserOpen(true);
-  };
-
-  const handleResetUserPassword = async () => {
-    if (!resetUserPw || resetUserPw.length < 6)
-      return toast.error('La contraseña debe tener al menos 6 caracteres');
-    setResetUserSaving(true);
-    try {
-      await usersAPI.resetPassword(tenantId, resetUserTarget.id, { new_password: resetUserPw });
-      toast.success(`Contraseña restablecida. ${resetUserTarget.user_name || resetUserTarget.user_email} deberá crear una nueva al ingresar.`);
-      setResetUserOpen(false);
-      setResetUserTarget(null);
-      setResetUserPw('');
-      loadUsers();
-    } catch (e) {
-      toast.error(e.response?.data?.detail || e.response?.data?.new_password?.[0] || 'Error al restablecer contraseña');
-    } finally { setResetUserSaving(false); }
   };
 
   // ── Guards ────────────────────────────────────────────────────────────────
@@ -1332,10 +1298,6 @@ export default function Config() {
                                       <button className="btn-ghost" style={{ color:'var(--teal-600)' }} title="Editar"
                                         onClick={() => openEditUser(u)}>
                                         <Pencil size={13}/>
-                                      </button>
-                                      <button className="btn-ghost" style={{ color:'var(--amber-600)' }} title="Restablecer contraseña"
-                                        onClick={() => openResetUser(u)}>
-                                        <KeyRound size={13}/>
                                       </button>
                                       {u.user !== user?.id && (
                                         <button className="btn-ghost" style={{ color:'var(--coral-500)' }} title="Eliminar" onClick={async () => {
@@ -2333,88 +2295,6 @@ export default function Config() {
             </div>
           </div>
         </Modal>
-      )}
-
-      {/* Reset password modal */}
-      {resetUserOpen && resetUserTarget && (
-        <div className="modal-bg open" onClick={() => { setResetUserOpen(false); setResetUserTarget(null); }}>
-          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth:460 }}>
-            <div className="modal-head">
-              <h3 style={{ display:'flex', alignItems:'center', gap:8 }}>
-                <KeyRound size={17} color="var(--amber-600)" /> Restablecer contraseña
-              </h3>
-              <button className="modal-close" onClick={() => { setResetUserOpen(false); setResetUserTarget(null); }}><X size={16}/></button>
-            </div>
-
-            <div className="modal-body" style={{ display:'flex', flexDirection:'column', gap:16 }}>
-              {/* User pill */}
-              <div style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 14px', background:'var(--sand-50)', border:'1px solid var(--sand-200)', borderRadius:10 }}>
-                <div style={{ width:38, height:38, borderRadius:'50%', background:'var(--teal-100)', display:'flex', alignItems:'center', justifyContent:'center', fontWeight:800, fontSize:15, color:'var(--teal-700)', flexShrink:0 }}>
-                  {(resetUserTarget.user_name || resetUserTarget.user_email || '?')[0].toUpperCase()}
-                </div>
-                <div>
-                  <div style={{ fontWeight:700, fontSize:14, color:'var(--ink-800)' }}>{resetUserTarget.user_name || '—'}</div>
-                  <div style={{ fontSize:12, color:'var(--ink-400)', marginTop:2 }}>{resetUserTarget.user_email}</div>
-                </div>
-              </div>
-
-              {/* Warning */}
-              <div style={{ display:'flex', gap:10, padding:'10px 14px', background:'var(--amber-50)', border:'1px solid var(--amber-200)', borderRadius:10 }}>
-                <ShieldAlert size={18} color="var(--amber-600)" style={{ flexShrink:0, marginTop:1 }}/>
-                <p style={{ fontSize:13, color:'var(--amber-700)', margin:0, lineHeight:1.55 }}>
-                  Se asignará una <strong>contraseña temporal</strong>. El usuario deberá crear una contraseña personalizada la próxima vez que inicie sesión.
-                </p>
-              </div>
-
-              {/* Password field */}
-              <div>
-                <label className="field-label">Contraseña temporal *</label>
-                <div style={{ display:'flex', gap:8 }}>
-                  <div style={{ position:'relative', flex:1 }}>
-                    <input
-                      type={resetUserShow ? 'text' : 'password'}
-                      className="field-input"
-                      value={resetUserPw}
-                      onChange={e => setResetUserPw(e.target.value)}
-                      placeholder="Mínimo 6 caracteres"
-                      style={{ paddingRight:40 }}
-                    />
-                    <button type="button" onClick={() => setResetUserShow(v => !v)}
-                      style={{ position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', background:'none', border:'none', cursor:'pointer', color:'var(--ink-400)', padding:0 }}>
-                      {resetUserShow ? <EyeOff size={15}/> : <Eye size={15}/>}
-                    </button>
-                  </div>
-                  <button type="button" className="btn btn-outline"
-                    title="Generar contraseña sugerida"
-                    style={{ flexShrink:0, padding:'0 12px', display:'flex', alignItems:'center', gap:6 }}
-                    onClick={() => {
-                      const words=['Casa','Hogar','Llave','Torre','Plaza','Verde','Cielo'];
-                      const syms=['!','#','@','*'];
-                      setResetUserPw(`${words[Math.floor(Math.random()*words.length)]}${Math.floor(100+Math.random()*900)}${syms[Math.floor(Math.random()*syms.length)]}`);
-                      setResetUserShow(true);
-                    }}>
-                    <RefreshCw size={14}/> Generar
-                  </button>
-                </div>
-                <p style={{ fontSize:12, color:'var(--ink-400)', marginTop:6, lineHeight:1.4 }}>
-                  Comparte esta contraseña con el usuario por un canal seguro.
-                </p>
-              </div>
-            </div>
-
-            <div className="modal-foot">
-              <button className="btn btn-outline" onClick={() => { setResetUserOpen(false); setResetUserTarget(null); }}>Cancelar</button>
-              <button
-                className="btn"
-                style={{ background:'var(--amber-500)', color:'#fff', border:'none', opacity:(resetUserSaving || !resetUserPw || resetUserPw.length < 6) ? 0.6 : 1 }}
-                disabled={resetUserSaving || !resetUserPw || resetUserPw.length < 6}
-                onClick={handleResetUserPassword}
-              >
-                {resetUserSaving ? 'Guardando…' : 'Restablecer contraseña'}
-              </button>
-            </div>
-          </div>
-        </div>
       )}
 
       {/* Super Admin modal */}

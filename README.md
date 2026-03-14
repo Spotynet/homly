@@ -169,7 +169,8 @@ homly/
 
 ### Auth
 - `POST /api/auth/login/` — Login with JWT
-- `POST /api/auth/change-password/` — Change password
+- `POST /api/auth/request-code/` — Request email verification code
+- `POST /api/auth/login-with-code/` — Login with code (passwordless)
 - `GET  /api/auth/tenants/` — List tenants for login
 
 ### Tenants (Super Admin)

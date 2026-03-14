@@ -47,7 +47,6 @@ export const authAPI = {
   login:               (data)     => api.post('/auth/login/', data),
   requestCode:         (email)    => api.post('/auth/request-code/', { email }),
   loginWithCode:       (data)     => api.post('/auth/login-with-code/', data),
-  changePassword:      (data)     => api.post('/auth/change-password/', data),
   getTenants:          ()         => api.get('/auth/tenants/'),
   getTenantsForEmail:  (email)    => api.post('/auth/tenants-for-email/', { email }),
   checkEmail:          (email)    => api.get('/auth/check-email/', { params: { email } }),
@@ -79,7 +78,6 @@ export const usersAPI = {
   create:        (data)                   => api.post('/users/', data),
   update:        (tenantId, id, data)     => api.patch(`/tenants/${tenantId}/users/${id}/`, data),
   delete:        (tenantId, id)           => api.delete(`/tenants/${tenantId}/users/${id}/`),
-  resetPassword: (tenantId, id, data)     => api.post(`/tenants/${tenantId}/users/${id}/reset-password/`, data),
   toggleActive:  (tenantId, id)           => api.post(`/tenants/${tenantId}/users/${id}/toggle-active/`),
 };
 

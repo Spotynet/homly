@@ -1732,7 +1732,7 @@ tr:hover td { background: rgba(59,185,144,0.02); }
   .landing-section { padding: 48px 16px; }
 }
 
-/* ─── Auth pages (Login / Registro / ChangePassword) responsive ─── */
+/* ─── Auth pages (Login / Registro) responsive ─── */
 /* The right decorative panel hides on mobile */
 @media (max-width: 900px) {
   /* Login split layout */

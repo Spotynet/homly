@@ -30,7 +30,6 @@ urlpatterns = [
     path('auth/login/', views.LoginView.as_view(), name='login'),
     path('auth/request-code/', views.RequestCodeView.as_view(), name='request-code'),
     path('auth/login-with-code/', views.LoginWithCodeView.as_view(), name='login-with-code'),
-    path('auth/change-password/', views.ChangePasswordView.as_view(), name='change-password'),
     path('auth/tenants/', views.TenantListForLoginView.as_view(), name='login-tenants'),
     path('auth/tenants-for-email/', views.TenantsForEmailView.as_view(), name='tenants-for-email'),
     path('auth/check-email/', views.CheckEmailView.as_view(), name='check-email'),
