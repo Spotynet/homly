@@ -453,8 +453,9 @@ export default function Login() {
               alt=""
               style={{ width: 56, height: 56, objectFit: 'contain', flexShrink: 0 }}
             />
-            <span style={{ fontFamily: 'var(--font-display)', fontSize: 32, fontWeight: 600, color: '#fff', letterSpacing: '-0.02em' }}>
+            <span style={{ fontFamily: 'var(--font-display)', fontSize: 32, fontWeight: 600, color: '#fff', letterSpacing: '-0.02em', display: 'inline-flex', alignItems: 'baseline', gap: 4 }}>
               homly
+              <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: '#F76F57', flexShrink: 0, marginLeft: 3, verticalAlign: 'middle', position: 'relative', top: 2 }} aria-hidden />
             </span>
           </div>
           <h2 className="text-3xl font-extrabold mb-4">
