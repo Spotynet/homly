@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { paymentsAPI, unitsAPI, extraFieldsAPI, tenantsAPI, unrecognizedIncomeAPI, reservationsAPI } from '../api/client';
+import { paymentsAPI, unitsAPI, extraFieldsAPI, tenantsAPI, unrecognizedIncomeAPI, reservationsAPI, reportsAPI } from '../api/client';
 import PaginationBar from '../components/PaginationBar';
 import { todayPeriod, periodLabel, prevPeriod, nextPeriod, tenantStartPeriod, fmtCurrency, statusClass, statusLabel, PAYMENT_TYPES, fmtDate, ROLES, CURRENCIES, APP_VERSION } from '../utils/helpers';
 import { ChevronLeft, ChevronRight, Search, Receipt, X, Users, CheckCircle, Clock, AlertCircle, DollarSign, Calendar, Building2, Upload, FileText, Check, Printer, Plus, Edit, Edit2, Trash2, Banknote } from 'lucide-react';
@@ -99,6 +99,8 @@ export default function Cobranza() {
   const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
   const [evidencePopup, setEvidencePopup] = useState(null); // { b64, mime, fileName }
   const [addlExtraFields, setAddlExtraFields] = useState([]); // campos para pagos adicionales (sin adelanto)
+  const [captureUnitPeriods, setCaptureUnitPeriods] = useState([]); // períodos con adeudo de la unidad en captura
+  const [captureUnitPeriodsLoading, setCaptureUnitPeriodsLoading] = useState(false);
 
   const load = async () => {
     if (!tenantId) return;
@@ -140,6 +142,30 @@ export default function Cobranza() {
       setReceiptReservations(all.filter(r => parseFloat(r.charge_amount) > 0));
     }).catch(() => setReceiptReservations([]));
   }, [showReceipt, tenantId]);
+
+  // Cargar períodos con adeudo cuando se abre el modal de captura
+  useEffect(() => {
+    if (!showCapture || !tenantId) { setCaptureUnitPeriods([]); return; }
+    setCaptureUnitPeriodsLoading(true);
+    reportsAPI.estadoCuenta(tenantId, { unit_id: showCapture.id })
+      .then(res => {
+        const rawPeriods = res.data?.periods || [];
+        // Solo períodos anteriores al período actual con saldo pendiente
+        const withDebt = rawPeriods
+          .filter(p => p.period < period && (parseFloat(p.charge) - parseFloat(p.paid)) > 0.01)
+          .map(p => ({
+            period: p.period,
+            charge: parseFloat(p.charge),
+            paid: parseFloat(p.paid),
+            saldoPeriodo: parseFloat(p.charge) - parseFloat(p.paid),
+            status: p.status,
+          }))
+          .sort((a, b) => a.period.localeCompare(b.period));
+        setCaptureUnitPeriods(withDebt);
+      })
+      .catch(() => setCaptureUnitPeriods([]))
+      .finally(() => setCaptureUnitPeriodsLoading(false));
+  }, [showCapture, tenantId, period]);
 
   const paymentMap = useMemo(() => {
     const m = {};
@@ -1001,14 +1027,14 @@ export default function Cobranza() {
         const obligFields = [{ id: 'maintenance', label: 'Mantenimiento', charge: maintCharge }, ...reqEFs.map(ef => ({ id: ef.id, label: ef.label, charge: parseFloat(ef.default_amount) || 0 }))];
         const totalAdelantoCount = obligFields.reduce((s, fd) => s + Object.keys(captureForm.field_payments?.[fd.id]?.adelantoTargets || {}).length, 0);
         const prevDebt = parseFloat(showCapture.previous_debt) || 0;
-        const tenantStart = tenantData?.operation_start_date || (() => { let p = period; for (let i = 0; i < 12; i++) p = prevPeriod(p); return p; })();
-        const allPast = periodsBetween(tenantStart, prevPeriod(period));
-        const periodsWithDebt = [];
-        if (prevDebt > 0) {
-          const existingPrev = captureForm.adeudo_payments?.__prevDebt;
-          const existingPrevSum = existingPrev ? Object.values(existingPrev).reduce((a, v) => a + (parseFloat(v) || 0), 0) : 0;
-          periodsWithDebt.push({ period: '__prevDebt', saldoPeriodo: prevDebt, label: 'Recaudo de adeudos' });
-        }
+        // Abono ya capturado a deuda anterior
+        const prevDebtCaptured = Object.values(captureForm.adeudo_payments?.__prevDebt || {})
+          .reduce((s, v) => s + (parseFloat(v) || 0), 0);
+        const netPrevDebt = Math.max(0, prevDebt - prevDebtCaptured);
+        // Lista final para el panel: deuda anterior + períodos reales cargados
+        const hasDeudaAnterior = prevDebt > 0;
+        const hasPeriodosDeuda = captureUnitPeriods.length > 0 || captureUnitPeriodsLoading;
+        const hasAnyDebt = hasDeudaAnterior || hasPeriodosDeuda;
         const responsible = showCapture.occupancy === 'rentado'
           ? `${showCapture.tenant_first_name || ''} ${showCapture.tenant_last_name || ''}`.trim() || showCapture.responsible_name
           : `${showCapture.owner_first_name || ''} ${showCapture.owner_last_name || ''}`.trim() || showCapture.responsible_name;
@@ -1208,89 +1234,203 @@ export default function Cobranza() {
                   )}
                 </div>
 
-                {/* SECCIÓN 4: ADEUDOS */}
-                {periodsWithDebt.length > 0 && (
-                  <div style={{ marginTop: 8, border: '1.5px solid var(--coral-100)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
-                    <button type="button" style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', background: 'var(--coral-50)', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-body)' }}
+                {/* SECCIÓN 4: ADEUDOS — separado en Deuda Anterior y Períodos No Pagados */}
+                {hasAnyDebt && (
+                  <div style={{ marginTop: 8, border: '1.5px solid var(--coral-200)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+
+                    {/* ── Toggle principal ── */}
+                    <button type="button"
+                      style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', background: 'var(--coral-50)', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-body)' }}
                       onClick={() => setCaptureForm(p => ({ ...p, showAdeudoPanel: !p.showAdeudoPanel }))}>
-                      <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, fontWeight: 700, color: 'var(--coral-700)' }}><AlertCircle size={14} /> Abono a Adeudos — {periodsWithDebt.length} concepto(s) pendiente(s)</span>
-                      <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--coral-500)' }}>{fmt(periodsWithDebt.reduce((a, d) => a + (d.saldoPeriodo || 0), 0))} {captureForm.showAdeudoPanel ? '▲' : '▼'}</span>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, fontWeight: 700, color: 'var(--coral-700)' }}>
+                        <AlertCircle size={14} />
+                        Abonos a Adeudos
+                        {hasDeudaAnterior && <span style={{ background: 'var(--coral-200)', color: 'var(--coral-700)', borderRadius: 4, padding: '1px 6px', fontSize: 10 }}>⚠ Deuda anterior</span>}
+                        {captureUnitPeriods.length > 0 && <span style={{ background: 'var(--amber-100)', color: 'var(--amber-700)', borderRadius: 4, padding: '1px 6px', fontSize: 10 }}>📅 {captureUnitPeriods.length} período(s)</span>}
+                        {captureUnitPeriodsLoading && <span style={{ fontSize: 10, color: 'var(--ink-400)' }}>Cargando…</span>}
+                      </span>
+                      <span style={{ fontSize: 12, color: 'var(--ink-400)' }}>{captureForm.showAdeudoPanel ? '▲' : '▼'}</span>
                     </button>
+
                     {captureForm.showAdeudoPanel && (
-                      <div style={{ background: 'white', borderTop: '1px solid var(--coral-100)' }}>
-                        {periodsWithDebt.map(d => {
-                          const isPrevDebt = d.period === '__prevDebt';
-                          const sel = !!(captureForm.adeudoSelections && captureForm.adeudoSelections[d.period]);
-                          const ds = (captureForm.adeudo_payments && captureForm.adeudo_payments[d.period]) || {};
-                          const capturedTotal = Object.values(ds).reduce((a, v) => a + (parseFloat(v) || 0), 0);
+                      <div>
+
+                        {/* ════ BLOQUE A: DEUDA ANTERIOR ════ */}
+                        {hasDeudaAnterior && (() => {
+                          const ds = captureForm.adeudo_payments?.__prevDebt || {};
+                          const capturedPrev = Object.values(ds).reduce((a, v) => a + (parseFloat(v) || 0), 0);
+                          const selPrev = !!(captureForm.adeudoSelections?.__prevDebt);
                           return (
-                            <div key={d.period} style={{ borderBottom: '1px solid var(--coral-50)' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', cursor: 'pointer', background: sel ? 'var(--coral-50)' : undefined }}
-                                onClick={() => toggleAdeudoPeriod(d.period)}>
-                                <div style={{ width: 20, height: 20, borderRadius: 6, border: `2px solid ${sel ? 'var(--coral-400)' : 'var(--sand-300)'}`, background: sel ? 'var(--coral-400)' : 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                                  {sel && <Check size={12} style={{ color: 'white' }} />}
+                            <div style={{ borderBottom: '2px solid var(--coral-100)' }}>
+                              {/* Sub-header */}
+                              <div style={{ padding: '7px 16px', background: 'var(--coral-100)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--coral-700)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+                                  ⚠ Deuda Anterior al Período Inicial
+                                </span>
+                                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--coral-600)' }}>
+                                  Saldo: {fmt(netPrevDebt)}
+                                  {capturedPrev > 0 && <span style={{ color: 'var(--teal-600)', marginLeft: 6 }}>· Abonando: {fmt(capturedPrev)}</span>}
+                                </span>
+                              </div>
+                              {/* Fila con checkbox */}
+                              <div
+                                style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', cursor: 'pointer', background: selPrev ? 'var(--coral-50)' : 'white' }}
+                                onClick={() => toggleAdeudoPeriod('__prevDebt')}
+                              >
+                                <div style={{ width: 20, height: 20, borderRadius: 6, border: `2px solid ${selPrev ? 'var(--coral-400)' : 'var(--sand-300)'}`, background: selPrev ? 'var(--coral-400)' : 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                  {selPrev && <Check size={12} style={{ color: 'white' }} />}
                                 </div>
                                 <div style={{ flex: 1 }}>
-                                  {/* Etiqueta clara según el tipo de adeudo */}
-                                  {isPrevDebt ? (
-                                    <>
-                                      <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--coral-600)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2 }}>⚠ DEUDA ANTERIOR</div>
-                                      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink-800)' }}>Saldo acumulado previo al sistema</div>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--amber-700)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2 }}>📅 PERÍODO ANTERIOR NO PAGADO</div>
-                                      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink-800)' }}>{periodLabel(d.period)}</div>
-                                    </>
-                                  )}
-                                  <div style={{ fontSize: 11, color: 'var(--coral-500)', fontWeight: 600 }}>Saldo pendiente: {fmt(d.saldoPeriodo)}{capturedTotal > 0 ? ` · Abonando: ${fmt(capturedTotal)}` : ''}</div>
+                                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-800)' }}>Saldo acumulado previo al inicio del sistema</div>
+                                  <div style={{ fontSize: 11, color: 'var(--coral-500)' }}>Total deuda anterior: {fmt(prevDebt)}{capturedPrev > 0 ? ` · Pendiente: ${fmt(netPrevDebt)}` : ''}</div>
                                 </div>
-                                <span style={{ fontSize: 11, color: 'var(--ink-400)' }}>{sel ? '▲ ocultar' : '▼ capturar'}</span>
+                                <span style={{ fontSize: 11, color: 'var(--ink-400)' }}>{selPrev ? '▲ cerrar' : '▼ aplicar abono'}</span>
                               </div>
-                              {sel && (
-                                <div style={{ padding: '10px 16px 14px', background: isPrevDebt ? 'var(--coral-50)' : 'var(--amber-50)' }}>
-                                  <div style={{ fontSize: 10, fontWeight: 700, color: isPrevDebt ? 'var(--coral-700)' : 'var(--amber-700)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>
-                                    {isPrevDebt ? 'Abono a deuda anterior:' : `Abono a período no pagado — ${periodLabel(d.period)}:`}
+                              {/* Inputs de captura */}
+                              {selPrev && (
+                                <div style={{ padding: '10px 16px 14px', background: 'var(--coral-50)', borderTop: '1px solid var(--coral-100)' }}>
+                                  <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--coral-700)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>
+                                    Monto a abonar a deuda anterior:
                                   </div>
-                                  {isPrevDebt ? (
-                                    <div style={{ marginBottom: 8 }}>
-                                      <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-700)' }}>Monto a abonar (deuda anterior)</label>
-                                      <input type="number" className="field-input" min={0} step="0.01" style={{ marginTop: 4, maxWidth: 140 }}
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                    <div style={{ flex: 1 }}>
+                                      <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-700)' }}>Abono a deuda anterior</label>
+                                      <input type="number" className="field-input" min={0} max={prevDebt} step="0.01"
+                                        style={{ marginTop: 4, maxWidth: 160 }}
                                         value={ds.prevDebt ?? ''}
-                                        onChange={e => setAdeudoSelection(d.period, 'prevDebt', e.target.value)} />
+                                        onChange={e => setAdeudoSelection('__prevDebt', 'prevDebt', e.target.value)} />
                                     </div>
-                                  ) : (
-                                    <>
-                                      <div style={{ marginBottom: 8 }}>
-                                        <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-700)' }}>Mantenimiento</label>
-                                        <input type="number" className="field-input" min={0} step="0.01" style={{ marginTop: 4, maxWidth: 140 }}
-                                          value={ds.maintenance ?? ''}
-                                          onChange={e => setAdeudoSelection(d.period, 'maintenance', e.target.value)} />
+                                    {capturedPrev > 0 && (
+                                      <div style={{ textAlign: 'right' }}>
+                                        <div style={{ fontSize: 10, color: 'var(--ink-400)' }}>Abonando</div>
+                                        <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--teal-700)' }}>{fmt(capturedPrev)}</div>
+                                        <div style={{ fontSize: 10, color: 'var(--coral-500)' }}>Queda: {fmt(Math.max(0, netPrevDebt - capturedPrev))}</div>
                                       </div>
-                                      {reqEFs.map(ef => (
-                                        <div key={ef.id} style={{ marginBottom: 8 }}>
-                                          <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-700)' }}>{ef.label}</label>
-                                          <input type="number" className="field-input" min={0} step="0.01" style={{ marginTop: 4, maxWidth: 140 }}
-                                            value={ds[ef.id] ?? ''}
-                                            onChange={e => setAdeudoSelection(d.period, ef.id, e.target.value)} />
-                                        </div>
-                                      ))}
-                                    </>
-                                  )}
-                                  {capturedTotal > 0 && (
-                                    <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between', padding: '8px 12px', background: 'white', border: '1px solid var(--coral-100)', borderRadius: 'var(--radius-sm)' }}>
-                                      <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--coral-700)' }}>Total a abonar este período</span>
-                                      <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--teal-700)' }}>{fmt(capturedTotal)}</span>
-                                    </div>
-                                  )}
+                                    )}
+                                  </div>
                                 </div>
                               )}
                             </div>
                           );
-                        })}
-                        <div style={{ padding: '8px 14px', background: 'var(--sand-50)', borderTop: '1px solid var(--sand-100)', fontSize: 11, color: 'var(--ink-500)' }}>
-                          <strong>Deuda anterior:</strong> abono a saldo acumulado previo al sistema. <strong>Período no pagado:</strong> abono a un mes específico no liquidado.
+                        })()}
+
+                        {/* ════ BLOQUE B: PERÍODOS NO PAGADOS ════ */}
+                        <div>
+                          {/* Sub-header */}
+                          <div style={{ padding: '7px 16px', background: 'var(--amber-50)', borderBottom: '1px solid var(--amber-100)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--amber-700)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+                              📅 Períodos Anteriores No Pagados
+                            </span>
+                            {!captureUnitPeriodsLoading && (
+                              <span style={{ fontSize: 11, color: 'var(--amber-700)', fontWeight: 600 }}>
+                                {captureUnitPeriods.length > 0
+                                  ? `${captureUnitPeriods.length} período(s) · Total: ${fmt(captureUnitPeriods.reduce((s, p) => s + p.saldoPeriodo, 0))}`
+                                  : 'Sin períodos con saldo pendiente'}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Estado de carga */}
+                          {captureUnitPeriodsLoading && (
+                            <div style={{ padding: '16px', textAlign: 'center', color: 'var(--ink-400)', fontSize: 13 }}>
+                              Cargando períodos con adeudo…
+                            </div>
+                          )}
+
+                          {/* Sin períodos */}
+                          {!captureUnitPeriodsLoading && captureUnitPeriods.length === 0 && (
+                            <div style={{ padding: '12px 16px', color: 'var(--ink-400)', fontSize: 12, fontStyle: 'italic' }}>
+                              No se encontraron períodos anteriores con saldo pendiente.
+                            </div>
+                          )}
+
+                          {/* Lista de períodos con deuda */}
+                          {!captureUnitPeriodsLoading && captureUnitPeriods.map(d => {
+                            const ds = captureForm.adeudo_payments?.[d.period] || {};
+                            const capturedTotal = Object.values(ds).reduce((a, v) => a + (parseFloat(v) || 0), 0);
+                            const sel = !!(captureForm.adeudoSelections?.[d.period]);
+                            const remaining = Math.max(0, d.saldoPeriodo - capturedTotal);
+                            return (
+                              <div key={d.period} style={{ borderBottom: '1px solid var(--amber-50)' }}>
+                                {/* Fila con checkbox */}
+                                <div
+                                  style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', cursor: 'pointer', background: sel ? 'var(--amber-50)' : 'white' }}
+                                  onClick={() => toggleAdeudoPeriod(d.period)}
+                                >
+                                  <div style={{ width: 20, height: 20, borderRadius: 6, border: `2px solid ${sel ? 'var(--amber-500)' : 'var(--sand-300)'}`, background: sel ? 'var(--amber-500)' : 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                    {sel && <Check size={12} style={{ color: 'white' }} />}
+                                  </div>
+                                  <div style={{ flex: 1 }}>
+                                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink-800)' }}>{periodLabel(d.period)}</div>
+                                    <div style={{ fontSize: 11, color: 'var(--amber-700)', fontWeight: 600 }}>
+                                      Cargo: {fmt(d.charge)} · Pagado: {fmt(d.paid)} · <strong>Saldo: {fmt(d.saldoPeriodo)}</strong>
+                                      {capturedTotal > 0 && <span style={{ color: 'var(--teal-600)', marginLeft: 4 }}>· Abonando: {fmt(capturedTotal)}</span>}
+                                    </div>
+                                  </div>
+                                  <span style={{ fontSize: 11, color: 'var(--ink-400)' }}>{sel ? '▲ cerrar' : '▼ aplicar abono'}</span>
+                                </div>
+                                {/* Inputs de captura por campo */}
+                                {sel && (
+                                  <div style={{ padding: '10px 16px 14px', background: 'var(--amber-50)', borderTop: '1px solid var(--amber-100)' }}>
+                                    <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--amber-700)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>
+                                      Abono por concepto — {periodLabel(d.period)}:
+                                    </div>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 10 }}>
+                                      <div>
+                                        <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-700)' }}>Mantenimiento</label>
+                                        <input type="number" className="field-input" min={0} step="0.01"
+                                          style={{ marginTop: 4 }}
+                                          placeholder="0.00"
+                                          value={ds.maintenance ?? ''}
+                                          onChange={e => setAdeudoSelection(d.period, 'maintenance', e.target.value)} />
+                                      </div>
+                                      {reqEFs.map(ef => (
+                                        <div key={ef.id}>
+                                          <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-700)' }}>{ef.label}</label>
+                                          <input type="number" className="field-input" min={0} step="0.01"
+                                            style={{ marginTop: 4 }}
+                                            placeholder="0.00"
+                                            value={ds[ef.id] ?? ''}
+                                            onChange={e => setAdeudoSelection(d.period, ef.id, e.target.value)} />
+                                        </div>
+                                      ))}
+                                      {allEFs.filter(ef => !reqEFs.find(r => r.id === ef.id)).map(ef => (
+                                        <div key={ef.id}>
+                                          <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-700)' }}>{ef.label} <span style={{ fontSize: 10, color: 'var(--ink-400)' }}>(opc.)</span></label>
+                                          <input type="number" className="field-input" min={0} step="0.01"
+                                            style={{ marginTop: 4 }}
+                                            placeholder="0.00"
+                                            value={ds[ef.id] ?? ''}
+                                            onChange={e => setAdeudoSelection(d.period, ef.id, e.target.value)} />
+                                        </div>
+                                      ))}
+                                    </div>
+                                    {capturedTotal > 0 && (
+                                      <div style={{ marginTop: 10, display: 'flex', justifyContent: 'space-between', padding: '8px 12px', background: 'white', border: '1px solid var(--amber-200)', borderRadius: 'var(--radius-sm)' }}>
+                                        <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--amber-700)' }}>Total abonado a {periodLabel(d.period)}</span>
+                                        <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--teal-700)' }}>
+                                          {fmt(capturedTotal)}
+                                          {remaining > 0.01 && <span style={{ fontSize: 11, color: 'var(--coral-500)', marginLeft: 6 }}>· Queda: {fmt(remaining)}</span>}
+                                        </span>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+
+                          {/* Totales de lo que se está abonando a períodos */}
+                          {captureUnitPeriods.some(d => Object.values(captureForm.adeudo_payments?.[d.period] || {}).reduce((s, v) => s + (parseFloat(v) || 0), 0) > 0) && (
+                            <div style={{ padding: '8px 16px', background: 'var(--amber-50)', borderTop: '1px solid var(--amber-100)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--amber-700)' }}>Total abonado a períodos no pagados</span>
+                              <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--teal-700)' }}>
+                                {fmt(captureUnitPeriods.reduce((s, d) => s + Object.values(captureForm.adeudo_payments?.[d.period] || {}).reduce((a, v) => a + (parseFloat(v) || 0), 0), 0))}
+                              </span>
+                            </div>
+                          )}
                         </div>
+
                       </div>
                     )}
                   </div>
