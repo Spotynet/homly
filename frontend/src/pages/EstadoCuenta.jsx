@@ -559,24 +559,55 @@ export default function EstadoCuenta() {
                       const maint = parseFloat(p.maintenance || p.charge || 0);
                       const hasDebt = saldoAcum > 0.5;
 
+                      // Abonos a períodos anteriores recibidos en este período
+                      const adeudoAp = p.pay?.adeudo_payments || {};
+                      const periodAdeudoRows = Object.entries(adeudoAp)
+                        .filter(([key]) => key !== '__prevDebt')
+                        .map(([targetPeriod, fieldMap]) => ({
+                          targetPeriod,
+                          total: Object.values(fieldMap || {}).reduce((s, v) => s + (parseFloat(v) || 0), 0),
+                        }))
+                        .filter(r => r.total > 0)
+                        .sort((a, b) => a.targetPeriod.localeCompare(b.targetPeriod));
+
                       return (
-                        <tr key={i} className={hasDebt ? 'period-row-debt' : 'period-row-ok'}>
-                          <td style={{ fontWeight: 700, fontSize: 13 }}>{periodLabel(p.period)}</td>
-                          <td style={{ textAlign: 'right', fontSize: 13 }}>{fmt(maint)}</td>
-                          <td style={{ textAlign: 'right', fontSize: 13, fontWeight: 700 }}>{fmt(charge)}</td>
-                          <td style={{ textAlign: 'right', fontSize: 13 }} className="credit-cell">
-                            {paid > 0 ? fmt(paid) : '—'}
-                          </td>
-                          <td><span className={`badge ${statusClass(p.status)}`}>{statusLabel(p.status)}</span></td>
-                          <td style={{ textAlign: 'right' }}>
-                            <span style={{
-                              fontFamily: 'var(--font-display)', fontSize: 14, fontWeight: 500,
-                              color: saldoAcum > 0 ? 'var(--coral-500)' : 'var(--teal-600)'
-                            }}>
-                              {saldoAcum > 0 ? '-' : saldoAcum < 0 ? '+' : ''}{fmt(Math.abs(saldoAcum))}
-                            </span>
-                          </td>
-                        </tr>
+                        <React.Fragment key={i}>
+                          <tr className={hasDebt ? 'period-row-debt' : 'period-row-ok'}>
+                            <td style={{ fontWeight: 700, fontSize: 13 }}>{periodLabel(p.period)}</td>
+                            <td style={{ textAlign: 'right', fontSize: 13 }}>{fmt(maint)}</td>
+                            <td style={{ textAlign: 'right', fontSize: 13, fontWeight: 700 }}>{fmt(charge)}</td>
+                            <td style={{ textAlign: 'right', fontSize: 13 }} className="credit-cell">
+                              {paid > 0 ? fmt(paid) : '—'}
+                            </td>
+                            <td><span className={`badge ${statusClass(p.status)}`}>{statusLabel(p.status)}</span></td>
+                            <td style={{ textAlign: 'right' }}>
+                              <span style={{
+                                fontFamily: 'var(--font-display)', fontSize: 14, fontWeight: 500,
+                                color: saldoAcum > 0 ? 'var(--coral-500)' : 'var(--teal-600)'
+                              }}>
+                                {saldoAcum > 0 ? '-' : saldoAcum < 0 ? '+' : ''}{fmt(Math.abs(saldoAcum))}
+                              </span>
+                            </td>
+                          </tr>
+                          {periodAdeudoRows.map(r => (
+                            <tr key={`adeudo-${i}-${r.targetPeriod}`} style={{ background: 'var(--amber-50)', borderLeft: '3px solid var(--amber-300)' }}>
+                              <td style={{ paddingLeft: 28, fontSize: 11, color: 'var(--amber-700)', fontWeight: 600 }}>
+                                📅 Abono a <strong>{periodLabel(r.targetPeriod)}</strong>
+                                <div style={{ fontSize: 10, color: 'var(--amber-500)', fontWeight: 400 }}>Período anterior no pagado</div>
+                              </td>
+                              <td colSpan={2} style={{ textAlign: 'right', fontSize: 11, color: 'var(--ink-400)', fontStyle: 'italic' }}>
+                                Recibido en {periodLabel(p.period)}
+                              </td>
+                              <td style={{ textAlign: 'right', fontSize: 12, fontWeight: 700, color: 'var(--teal-600)' }}>
+                                {fmt(r.total)}
+                              </td>
+                              <td>
+                                <span className="badge badge-amber" style={{ fontSize: 10 }}>Abono</span>
+                              </td>
+                              <td></td>
+                            </tr>
+                          ))}
+                        </React.Fragment>
                       );
                     })}
                     {data.periods.length === 0 && (
