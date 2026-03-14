@@ -1,9 +1,11 @@
 """
 Email sending for verification codes.
 Uses Django's email backend (configure EMAIL_* in .env and settings).
-Styled HTML email matching Homly brand (naranja/amber, cream).
+Styled HTML email with Homly logo (Homly_Full.png) and brand colors (naranja, crema).
 """
+import base64
 import logging
+import os
 
 from django.conf import settings
 from django.core.mail import EmailMultiAlternatives
@@ -13,24 +15,37 @@ logger = logging.getLogger(__name__)
 # Code expiry in minutes
 CODE_EXPIRY_MINUTES = 10
 
-# Homly brand colors — naranja (amber)
+# Colores del logo Homly — mismo tono naranja y crema
 COLORS = {
-    'orange_500': '#F59E0B',
-    'orange_600': '#D97706',
-    'orange_700': '#B45309',
-    'orange_800': '#92400E',
-    'orange_50': '#FFFBEB',
+    'orange': '#F76F57',      # naranja/coral del logo (casa y punto)
+    'orange_light': '#FFE8E4', # fondo suave para caja del código
+    'green': '#1E594F',        # verde del texto "homly"
+    'cream': '#FDFBF7',        # crema del fondo (mismo tono que la app)
+    'cream_outer': '#F9F5ED',  # crema exterior
     'ink_800': '#2D2720',
     'ink_600': '#5C5347',
-    'cream': '#FDFBF7',
-    'sand_100': '#F3EDE4',
     'white': '#FFFFFF',
 }
 
+EMAIL_ASSETS_DIR = os.path.join(os.path.dirname(__file__), 'email_assets')
+
+
+def _logo_base64(filename: str) -> str:
+    """Return base64 data URL for an image in email_assets."""
+    path = os.path.join(EMAIL_ASSETS_DIR, filename)
+    if not os.path.isfile(path):
+        return ''
+    with open(path, 'rb') as f:
+        data = base64.b64encode(f.read()).decode('ascii')
+    return f'data:image/png;base64,{data}'
+
 
 def _build_html_email(code: str) -> str:
-    """Build branded HTML email body."""
+    """Build branded HTML email body with logo and brand colors."""
     c = COLORS
+    logo_full_url = _logo_base64('homly-full.png')
+    logo_img = f'<img src="{logo_full_url}" alt="Homly" width="180" height="auto" style="display:block; height:auto; max-width:180px;" />' if logo_full_url else '<span style="font-size:24px; font-weight:700; color:#1E594F;">Homly</span>'
+
     return f"""
 <!DOCTYPE html>
 <html lang="es">
@@ -39,24 +54,24 @@ def _build_html_email(code: str) -> str:
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Tu código de acceso Homly</title>
 </head>
-<body style="margin:0; padding:0; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background-color:{c['sand_100']};">
-  <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background-color:{c['sand_100']}; padding:40px 20px;">
+<body style="margin:0; padding:0; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background-color:{c['cream_outer']};">
+  <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background-color:{c['cream_outer']}; padding:40px 20px;">
     <tr>
       <td align="center">
-        <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="max-width:420px; background:{c['white']}; border-radius:16px; overflow:hidden; box-shadow:0 4px 24px rgba(26,22,18,0.08);">
-          <!-- Header -->
+        <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="max-width:420px; background:{c['cream']}; border-radius:16px; overflow:hidden; box-shadow:0 4px 24px rgba(26,22,18,0.08);">
+          <!-- Header con logo Homly -->
           <tr>
-            <td style="background-color:{c['orange_600']}; padding:32px 28px; text-align:center;">
+            <td style="background-color:{c['cream']}; padding:32px 28px; text-align:center;">
               <table width="100%" cellpadding="0" cellspacing="0" role="presentation">
                 <tr>
                   <td align="center">
-                    <span style="font-size:28px; font-weight:800; color:{c['white']}; letter-spacing:-0.02em;">Homly</span>
+                    {logo_img}
                   </td>
                 </tr>
                 <tr><td style="height:8px;"></td></tr>
                 <tr>
                   <td align="center">
-                    <span style="font-size:13px; font-weight:600; color:rgba(255,255,255,0.85); letter-spacing:0.04em;">Property Management</span>
+                    <span style="font-size:13px; font-weight:600; color:{c['ink_600']}; letter-spacing:0.04em;">Property Management</span>
                   </td>
                 </tr>
               </table>
@@ -73,8 +88,8 @@ def _build_html_email(code: str) -> str:
               </p>
               <table width="100%" cellpadding="0" cellspacing="0" role="presentation">
                 <tr>
-                  <td align="center" style="background:{c['orange_50']}; border:2px solid {c['orange_500']}; border-radius:12px; padding:20px 24px;">
-                    <span style="font-size:32px; font-weight:800; letter-spacing:8px; color:{c['orange_700']}; font-family:monospace;">{code}</span>
+                  <td align="center" style="background:{c['orange_light']}; border:2px solid {c['orange']}; border-radius:12px; padding:20px 24px;">
+                    <span style="font-size:32px; font-weight:800; letter-spacing:8px; color:{c['orange']}; font-family:monospace;">{code}</span>
                   </td>
                 </tr>
               </table>
@@ -85,11 +100,11 @@ def _build_html_email(code: str) -> str:
           </tr>
           <!-- Footer -->
           <tr>
-            <td style="padding:20px 28px; background:{c['cream']}; border-top:1px solid {c['sand_100']};">
+            <td style="padding:20px 28px; background:{c['cream']}; border-top:1px solid #E8DFD1;">
               <p style="margin:0; font-size:12px; color:{c['ink_600']}; text-align:center; line-height:1.5;">
                 Si no solicitaste este código, puedes ignorar este correo. Tu cuenta está segura.
               </p>
-              <p style="margin:12px 0 0; font-size:11px; color:{c['ink_600']}; text-align:center; opacity:0.8;">
+              <p style="margin:12px 0 0; font-size:11px; color:{c['ink_600']}; text-align:center;">
                 © Homly — La administración que tu hogar se merece
               </p>
             </td>
