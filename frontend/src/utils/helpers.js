@@ -184,37 +184,37 @@ export function getStatesForCountry(country) {
   return states[country] || [];
 }
 
-// ── Homly brand assets ────────────────────────────────────────────────────────
-// isotipo-homly.svg  → square icon with cream background (283×279)
-// nombre-homly.svg   → "homly" logotype text (631×215)
-// logo-homly.svg     → full combined lockup (2816×1536)
+// ── Homly brand assets (PNG) ──────────────────────────────────────────────────
+// homly-house.png → house/casita icon (coral-orange)
+// homly-name.png → "homly" text + dot (teal-green + coral dot)
+// homly-full.png → full logo (house + name + dot)
 
-/** Isotipo only — square icon badge. Works on any background (has built-in bg). */
+/** Icon only — house/casita from Homly_house.png */
 export const HOMLY_LOGO = (
   <img
-    src="/img/isotipo-homly.svg"
+    src="/img/homly-house.png"
     alt="Homly"
     style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
   />
 );
 
-/** Small reusable isotipo component with controllable size */
+/** Small reusable house icon with controllable size */
 export function HomlyIsotipo({ size = 44, style = {} }) {
   return (
     <img
-      src="/img/isotipo-homly.svg"
+      src="/img/homly-house.png"
       alt="Homly"
       style={{ width: size, height: size, objectFit: 'contain', flexShrink: 0, ...style }}
     />
   );
 }
 
-/** Full brand — isotipo (imagen original) + "Homly" en verde para fondo crema */
+/** Full brand — house icon + name image (light backgrounds) */
 export function HomlyBrand({ iconSize = 44, nameHeight = 32, style = {} }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, ...style }}>
       <img
-        src="/img/isotipo-homly.svg"
+        src="/img/homly-house.png"
         alt=""
         style={{
           width: iconSize,
@@ -223,27 +223,26 @@ export function HomlyBrand({ iconSize = 44, nameHeight = 32, style = {} }) {
           flexShrink: 0,
         }}
       />
-      <span
+      <img
+        src="/img/homly-name.png"
+        alt="Homly"
         style={{
-          fontFamily: 'var(--font-display)',
-          fontSize: nameHeight,
-          fontWeight: 600,
-          color: '#1F7D5B',
-          letterSpacing: '-0.02em',
+          height: nameHeight,
+          width: 'auto',
+          objectFit: 'contain',
+          flexShrink: 0,
         }}
-      >
-        Homly
-      </span>
+      />
     </div>
   );
 }
 
-/** Full brand para fondo verde — isotipo (imagen original) + "Homly" en crema */
+/** Full brand for dark background — house icon + name image */
 export function HomlyBrandDark({ iconSize = 44, fontSize = 26, style = {} }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, ...style }}>
       <img
-        src="/img/isotipo-homly.svg"
+        src="/img/homly-house.png"
         alt=""
         style={{
           width: iconSize,
@@ -253,38 +252,27 @@ export function HomlyBrandDark({ iconSize = 44, fontSize = 26, style = {} }) {
           borderRadius: 8,
         }}
       />
-      <span
+      <img
+        src="/img/homly-name.png"
+        alt="Homly"
         style={{
-          fontFamily: 'var(--font-display)',
-          fontSize,
-          fontWeight: 600,
-          color: '#FDFBF7',
-          letterSpacing: '-0.02em',
+          height: fontSize,
+          width: 'auto',
+          objectFit: 'contain',
+          flexShrink: 0,
         }}
-      >
-        Homly
-      </span>
+      />
     </div>
   );
 }
 
-/** Logo completo — isotipo (imagen original) + nombre Homly */
+/** Full logo — single image (house + name + dot) */
 export const HOMLY_LOGO_FULL = (
-  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-    <img
-      src="/img/isotipo-homly.svg"
-      alt=""
-      style={{
-        width: 52,
-        height: 52,
-        objectFit: 'contain',
-        flexShrink: 0,
-      }}
-    />
-    <span style={{ fontFamily: 'var(--font-display)', fontSize: 28, fontWeight: 600, color: '#1F7D5B', letterSpacing: '-0.02em' }}>
-      Homly
-    </span>
-  </div>
+  <img
+    src="/img/homly-full.png"
+    alt="Homly"
+    style={{ height: 52, width: 'auto', objectFit: 'contain', display: 'block' }}
+  />
 );
 
 export const APP_VERSION = '10.1.0';

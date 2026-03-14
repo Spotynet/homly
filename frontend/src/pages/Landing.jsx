@@ -384,14 +384,13 @@ export default function Landing() {
 
       {/* ── CTA FINAL ── */}
       <section id="contacto" className="landing-section" style={{ background: '#124A36' }}>
-        <div style={{ maxWidth: 700, margin: '0 auto', textAlign: 'center' }}>
-          <LogoFullDark iconSize={56} fontSize={38} />
+        <div style={{ maxWidth: 700, margin: '0 auto', textAlign: 'center', paddingTop: 24 }}>
           <h2 style={{
             fontSize: 'clamp(28px, 4vw, 48px)',
             fontWeight: 800,
             color: '#FDFBF7',
             letterSpacing: '-1px',
-            margin: '32px 0 16px',
+            margin: '0 0 16px',
             lineHeight: 1.15,
           }}>
             ¿Listo para transformar<br />tu condominio?
@@ -427,7 +426,6 @@ export default function Landing() {
       {/* ── FOOTER ── */}
       <footer style={{ background: '#0E3829', padding: '32px 20px' }}>
         <div className="landing-footer-inner">
-          <LogoFullDark iconSize={32} fontSize={20} />
           <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap', justifyContent: 'center' }}>
             {['Beneficios', 'Cómo funciona', 'Iniciar sesión'].map((l, i) => (
               <a key={i} href={i === 2 ? '/login' : `#${['beneficios', 'como-funciona'][i]}`}
