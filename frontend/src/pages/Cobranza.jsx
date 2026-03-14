@@ -244,6 +244,13 @@ export default function Cobranza() {
         fieldPayments[k] = { ...v, received: v.received ?? '' };
       }
     });
+    // Rebuild adeudoSelections from existing adeudo_payments so checkboxes/inputs
+    // are correctly shown when editing a previously-saved payment.
+    const existingAp = existing?.adeudo_payments || {};
+    const restoredSelections = {};
+    Object.keys(existingAp).forEach(k => {
+      if (Object.keys(existingAp[k] || {}).length > 0) restoredSelections[k] = {};
+    });
     setCaptureForm({
       unit_id: unit.id,
       period,
@@ -254,7 +261,8 @@ export default function Cobranza() {
       evidenceFileName: '',
       bank_reconciled: !!existing?.bank_reconciled,
       field_payments: fieldPayments,
-      adeudo_payments: existing?.adeudo_payments || {},
+      adeudo_payments: existingAp,
+      adeudoSelections: restoredSelections,
       showAdelantoPanel: false,
       showAdeudoPanel: false,
       showPreview: false,
@@ -320,9 +328,15 @@ export default function Cobranza() {
       const sel = prev.adeudoSelections || {};
       const has = !!sel[period];
       const newSel = { ...sel };
-      if (has) delete newSel[period];
-      else newSel[period] = {};
-      return { ...prev, adeudoSelections: newSel };
+      const newAp = { ...(prev.adeudo_payments || {}) };
+      if (has) {
+        // Unchecking: remove selection AND wipe amounts so nothing stale gets sent
+        delete newSel[period];
+        delete newAp[period];
+      } else {
+        newSel[period] = {};
+      }
+      return { ...prev, adeudoSelections: newSel, adeudo_payments: newAp };
     });
   };
 
