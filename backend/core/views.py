@@ -1168,6 +1168,9 @@ def _compute_statement(tenant, unit_id, start_period, cutoff_period):
     adelanto_credits = {}
     adeudo_credits_received = {}
     prev_debt_adeudo = Decimal('0')
+    # Adeudo recibido por período de pago (para mostrar en la columna Abono del período receptor)
+    adeudo_all_by_recv = {}   # payment.period -> total adeudo cobrado (todos los tipos, para display)
+    adeudo_spec_by_recv = {}  # payment.period -> total adeudo de períodos específicos (para balance)
 
     for p in payments_qs:
         fp_map = {fp.field_key: fp for fp in p.field_payments.all()}
@@ -1179,12 +1182,15 @@ def _compute_statement(tenant, unit_id, start_period, cutoff_period):
                 adelanto_credits[target_period][field_key] = adelanto_credits[target_period].get(field_key, Decimal('0')) + Decimal(str(amt or 0))
 
         ap = p.adeudo_payments or {}
+        recv_period = p.period
         for target_p, field_map in ap.items():
             total = sum(Decimal(str(v or 0)) for v in (field_map or {}).values())
             if target_p == '__prevDebt':
                 prev_debt_adeudo += total
             else:
                 adeudo_credits_received[target_p] = adeudo_credits_received.get(target_p, Decimal('0')) + total
+                adeudo_spec_by_recv[recv_period] = adeudo_spec_by_recv.get(recv_period, Decimal('0')) + total
+            adeudo_all_by_recv[recv_period] = adeudo_all_by_recv.get(recv_period, Decimal('0')) + total
 
     # Saldo inicial = deuda anterior - abonos a deuda - saldo a favor previo
     # Sin max(0,...): el excedente de saldo a favor reduce los cargos de los periodos
@@ -1258,6 +1264,14 @@ def _compute_statement(tenant, unit_id, start_period, cutoff_period):
         cargo_total = cargo_oblig + cargo_opt
         abono_balance = total_abono_req + total_abono_opt          # Solo pagos que afectan el saldo
         abono_display = abono_balance + total_received_neutral     # Todos los pagos recibidos (para mostrar)
+
+        # Adeudo cobrado en este período: se suma al display y al balance
+        # __prevDebt: solo display (ya está en saldo_acum inicial vía prev_debt_adeudo)
+        # Específicos: display + balance (reducen el saldo acumulado de deudas pasadas)
+        adeudo_recv_all = adeudo_all_by_recv.get(period, Decimal('0'))
+        adeudo_recv_spec = adeudo_spec_by_recv.get(period, Decimal('0'))
+        abono_display += adeudo_recv_all
+        abono_balance += adeudo_recv_spec
 
         oblig_abono = maint_abono + sum((fd['abono'] for fd in field_detail if fd.get('required')), 0)
         oblig_abono = Decimal(str(oblig_abono)) if not isinstance(oblig_abono, Decimal) else oblig_abono

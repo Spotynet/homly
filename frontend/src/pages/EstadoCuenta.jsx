@@ -559,8 +559,12 @@ export default function EstadoCuenta() {
                       const maint = parseFloat(p.maintenance || p.charge || 0);
                       const hasDebt = saldoAcum > 0.5;
 
-                      // Abonos a períodos anteriores recibidos en este período
+                      // Abonos a adeudos recibidos en este período (deuda anterior + períodos no pagados)
                       const adeudoAp = p.pay?.adeudo_payments || {};
+                      // Abono a deuda anterior (prevDebt)
+                      const prevDebtAbono = Object.values(adeudoAp.__prevDebt || {})
+                        .reduce((s, v) => s + (parseFloat(v) || 0), 0);
+                      // Abonos a períodos específicos no pagados
                       const periodAdeudoRows = Object.entries(adeudoAp)
                         .filter(([key]) => key !== '__prevDebt')
                         .map(([targetPeriod, fieldMap]) => ({
@@ -589,6 +593,26 @@ export default function EstadoCuenta() {
                               </span>
                             </td>
                           </tr>
+                          {/* Sub-fila: abono a deuda anterior */}
+                          {prevDebtAbono > 0 && (
+                            <tr style={{ background: 'var(--coral-50)', borderLeft: '3px solid var(--coral-300)' }}>
+                              <td style={{ paddingLeft: 28, fontSize: 11, color: 'var(--coral-700)', fontWeight: 600 }}>
+                                ⚠ Abono a Deuda Anterior
+                                <div style={{ fontSize: 10, color: 'var(--coral-400)', fontWeight: 400 }}>Saldo acumulado previo al sistema</div>
+                              </td>
+                              <td colSpan={2} style={{ textAlign: 'right', fontSize: 11, color: 'var(--ink-400)', fontStyle: 'italic' }}>
+                                Recibido en {periodLabel(p.period)}
+                              </td>
+                              <td style={{ textAlign: 'right', fontSize: 12, fontWeight: 700, color: 'var(--teal-600)' }}>
+                                {fmt(prevDebtAbono)}
+                              </td>
+                              <td>
+                                <span className="badge badge-coral" style={{ fontSize: 10 }}>Abono</span>
+                              </td>
+                              <td></td>
+                            </tr>
+                          )}
+                          {/* Sub-filas: abonos a períodos específicos no pagados */}
                           {periodAdeudoRows.map(r => (
                             <tr key={`adeudo-${i}-${r.targetPeriod}`} style={{ background: 'var(--amber-50)', borderLeft: '3px solid var(--amber-300)' }}>
                               <td style={{ paddingLeft: 28, fontSize: 11, color: 'var(--amber-700)', fontWeight: 600 }}>
