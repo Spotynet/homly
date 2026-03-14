@@ -439,7 +439,7 @@ export default function Landing() {
           </div>
           <div style={{ width: '100%', height: 1, background: 'rgba(253,251,247,0.08)' }} />
           <div style={{ fontSize: 12, color: 'rgba(253,251,247,0.35)', fontWeight: 500 }}>
-            © {new Date().getFullYear()} Homly · Powered by Spotynet
+            © {new Date().getFullYear()} Homly
           </div>
         </div>
       </footer>

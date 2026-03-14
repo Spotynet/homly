@@ -441,7 +441,6 @@ export default function Login() {
           <div className="mt-4 text-center">
             <span className="badge badge-gray">Homly v{APP_VERSION}</span>
           </div>
-          <div className="mt-3 text-center text-xs text-ink-300">Powered by Spotynet</div>
         </div>
       </div>
 
