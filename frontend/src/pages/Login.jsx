@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { authAPI } from '../api/client';
-import { HomlyBrand, HomlyBrandDark, APP_VERSION } from '../utils/helpers';
+import { HomlyBrand, APP_VERSION } from '../utils/helpers';
 import { Building2, ChevronDown, Check, ArrowLeft } from 'lucide-react';
 
 // ── Tenant picker dropdown ──────────────────────────────────────────────────
@@ -447,8 +447,15 @@ export default function Login() {
       {/* ── Right: Feature panel ─────────────────────────────────────────── */}
       <div className="hidden lg:flex flex-1 bg-gradient-to-b from-teal-800 to-teal-600 items-center justify-center p-12">
         <div className="max-w-md text-white">
-          <div style={{ marginBottom: 32 }}>
-            <HomlyBrandDark iconSize={56} fontSize={32} />
+          <div style={{ marginBottom: 32, display: 'flex', alignItems: 'center', gap: 12 }}>
+            <img
+              src="/img/homly-house.png"
+              alt=""
+              style={{ width: 56, height: 56, objectFit: 'contain', flexShrink: 0 }}
+            />
+            <span style={{ fontFamily: 'var(--font-display)', fontSize: 32, fontWeight: 600, color: '#fff', letterSpacing: '-0.02em' }}>
+              homly
+            </span>
           </div>
           <h2 className="text-3xl font-extrabold mb-4">
             La administración que tu hogar se merece

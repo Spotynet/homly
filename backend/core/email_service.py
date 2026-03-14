@@ -2,10 +2,12 @@
 Email sending for verification codes.
 Uses Django's email backend (configure EMAIL_* in .env and settings).
 Styled HTML email with Homly logo (Homly_Full.png) and brand colors (naranja, crema).
+Logo is attached as inline MIME (cid:) so it displays in Gmail, Outlook, etc.
 """
-import base64
 import logging
 import os
+
+from email.mime.image import MIMEImage
 
 from django.conf import settings
 from django.core.mail import EmailMultiAlternatives
@@ -28,23 +30,23 @@ COLORS = {
 }
 
 EMAIL_ASSETS_DIR = os.path.join(os.path.dirname(__file__), 'email_assets')
+LOGO_CID = 'homlylogo'
 
 
-def _logo_base64(filename: str) -> str:
-    """Return base64 data URL for an image in email_assets."""
+def _read_logo_bytes(filename: str) -> bytes | None:
+    """Read logo file from email_assets. Returns None if missing."""
     path = os.path.join(EMAIL_ASSETS_DIR, filename)
     if not os.path.isfile(path):
-        return ''
+        return None
     with open(path, 'rb') as f:
-        data = base64.b64encode(f.read()).decode('ascii')
-    return f'data:image/png;base64,{data}'
+        return f.read()
 
 
 def _build_html_email(code: str) -> str:
-    """Build branded HTML email body with logo and brand colors."""
+    """Build branded HTML body. Logo referenced as cid:homlylogo (attached separately)."""
     c = COLORS
-    logo_full_url = _logo_base64('homly-full.png')
-    logo_img = f'<img src="{logo_full_url}" alt="Homly" width="180" height="auto" style="display:block; height:auto; max-width:180px;" />' if logo_full_url else '<span style="font-size:24px; font-weight:700; color:#1E594F;">Homly</span>'
+    # cid: reference so Gmail/Outlook show the attached inline image
+    logo_img = f'<img src="cid:{LOGO_CID}" alt="Homly" width="180" style="display:block; height:auto; max-width:180px;" />'
 
     return f"""
 <!DOCTYPE html>
@@ -131,6 +133,7 @@ def send_verification_email(email: str, code: str) -> bool:
     """
     Send the verification code to the user's email.
     Sends both HTML (styled) and plain text fallback.
+    Logo is attached as inline image (cid:) so it displays in major email clients.
     """
     subject = 'Tu código de acceso Homly'
     plain = _build_plain_message(code)
@@ -143,6 +146,15 @@ def send_verification_email(email: str, code: str) -> bool:
             to=[email],
         )
         msg.attach_alternative(html, 'text/html')
+
+        # Attach logo as inline image so it shows in Gmail, Outlook, etc. (base64 is often blocked)
+        logo_data = _read_logo_bytes('homly-full.png')
+        if logo_data:
+            logo_part = MIMEImage(logo_data, 'png')
+            logo_part.add_header('Content-Disposition', 'inline', filename='homly-full.png')
+            logo_part.add_header('Content-ID', f'<{LOGO_CID}>')
+            msg.attach(logo_part)
+
         msg.send(fail_silently=False)
         return True
     except Exception as e:
