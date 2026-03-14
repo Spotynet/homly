@@ -1019,6 +1019,7 @@ export default function Cobranza() {
       {showCapture && (() => {
         const reqEFs = extraFields.filter(ef => ef.required);
         const optEFs = extraFields.filter(ef => !ef.required);
+        const allEFs = [...reqEFs, ...optEFs];
         const isUnitExempt = !!showCapture.admin_exempt;
         // Para unidades exentas: el cargo de mantenimiento es 0
         const maintCharge = isUnitExempt ? 0 : maintenanceFee;
