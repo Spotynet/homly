@@ -413,19 +413,20 @@ export default function EstadoCuenta() {
             {data && (
               <div className="ec-summary-strip">
                 {unitPrevDebt > 0 && (
-                  <div className="ec-sum-cell" style={{ background: 'var(--coral-50)' }}>
-                    <div className="ec-sum-label" style={{ color: 'var(--coral-500)' }}>
-                      Recaudo de adeudos
+                  <div className="ec-sum-cell" style={{ background: 'var(--coral-50)', borderLeft: '3px solid var(--coral-400)' }}>
+                    <div className="ec-sum-label" style={{ color: 'var(--coral-600)' }}>
+                      ⚠ Deuda Anterior
+                      <div style={{ fontSize: 9, color: 'var(--coral-400)', fontWeight: 400, marginTop: 1 }}>Saldo acumulado previo al sistema</div>
                       {prevDebtAdeudo > 0 && (
-                        <span style={{ fontSize: 9, color: 'var(--teal-600)', fontWeight: 400, marginLeft: 4 }}>
-                          (Abonado: {fmt(prevDebtAdeudo)})
+                        <span style={{ fontSize: 9, color: 'var(--teal-600)', fontWeight: 600, display: 'block', marginTop: 2 }}>
+                          Abonado: {fmt(prevDebtAdeudo)} · Pendiente: {fmt(netPrevDebt)}
                         </span>
                       )}
                     </div>
                     <div className="ec-sum-val debt">-{fmt(netPrevDebt)}</div>
                     {data?.unit?.previous_debt_evidence && (
                       <button
-                        title="Ver evidencia de recaudo de adeudos"
+                        title="Ver evidencia de deuda anterior"
                         onClick={() => {
                           const b64 = data.unit.previous_debt_evidence;
                           const bytes = atob(b64);
@@ -502,25 +503,33 @@ export default function EstadoCuenta() {
                   </thead>
                   <tbody>
                     {unitPrevDebt > 0 && (
-                      <tr style={{ background: 'var(--coral-50)', fontStyle: 'italic' }}>
-                        <td style={{ fontWeight: 700, color: 'var(--coral-500)', whiteSpace: 'nowrap' }}>
+                      <tr style={{ background: 'var(--coral-50)', borderLeft: '3px solid var(--coral-400)' }}>
+                        <td style={{ fontWeight: 700, color: 'var(--coral-600)', whiteSpace: 'nowrap' }}>
                           <AlertCircle size={13} style={{ display: 'inline', verticalAlign: -2, marginRight: 6 }} />
-                          Recaudo de adeudos
+                          ⚠ Deuda Anterior
+                          <div style={{ fontSize: 10, color: 'var(--coral-400)', fontWeight: 400, fontStyle: 'italic', marginTop: 1 }}>Saldo acumulado previo al sistema</div>
                         </td>
-                        <td colSpan={2} style={{ textAlign: 'right', color: 'var(--coral-500)', fontSize: 12 }}>
+                        <td colSpan={2} style={{ textAlign: 'right', color: 'var(--coral-500)', fontSize: 12, fontStyle: 'italic' }}>
                           Saldo previo
                           {prevDebtAdeudo > 0 && (
-                            <span style={{ color: 'var(--teal-600)', marginLeft: 4 }}>· Abonado: {fmt(prevDebtAdeudo)}</span>
+                            <div style={{ color: 'var(--teal-600)', fontWeight: 600, fontStyle: 'normal', fontSize: 11, marginTop: 2 }}>
+                              Abonado: {fmt(prevDebtAdeudo)}
+                            </div>
                           )}
                         </td>
                         <td style={{ textAlign: 'right', color: 'var(--coral-500)', fontWeight: 600 }}>—</td>
-                        <td></td>
+                        <td>
+                          {prevDebtAdeudo > 0 && netPrevDebt <= 0
+                            ? <span className="badge badge-teal" style={{ fontSize: 10 }}>Liquidada</span>
+                            : <span className="badge badge-coral" style={{ fontSize: 10 }}>Pendiente</span>
+                          }
+                        </td>
                         <td style={{ textAlign: 'right' }}>
                           <span className="debt-cell" style={{ fontSize: 14, fontFamily: 'var(--font-display)' }}>
                             -{fmt(netPrevDebt)}
                           </span>
                           {prevDebtAdeudo > 0 && (
-                            <div style={{ fontSize: 9, color: 'var(--teal-600)', fontStyle: 'normal' }}>Abono: {fmt(prevDebtAdeudo)}</div>
+                            <div style={{ fontSize: 9, color: 'var(--teal-600)', fontStyle: 'normal' }}>Abono aplicado: {fmt(prevDebtAdeudo)}</div>
                           )}
                         </td>
                       </tr>
@@ -1782,7 +1791,7 @@ function ReporteGeneralView({ tenantData, generalData, genLoading, cutoff, setCu
             }}>
               <span>
                 Generado por: <strong style={{ color: 'rgba(255,255,255,0.85)' }}>{user?.name || ''}</strong>
-                {role && ROLES[role] ? ` · ${ROLES[role].label}` : ''} · Homly — Powered by Spotynet
+                {role && ROLES[role] ? ` · ${ROLES[role].label}` : ''} · Homly
               </span>
               <span style={{ color: 'rgba(255,255,255,0.5)' }}>
                 {tenantData?.name || ''} · {periodLabel(cutoff)} · {new Date().toLocaleString('es-MX', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
@@ -1954,8 +1963,8 @@ function ReporteAdeudosView({ tenantData, adeudosData, adeudosLoading, cutoff, s
               <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 700 }}>Código</th>
               <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 700 }}>Nombre / Unidad</th>
               <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 700 }}>Responsable</th>
-              <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 700 }}>Recaudo de adeudos</th>
-              <th style={{ padding: '6px 8px', textAlign: 'center', fontWeight: 700 }}>Períodos</th>
+              <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 700 }}>Deuda Anterior</th>
+              <th style={{ padding: '6px 8px', textAlign: 'center', fontWeight: 700 }}>Períodos No Pagados</th>
               <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 700 }}>Adeudo Total</th>
             </tr>
           </thead>
@@ -2035,8 +2044,8 @@ function ReporteAdeudosView({ tenantData, adeudosData, adeudosLoading, cutoff, s
                   <tr>
                     <th>Unidad</th>
                     <th>Responsable</th>
-                    <th style={{ textAlign: 'right' }}>Recaudo de adeudos</th>
-                    <th style={{ textAlign: 'right' }}>Períodos con Deuda</th>
+                    <th style={{ textAlign: 'right' }}>⚠ Deuda Anterior</th>
+                    <th style={{ textAlign: 'right' }}>📅 Períodos No Pagados</th>
                     <th style={{ textAlign: 'right' }}>Adeudo Total</th>
                     <th style={{ width: 40 }}></th>
                   </tr>
@@ -2106,30 +2115,34 @@ function ReporteAdeudosView({ tenantData, adeudosData, adeudosLoading, cutoff, s
                                     </tr>
                                   </thead>
                                   <tbody>
-                                    {/* Previous debt row */}
+                                    {/* Deuda anterior (saldo previo acumulado) */}
                                     {prevDebt > 0 && (
-                                      <tr style={{ background: 'var(--coral-50)' }}>
-                                        <td style={{ padding: '6px 8px', color: 'var(--coral-600)', fontWeight: 600, fontStyle: 'italic' }}>
+                                      <tr style={{ background: 'var(--coral-50)', borderLeft: '3px solid var(--coral-400)' }}>
+                                        <td style={{ padding: '6px 8px', color: 'var(--coral-700)', fontWeight: 700 }}>
                                           <AlertCircle size={12} style={{ display: 'inline', verticalAlign: -1, marginRight: 4 }} />
-                                          Recaudo de adeudos
+                                          ⚠ Deuda Anterior
+                                          <div style={{ fontSize: 10, color: 'var(--coral-400)', fontWeight: 400, fontStyle: 'italic', marginTop: 1 }}>Saldo acumulado previo al sistema</div>
                                           {parseFloat(item.prev_debt_adeudo || 0) > 0 && (
-                                            <span style={{ fontSize: 11, color: 'var(--teal-600)', fontStyle: 'normal', marginLeft: 6 }}>
-                                              (Abonado: {fmt(item.prev_debt_adeudo)})
-                                            </span>
+                                            <div style={{ fontSize: 11, color: 'var(--teal-600)', fontStyle: 'normal', fontWeight: 600, marginTop: 2 }}>
+                                              Abonado: {fmt(item.prev_debt_adeudo)}
+                                            </div>
                                           )}
                                         </td>
                                         <td style={{ textAlign: 'right', padding: '6px 8px', color: 'var(--coral-500)' }}>—</td>
                                         <td style={{ textAlign: 'right', padding: '6px 8px', color: 'var(--coral-500)' }}>—</td>
                                         <td style={{ textAlign: 'right', padding: '6px 8px', fontWeight: 700, color: 'var(--coral-500)' }}>{fmt(prevDebt)}</td>
                                         <td style={{ textAlign: 'center', padding: '6px 8px' }}>
-                                          <span className="badge badge-coral">Pendiente</span>
+                                          <span className="badge badge-coral" style={{ fontSize: 10 }}>Pendiente</span>
                                         </td>
                                       </tr>
                                     )}
-                                    {/* Period debt rows */}
+                                    {/* Períodos anteriores no pagados */}
                                     {periodDebts.map((pd, idx) => (
-                                      <tr key={idx} style={{ borderBottom: '1px solid var(--sand-100)' }}>
-                                        <td style={{ padding: '6px 8px', fontWeight: 600 }}>{periodLabel(pd.period)}</td>
+                                      <tr key={idx} style={{ borderBottom: '1px solid var(--sand-100)', borderLeft: '3px solid var(--amber-300)' }}>
+                                        <td style={{ padding: '6px 8px', fontWeight: 600 }}>
+                                          📅 {periodLabel(pd.period)}
+                                          <div style={{ fontSize: 10, color: 'var(--amber-700)', fontWeight: 400, marginTop: 1 }}>Período anterior no pagado</div>
+                                        </td>
                                         <td style={{ textAlign: 'right', padding: '6px 8px' }}>{fmt(pd.charge)}</td>
                                         <td style={{ textAlign: 'right', padding: '6px 8px', color: 'var(--teal-600)' }}>
                                           {pd.paid > 0 ? fmt(pd.paid) : '—'}

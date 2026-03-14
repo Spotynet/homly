@@ -159,12 +159,21 @@ export default function Cobranza() {
       if (st === 'pagado') paid++;
       else if (st === 'parcial') partial++;
       else pending++;
+      // Suma campo a campo: field_payments + additional_payments
       const eff = getEffectiveFieldTotals(p);
       recaudo += Object.values(eff).reduce((s, v) => s + v, 0);
+      // Suma pagos de adeudos recibidos en el período
+      Object.values(p?.adeudo_payments || {}).forEach(fieldMap => {
+        Object.values(fieldMap || {}).forEach(amt => {
+          recaudo += parseFloat(amt) || 0;
+        });
+      });
     });
+    // Suma ingresos no identificados del período
+    recaudo += unrecognizedIncome.reduce((s, r) => s + parseFloat(r.amount || 0), 0);
     const paidPct = total > 0 ? (paid / total) * 100 : 0;
     return { total, paid, partial, pending, recaudo, paidPct };
-  }, [units, paymentMap]);
+  }, [units, paymentMap, unrecognizedIncome]);
 
   const maintenanceFee = parseFloat(tenantData?.maintenance_fee) || 0;
 
@@ -1204,12 +1213,13 @@ export default function Cobranza() {
                   <div style={{ marginTop: 8, border: '1.5px solid var(--coral-100)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
                     <button type="button" style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', background: 'var(--coral-50)', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-body)' }}
                       onClick={() => setCaptureForm(p => ({ ...p, showAdeudoPanel: !p.showAdeudoPanel }))}>
-                      <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, fontWeight: 700, color: 'var(--coral-700)' }}><AlertCircle size={14} /> Abono a Adeudo — {periodsWithDebt.length} período(s) con saldo pendiente</span>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, fontWeight: 700, color: 'var(--coral-700)' }}><AlertCircle size={14} /> Abono a Adeudos — {periodsWithDebt.length} concepto(s) pendiente(s)</span>
                       <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--coral-500)' }}>{fmt(periodsWithDebt.reduce((a, d) => a + (d.saldoPeriodo || 0), 0))} {captureForm.showAdeudoPanel ? '▲' : '▼'}</span>
                     </button>
                     {captureForm.showAdeudoPanel && (
                       <div style={{ background: 'white', borderTop: '1px solid var(--coral-100)' }}>
                         {periodsWithDebt.map(d => {
+                          const isPrevDebt = d.period === '__prevDebt';
                           const sel = !!(captureForm.adeudoSelections && captureForm.adeudoSelections[d.period]);
                           const ds = (captureForm.adeudo_payments && captureForm.adeudo_payments[d.period]) || {};
                           const capturedTotal = Object.values(ds).reduce((a, v) => a + (parseFloat(v) || 0), 0);
@@ -1221,17 +1231,30 @@ export default function Cobranza() {
                                   {sel && <Check size={12} style={{ color: 'white' }} />}
                                 </div>
                                 <div style={{ flex: 1 }}>
-                                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink-800)' }}>{d.period === '__prevDebt' ? '⚠️ Recaudo de adeudos' : periodLabel(d.period)}</div>
+                                  {/* Etiqueta clara según el tipo de adeudo */}
+                                  {isPrevDebt ? (
+                                    <>
+                                      <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--coral-600)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2 }}>⚠ DEUDA ANTERIOR</div>
+                                      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink-800)' }}>Saldo acumulado previo al sistema</div>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--amber-700)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2 }}>📅 PERÍODO ANTERIOR NO PAGADO</div>
+                                      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink-800)' }}>{periodLabel(d.period)}</div>
+                                    </>
+                                  )}
                                   <div style={{ fontSize: 11, color: 'var(--coral-500)', fontWeight: 600 }}>Saldo pendiente: {fmt(d.saldoPeriodo)}{capturedTotal > 0 ? ` · Abonando: ${fmt(capturedTotal)}` : ''}</div>
                                 </div>
                                 <span style={{ fontSize: 11, color: 'var(--ink-400)' }}>{sel ? '▲ ocultar' : '▼ capturar'}</span>
                               </div>
                               {sel && (
-                                <div style={{ padding: '10px 16px 14px', background: 'var(--coral-50)' }}>
-                                  <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--coral-700)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>Abono por campo — período {d.period === '__prevDebt' ? 'Recaudo de adeudos' : periodLabel(d.period)}:</div>
-                                  {d.period === '__prevDebt' ? (
+                                <div style={{ padding: '10px 16px 14px', background: isPrevDebt ? 'var(--coral-50)' : 'var(--amber-50)' }}>
+                                  <div style={{ fontSize: 10, fontWeight: 700, color: isPrevDebt ? 'var(--coral-700)' : 'var(--amber-700)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>
+                                    {isPrevDebt ? 'Abono a deuda anterior:' : `Abono a período no pagado — ${periodLabel(d.period)}:`}
+                                  </div>
+                                  {isPrevDebt ? (
                                     <div style={{ marginBottom: 8 }}>
-                                      <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-700)' }}>Recaudo de adeudos</label>
+                                      <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-700)' }}>Monto a abonar (deuda anterior)</label>
                                       <input type="number" className="field-input" min={0} step="0.01" style={{ marginTop: 4, maxWidth: 140 }}
                                         value={ds.prevDebt ?? ''}
                                         onChange={e => setAdeudoSelection(d.period, 'prevDebt', e.target.value)} />
@@ -1265,7 +1288,9 @@ export default function Cobranza() {
                             </div>
                           );
                         })}
-                        <div style={{ padding: '8px 14px', background: 'var(--sand-50)', borderTop: '1px solid var(--sand-100)', fontSize: 11, color: 'var(--ink-500)' }}>Cada campo abonado actualiza el período correspondiente.</div>
+                        <div style={{ padding: '8px 14px', background: 'var(--sand-50)', borderTop: '1px solid var(--sand-100)', fontSize: 11, color: 'var(--ink-500)' }}>
+                          <strong>Deuda anterior:</strong> abono a saldo acumulado previo al sistema. <strong>Período no pagado:</strong> abono a un mes específico no liquidado.
+                        </div>
                       </div>
                     )}
                   </div>
@@ -1395,12 +1420,15 @@ export default function Cobranza() {
           Object.entries(fieldMap || {}).forEach(([fieldId, amt]) => {
             const a = parseFloat(amt) || 0;
             if (a > 0) {
-              const fLabel = fieldId === 'maintenance' ? 'Mantenimiento' : fieldId === 'prevDebt' ? 'Recaudo de adeudos' : (extraFields.find(e => e.id === fieldId) || {}).label || fieldId;
+              const fLabel = fieldId === 'maintenance' ? 'Mantenimiento' : fieldId === 'prevDebt' ? 'Deuda Anterior' : (extraFields.find(e => e.id === fieldId) || {}).label || fieldId;
               adeudoRows.push({ fieldLabel: fLabel, targetPeriod, amount: a });
               totalAdeudo += a;
             }
           });
         });
+        // Separar: abonos a deuda anterior (saldo previo acumulado) vs abonos a períodos no pagados
+        const adeudoRowsPrev = adeudoRows.filter(r => r.targetPeriod === '__prevDebt');
+        const adeudoRowsPeriods = adeudoRows.filter(r => r.targetPeriod !== '__prevDebt');
         const totalReservations = receiptReservations.reduce((s, r) => s + (parseFloat(r.charge_amount) || 0), 0);
         const grandTotal = totReqAbono + totOptAbono + totalAdelanto + totalAdeudo + totalReservations;
         const ptLabel = pay?.payment_type ? (PAYMENT_TYPES[pay.payment_type]?.label || pay.payment_type) : 'No especificado';
@@ -1487,14 +1515,43 @@ export default function Cobranza() {
                           ))}
                         </>
                       )}
-                      {adeudoRows.length > 0 && (
+                      {adeudoRowsPrev.length > 0 && (
                         <>
-                          <tr className="receipt-section-header"><td colSpan={4} style={{ color: 'var(--coral-500)', background: 'var(--coral-50)' }}>◂ ABONOS A ADEUDO</td></tr>
-                          {adeudoRows.map((ar, i) => (
-                            <tr key={i}>
-                              <td>{ar.fieldLabel}<br /><small style={{ color: 'var(--coral-500)' }}>{ar.targetPeriod === '__prevDebt' ? 'Recaudo de adeudos' : `Abono a Adeudo → ${periodLabel(ar.targetPeriod)}`}</small></td>
+                          <tr className="receipt-section-header">
+                            <td colSpan={4} style={{ color: 'var(--coral-700)', background: 'var(--coral-100)', fontWeight: 800 }}>
+                              ◂ ABONO A DEUDA ANTERIOR
+                            </td>
+                          </tr>
+                          {adeudoRowsPrev.map((ar, i) => (
+                            <tr key={`prev-${i}`}>
+                              <td>
+                                {ar.fieldLabel}
+                                <br />
+                                <small style={{ color: 'var(--coral-600)' }}>Abono a saldo de deuda acumulada previa</small>
+                              </td>
                               <td style={{ textAlign: 'right', color: 'var(--ink-300)' }}>—</td>
-                              <td style={{ textAlign: 'right', color: 'var(--coral-500)', fontWeight: 700 }}>{rfmt(ar.amount)}</td>
+                              <td style={{ textAlign: 'right', color: 'var(--coral-600)', fontWeight: 700 }}>{rfmt(ar.amount)}</td>
+                              <td style={{ textAlign: 'right', color: 'var(--ink-300)' }}>—</td>
+                            </tr>
+                          ))}
+                        </>
+                      )}
+                      {adeudoRowsPeriods.length > 0 && (
+                        <>
+                          <tr className="receipt-section-header">
+                            <td colSpan={4} style={{ color: 'var(--amber-700)', background: 'var(--amber-50)', fontWeight: 800 }}>
+                              ◂ ABONO A PERÍODO ANTERIOR NO PAGADO
+                            </td>
+                          </tr>
+                          {adeudoRowsPeriods.map((ar, i) => (
+                            <tr key={`period-${i}`}>
+                              <td>
+                                {ar.fieldLabel}
+                                <br />
+                                <small style={{ color: 'var(--amber-700)' }}>Período sin pago aplicado: {periodLabel(ar.targetPeriod)}</small>
+                              </td>
+                              <td style={{ textAlign: 'right', color: 'var(--ink-300)' }}>—</td>
+                              <td style={{ textAlign: 'right', color: 'var(--amber-600)', fontWeight: 700 }}>{rfmt(ar.amount)}</td>
                               <td style={{ textAlign: 'right', color: 'var(--ink-300)' }}>—</td>
                             </tr>
                           ))}
@@ -1570,7 +1627,8 @@ export default function Cobranza() {
                         <td style={{ textAlign: 'right', color: totSaldo > 0 ? 'var(--coral-500)' : 'var(--teal-600)' }}>{rfmt(totSaldo)}</td>
                       </tr>
                       {totalAdelanto > 0 && <tr><td colSpan={4} style={{ textAlign: 'right', fontSize: 11, color: 'var(--blue-600)', padding: '4px 12px' }}>Incluye {rfmt(totalAdelanto)} en pagos adelantados</td></tr>}
-                      {totalAdeudo > 0 && <tr><td colSpan={4} style={{ textAlign: 'right', fontSize: 11, color: 'var(--coral-500)', padding: '4px 12px' }}>Incluye {rfmt(totalAdeudo)} en abonos a adeudo</td></tr>}
+                      {adeudoRowsPrev.length > 0 && <tr><td colSpan={4} style={{ textAlign: 'right', fontSize: 11, color: 'var(--coral-600)', padding: '4px 12px' }}>Incluye {rfmt(adeudoRowsPrev.reduce((s, r) => s + r.amount, 0))} en abono a <strong>deuda anterior</strong></td></tr>}
+                      {adeudoRowsPeriods.length > 0 && <tr><td colSpan={4} style={{ textAlign: 'right', fontSize: 11, color: 'var(--amber-700)', padding: '4px 12px' }}>Incluye {rfmt(adeudoRowsPeriods.reduce((s, r) => s + r.amount, 0))} en abono a <strong>período(s) anterior(es) no pagado(s)</strong></td></tr>}
                       {totalReservations > 0 && <tr><td colSpan={4} style={{ textAlign: 'right', fontSize: 11, color: 'var(--teal-600)', padding: '4px 12px' }}>Incluye {rfmt(totalReservations)} en reservas de áreas comunes</td></tr>}
                       {(pay?.additional_payments || []).length > 0 && (() => {
                         let t = 0;
@@ -1607,7 +1665,7 @@ export default function Cobranza() {
                   </div>
                   <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--sand-100)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 10, color: 'var(--ink-300)' }}>
                     <span>Generado por: {user?.name || ''} ({roleLabel})</span>
-                    <span>Homly v{APP_VERSION} · Powered by Spotynet</span>
+                    <span>Homly v{APP_VERSION}</span>
                     <span>{tc?.name || ''} — Recibo — {periodLabel(pay.period)}</span>
                   </div>
                 </div>
