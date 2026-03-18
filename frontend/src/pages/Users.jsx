@@ -106,7 +106,11 @@ export default function Users() {
           payload.password = form.password;
         }
         await usersAPI.create(payload);
-        toast.success(existingUser ? `${existingUser.name} agregado al condominio` : 'Usuario creado');
+        if (existingUser) {
+          toast.success(`${existingUser.name} agregado al condominio`);
+        } else {
+          toast.success('Usuario creado — se envió correo de bienvenida a ' + form.email.trim(), { duration: 5000 });
+        }
       }
       closeModal();
       load();

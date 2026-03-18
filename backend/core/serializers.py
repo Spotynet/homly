@@ -224,12 +224,34 @@ class UserCreateSerializer(serializers.ModelSerializer):
             user.must_change_password = True
             user.save()
 
-        TenantUser.objects.create(
+        tenant_user = TenantUser.objects.create(
             user=user,
             tenant_id=tenant_id,
             role=role,
             unit_id=unit_id,
         )
+
+        # Enviar email de bienvenida al nuevo usuario (no bloquea si falla)
+        try:
+            from .email_service import send_welcome_invitation
+            from .models import Tenant, Unit
+            tenant = Tenant.objects.get(id=tenant_id)
+            unit_name = None
+            if unit_id:
+                unit_obj = Unit.objects.filter(id=unit_id).first()
+                if unit_obj:
+                    parts = [p for p in [unit_obj.unit_id_code, unit_obj.unit_name] if p]
+                    unit_name = ' — '.join(parts) if parts else None
+            send_welcome_invitation(
+                email=user.email,
+                user_name=user.name or user.email,
+                tenant_name=tenant.name,
+                role=role,
+                unit_name=unit_name,
+            )
+        except Exception:
+            pass  # El email es opcional — la creación del usuario no debe fallar
+
         return user
 
 
