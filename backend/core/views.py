@@ -406,6 +406,33 @@ class TenantUserViewSet(viewsets.ModelViewSet):
             status=status.HTTP_200_OK,
         )
 
+    @action(detail=True, methods=['post'], url_path='send-invitation')
+    def send_invitation(self, request, tenant_id=None, pk=None):
+        """
+        POST /api/tenants/{tenant_id}/users/{id}/send-invitation/
+        Sends a branded welcome email to the user with access info and login instructions.
+        """
+        from .email_service import send_welcome_invitation
+        tenant_user = self.get_object()
+        user = tenant_user.user
+        tenant = tenant_user.tenant
+        unit = tenant_user.unit
+        unit_name = None
+        if unit:
+            parts = [p for p in [unit.unit_id_code, unit.unit_name] if p]
+            unit_name = ' — '.join(parts) if parts else None
+
+        success = send_welcome_invitation(
+            email=user.email,
+            user_name=user.name or user.email,
+            tenant_name=tenant.name,
+            role=tenant_user.role,
+            unit_name=unit_name,
+        )
+        if success:
+            return Response({'detail': 'Invitación enviada correctamente.'}, status=status.HTTP_200_OK)
+        return Response({'detail': 'Error al enviar el correo. Verifica la configuración de email.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 
 class UserCreateView(generics.CreateAPIView):
     """POST /api/users/"""

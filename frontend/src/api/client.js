@@ -78,7 +78,8 @@ export const usersAPI = {
   create:        (data)                   => api.post('/users/', data),
   update:        (tenantId, id, data)     => api.patch(`/tenants/${tenantId}/users/${id}/`, data),
   delete:        (tenantId, id)           => api.delete(`/tenants/${tenantId}/users/${id}/`),
-  toggleActive:  (tenantId, id)           => api.post(`/tenants/${tenantId}/users/${id}/toggle-active/`),
+  toggleActive:    (tenantId, id)         => api.post(`/tenants/${tenantId}/users/${id}/toggle-active/`),
+  sendInvitation:  (tenantId, id)         => api.post(`/tenants/${tenantId}/users/${id}/send-invitation/`),
 };
 
 // ─── Payments ───────────────────────────────────

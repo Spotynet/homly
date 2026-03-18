@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { usersAPI, unitsAPI, authAPI } from '../api/client';
 import { ROLES } from '../utils/helpers';
-import { Plus, Trash2, X, Pencil, UserCheck, Loader, ShieldAlert, ToggleLeft, ToggleRight } from 'lucide-react';
+import { Plus, Trash2, X, Pencil, UserCheck, Loader, ShieldAlert, ToggleLeft, ToggleRight, Mail, UserX, UserCheck2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export default function Users() {
@@ -12,8 +12,9 @@ export default function Users() {
   const [loading, setLoading] = useState(true);
   const [modal,   setModal]   = useState(false);   // 'edit' | false
   const [editId,  setEditId]  = useState(null);
-  const [saving,  setSaving]  = useState(false);
-  const [form,    setForm]    = useState({});
+  const [saving,   setSaving]   = useState(false);
+  const [sending,  setSending]  = useState(null); // tu.id del que está enviando invitación
+  const [form,     setForm]     = useState({});
 
   // ── Email lookup (create mode) ──────────────────────────────────────────
   const [emailChecking, setEmailChecking] = useState(false);
@@ -138,6 +139,17 @@ export default function Users() {
     } catch { toast.error('Error al cambiar estado del usuario'); }
   };
 
+  const handleSendInvitation = async (tu) => {
+    if (!window.confirm(`¿Enviar correo de bienvenida a ${tu.user_name} (${tu.user_email})?`)) return;
+    setSending(tu.id);
+    try {
+      await usersAPI.sendInvitation(tenantId, tu.id);
+      toast.success(`Invitación enviada a ${tu.user_email}`);
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Error al enviar la invitación');
+    } finally { setSending(null); }
+  };
+
   const setField    = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const unitLabel   = (u) => [u.unit_id_code, u.unit_name].filter(Boolean).join(' — ');
   const unitById    = (id) => units.find(u => String(u.id) === String(id));
@@ -171,7 +183,7 @@ export default function Users() {
                 <th>Email</th>
                 <th>Rol</th>
                 <th>Unidad</th>
-                {isAdmin && <th style={{ width: 120, textAlign: 'center' }}>Acciones</th>}
+                {isAdmin && <th style={{ width: 240, textAlign: 'center' }}>Acciones</th>}
               </tr>
             </thead>
             <tbody>
@@ -220,20 +232,52 @@ export default function Users() {
                     </td>
                     {isAdmin && (
                       <td>
-                        <div style={{ display: 'flex', gap: 4, justifyContent: 'center' }}>
+                        <div style={{ display: 'flex', gap: 4, justifyContent: 'center', flexWrap: 'wrap' }}>
+
+                          {/* Activar / Desactivar */}
                           <button
                             onClick={() => handleToggleActive(tu)}
-                            className="btn-icon"
-                            style={{ color: tu.is_active === false ? 'var(--teal-600)' : 'var(--ink-400)' }}
-                            title={tu.is_active === false ? 'Activar usuario' : 'Desactivar usuario'}>
-                            {tu.is_active === false ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}
+                            title={tu.is_active === false ? 'Activar usuario' : 'Desactivar usuario'}
+                            style={{
+                              display: 'inline-flex', alignItems: 'center', gap: 4,
+                              padding: '4px 9px', borderRadius: 6, border: '1px solid',
+                              fontSize: 11, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap',
+                              background: tu.is_active === false ? 'var(--teal-50)' : 'var(--sand-50)',
+                              color: tu.is_active === false ? 'var(--teal-700)' : 'var(--ink-500)',
+                              borderColor: tu.is_active === false ? 'var(--teal-200)' : 'var(--sand-200)',
+                            }}>
+                            {tu.is_active === false
+                              ? <><UserCheck2 size={13} /> Activar</>
+                              : <><UserX size={13} /> Desactivar</>}
                           </button>
+
+                          {/* Enviar invitación */}
+                          <button
+                            onClick={() => handleSendInvitation(tu)}
+                            disabled={sending === tu.id}
+                            title="Enviar correo de bienvenida al sistema"
+                            style={{
+                              display: 'inline-flex', alignItems: 'center', gap: 4,
+                              padding: '4px 9px', borderRadius: 6, border: '1px solid var(--blue-200)',
+                              fontSize: 11, fontWeight: 600, cursor: sending === tu.id ? 'default' : 'pointer',
+                              background: 'var(--blue-50)', color: 'var(--blue-700)', whiteSpace: 'nowrap',
+                              opacity: sending === tu.id ? 0.6 : 1,
+                            }}>
+                            {sending === tu.id
+                              ? <><Loader size={13} style={{ animation: 'spin 0.8s linear infinite' }} /> Enviando…</>
+                              : <><Mail size={13} /> Invitar</>}
+                          </button>
+
+                          {/* Editar */}
                           <button onClick={() => openEdit(tu)} className="btn-icon" style={{ color: 'var(--teal-600)' }} title="Editar usuario">
                             <Pencil size={15} />
                           </button>
+
+                          {/* Eliminar */}
                           <button onClick={() => handleDelete(tu)} className="btn-icon" style={{ color: 'var(--coral-500)' }} title="Eliminar acceso">
                             <Trash2 size={15} />
                           </button>
+
                         </div>
                       </td>
                     )}
