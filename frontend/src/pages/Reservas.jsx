@@ -109,9 +109,10 @@ export default function Reservas() {
   const [resStatusFilter, setResStatusFilter] = useState('all');
 
   // New reservation modal
-  const [modalOpen, setModalOpen] = useState(false);
-  const [form,      setForm]      = useState({ area_id: '', unit_id: '', date: '', start_time: '', end_time: '', notes: '' });
-  const [saving,    setSaving]    = useState(false);
+  const [modalOpen,       setModalOpen]       = useState(false);
+  const [form,            setForm]            = useState({ area_id: '', unit_id: '', date: '', start_time: '', end_time: '', notes: '' });
+  const [saving,          setSaving]          = useState(false);
+  const [policiesAccepted, setPoliciesAccepted] = useState(false);
 
   // Reject modal
   const [rejectOpen,    setRejectOpen]    = useState(false);
@@ -218,6 +219,7 @@ export default function Reservas() {
       end_time:   '',
       notes:      '',
     });
+    setPoliciesAccepted(false);
     setModalOpen(true);
   };
 
@@ -252,6 +254,7 @@ export default function Reservas() {
 
   // ── Selected area object ───────────────────────────────────────────────
   const selectedAreaObj = areas.find(a => a.id === form.area_id);
+  const hasPolicies = !!(selectedAreaObj?.reservation_policy || selectedAreaObj?.usage_policy);
   const pendingCount = reservations.filter(r => r.status === 'pending').length;
 
   // ── Render ─────────────────────────────────────────────────────────────
@@ -583,7 +586,7 @@ export default function Reservas() {
               <div>
                 <label className="field-label">Área *</label>
                 <select className="field-input" value={form.area_id}
-                  onChange={e => setForm(f => ({ ...f, area_id: e.target.value }))}>
+                  onChange={e => { setForm(f => ({ ...f, area_id: e.target.value })); setPoliciesAccepted(false); }}>
                   <option value="">Selecciona un área</option>
                   {areas.map(a => (
                     <option key={a.id} value={a.id}>
@@ -591,12 +594,59 @@ export default function Reservas() {
                     </option>
                   ))}
                 </select>
-                {selectedAreaObj?.reservation_policy && (
-                  <div style={{ fontSize: 11, color: 'var(--ink-500)', marginTop: 6, padding: '8px 10px', background: 'var(--sand-50)', borderRadius: 8, border: '1px solid var(--sand-100)', lineHeight: 1.5 }}>
-                    <strong>Política de reserva:</strong> {selectedAreaObj.reservation_policy}
-                  </div>
-                )}
               </div>
+
+              {/* ── Políticas del área ── se muestran si el área tiene al menos una política */}
+              {hasPolicies && (
+                <div style={{ border: '1px solid var(--amber-200)', borderRadius: 10, overflow: 'hidden' }}>
+                  {/* Encabezado */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', background: 'var(--amber-100)', borderBottom: '1px solid var(--amber-200)' }}>
+                    <AlertCircle size={14} color="var(--amber-600)" style={{ flexShrink: 0 }} />
+                    <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--amber-800)' }}>
+                      Políticas del área — lectura obligatoria
+                    </span>
+                  </div>
+
+                  {/* Contenido de políticas (con scroll si es largo) */}
+                  <div style={{ padding: '12px 14px', maxHeight: 220, overflowY: 'auto', background: 'var(--amber-50)', display: 'flex', flexDirection: 'column', gap: 14 }}>
+                    {selectedAreaObj?.reservation_policy && (
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--amber-700)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
+                          📋 Política de Reserva
+                        </div>
+                        <div style={{ fontSize: 12, color: 'var(--ink-700)', lineHeight: 1.65, whiteSpace: 'pre-wrap' }}>
+                          {selectedAreaObj.reservation_policy}
+                        </div>
+                      </div>
+                    )}
+                    {selectedAreaObj?.usage_policy && (
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--amber-700)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
+                          🏛 Política de Uso
+                        </div>
+                        <div style={{ fontSize: 12, color: 'var(--ink-700)', lineHeight: 1.65, whiteSpace: 'pre-wrap' }}>
+                          {selectedAreaObj.usage_policy}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Checkbox de aceptación */}
+                  <div style={{ padding: '10px 14px', borderTop: '1px solid var(--amber-200)', background: 'white' }}>
+                    <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={policiesAccepted}
+                        onChange={e => setPoliciesAccepted(e.target.checked)}
+                        style={{ marginTop: 2, accentColor: 'var(--teal-500)', width: 15, height: 15, flexShrink: 0 }}
+                      />
+                      <span style={{ fontSize: 12, color: policiesAccepted ? 'var(--teal-700)' : 'var(--ink-600)', lineHeight: 1.4, fontWeight: policiesAccepted ? 600 : 400 }}>
+                        He leído y acepto las políticas de reserva y uso de esta área común
+                      </span>
+                    </label>
+                  </div>
+                </div>
+              )}
 
               {/* Unidad — solo para admin/tesorero */}
               {needsUnitSelector && (
@@ -660,7 +710,12 @@ export default function Reservas() {
             </div>
             <div className="modal-foot">
               <button className="btn btn-secondary" onClick={() => setModalOpen(false)}>Cancelar</button>
-              <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
+              <button
+                className="btn btn-primary"
+                onClick={handleSave}
+                disabled={saving || (hasPolicies && !policiesAccepted)}
+                title={hasPolicies && !policiesAccepted ? 'Debes aceptar las políticas del área antes de continuar' : ''}
+              >
                 {saving ? 'Guardando…' : isAutoApprover ? 'Crear Reserva' : 'Solicitar Reserva'}
               </button>
             </div>

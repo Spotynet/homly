@@ -366,6 +366,71 @@ export default function EstadoCuenta() {
           )}
 
           <div className="ec-detail">
+
+            {/* ── PRINT-ONLY HEADER: logo + datos del condominio ── */}
+            <div className="ec-unit-print-header">
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 20, paddingBottom: 10, borderBottom: '2px solid #0d7c6e' }}>
+                {/* Logo */}
+                {tenantData?.logo && (() => {
+                  const b64 = tenantData.logo;
+                  const src = b64.startsWith('data:') ? b64
+                    : b64.startsWith('/9j/') ? `data:image/jpeg;base64,${b64}`
+                    : b64.startsWith('iVBOR') ? `data:image/png;base64,${b64}`
+                    : `data:image/png;base64,${b64}`;
+                  return (
+                    <img src={src} alt="Logo"
+                      style={{ height: 60, width: 'auto', objectFit: 'contain', flexShrink: 0 }} />
+                  );
+                })()}
+                {/* Tenant / condominio info */}
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: '#1a1a2e', lineHeight: 1.2 }}>
+                    {tenantData?.razon_social || tenantData?.name}
+                  </div>
+                  {tenantData?.name && tenantData?.razon_social && tenantData.name !== tenantData.razon_social && (
+                    <div style={{ fontSize: 11, color: '#64748b', marginTop: 1 }}>{tenantData.name}</div>
+                  )}
+                  {tenantData?.rfc && (
+                    <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>RFC: {tenantData.rfc}</div>
+                  )}
+                  {(tenantData?.info_calle || tenantData?.addr_calle) && (
+                    <div style={{ fontSize: 11, color: '#64748b', marginTop: 1 }}>
+                      {[
+                        tenantData.info_calle || tenantData.addr_calle,
+                        tenantData.info_num_externo || tenantData.addr_num_externo,
+                        tenantData.info_colonia || tenantData.addr_colonia,
+                        tenantData.info_ciudad || tenantData.addr_ciudad,
+                        tenantData.info_codigo_postal || tenantData.addr_codigo_postal,
+                      ].filter(Boolean).join(', ')}
+                    </div>
+                  )}
+                </div>
+                {/* Report title + unit info */}
+                <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                  <div style={{ fontSize: 17, fontWeight: 800, color: '#1a1a2e', lineHeight: 1.2 }}>Estado de Cuenta</div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: '#0d7c6e', marginTop: 3 }}>
+                    {data?.unit?.unit_name || selectedUnitInfo?.unit_name}
+                    {' '}<span style={{ fontWeight: 400, color: '#64748b', fontSize: 11 }}>
+                      ({data?.unit?.unit_id_code || selectedUnitInfo?.unit_id_code})
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
+                    {data?.unit?.responsible_name || selectedUnitInfo?.responsible_name}
+                    {' · '}
+                    {(data?.unit?.occupancy || selectedUnitInfo?.occupancy) === 'rentado' ? 'Inquilino' : 'Propietario'}
+                  </div>
+                  {(detailFrom || detailTo) && (
+                    <div style={{ fontSize: 11, color: '#0d7c6e', fontWeight: 600, marginTop: 4 }}>
+                      Período: {detailFrom ? periodLabel(detailFrom) : '—'} — {detailTo ? periodLabel(detailTo) : '—'}
+                    </div>
+                  )}
+                  <div style={{ fontSize: 10, color: '#64748b', marginTop: 2 }}>
+                    Generado: {new Date().toLocaleDateString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                  </div>
+                </div>
+              </div>
+            </div>
+
             {/* Dark header */}
             <div className="ec-detail-header">
               <div>
