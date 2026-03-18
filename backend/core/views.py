@@ -919,17 +919,8 @@ class AmenityReservationViewSet(viewsets.ModelViewSet):
         if unit_id:
             qs = qs.filter(unit_id=unit_id)
 
-        # vecinos only see their own unit's reservations
-        user = self.request.user
-        if not user.is_super_admin:
-            from .models import TenantUser as TU
-            try:
-                tu = TU.objects.get(user=user, tenant_id=self.kwargs['tenant_id'])
-                if tu.role == 'vecino' and tu.unit_id:
-                    qs = qs.filter(unit_id=tu.unit_id)
-            except TU.DoesNotExist:
-                pass
-
+        # All tenant members see all reservations so they can check availability
+        # before making a new reservation (no per-unit restriction).
         return qs
 
     def perform_create(self, serializer):

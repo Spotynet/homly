@@ -90,10 +90,12 @@ function AreaCard({ area, reservations, selected, onSelect }) {
 
 // ─── Main ──────────────────────────────────────────────────────────────────
 export default function Reservas() {
-  const { tenantId, isAdmin, isVecino, role } = useAuth();
+  const { tenantId, isAdmin, isVecino, isReadOnly, role, user } = useAuth();
   const autoApproveRoles = ['admin', 'tesorero', 'superadmin'];
   const isAutoApprover   = autoApproveRoles.includes(role);
   const canManage        = isAdmin || role === 'tesorero'; // admin, superadmin, tesorero can approve/reject
+  const canCancelOwn     = !canManage && !isReadOnly;      // vecino, vigilante can cancel their own
+  const showActionsCol   = canManage || canCancelOwn;
   const needsUnitSelector = !isVecino; // admins / tesoreros / vigilante pick the unit manually
 
   const today = new Date();
@@ -311,9 +313,10 @@ export default function Reservas() {
           <h2 style={{ fontSize: 20, fontWeight: 800, color: 'var(--ink-800)', margin: 0 }}>Reservas de Áreas Comunes</h2>
           <p style={{ fontSize: 13, color: 'var(--ink-400)', margin: '4px 0 0' }}>
             {MONTHS_ES[calMonth]} {calYear}
-            {pendingCount > 0 && canManage && (
+            {pendingCount > 0 && (
               <span style={{ marginLeft: 8, background: 'var(--amber-50)', color: 'var(--amber-700)', border: '1px solid var(--amber-100)', borderRadius: 20, padding: '1px 8px', fontSize: 11, fontWeight: 700 }}>
-                {pendingCount} pendiente{pendingCount !== 1 ? 's' : ''} de revisión
+                {pendingCount} pendiente{pendingCount !== 1 ? 's' : ''}
+                {canManage ? ' de revisión' : ''}
               </span>
             )}
           </p>
@@ -401,10 +404,11 @@ export default function Reservas() {
                 const d   = i + 1;
                 const ds  = makeDateStr(calYear, calMonth, d);
                 const recs = resByDate[ds] || [];
-                const hasPending  = recs.some(r => r.status === 'pending');
-                const hasApproved = recs.some(r => r.status === 'approved');
                 const isSelected  = selectedDay === ds;
                 const isTodayDate = ds === makeDateStr(today.getFullYear(), today.getMonth(), today.getDate());
+                // Collect unique statuses present on this day (in priority order)
+                const STATUS_ORDER = ['pending', 'approved', 'rejected', 'cancelled'];
+                const dayStatuses  = STATUS_ORDER.filter(s => recs.some(r => r.status === s));
                 return (
                   <button
                     key={d}
@@ -419,27 +423,30 @@ export default function Reservas() {
                     }}
                   >
                     {d}
-                    {recs.length > 0 && (
+                    {dayStatuses.length > 0 && (
                       <span style={{
-                        position: 'absolute', bottom: 2, right: 2,
-                        width: 6, height: 6, borderRadius: '50%',
-                        background: hasPending ? 'var(--amber-400)' : hasApproved ? 'var(--teal-400)' : 'var(--ink-300)',
-                      }} />
+                        position: 'absolute', bottom: 2, left: '50%', transform: 'translateX(-50%)',
+                        display: 'flex', gap: 2,
+                      }}>
+                        {dayStatuses.map(s => (
+                          <span key={s} style={{
+                            width: 5, height: 5, borderRadius: '50%',
+                            background: STATUS_CFG[s]?.color || 'var(--ink-300)',
+                            flexShrink: 0,
+                          }} />
+                        ))}
+                      </span>
                     )}
                   </button>
                 );
               })}
             </div>
-            {/* Leyenda */}
-            <div style={{ display: 'flex', gap: 12, marginTop: 12, fontSize: 10, color: 'var(--ink-400)' }}>
-              {[
-                { color: 'var(--amber-400)', label: 'Pendiente' },
-                { color: 'var(--teal-400)',  label: 'Aprobada'  },
-                { color: 'var(--ink-300)',   label: 'Otra'      },
-              ].map(l => (
-                <span key={l.label} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: l.color, flexShrink: 0 }} />
-                  {l.label}
+            {/* Leyenda — un punto por estatus */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 12px', marginTop: 12, fontSize: 10, color: 'var(--ink-400)' }}>
+              {Object.entries(STATUS_CFG).map(([key, cfg]) => (
+                <span key={key} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: cfg.color, flexShrink: 0 }} />
+                  {cfg.label}
                 </span>
               ))}
             </div>
@@ -456,7 +463,7 @@ export default function Reservas() {
                   style={{ padding: '4px 10px', fontSize: 12 }}
                   onClick={() => setResStatusFilter(v)}>
                   {l}
-                  {v === 'pending' && pendingCount > 0 && canManage && (
+                  {v === 'pending' && pendingCount > 0 && (
                     <span className="badge badge-amber" style={{ marginLeft: 5, fontSize: 10, padding: '1px 5px' }}>{pendingCount}</span>
                   )}
                 </button>
@@ -499,7 +506,7 @@ export default function Reservas() {
                       <th>Horario</th>
                       <th>Unidad / Solicitante</th>
                       <th>Estado</th>
-                      {canManage && <th style={{ width: 130, textAlign: 'center' }}>Acciones</th>}
+                      {showActionsCol && <th style={{ width: 130, textAlign: 'center' }}>Acciones</th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -538,10 +545,11 @@ export default function Reservas() {
                               </div>
                             )}
                           </td>
-                          {canManage && (
+                          {showActionsCol && (
                             <td style={{ textAlign: 'center' }}>
                               <div style={{ display: 'flex', gap: 4, justifyContent: 'center', flexWrap: 'wrap' }}>
-                                {r.status === 'pending' && (
+                                {/* Managers: approve / reject / cancel */}
+                                {canManage && r.status === 'pending' && (
                                   <>
                                     <button className="btn btn-primary btn-sm" style={{ padding: '3px 10px', fontSize: 11 }}
                                       onClick={() => handleApprove(r.id)}>
@@ -553,7 +561,14 @@ export default function Reservas() {
                                     </button>
                                   </>
                                 )}
-                                {r.status === 'approved' && (
+                                {canManage && r.status === 'approved' && (
+                                  <button className="btn btn-secondary btn-sm" style={{ padding: '3px 10px', fontSize: 11 }}
+                                    onClick={() => handleCancel(r.id)}>
+                                    Cancelar
+                                  </button>
+                                )}
+                                {/* Vecino / Vigilante: cancel own pending or approved reservations */}
+                                {canCancelOwn && (r.status === 'pending' || r.status === 'approved') && r.requested_by === user?.id && (
                                   <button className="btn btn-secondary btn-sm" style={{ padding: '3px 10px', fontSize: 11 }}
                                     onClick={() => handleCancel(r.id)}>
                                     Cancelar

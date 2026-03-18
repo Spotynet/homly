@@ -5,7 +5,7 @@ import { HomlyBrand, APP_VERSION, ROLES } from '../../utils/helpers';
 import { notificationsAPI } from '../../api/client';
 import {
   Home, Globe, FileText, ShoppingBag, Receipt, Settings,
-  Users, Building, Shield, LogOut, Menu, X, Search, Calendar,
+  Users, Building, Shield, LogOut, Menu, X, Calendar,
   ChevronDown, Check, Building2, Bell, CheckCheck,
 } from 'lucide-react';
 
@@ -566,12 +566,6 @@ export default function AppLayout() {
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {!isVecino && (
-              <div className="search-bar hidden-mobile">
-                <Search size={16} />
-                <input type="text" placeholder="Buscar..." />
-              </div>
-            )}
             {tenantId && <NotificationBell tenantId={tenantId} />}
           </div>
         </header>
