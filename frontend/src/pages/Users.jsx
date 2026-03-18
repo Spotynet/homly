@@ -399,6 +399,27 @@ export default function Users() {
                     <p style={{ fontSize: 12, color: 'var(--ink-400)', margin: 0 }}>Ingresa un email válido para continuar.</p>
                   </div>
                 )}
+
+                {/* Aviso de correo de bienvenida — solo en modo crear usuario nuevo */}
+                {!editId && existingUser === false && (
+                  <div className="field field-full">
+                    <div style={{
+                      display: 'flex', alignItems: 'flex-start', gap: 10,
+                      padding: '10px 14px',
+                      background: 'var(--blue-50)', border: '1px solid var(--blue-100)', borderRadius: 10,
+                    }}>
+                      <Mail size={16} color="var(--blue-500)" style={{ flexShrink: 0, marginTop: 2 }} />
+                      <div>
+                        <div style={{ fontWeight: 700, fontSize: 12, color: 'var(--blue-700)' }}>
+                          Se enviará correo de bienvenida
+                        </div>
+                        <div style={{ fontSize: 12, color: 'var(--blue-600)', marginTop: 2, lineHeight: 1.5 }}>
+                          Al crear el usuario se enviará automáticamente un correo a <strong>{form.email}</strong> con la bienvenida al sistema, su perfil asignado y las instrucciones para ingresar.
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -406,7 +427,13 @@ export default function Users() {
               <button onClick={closeModal} className="btn btn-outline">Cancelar</button>
               <button onClick={handleSave} className="btn btn-primary"
                 disabled={saving || (!editId && existingUser === null && !emailChecking)}>
-                {saving ? 'Guardando…' : editId ? 'Guardar Cambios' : existingUser ? 'Agregar al Condominio' : 'Crear Usuario'}
+                {saving
+                  ? 'Guardando…'
+                  : editId
+                    ? 'Guardar Cambios'
+                    : existingUser
+                      ? 'Agregar al Condominio'
+                      : <><Mail size={14} style={{ marginRight: 6 }} />Crear Usuario y Enviar Bienvenida</>}
               </button>
             </div>
           </div>
