@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { paymentsAPI, unitsAPI, extraFieldsAPI, tenantsAPI, unrecognizedIncomeAPI, reservationsAPI, reportsAPI } from '../api/client';
 import PaginationBar from '../components/PaginationBar';
 import { todayPeriod, periodLabel, prevPeriod, nextPeriod, tenantStartPeriod, fmtCurrency, statusClass, statusLabel, PAYMENT_TYPES, fmtDate, ROLES, CURRENCIES, APP_VERSION } from '../utils/helpers';
-import { ChevronLeft, ChevronRight, Search, Receipt, X, Users, CheckCircle, Clock, AlertCircle, DollarSign, Calendar, Building2, Upload, FileText, Check, Printer, Plus, Edit, Edit2, Trash2, Banknote } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Search, Receipt, X, Users, CheckCircle, Clock, AlertCircle, DollarSign, Calendar, Building2, Upload, FileText, Check, Printer, Plus, Edit, Edit2, Trash2, Banknote, Mail } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 function fmt(n) {
@@ -101,6 +101,8 @@ export default function Cobranza() {
   const [addlExtraFields, setAddlExtraFields] = useState([]); // campos para pagos adicionales (sin adelanto)
   const [captureUnitPeriods, setCaptureUnitPeriods] = useState([]); // períodos con adeudo de la unidad en captura
   const [captureUnitPeriodsLoading, setCaptureUnitPeriodsLoading] = useState(false);
+  const [sendingReceipt, setSendingReceipt] = useState(false);
+  const [receiptEmailRecipient, setReceiptEmailRecipient] = useState('owner'); // 'owner' | 'tenant' | 'both'
 
   const load = async () => {
     if (!tenantId) return;
@@ -1805,8 +1807,48 @@ export default function Cobranza() {
                   </div>
                 </div>
               </div>
-              <div className="modal-foot">
+              <div className="modal-foot" style={{ flexWrap: 'wrap', gap: 8 }}>
                 <button className="btn btn-secondary" onClick={() => setShowReceipt(null)}>Cerrar</button>
+                {/* Email send controls */}
+                {(unit?.owner_email || unit?.tenant_email) && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginRight: 'auto' }}>
+                    {unit?.owner_email && unit?.tenant_email ? (
+                      <select
+                        value={receiptEmailRecipient}
+                        onChange={e => setReceiptEmailRecipient(e.target.value)}
+                        style={{ fontSize: 12, padding: '5px 8px', border: '1px solid var(--sand-200)', borderRadius: 6, color: 'var(--ink-700)', background: 'var(--white)' }}
+                      >
+                        <option value="owner">Propietario</option>
+                        <option value="tenant">Inquilino</option>
+                        <option value="both">Ambos</option>
+                      </select>
+                    ) : (
+                      <span style={{ fontSize: 11, color: 'var(--ink-400)' }}>
+                        {unit?.owner_email || unit?.tenant_email}
+                      </span>
+                    )}
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      disabled={sendingReceipt}
+                      onClick={async () => {
+                        if (!pay?.id) return;
+                        const recipient = (unit?.owner_email && unit?.tenant_email) ? receiptEmailRecipient : (unit?.owner_email ? 'owner' : 'tenant');
+                        setSendingReceipt(true);
+                        try {
+                          const res = await paymentsAPI.sendReceipt(tenantId, pay.id, { recipients: recipient });
+                          toast.success(res.data?.detail || 'Recibo enviado');
+                        } catch (err) {
+                          toast.error(err?.response?.data?.detail || 'Error al enviar el recibo');
+                        } finally {
+                          setSendingReceipt(false);
+                        }
+                      }}
+                      style={{ display: 'flex', alignItems: 'center', gap: 5 }}
+                    >
+                      <Mail size={13} /> {sendingReceipt ? 'Enviando…' : 'Enviar por Email'}
+                    </button>
+                  </div>
+                )}
                 <button className="btn btn-primary" onClick={() => {
                   const folioNum = pay?.folio || pay?.id?.slice(0, 8)?.toUpperCase() || 'SN';
                   const tenantName = (tc?.name || '').replace(/[^a-zA-Z0-9À-ÿ\s]/g, '').trim();

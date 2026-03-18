@@ -4,7 +4,8 @@ import { useAuth } from '../context/AuthContext';
 import { unitsAPI, reportsAPI, tenantsAPI, paymentsAPI, gastosAPI, unrecognizedIncomeAPI } from '../api/client';
 import PaginationBar from '../components/PaginationBar';
 import { statusClass, statusLabel, fmtDate, periodLabel, todayPeriod, prevPeriod, nextPeriod, ROLES } from '../utils/helpers';
-import { Search, ChevronLeft, ChevronRight, Building, Globe, DollarSign, ArrowDown, TrendingDown, AlertCircle, Calendar, Printer, ShoppingBag, FileText } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight, Building, Globe, DollarSign, ArrowDown, TrendingDown, AlertCircle, Calendar, Printer, ShoppingBag, FileText, Mail, X, Send } from 'lucide-react';
+import toast from 'react-hot-toast';
 
 function fmt(n) {
   return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 0 }).format(n ?? 0);
@@ -77,6 +78,14 @@ export default function EstadoCuenta() {
 
   // Load unit summaries via estado-cuenta (without unit_id) for list view
   const [listMeta, setListMeta] = useState(null);
+  // Email state
+  const [sendingUnitEmail, setSendingUnitEmail] = useState(false);
+  const [unitEmailRecipient, setUnitEmailRecipient] = useState('owner'); // 'owner' | 'tenant' | 'both'
+  const [showGeneralEmailModal, setShowGeneralEmailModal] = useState(false);
+  const [generalEmailRecipientMode, setGeneralEmailRecipientMode] = useState('owners'); // 'owners' | 'tenants' | 'custom'
+  const [generalEmailCustom, setGeneralEmailCustom] = useState('');
+  const [sendingGeneralEmail, setSendingGeneralEmail] = useState(false);
+
   useEffect(() => {
     if (!tenantId || selectedUnit) return;
     reportsAPI.estadoCuenta(tenantId, { cutoff })
@@ -442,7 +451,49 @@ export default function EstadoCuenta() {
                   {data?.unit?.responsible_name || selectedUnitInfo?.responsible_name} · {(data?.unit?.occupancy || selectedUnitInfo?.occupancy) === 'rentado' ? 'Inquilino' : 'Propietario'} · {data?.tenant_name || tenantData?.name || ''}
                 </div>
               </div>
-              <div className="ec-detail-actions">
+              <div className="ec-detail-actions" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                {/* Email controls for unit statement */}
+                {((data?.unit?.owner_email || selectedUnitInfo?.owner_email) || (data?.unit?.tenant_email || selectedUnitInfo?.tenant_email)) && (
+                  <>
+                    {(data?.unit?.owner_email || selectedUnitInfo?.owner_email) && (data?.unit?.tenant_email || selectedUnitInfo?.tenant_email) && (
+                      <select
+                        value={unitEmailRecipient}
+                        onChange={e => setUnitEmailRecipient(e.target.value)}
+                        style={{ fontSize: 12, padding: '5px 8px', border: '1px solid rgba(255,255,255,0.3)', borderRadius: 6, color: 'var(--white)', background: 'rgba(255,255,255,0.1)', cursor: 'pointer' }}
+                      >
+                        <option value="owner" style={{ color: 'var(--ink-800)', background: 'var(--white)' }}>Propietario</option>
+                        <option value="tenant" style={{ color: 'var(--ink-800)', background: 'var(--white)' }}>Inquilino</option>
+                        <option value="both" style={{ color: 'var(--ink-800)', background: 'var(--white)' }}>Ambos</option>
+                      </select>
+                    )}
+                    <button
+                      className="btn-outline-white"
+                      disabled={sendingUnitEmail}
+                      onClick={async () => {
+                        const unitId = selectedUnit;
+                        const recipient = (data?.unit?.owner_email || selectedUnitInfo?.owner_email) && (data?.unit?.tenant_email || selectedUnitInfo?.tenant_email)
+                          ? unitEmailRecipient
+                          : (data?.unit?.owner_email || selectedUnitInfo?.owner_email) ? 'owner' : 'tenant';
+                        setSendingUnitEmail(true);
+                        try {
+                          const res = await reportsAPI.sendUnitStatementEmail(tenantId, {
+                            unit_id: unitId,
+                            from_period: detailFrom,
+                            to_period: detailTo,
+                            recipients: recipient,
+                          });
+                          toast.success(res.data?.detail || 'Estado de cuenta enviado');
+                        } catch (err) {
+                          toast.error(err?.response?.data?.detail || 'Error al enviar el correo');
+                        } finally {
+                          setSendingUnitEmail(false);
+                        }
+                      }}
+                    >
+                      <Mail size={14} /> {sendingUnitEmail ? 'Enviando…' : 'Enviar por Email'}
+                    </button>
+                  </>
+                )}
                 <button className="btn-outline-white" onClick={() => window.print()}>
                   <Printer size={14} /> Imprimir / PDF
                 </button>
@@ -769,6 +820,13 @@ export default function EstadoCuenta() {
                       </span>
                     )}
                     {search && <span className="badge badge-amber">Filtrado: {filteredUnits.length}</span>}
+                    <button
+                      className="btn btn-outline btn-sm"
+                      onClick={() => setShowGeneralEmailModal(true)}
+                      style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+                    >
+                      <Mail size={14} /> Enviar por Email
+                    </button>
                     <button
                       className="btn btn-outline btn-sm"
                       onClick={handlePrintUnits}
@@ -2323,6 +2381,91 @@ function ReporteAdeudosView({ tenantData, adeudosData, adeudosLoading, cutoff, s
               </table>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── General Statement Email Modal ── */}
+      {showGeneralEmailModal && (
+        <div className="modal-bg open" onClick={() => setShowGeneralEmailModal(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 460 }}>
+            <div className="modal-head">
+              <h3 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Mail size={16} /> Enviar Estado General por Email
+              </h3>
+              <button className="modal-close" onClick={() => setShowGeneralEmailModal(false)}><X size={16} /></button>
+            </div>
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <p style={{ fontSize: 13, color: 'var(--ink-600)', margin: 0 }}>
+                Se enviará el estado de cuenta general de <strong>{tenantData?.name || ''}</strong> al corte de <strong>{cutoff}</strong>.
+              </p>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-600)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: 8 }}>Destinatarios</label>
+                {[
+                  { value: 'owners', label: 'Todos los propietarios', desc: 'owner_email de cada unidad' },
+                  { value: 'tenants', label: 'Todos los inquilinos', desc: 'tenant_email de cada unidad' },
+                  { value: 'custom', label: 'Emails específicos', desc: 'Ingresa manualmente' },
+                ].map(opt => (
+                  <label key={opt.value} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 10, cursor: 'pointer' }}>
+                    <input
+                      type="radio"
+                      name="generalEmailMode"
+                      value={opt.value}
+                      checked={generalEmailRecipientMode === opt.value}
+                      onChange={() => setGeneralEmailRecipientMode(opt.value)}
+                      style={{ marginTop: 2 }}
+                    />
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-800)' }}>{opt.label}</div>
+                      <div style={{ fontSize: 11, color: 'var(--ink-400)' }}>{opt.desc}</div>
+                    </div>
+                  </label>
+                ))}
+                {generalEmailRecipientMode === 'custom' && (
+                  <textarea
+                    value={generalEmailCustom}
+                    onChange={e => setGeneralEmailCustom(e.target.value)}
+                    placeholder="ejemplo@mail.com, otro@mail.com"
+                    rows={3}
+                    style={{ width: '100%', padding: '8px 10px', border: '1px solid var(--sand-200)', borderRadius: 6, fontSize: 13, color: 'var(--ink-800)', resize: 'vertical', boxSizing: 'border-box' }}
+                  />
+                )}
+              </div>
+            </div>
+            <div className="modal-foot">
+              <button className="btn btn-secondary" onClick={() => setShowGeneralEmailModal(false)}>Cancelar</button>
+              <button
+                className="btn btn-primary"
+                disabled={sendingGeneralEmail}
+                onClick={async () => {
+                  let emails = [];
+                  if (generalEmailRecipientMode === 'owners') {
+                    emails = unitSummaries.map(u => u.unit?.owner_email).filter(Boolean);
+                  } else if (generalEmailRecipientMode === 'tenants') {
+                    emails = unitSummaries.map(u => u.unit?.tenant_email).filter(Boolean);
+                  } else {
+                    emails = generalEmailCustom.split(/[,\n]+/).map(e => e.trim()).filter(Boolean);
+                  }
+                  if (!emails.length) {
+                    toast.error('No hay correos para enviar');
+                    return;
+                  }
+                  setSendingGeneralEmail(true);
+                  try {
+                    const res = await reportsAPI.sendGeneralStatementEmail(tenantId, { emails, cutoff });
+                    toast.success(res.data?.detail || 'Estado general enviado');
+                    setShowGeneralEmailModal(false);
+                  } catch (err) {
+                    toast.error(err?.response?.data?.detail || 'Error al enviar el correo');
+                  } finally {
+                    setSendingGeneralEmail(false);
+                  }
+                }}
+                style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+              >
+                <Send size={14} /> {sendingGeneralEmail ? 'Enviando…' : 'Enviar'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

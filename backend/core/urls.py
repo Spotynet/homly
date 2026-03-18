@@ -60,4 +60,10 @@ urlpatterns = [
          views.ReporteAdeudosView.as_view(), name='reporte-adeudos'),
     path('tenants/<uuid:tenant_id>/estado-cuenta-pdf/',
          views.EstadoPorUnidadPDFView.as_view(), name='estado-cuenta-pdf'),
+
+    # Email endpoints
+    path('tenants/<uuid:tenant_id>/send-unit-statement-email/',
+         views.SendUnitStatementEmailView.as_view(), name='send-unit-statement-email'),
+    path('tenants/<uuid:tenant_id>/send-statement-email/',
+         views.SendGeneralStatementEmailView.as_view(), name='send-statement-email'),
 ]

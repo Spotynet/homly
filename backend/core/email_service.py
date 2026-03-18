@@ -434,3 +434,492 @@ def send_verification_email(email: str, code: str) -> bool:
         logger.exception('Error sending verification email to %s: %s', email, e)
         print(f'[EMAIL ERROR] {type(e).__name__}: {e}', flush=True)
         return False
+
+
+# ─── Helpers ───────────────────────────────────────────────────────────────
+
+def _fmt_amount(amount, symbol='$') -> str:
+    try:
+        n = float(amount or 0)
+    except (TypeError, ValueError):
+        n = 0.0
+    return f'{symbol}{n:,.0f}'
+
+
+def _send_branded_email(subject: str, plain: str, html: str, to_emails: list[str], from_email: str | None = None) -> bool:
+    """Helper to build and send a branded email with inline logo."""
+    if not from_email:
+        from django.conf import settings as _s
+        from_email = getattr(_s, 'HOMLY_NOREPLY_EMAIL', 'no-reply@homly.com.mx')
+    try:
+        msg = EmailMultiAlternatives(subject=subject, body=plain, from_email=from_email, to=to_emails)
+        msg.attach_alternative(html, 'text/html')
+        logo_data = _read_logo_bytes('homly-full.png')
+        if logo_data:
+            logo_part = MIMEImage(logo_data, 'png')
+            logo_part.add_header('Content-Disposition', 'inline', filename='homly-full.png')
+            logo_part.add_header('Content-ID', f'<{LOGO_CID}>')
+            msg.attach(logo_part)
+        msg.send(fail_silently=False)
+        return True
+    except Exception as e:
+        logger.exception('Error sending email to %s: %s', to_emails, e)
+        print(f'[EMAIL ERROR] {type(e).__name__}: {e}', flush=True)
+        return False
+
+
+def _email_header_html(c: dict, logo_img: str, title: str, subtitle: str = '') -> str:
+    sub_block = f'<p style="margin:6px 0 0;font-size:13px;font-weight:600;color:{c["ink_600"]};">{subtitle}</p>' if subtitle else ''
+    return f"""
+<tr>
+  <td style="background:{c['cream']};padding:28px 28px 20px;text-align:center;border-bottom:3px solid {c['green']};">
+    {logo_img}
+    <p style="margin:10px 0 0;font-size:13px;font-weight:600;color:{c['ink_600']};letter-spacing:0.04em;">Property Management</p>
+    <p style="margin:12px 0 0;font-size:18px;font-weight:800;color:{c['ink_800']};">{title}</p>
+    {sub_block}
+  </td>
+</tr>"""
+
+
+def _email_footer_html(c: dict) -> str:
+    return f"""
+<tr>
+  <td style="padding:18px 28px;border-top:1px solid #E8DFD1;text-align:center;">
+    <p style="margin:0;font-size:12px;color:{c['ink_600']};line-height:1.5;">Este correo fue generado automáticamente por Homly.</p>
+    <p style="margin:8px 0 0;font-size:11px;color:{c['ink_600']};">© Homly — La administración que tu hogar se merece</p>
+  </td>
+</tr>"""
+
+
+def _email_table_row(c: dict, cols: list, header: bool = False, section: bool = False) -> str:
+    if section:
+        return f'<tr><td colspan="{len(cols)}" style="background:{c["cream_outer"]};padding:8px 12px;font-size:10px;font-weight:700;color:{c["ink_600"]};text-transform:uppercase;letter-spacing:0.05em;">{cols[0]}</td></tr>'
+    bg = c['green'] if header else 'transparent'
+    text_color = c['white'] if header else c['ink_800']
+    cells = ''
+    for i, col in enumerate(cols):
+        align = 'right' if i > 0 else 'left'
+        weight = '700' if header else '400'
+        cells += f'<td style="padding:9px 12px;text-align:{align};font-size:{"11" if header else "13"}px;font-weight:{weight};color:{text_color};white-space:nowrap;">{col}</td>'
+    return f'<tr style="border-bottom:1px solid {c["cream_outer"]};">{cells}</tr>'
+
+
+# ─── Receipt Email ──────────────────────────────────────────────────────────
+
+def send_receipt_email(
+    emails: list[str],
+    tenant_name: str,
+    tenant_rfc: str,
+    currency_symbol: str,
+    unit_code: str,
+    unit_name: str,
+    responsible: str,
+    period_str: str,
+    folio: str,
+    payment_type_label: str,
+    payment_date_label: str,
+    rows: list[dict],       # [{concept, charge, paid, balance, is_section?}]
+    total_charges: float,
+    total_paid: float,
+    saldo: float,
+) -> bool:
+    """Send a branded payment receipt email."""
+    c = COLORS
+    logo_img = f'<img src="cid:{LOGO_CID}" alt="Homly" width="150" style="display:block;height:auto;max-width:150px;" />'
+
+    def fmt(n): return _fmt_amount(n, currency_symbol)
+
+    # Build rows HTML
+    rows_html = ''
+    for row in rows:
+        if row.get('is_section'):
+            rows_html += _email_table_row(c, [row['concept']], section=True)
+        else:
+            bal = float(row.get('balance', 0))
+            bal_color = c['orange'] if bal > 0 else c['green']
+            bal_cell = f'<td style="padding:9px 12px;text-align:right;font-size:13px;font-weight:600;color:{bal_color};">{fmt(bal)}</td>'
+            rows_html += (
+                f'<tr style="border-bottom:1px solid {c["cream_outer"]};">'
+                f'<td style="padding:9px 12px;font-size:13px;color:{c["ink_800"]};">{row["concept"]}</td>'
+                f'<td style="padding:9px 12px;text-align:right;font-size:13px;color:{c["ink_600"]};">{fmt(row.get("charge", 0))}</td>'
+                f'<td style="padding:9px 12px;text-align:right;font-size:13px;color:{c["green"]};font-weight:600;">{fmt(row.get("paid", 0))}</td>'
+                f'{bal_cell}'
+                f'</tr>'
+            )
+
+    saldo_color = c['orange'] if float(saldo) > 0 else c['green']
+    folio_line = f'<div style="font-size:14px;font-weight:800;color:{c["orange"]};margin-top:4px;">No. {folio}</div>' if folio else ''
+    rfc_line = f'<div style="font-size:12px;color:{c["ink_600"]};margin-top:2px;">RFC: {tenant_rfc}</div>' if tenant_rfc else ''
+
+    html = f"""<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Recibo de Pago — {period_str}</title></head>
+<body style="margin:0;padding:0;font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:{c['cream_outer']};">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:{c['cream_outer']};padding:40px 20px;">
+<tr><td align="center">
+<table width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;background:{c['cream']};border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(26,22,18,0.08);">
+
+<!-- HEADER -->
+<tr><td style="padding:24px 28px 20px;border-bottom:3px solid {c['green']};">
+  <table width="100%" cellpadding="0" cellspacing="0">
+    <tr>
+      <td style="vertical-align:top;">
+        {logo_img}
+        <div style="margin-top:10px;font-size:15px;font-weight:800;color:{c['ink_800']};">{tenant_name}</div>
+        {rfc_line}
+      </td>
+      <td style="text-align:right;vertical-align:top;">
+        <div style="font-size:11px;font-weight:700;letter-spacing:0.1em;color:{c['ink_600']};text-transform:uppercase;">Recibo de Pago</div>
+        {folio_line}
+        <div style="font-size:13px;font-weight:600;color:{c['orange']};margin-top:4px;">{period_str}</div>
+        <div style="font-size:11px;color:{c['ink_600']};margin-top:3px;">{payment_date_label}</div>
+      </td>
+    </tr>
+  </table>
+</td></tr>
+
+<!-- UNIT INFO -->
+<tr><td style="padding:16px 28px;background:{c['cream_outer']};">
+  <table width="100%" cellpadding="0" cellspacing="0">
+    <tr>
+      <td style="width:50%;padding-bottom:8px;">
+        <div style="font-size:10px;font-weight:700;color:{c['ink_600']};text-transform:uppercase;letter-spacing:0.06em;">Unidad</div>
+        <div style="font-size:14px;font-weight:700;color:{c['ink_800']};margin-top:2px;">{unit_code} — {unit_name}</div>
+      </td>
+      <td style="width:50%;padding-bottom:8px;">
+        <div style="font-size:10px;font-weight:700;color:{c['ink_600']};text-transform:uppercase;letter-spacing:0.06em;">Responsable</div>
+        <div style="font-size:13px;color:{c['ink_800']};margin-top:2px;">{responsible}</div>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <div style="font-size:10px;font-weight:700;color:{c['ink_600']};text-transform:uppercase;letter-spacing:0.06em;">Forma de Pago</div>
+        <div style="font-size:13px;color:{c['ink_800']};margin-top:2px;">{payment_type_label}</div>
+      </td>
+      <td>
+        <div style="font-size:10px;font-weight:700;color:{c['ink_600']};text-transform:uppercase;letter-spacing:0.06em;">Fecha de Pago</div>
+        <div style="font-size:13px;color:{c['ink_800']};margin-top:2px;">{payment_date_label}</div>
+      </td>
+    </tr>
+  </table>
+</td></tr>
+
+<!-- TABLE -->
+<tr><td style="padding:0 28px 24px;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:16px;border:1px solid {c['cream_outer']};border-radius:8px;overflow:hidden;">
+    <thead>
+      <tr style="background:{c['green']};">
+        <th style="padding:10px 12px;text-align:left;font-size:11px;font-weight:700;color:{c['white']};text-transform:uppercase;">Concepto</th>
+        <th style="padding:10px 12px;text-align:right;font-size:11px;font-weight:700;color:{c['white']};text-transform:uppercase;">Cargo</th>
+        <th style="padding:10px 12px;text-align:right;font-size:11px;font-weight:700;color:{c['white']};text-transform:uppercase;">Abono</th>
+        <th style="padding:10px 12px;text-align:right;font-size:11px;font-weight:700;color:{c['white']};text-transform:uppercase;">Saldo</th>
+      </tr>
+    </thead>
+    <tbody>
+      {rows_html}
+    </tbody>
+    <tfoot>
+      <tr style="background:{c['cream_outer']};border-top:2px solid {c['green']};">
+        <td style="padding:12px;font-size:13px;font-weight:800;color:{c['ink_800']};">TOTAL</td>
+        <td style="padding:12px;text-align:right;font-size:13px;font-weight:700;color:{c['ink_800']};">{fmt(total_charges)}</td>
+        <td style="padding:12px;text-align:right;font-size:13px;font-weight:700;color:{c['green']};">{fmt(total_paid)}</td>
+        <td style="padding:12px;text-align:right;font-size:14px;font-weight:800;color:{saldo_color};">{fmt(saldo)}</td>
+      </tr>
+    </tfoot>
+  </table>
+</td></tr>
+
+{_email_footer_html(c)}
+</table>
+</td></tr>
+</table>
+</body>
+</html>"""
+
+    plain = (
+        f'Recibo de Pago — {period_str}\n'
+        f'{tenant_name}\n\n'
+        f'Unidad: {unit_code} — {unit_name}\n'
+        f'Responsable: {responsible}\n'
+        f'Forma de Pago: {payment_type_label}\n'
+        f'Fecha: {payment_date_label}\n\n'
+        f'Total Cargos: {fmt(total_charges)}\n'
+        f'Total Abonado: {fmt(total_paid)}\n'
+        f'Saldo: {fmt(saldo)}\n\n'
+        f'© Homly — La administración que tu hogar se merece'
+    )
+
+    return _send_branded_email(
+        subject=f'Recibo de Pago — {period_str} | {unit_code}',
+        plain=plain,
+        html=html,
+        to_emails=emails,
+    )
+
+
+# ─── Unit Statement Email ───────────────────────────────────────────────────
+
+def send_unit_statement_email(
+    emails: list[str],
+    tenant_name: str,
+    unit_code: str,
+    unit_name: str,
+    responsible: str,
+    period_from: str,
+    period_to: str,
+    rows: list[dict],   # [{period, charges, paid, balance, status}]
+    total_charges: float,
+    total_paid: float,
+    balance: float,
+) -> bool:
+    """Send a branded unit estado de cuenta email."""
+    c = COLORS
+    logo_img = f'<img src="cid:{LOGO_CID}" alt="Homly" width="150" style="display:block;height:auto;max-width:150px;" />'
+
+    STATUS_LABELS = {
+        'pagado': ('Pagado', '#1E594F'),
+        'parcial': ('Parcial', '#D97706'),
+        'pendiente': ('Pendiente', '#DC2626'),
+        'futuro': ('Futuro', '#6B7280'),
+    }
+
+    def fmt(n): return _fmt_amount(n, '$')
+
+    rows_html = ''
+    for row in rows:
+        st_label, st_color = STATUS_LABELS.get(row.get('status', 'pendiente'), ('—', '#6B7280'))
+        bal = float(row.get('balance', 0))
+        bal_color = c['orange'] if bal > 0 else c['green']
+        rows_html += (
+            f'<tr style="border-bottom:1px solid {c["cream_outer"]};">'
+            f'<td style="padding:9px 12px;font-size:13px;color:{c["ink_800"]};">{row.get("period", "")}</td>'
+            f'<td style="padding:9px 12px;text-align:right;font-size:13px;color:{c["ink_600"]};">{fmt(row.get("charges", 0))}</td>'
+            f'<td style="padding:9px 12px;text-align:right;font-size:13px;color:{c["green"]};font-weight:600;">{fmt(row.get("paid", 0))}</td>'
+            f'<td style="padding:9px 12px;text-align:right;font-size:13px;font-weight:600;color:{bal_color};">{fmt(bal)}</td>'
+            f'<td style="padding:9px 12px;text-align:center;"><span style="font-size:11px;font-weight:700;color:{st_color};background:{st_color}18;padding:2px 8px;border-radius:20px;">{st_label}</span></td>'
+            f'</tr>'
+        )
+
+    bal_color = c['orange'] if float(balance) > 0 else c['green']
+    range_str = f'{period_from} — {period_to}'
+
+    html = f"""<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Estado de Cuenta — {unit_code}</title></head>
+<body style="margin:0;padding:0;font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:{c['cream_outer']};">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:{c['cream_outer']};padding:40px 20px;">
+<tr><td align="center">
+<table width="100%" cellpadding="0" cellspacing="0" style="max-width:620px;background:{c['cream']};border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(26,22,18,0.08);">
+
+<!-- HEADER -->
+<tr><td style="padding:28px 28px 20px;text-align:center;border-bottom:3px solid {c['green']};">
+  {logo_img}
+  <p style="margin:10px 0 0;font-size:13px;font-weight:600;color:{c['ink_600']};letter-spacing:0.04em;">Property Management</p>
+  <p style="margin:8px 0 0;font-size:18px;font-weight:800;color:{c['ink_800']};">Estado de Cuenta</p>
+  <p style="margin:4px 0 0;font-size:14px;font-weight:600;color:{c['ink_600']};">{tenant_name}</p>
+</td></tr>
+
+<!-- UNIT INFO -->
+<tr><td style="padding:16px 28px;background:{c['cream_outer']};">
+  <table width="100%" cellpadding="0" cellspacing="0">
+    <tr>
+      <td style="width:50%;padding-bottom:6px;">
+        <div style="font-size:10px;font-weight:700;color:{c['ink_600']};text-transform:uppercase;letter-spacing:0.06em;">Unidad</div>
+        <div style="font-size:14px;font-weight:700;color:{c['ink_800']};margin-top:2px;">{unit_code} — {unit_name}</div>
+      </td>
+      <td style="width:50%;padding-bottom:6px;">
+        <div style="font-size:10px;font-weight:700;color:{c['ink_600']};text-transform:uppercase;letter-spacing:0.06em;">Responsable</div>
+        <div style="font-size:13px;color:{c['ink_800']};margin-top:2px;">{responsible}</div>
+      </td>
+    </tr>
+    <tr>
+      <td colspan="2">
+        <div style="font-size:10px;font-weight:700;color:{c['ink_600']};text-transform:uppercase;letter-spacing:0.06em;">Período</div>
+        <div style="font-size:13px;color:{c['ink_800']};margin-top:2px;">{range_str}</div>
+      </td>
+    </tr>
+  </table>
+</td></tr>
+
+<!-- SUMMARY -->
+<tr><td style="padding:16px 28px;">
+  <table width="100%" cellpadding="0" cellspacing="0">
+    <tr>
+      <td style="width:33%;text-align:center;padding:12px;background:{c['cream_outer']};border-radius:8px;margin:0 4px;">
+        <div style="font-size:10px;font-weight:700;color:{c['ink_600']};text-transform:uppercase;">Total Cargos</div>
+        <div style="font-size:18px;font-weight:800;color:{c['ink_800']};margin-top:4px;">{fmt(total_charges)}</div>
+      </td>
+      <td style="width:4px;"></td>
+      <td style="width:33%;text-align:center;padding:12px;background:{c['cream_outer']};border-radius:8px;">
+        <div style="font-size:10px;font-weight:700;color:{c['ink_600']};text-transform:uppercase;">Total Abonado</div>
+        <div style="font-size:18px;font-weight:800;color:{c['green']};margin-top:4px;">{fmt(total_paid)}</div>
+      </td>
+      <td style="width:4px;"></td>
+      <td style="width:33%;text-align:center;padding:12px;background:{c['cream_outer']};border-radius:8px;">
+        <div style="font-size:10px;font-weight:700;color:{c['ink_600']};text-transform:uppercase;">Saldo</div>
+        <div style="font-size:18px;font-weight:800;color:{bal_color};margin-top:4px;">{fmt(balance)}</div>
+      </td>
+    </tr>
+  </table>
+</td></tr>
+
+<!-- TABLE -->
+<tr><td style="padding:0 28px 24px;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid {c['cream_outer']};border-radius:8px;overflow:hidden;">
+    <thead>
+      <tr style="background:{c['green']};">
+        <th style="padding:10px 12px;text-align:left;font-size:11px;font-weight:700;color:{c['white']};text-transform:uppercase;">Período</th>
+        <th style="padding:10px 12px;text-align:right;font-size:11px;font-weight:700;color:{c['white']};text-transform:uppercase;">Cargos</th>
+        <th style="padding:10px 12px;text-align:right;font-size:11px;font-weight:700;color:{c['white']};text-transform:uppercase;">Abonado</th>
+        <th style="padding:10px 12px;text-align:right;font-size:11px;font-weight:700;color:{c['white']};text-transform:uppercase;">Saldo</th>
+        <th style="padding:10px 12px;text-align:center;font-size:11px;font-weight:700;color:{c['white']};text-transform:uppercase;">Estado</th>
+      </tr>
+    </thead>
+    <tbody>
+      {rows_html}
+    </tbody>
+  </table>
+</td></tr>
+
+{_email_footer_html(c)}
+</table>
+</td></tr>
+</table>
+</body>
+</html>"""
+
+    plain = (
+        f'Estado de Cuenta — {unit_code} — {unit_name}\n'
+        f'{tenant_name}\n'
+        f'Período: {range_str}\n\n'
+        f'Total Cargos: {fmt(total_charges)}\n'
+        f'Total Abonado: {fmt(total_paid)}\n'
+        f'Saldo: {fmt(balance)}\n\n'
+        f'© Homly — La administración que tu hogar se merece'
+    )
+
+    return _send_branded_email(
+        subject=f'Estado de Cuenta — {unit_code} | {tenant_name}',
+        plain=plain,
+        html=html,
+        to_emails=emails,
+    )
+
+
+# ─── General Statement Email ────────────────────────────────────────────────
+
+def send_general_statement_email(
+    emails: list[str],
+    tenant_name: str,
+    cutoff_str: str,
+    units_data: list[dict],  # [{unit_code, unit_name, responsible, total_charges, total_paid, balance}]
+    total_cargo: float,
+    total_abono: float,
+    total_deuda: float,
+) -> bool:
+    """Send a branded general estado de cuenta email (all units summary)."""
+    c = COLORS
+    logo_img = f'<img src="cid:{LOGO_CID}" alt="Homly" width="150" style="display:block;height:auto;max-width:150px;" />'
+
+    def fmt(n): return _fmt_amount(n, '$')
+
+    rows_html = ''
+    for u in units_data:
+        bal = float(u.get('balance', 0))
+        adj_bal = max(0, bal)
+        bal_color = c['orange'] if adj_bal > 0 else c['green']
+        rows_html += (
+            f'<tr style="border-bottom:1px solid {c["cream_outer"]};">'
+            f'<td style="padding:9px 12px;font-size:12px;font-weight:700;color:{c["ink_800"]};">{u.get("unit_code", "")}</td>'
+            f'<td style="padding:9px 12px;font-size:12px;color:{c["ink_600"]};">{u.get("unit_name", "")}</td>'
+            f'<td style="padding:9px 12px;font-size:12px;color:{c["ink_600"]};">{u.get("responsible", "")}</td>'
+            f'<td style="padding:9px 12px;text-align:right;font-size:12px;color:{c["ink_600"]};">{fmt(u.get("total_charges", 0))}</td>'
+            f'<td style="padding:9px 12px;text-align:right;font-size:12px;color:{c["green"]};font-weight:600;">{fmt(u.get("total_paid", 0))}</td>'
+            f'<td style="padding:9px 12px;text-align:right;font-size:12px;font-weight:700;color:{bal_color};">{fmt(adj_bal)}</td>'
+            f'</tr>'
+        )
+
+    html = f"""<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Estado General — {tenant_name}</title></head>
+<body style="margin:0;padding:0;font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:{c['cream_outer']};">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:{c['cream_outer']};padding:40px 20px;">
+<tr><td align="center">
+<table width="100%" cellpadding="0" cellspacing="0" style="max-width:700px;background:{c['cream']};border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(26,22,18,0.08);">
+
+<!-- HEADER -->
+<tr><td style="padding:28px 28px 20px;text-align:center;border-bottom:3px solid {c['green']};">
+  {logo_img}
+  <p style="margin:10px 0 0;font-size:13px;font-weight:600;color:{c['ink_600']};letter-spacing:0.04em;">Property Management</p>
+  <p style="margin:8px 0 0;font-size:18px;font-weight:800;color:{c['ink_800']};">Estado General de Cuenta</p>
+  <p style="margin:4px 0 0;font-size:14px;font-weight:600;color:{c['ink_600']};">{tenant_name}</p>
+  <p style="margin:4px 0 0;font-size:12px;color:{c['ink_600']};">Corte al: {cutoff_str}</p>
+</td></tr>
+
+<!-- SUMMARY -->
+<tr><td style="padding:16px 28px;">
+  <table width="100%" cellpadding="0" cellspacing="0">
+    <tr>
+      <td style="width:33%;text-align:center;padding:12px;background:{c['cream_outer']};border-radius:8px;">
+        <div style="font-size:10px;font-weight:700;color:{c['ink_600']};text-transform:uppercase;">Total Cargos</div>
+        <div style="font-size:18px;font-weight:800;color:{c['ink_800']};margin-top:4px;">{fmt(total_cargo)}</div>
+      </td>
+      <td style="width:4px;"></td>
+      <td style="width:33%;text-align:center;padding:12px;background:{c['cream_outer']};border-radius:8px;">
+        <div style="font-size:10px;font-weight:700;color:{c['ink_600']};text-transform:uppercase;">Total Abonado</div>
+        <div style="font-size:18px;font-weight:800;color:{c['green']};margin-top:4px;">{fmt(total_abono)}</div>
+      </td>
+      <td style="width:4px;"></td>
+      <td style="width:33%;text-align:center;padding:12px;background:{c['cream_outer']};border-radius:8px;">
+        <div style="font-size:10px;font-weight:700;color:{c['ink_600']};text-transform:uppercase;">Total Adeudo</div>
+        <div style="font-size:18px;font-weight:800;color:{c['orange']};margin-top:4px;">{fmt(total_deuda)}</div>
+      </td>
+    </tr>
+  </table>
+</td></tr>
+
+<!-- TABLE -->
+<tr><td style="padding:0 28px 24px;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid {c['cream_outer']};border-radius:8px;overflow:hidden;">
+    <thead>
+      <tr style="background:{c['green']};">
+        <th style="padding:10px 12px;text-align:left;font-size:11px;font-weight:700;color:{c['white']};text-transform:uppercase;">Código</th>
+        <th style="padding:10px 12px;text-align:left;font-size:11px;font-weight:700;color:{c['white']};text-transform:uppercase;">Unidad</th>
+        <th style="padding:10px 12px;text-align:left;font-size:11px;font-weight:700;color:{c['white']};text-transform:uppercase;">Responsable</th>
+        <th style="padding:10px 12px;text-align:right;font-size:11px;font-weight:700;color:{c['white']};text-transform:uppercase;">Cargos</th>
+        <th style="padding:10px 12px;text-align:right;font-size:11px;font-weight:700;color:{c['white']};text-transform:uppercase;">Abonado</th>
+        <th style="padding:10px 12px;text-align:right;font-size:11px;font-weight:700;color:{c['white']};text-transform:uppercase;">Adeudo</th>
+      </tr>
+    </thead>
+    <tbody>
+      {rows_html}
+    </tbody>
+  </table>
+</td></tr>
+
+{_email_footer_html(c)}
+</table>
+</td></tr>
+</table>
+</body>
+</html>"""
+
+    plain = (
+        f'Estado General de Cuenta — {tenant_name}\n'
+        f'Corte al: {cutoff_str}\n\n'
+        f'Total Cargos: {fmt(total_cargo)}\n'
+        f'Total Abonado: {fmt(total_abono)}\n'
+        f'Total Adeudo: {fmt(total_deuda)}\n\n'
+        + '\n'.join(
+            f'{u.get("unit_code","")} | {u.get("unit_name","")} | {u.get("responsible","")} | Adeudo: {fmt(max(0, float(u.get("balance", 0))))}'
+            for u in units_data
+        )
+        + '\n\n© Homly — La administración que tu hogar se merece'
+    )
+
+    return _send_branded_email(
+        subject=f'Estado General de Cuenta — {tenant_name} | {cutoff_str}',
+        plain=plain,
+        html=html,
+        to_emails=emails,
+    )

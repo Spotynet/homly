@@ -90,6 +90,7 @@ export const paymentsAPI = {
   deleteAdditional: (tenantId, paymentId, additionalId) => api.delete(`/tenants/${tenantId}/payments/${paymentId}/delete-additional/${additionalId}/`),
   updateAdditional: (tenantId, paymentId, additionalId, data) => api.patch(`/tenants/${tenantId}/payments/${paymentId}/update-additional/${additionalId}/`, data),
   clear: (tenantId, id) => api.delete(`/tenants/${tenantId}/payments/${id}/clear/`),
+  sendReceipt: (tenantId, paymentId, data) => api.post(`/tenants/${tenantId}/payments/${paymentId}/send-receipt/`, data),
 };
 
 // ─── Extra Fields ───────────────────────────────
@@ -186,6 +187,8 @@ export const reportsAPI = {
   reporteAdeudos: (tenantId, params) => api.get(`/tenants/${tenantId}/reporte-adeudos/`, { params }),
   estadoCuentaPDF: (tenantId, cutoff) =>
     api.get(`/tenants/${tenantId}/estado-cuenta-pdf/`, { params: { cutoff }, responseType: 'blob' }),
+  sendUnitStatementEmail: (tenantId, data) => api.post(`/tenants/${tenantId}/send-unit-statement-email/`, data),
+  sendGeneralStatementEmail: (tenantId, data) => api.post(`/tenants/${tenantId}/send-statement-email/`, data),
 };
 
 export default api;

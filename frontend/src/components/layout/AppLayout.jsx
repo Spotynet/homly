@@ -274,15 +274,18 @@ function NotificationBell({ tenantId }) {
     return () => clearInterval(id);
   }, [fetchCount]);
 
-  // Load list when opening
+  // Load list when opening; also refresh the badge count
   const handleOpen = async () => {
     if (!tenantId) return;
     setOpen(o => !o);
     if (!open) {
       setLoadingList(true);
       try {
-        const r = await notificationsAPI.list(tenantId, {});
-        setNotifs((r.data || []).slice(0, 10));
+        const [listRes] = await Promise.all([
+          notificationsAPI.list(tenantId, {}),
+          fetchCount(),   // refresh badge count in parallel
+        ]);
+        setNotifs((listRes.data || []).slice(0, 10));
       } catch { /* silent */ }
       finally { setLoadingList(false); }
     }

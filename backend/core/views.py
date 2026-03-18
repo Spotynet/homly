@@ -713,6 +713,38 @@ class PaymentViewSet(viewsets.ModelViewSet):
         payment.save()
         return Response(PaymentSerializer(payment).data, status=status.HTTP_200_OK)
 
+    @action(detail=True, methods=['post'], url_path='send-receipt')
+    def send_receipt(self, request, tenant_id=None, pk=None):
+        """POST /api/tenants/{tenant_id}/payments/{id}/send-receipt/
+           Sends the payment receipt by email to the unit's owner or tenant."""
+        payment = self.get_object()
+        unit = payment.unit
+
+        recipients = request.data.get('recipients', 'owner')  # 'owner' | 'tenant' | 'both'
+        emails = []
+        if recipients in ('owner', 'both') and (unit.owner_email or '').strip():
+            emails.append(unit.owner_email.strip())
+        if recipients in ('tenant', 'both') and (unit.tenant_email or '').strip():
+            emails.append(unit.tenant_email.strip())
+
+        if not emails:
+            return Response(
+                {'detail': 'No hay correo electrónico configurado para esta unidad.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        tenant = Tenant.objects.get(id=tenant_id)
+        extra_fields = list(ExtraField.objects.filter(tenant_id=tenant_id, enabled=True))
+
+        receipt_data = _compute_receipt_email_data(payment, unit, tenant, extra_fields)
+
+        from .email_service import send_receipt_email
+        ok = send_receipt_email(emails=emails, **receipt_data)
+
+        if ok:
+            return Response({'detail': f'Recibo enviado a {", ".join(emails)}'})
+        return Response({'detail': 'Error al enviar el correo. Verifica la configuración SMTP.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 
 # ═══════════════════════════════════════════════════════════
 #  GASTOS
@@ -923,44 +955,6 @@ class AmenityReservationViewSet(viewsets.ModelViewSet):
         # before making a new reservation (no per-unit restriction).
         return qs
 
-    def perform_create(self, serializer):
-        from .models import TenantUser as TU, Unit
-        user = self.request.user
-        unit = None
-        role = None
-
-        if user.is_super_admin:
-            role = 'superadmin'
-        else:
-            try:
-                tu = TU.objects.get(user=user, tenant_id=self.kwargs['tenant_id'])
-                role = tu.role
-                # Vecino → auto-assign their linked unit
-                if tu.role == 'vecino' and tu.unit_id:
-                    unit = tu.unit
-            except TU.DoesNotExist:
-                pass
-
-        # Admin / tesorero / superadmin → accept unit_id from request body
-        if unit is None:
-            unit_id = self.request.data.get('unit_id')
-            if unit_id:
-                unit = Unit.objects.filter(
-                    id=unit_id, tenant_id=self.kwargs['tenant_id']
-                ).first()
-
-        # Admins, tesoreros and superadmins create reservations already approved
-        admin_roles = ('admin', 'tesorero', 'superadmin')
-        status = 'approved' if role in admin_roles else 'pending'
-
-        serializer.save(
-            tenant_id=self.kwargs['tenant_id'],
-            requested_by=user,
-            unit=unit,
-            status=status,
-            reviewed_by=user if status == 'approved' else None,
-        )
-
     def _notify_managers(self, res, notif_type, title, message=''):
         """Send notification to all admin/tesorero users of this tenant."""
         manager_roles = ('admin', 'tesorero', 'superadmin')
@@ -1037,14 +1031,23 @@ class AmenityReservationViewSet(viewsets.ModelViewSet):
             reviewed_by=user if res_status == 'approved' else None,
         )
 
-        # Notify managers when a vecino creates a pending reservation
+        time_str = f'{str(res.start_time)[:5]}–{str(res.end_time)[:5]}'
         if res_status == 'pending':
+            # Vecino created → notify managers for review
             unit_label = f' — {unit.unit_name}' if unit else ''
             self._notify_managers(
                 res,
                 notif_type='reservation_new',
                 title=f'Nueva reserva solicitada: {res.area_name}{unit_label}',
-                message=f'Fecha: {res.date}  {str(res.start_time)[:5]}–{str(res.end_time)[:5]}',
+                message=f'Fecha: {res.date}  {time_str}',
+            )
+        elif res_status == 'approved':
+            # Admin created directly approved → notify vecinos of the unit
+            self._notify_unit_vecinos(
+                res,
+                notif_type='reservation_approved',
+                title=f'✅ Nueva reserva aprobada: {res.area_name}',
+                message=f'Fecha: {res.date}  {time_str}',
             )
 
     @action(detail=True, methods=['post'])
@@ -1083,20 +1086,34 @@ class AmenityReservationViewSet(viewsets.ModelViewSet):
         res = self.get_object()
         res.status = 'cancelled'
         res.save()
-        # If cancelled by a vecino → notify managers
+        time_str    = f'{str(res.start_time)[:5]}–{str(res.end_time)[:5]}'
+        unit_label  = f' — {res.unit.unit_name}' if res.unit else ''
+        cancel_msg  = f'Fecha: {res.date}  {time_str}'
+
         user = request.user
+        canceller_role = None
         try:
             tu = TenantUser.objects.get(user=user, tenant_id=tenant_id)
-            if tu.role == 'vecino':
-                unit_label = f' — {res.unit.unit_name}' if res.unit else ''
-                self._notify_managers(
-                    res,
-                    notif_type='reservation_cancelled',
-                    title=f'Reserva cancelada: {res.area_name}{unit_label}',
-                    message=f'Fecha: {res.date}  {str(res.start_time)[:5]}–{str(res.end_time)[:5]}',
-                )
+            canceller_role = tu.role
         except TenantUser.DoesNotExist:
             pass
+
+        if canceller_role in ('admin', 'tesorero', 'superadmin', None):
+            # Admin/manager cancelled → notify vecinos of the unit
+            self._notify_unit_vecinos(
+                res,
+                notif_type='reservation_cancelled',
+                title=f'🚫 Tu reserva de {res.area_name} fue cancelada',
+                message=cancel_msg,
+            )
+        else:
+            # Vecino/vigilante cancelled → notify managers
+            self._notify_managers(
+                res,
+                notif_type='reservation_cancelled',
+                title=f'Reserva cancelada: {res.area_name}{unit_label}',
+                message=cancel_msg,
+            )
         return Response(self.get_serializer(res).data)
 
 
@@ -1297,6 +1314,154 @@ def _today_period():
     from datetime import date
     d = date.today()
     return f'{d.year}-{d.month:02d}'
+
+
+_MONTH_NAMES_ES = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+                   'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+
+_PAYMENT_TYPE_LABELS = {
+    'efectivo': 'Efectivo',
+    'transferencia': 'Transferencia Bancaria',
+    'cheque': 'Cheque',
+    'tarjeta': 'Tarjeta',
+    'deposito': 'Depósito',
+    'otro': 'Otro',
+}
+
+_CURRENCY_SYMBOLS = {'MXN': '$', 'USD': 'US$', 'EUR': '€'}
+
+
+def _period_label_es(period: str) -> str:
+    """Convert 'YYYY-MM' to 'Mes YYYY' in Spanish."""
+    if not period or len(period) < 7:
+        return period or ''
+    try:
+        year, month = period[:7].split('-')
+        return f'{_MONTH_NAMES_ES[int(month)]} {year}'
+    except (ValueError, IndexError):
+        return period
+
+
+def _compute_receipt_email_data(payment, unit, tenant, extra_fields: list) -> dict:
+    """Compute receipt rows and totals for the email, mirroring JS receipt logic."""
+    # Effective totals: main field_payments + additional_payments
+    eff_totals: dict[str, Decimal] = {}
+    for fp in payment.field_payments.all():
+        eff_totals[fp.field_key] = eff_totals.get(fp.field_key, Decimal('0')) + fp.received
+    for ap in (payment.additional_payments or []):
+        for fk, fd in (ap.get('field_payments') or {}).items():
+            v = fd.get('received', 0) if isinstance(fd, dict) else fd
+            eff_totals[fk] = eff_totals.get(fk, Decimal('0')) + Decimal(str(v or 0))
+
+    is_exempt = bool(unit.admin_exempt)
+    maint_charge = Decimal('0') if is_exempt else Decimal(str(tenant.maintenance_fee or 0))
+
+    req_efs = [ef for ef in extra_fields if ef.required]
+    opt_efs = [ef for ef in extra_fields if not ef.required]
+
+    rows = []
+    total_req_charges = Decimal('0')
+    total_req_paid = Decimal('0')
+    total_received = Decimal('0')
+
+    # Required section
+    rows.append({'is_section': True, 'concept': '● Campos Obligatorios'})
+
+    # Maintenance
+    maint_abono = min(eff_totals.get('maintenance', Decimal('0')), maint_charge)
+    maint_bal = maint_charge - maint_abono
+    rows.append({'concept': 'Mantenimiento', 'charge': float(maint_charge), 'paid': float(maint_abono), 'balance': float(maint_bal)})
+    total_req_charges += maint_charge
+    total_req_paid += maint_abono
+    total_received += maint_abono
+
+    for ef in req_efs:
+        ch = Decimal(str(ef.default_amount or 0))
+        ab = min(eff_totals.get(str(ef.id), Decimal('0')), ch)
+        bal = ch - ab
+        rows.append({'concept': ef.label, 'charge': float(ch), 'paid': float(ab), 'balance': float(bal)})
+        total_req_charges += ch
+        total_req_paid += ab
+        total_received += ab
+
+    # Optional section
+    opt_rows = []
+    for ef in opt_efs:
+        ab = eff_totals.get(str(ef.id), Decimal('0'))
+        if ab > 0:
+            opt_rows.append({'concept': ef.label, 'charge': 0, 'paid': float(ab), 'balance': 0})
+            total_received += ab
+    if opt_rows:
+        rows.append({'is_section': True, 'concept': '◦ Campos Opcionales'})
+        rows.extend(opt_rows)
+
+    # Adelantos (future-period credits)
+    fp_map = {fp.field_key: fp for fp in payment.field_payments.all()}
+    adelanto_rows = []
+    for field_key, fp in fp_map.items():
+        if fp.adelanto_targets and isinstance(fp.adelanto_targets, dict):
+            for tp, amt in fp.adelanto_targets.items():
+                a = Decimal(str(amt or 0))
+                if a > 0:
+                    f_label = 'Mantenimiento' if field_key == 'maintenance' else next(
+                        (e.label for e in extra_fields if str(e.id) == field_key), field_key)
+                    adelanto_rows.append({'concept': f'{f_label} — {_period_label_es(tp)}', 'charge': 0, 'paid': float(a), 'balance': 0})
+                    total_received += a
+    if adelanto_rows:
+        rows.append({'is_section': True, 'concept': '→ Adelantos a Períodos Futuros'})
+        rows.extend(adelanto_rows)
+
+    # Adeudos
+    adeudo_rows = []
+    for target_period, field_map in (payment.adeudo_payments or {}).items():
+        for field_id, amt in (field_map or {}).items():
+            a = Decimal(str(amt or 0))
+            if a > 0:
+                if field_id == 'maintenance':
+                    f_label = 'Mantenimiento'
+                elif field_id == 'prevDebt':
+                    f_label = 'Deuda Anterior'
+                else:
+                    f_label = next((e.label for e in extra_fields if str(e.id) == field_id), field_id)
+                tp_display = 'Saldo Previo' if target_period == '__prevDebt' else _period_label_es(target_period)
+                adeudo_rows.append({'concept': f'{f_label} — {tp_display}', 'charge': 0, 'paid': float(a), 'balance': 0})
+                total_received += a
+    if adeudo_rows:
+        rows.append({'is_section': True, 'concept': '↑ Abonos a Adeudos Previos'})
+        rows.extend(adeudo_rows)
+
+    saldo = max(Decimal('0'), total_req_charges - total_req_paid)
+
+    # Payment info labels
+    pt_label = _PAYMENT_TYPE_LABELS.get(payment.payment_type or '', payment.payment_type or 'No especificado')
+    if payment.payment_date:
+        from datetime import date as _date
+        pd = payment.payment_date
+        if hasattr(pd, 'month'):
+            pd_label = f'{pd.day:02d} de {_MONTH_NAMES_ES[pd.month]} de {pd.year}'
+        else:
+            pd_label = str(pd)
+    else:
+        pd_label = 'No registrada'
+
+    currency_sym = _CURRENCY_SYMBOLS.get(getattr(tenant, 'currency', 'MXN') or 'MXN', '$')
+
+    return {
+        'tenant_name': getattr(tenant, 'razon_social', '') or tenant.name or '',
+        'tenant_rfc': getattr(tenant, 'rfc', '') or '',
+        'currency_symbol': currency_sym,
+        'unit_code': unit.unit_id_code or '',
+        'unit_name': unit.unit_name or '',
+        'responsible': unit.responsible_name or '',
+        'period_str': _period_label_es(payment.period),
+        'folio': payment.folio or '',
+        'payment_type_label': pt_label,
+        'payment_date_label': pd_label,
+        'rows': rows,
+        'total_charges': float(total_req_charges),
+        'total_paid': float(total_received),
+        'saldo': float(saldo),
+    }
 
 
 def _has_admin_exempt(tenant, unit_id, period):
@@ -2004,6 +2169,146 @@ class ReporteGeneralView(APIView):
                 tenant_id=tenant_id, period=period
             ).exists(),
         })
+
+
+# ═══════════════════════════════════════════════════════════
+#  EMAIL — ESTADO DE CUENTA POR UNIDAD
+# ═══════════════════════════════════════════════════════════
+
+class SendUnitStatementEmailView(APIView):
+    """POST /api/tenants/{tenant_id}/send-unit-statement-email/
+       Sends the estado de cuenta for a single unit by email."""
+    permission_classes = [IsAdminOrTesorero]
+
+    def post(self, request, tenant_id=None):
+        unit_id = request.data.get('unit_id')
+        from_period = request.data.get('from_period', '')
+        to_period = request.data.get('to_period', _today_period())
+        recipients = request.data.get('recipients', 'owner')  # 'owner' | 'tenant' | 'both'
+
+        if not unit_id:
+            return Response({'detail': 'Falta unit_id.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        unit = Unit.objects.filter(tenant_id=tenant_id, id=unit_id).first()
+        if not unit:
+            return Response({'detail': 'Unidad no encontrada.'}, status=status.HTTP_404_NOT_FOUND)
+
+        emails = []
+        if recipients in ('owner', 'both') and (unit.owner_email or '').strip():
+            emails.append(unit.owner_email.strip())
+        if recipients in ('tenant', 'both') and (unit.tenant_email or '').strip():
+            emails.append(unit.tenant_email.strip())
+
+        if not emails:
+            return Response(
+                {'detail': 'No hay correo electrónico configurado para esta unidad.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        tenant = Tenant.objects.get(id=tenant_id)
+        start_period = from_period or tenant.operation_start_date or '2024-01'
+
+        rows, total_charges, total_paid, balance, prev_debt_adeudo = _compute_statement(
+            tenant, str(unit_id), start_period, to_period
+        )
+        # Adjust balance like EstadoCuentaView does
+        prev_debt = float(unit.previous_debt or 0)
+        credit_bal = float(unit.credit_balance or 0)
+        adj_balance = balance + prev_debt - float(prev_debt_adeudo) - credit_bal
+
+        email_rows = [
+            {
+                'period': _period_label_es(r.get('period', '')),
+                'charges': r.get('charge', 0),
+                'paid': r.get('paid', 0),
+                'balance': r.get('saldo_accum', 0),
+                'status': r.get('status', 'pendiente'),
+            }
+            for r in (rows or [])
+        ]
+
+        from .email_service import send_unit_statement_email
+        ok = send_unit_statement_email(
+            emails=emails,
+            tenant_name=getattr(tenant, 'razon_social', '') or tenant.name or '',
+            unit_code=unit.unit_id_code or '',
+            unit_name=unit.unit_name or '',
+            responsible=unit.responsible_name or '',
+            period_from=_period_label_es(start_period),
+            period_to=_period_label_es(to_period),
+            rows=email_rows,
+            total_charges=total_charges,
+            total_paid=total_paid,
+            balance=adj_balance,
+        )
+
+        if ok:
+            return Response({'detail': f'Estado de cuenta enviado a {", ".join(emails)}'})
+        return Response({'detail': 'Error al enviar el correo. Verifica la configuración SMTP.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ═══════════════════════════════════════════════════════════
+#  EMAIL — ESTADO GENERAL DE CUENTA
+# ═══════════════════════════════════════════════════════════
+
+class SendGeneralStatementEmailView(APIView):
+    """POST /api/tenants/{tenant_id}/send-statement-email/
+       Sends the general estado de cuenta summary by email to a list of recipients."""
+    permission_classes = [IsAdminOrTesorero]
+
+    def post(self, request, tenant_id=None):
+        recipient_emails = request.data.get('emails', [])  # list of email strings
+        cutoff = request.data.get('cutoff', _today_period())
+
+        if not recipient_emails or not isinstance(recipient_emails, list):
+            return Response({'detail': 'Proporciona una lista de correos en el campo "emails".'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Validate emails are non-empty strings
+        emails = [e.strip() for e in recipient_emails if isinstance(e, str) and e.strip()]
+        if not emails:
+            return Response({'detail': 'No hay correos válidos.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        tenant = Tenant.objects.get(id=tenant_id)
+        start_period = tenant.operation_start_date or '2024-01'
+
+        units = Unit.objects.filter(tenant_id=tenant_id).order_by('unit_id_code')
+        units_data = []
+        total_cargo = 0.0
+        total_abono = 0.0
+        total_deuda = 0.0
+
+        for unit in units:
+            rows, tc, tp, bal, pda = _compute_statement(tenant, str(unit.id), start_period, cutoff)
+            prev_debt = float(unit.previous_debt or 0)
+            credit_bal = float(unit.credit_balance or 0)
+            adj_bal = bal + prev_debt - float(pda) - credit_bal
+            deuda = max(0.0, adj_bal)
+            total_cargo += tc
+            total_abono += tp
+            total_deuda += deuda
+            units_data.append({
+                'unit_code': unit.unit_id_code or '',
+                'unit_name': unit.unit_name or '',
+                'responsible': unit.responsible_name or '',
+                'total_charges': tc,
+                'total_paid': tp,
+                'balance': adj_bal,
+            })
+
+        from .email_service import send_general_statement_email
+        ok = send_general_statement_email(
+            emails=emails,
+            tenant_name=getattr(tenant, 'razon_social', '') or tenant.name or '',
+            cutoff_str=_period_label_es(cutoff),
+            units_data=units_data,
+            total_cargo=total_cargo,
+            total_abono=total_abono,
+            total_deuda=total_deuda,
+        )
+
+        if ok:
+            return Response({'detail': f'Estado general enviado a {", ".join(emails)}'})
+        return Response({'detail': 'Error al enviar el correo. Verifica la configuración SMTP.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 # ═══════════════════════════════════════════════════════════
