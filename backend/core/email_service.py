@@ -578,6 +578,22 @@ def send_receipt_email(
   </table>
 </td></tr>
 
+<!-- INTRO -->
+<tr><td style="padding:20px 28px 0;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#F0FAF7;border-left:3px solid {c['green']};border-radius:0 8px 8px 0;padding:14px 18px;">
+    <tr>
+      <td>
+        <p style="margin:0 0 4px;font-size:11px;font-weight:700;color:{c['green']};text-transform:uppercase;letter-spacing:0.06em;">Contenido de este correo</p>
+        <p style="margin:0;font-size:13px;color:{c['ink_600']};line-height:1.6;">
+          Este correo contiene el <strong>recibo de pago del período {period_str}</strong> correspondiente a la unidad
+          <strong>{unit_code} — {unit_name}</strong> del condominio <strong>{tenant_name}</strong>.
+          Incluye el desglose de cargos obligatorios, abonos registrados y el saldo resultante.
+        </p>
+      </td>
+    </tr>
+  </table>
+</td></tr>
+
 <!-- UNIT INFO -->
 <tr><td style="padding:16px 28px;background:{c['cream_outer']};">
   <table width="100%" cellpadding="0" cellspacing="0">
@@ -719,6 +735,22 @@ def send_unit_statement_email(
   <p style="margin:4px 0 0;font-size:14px;font-weight:600;color:{c['ink_600']};">{tenant_name}</p>
 </td></tr>
 
+<!-- INTRO -->
+<tr><td style="padding:20px 28px 0;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#F0FAF7;border-left:3px solid {c['green']};border-radius:0 8px 8px 0;padding:14px 18px;">
+    <tr>
+      <td>
+        <p style="margin:0 0 4px;font-size:11px;font-weight:700;color:{c['green']};text-transform:uppercase;letter-spacing:0.06em;">Contenido de este correo</p>
+        <p style="margin:0;font-size:13px;color:{c['ink_600']};line-height:1.6;">
+          Este correo contiene el <strong>estado de cuenta de la unidad {unit_code} — {unit_name}</strong>
+          del condominio <strong>{tenant_name}</strong>, correspondiente al período <strong>{range_str}</strong>.
+          Incluye el historial de cargos, abonos y saldo acumulado por período.
+        </p>
+      </td>
+    </tr>
+  </table>
+</td></tr>
+
 <!-- UNIT INFO -->
 <tr><td style="padding:16px 28px;background:{c['cream_outer']};">
   <table width="100%" cellpadding="0" cellspacing="0">
@@ -854,6 +886,22 @@ def send_general_statement_email(
   <p style="margin:8px 0 0;font-size:18px;font-weight:800;color:{c['ink_800']};">Estado General de Cuenta</p>
   <p style="margin:4px 0 0;font-size:14px;font-weight:600;color:{c['ink_600']};">{tenant_name}</p>
   <p style="margin:4px 0 0;font-size:12px;color:{c['ink_600']};">Corte al: {cutoff_str}</p>
+</td></tr>
+
+<!-- INTRO -->
+<tr><td style="padding:20px 28px 0;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#F0FAF7;border-left:3px solid {c['green']};border-radius:0 8px 8px 0;padding:14px 18px;">
+    <tr>
+      <td>
+        <p style="margin:0 0 4px;font-size:11px;font-weight:700;color:{c['green']};text-transform:uppercase;letter-spacing:0.06em;">Contenido de este correo</p>
+        <p style="margin:0;font-size:13px;color:{c['ink_600']};line-height:1.6;">
+          Este correo contiene el <strong>estado general de cuenta del condominio {tenant_name}</strong>
+          con corte al <strong>{cutoff_str}</strong>. Incluye el resumen consolidado de cargos, abonos y adeudos
+          de todas las unidades, así como el desglose individual por unidad.
+        </p>
+      </td>
+    </tr>
+  </table>
 </td></tr>
 
 <!-- SUMMARY -->
