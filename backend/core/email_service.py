@@ -139,7 +139,7 @@ ROLE_DESCRIPTIONS = {
 }
 
 
-def _build_invitation_html(user_name: str, tenant_name: str, role: str, unit_name: str | None, app_url: str) -> str:
+def _build_invitation_html(user_name: str, tenant_name: str, role: str, unit_name: str | None, app_url: str, email: str = '') -> str:
     """Build branded HTML for the welcome invitation email."""
     c = COLORS
     logo_img = f'<img src="cid:{LOGO_CID}" alt="Homly" width="160" style="display:block; height:auto; max-width:160px;" />'
@@ -282,7 +282,7 @@ def _build_invitation_html(user_name: str, tenant_name: str, role: str, unit_nam
                         <td style="padding:6px 0;">
                           <p style="margin:0;font-size:13px;color:{c['ink_800']};line-height:1.5;">
                             <strong style="color:{c['orange']};">2.</strong>
-                            Escribe tu correo electrónico (<strong>{{}}</strong> — el de esta invitación).
+                            Escribe tu correo electrónico (<strong>{email}</strong> — el de esta invitación).
                           </p>
                         </td>
                       </tr>
@@ -342,7 +342,7 @@ def _build_invitation_html(user_name: str, tenant_name: str, role: str, unit_nam
 </html>"""
 
 
-def _build_invitation_plain(user_name: str, tenant_name: str, role: str, unit_name: str | None, app_url: str) -> str:
+def _build_invitation_plain(user_name: str, tenant_name: str, role: str, unit_name: str | None, app_url: str, email: str = '') -> str:
     role_label, role_desc = ROLE_DESCRIPTIONS.get(role, (role.capitalize(), ''))
     unit_line = f'\nUnidad asignada: {unit_name}' if unit_name else ''
     return (
@@ -354,8 +354,8 @@ def _build_invitation_plain(user_name: str, tenant_name: str, role: str, unit_na
         f'CON TU PERFIL PODRÁS:\n{role_desc}\n\n'
         f'CÓMO INGRESAR AL SISTEMA:\n'
         f'1. Ve a {app_url}\n'
-        f'2. Escribe tu correo electrónico (el de esta invitación).\n'
-        f'3. Recibirás un código de verificación de 6 dígitos. Ingrésalo para acceder.\n'
+        f'2. Escribe tu correo electrónico: {email}\n'
+        f'3. Recibirás un código de verificación de 6 dígitos en tu correo. Ingrésalo para acceder.\n'
         f'4. ¡Listo! Explora el sistema con tu perfil de {role_label}.\n\n'
         f'Si crees que recibiste este correo por error, puedes ignorarlo.\n\n'
         f'© Homly — La administración que tu hogar se merece'
@@ -373,15 +373,16 @@ def send_welcome_invitation(
     Send a welcome / invitation email to a user added to a condominio.
     Includes tenant name, role description, access URL and login instructions.
     """
-    app_url = getattr(settings, 'HOMLY_APP_URL', 'https://app.homly.com.mx')
+    app_url = getattr(settings, 'HOMLY_APP_URL', 'https://homly.com.mx/login')
+    from_email = getattr(settings, 'HOMLY_NOREPLY_EMAIL', 'no-reply@homly.com.mx')
     subject = f'Bienvenido a Homly — {tenant_name}'
-    plain = _build_invitation_plain(user_name, tenant_name, role, unit_name, app_url)
-    html = _build_invitation_html(user_name, tenant_name, role, unit_name, app_url)
+    plain = _build_invitation_plain(user_name, tenant_name, role, unit_name, app_url, email)
+    html = _build_invitation_html(user_name, tenant_name, role, unit_name, app_url, email)
     try:
         msg = EmailMultiAlternatives(
             subject=subject,
             body=plain,
-            from_email=settings.DEFAULT_FROM_EMAIL,
+            from_email=from_email,
             to=[email],
         )
         msg.attach_alternative(html, 'text/html')
