@@ -163,6 +163,14 @@ export const reservationsAPI = {
   cancel:  (tenantId, id)          => api.post(`/tenants/${tenantId}/amenity-reservations/${id}/cancel/`),
 };
 
+// ─── Notifications ───────────────────────────────
+export const notificationsAPI = {
+  list:        (tenantId, params) => api.get(`/tenants/${tenantId}/notifications/`, { params: params || {} }),
+  unreadCount: (tenantId)         => api.get(`/tenants/${tenantId}/notifications/unread-count/`),
+  markRead:    (tenantId, id)     => api.post(`/tenants/${tenantId}/notifications/${id}/mark-read/`),
+  markAllRead: (tenantId)         => api.post(`/tenants/${tenantId}/notifications/mark-all-read/`),
+};
+
 // ─── Super Admins ────────────────────────────────
 export const superAdminAPI = {
   list: () => api.get('/super-admins/'),

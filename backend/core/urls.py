@@ -24,6 +24,7 @@ tenant_router.register(r'assembly-positions', views.AssemblyPositionViewSet, bas
 tenant_router.register(r'committees', views.CommitteeViewSet, basename='committees')
 tenant_router.register(r'unrecognized-income', views.UnrecognizedIncomeViewSet, basename='unrecognized-income')
 tenant_router.register(r'amenity-reservations', views.AmenityReservationViewSet, basename='amenity-reservations')
+tenant_router.register(r'notifications', views.NotificationViewSet, basename='notifications')
 
 urlpatterns = [
     # Auth

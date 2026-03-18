@@ -654,6 +654,44 @@ class AmenityReservation(models.Model):
 
 
 # ═══════════════════════════════════════════════════════════
+#  NOTIFICATIONS
+# ═══════════════════════════════════════════════════════════
+
+class Notification(models.Model):
+    TYPES = [
+        ('reservation_new',       'Nueva Reserva Solicitada'),
+        ('reservation_approved',  'Reserva Aprobada'),
+        ('reservation_rejected',  'Reserva Rechazada'),
+        ('reservation_cancelled', 'Reserva Cancelada'),
+        ('general',               'Información General'),
+    ]
+
+    id        = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant    = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='notifications')
+    user      = models.ForeignKey(User,   on_delete=models.CASCADE, related_name='notifications')
+    notif_type = models.CharField(max_length=40, choices=TYPES, default='general', db_index=True)
+    title     = models.CharField(max_length=200)
+    message   = models.TextField(blank=True, default='')
+    is_read   = models.BooleanField(default=False, db_index=True)
+    # Optional link back to a reservation
+    related_reservation = models.ForeignKey(
+        AmenityReservation, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='notifications',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'notifications'
+        ordering = ['-created_at']
+        indexes  = [
+            models.Index(fields=['tenant', 'user', 'is_read']),
+        ]
+
+    def __str__(self):
+        return f'[{self.notif_type}] {self.title} → {self.user}'
+
+
+# ═══════════════════════════════════════════════════════════
 #  CONDOMINIO REQUEST (Landing page registration leads)
 # ═══════════════════════════════════════════════════════════
 

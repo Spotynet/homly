@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { reservationsAPI, tenantsAPI, unitsAPI } from '../api/client';
 import {
   Calendar, ChevronLeft, ChevronRight, Plus, X, Check,
-  Clock, CheckCircle, AlertCircle, Ban, RefreshCw,
+  Clock, CheckCircle, AlertCircle, Ban, RefreshCw, FileText,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -109,10 +109,11 @@ export default function Reservas() {
   const [resStatusFilter, setResStatusFilter] = useState('all');
 
   // New reservation modal
-  const [modalOpen,       setModalOpen]       = useState(false);
-  const [form,            setForm]            = useState({ area_id: '', unit_id: '', date: '', start_time: '', end_time: '', notes: '' });
-  const [saving,          setSaving]          = useState(false);
-  const [policiesAccepted, setPoliciesAccepted] = useState(false);
+  const [modalOpen,         setModalOpen]         = useState(false);
+  const [form,              setForm]              = useState({ area_id: '', unit_id: '', date: '', start_time: '', end_time: '', notes: '' });
+  const [saving,            setSaving]            = useState(false);
+  const [policiesAccepted,  setPoliciesAccepted]  = useState(false);
+  const [policiesModalOpen, setPoliciesModalOpen] = useState(false);
 
   // Reject modal
   const [rejectOpen,    setRejectOpen]    = useState(false);
@@ -596,56 +597,53 @@ export default function Reservas() {
                 </select>
               </div>
 
-              {/* ── Políticas del área ── se muestran si el área tiene al menos una política */}
+              {/* ── Políticas del área ── botón para abrir lector + indicador de aceptación */}
               {hasPolicies && (
-                <div style={{ border: '1px solid var(--amber-200)', borderRadius: 10, overflow: 'hidden' }}>
-                  {/* Encabezado */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', background: 'var(--amber-100)', borderBottom: '1px solid var(--amber-200)' }}>
-                    <AlertCircle size={14} color="var(--amber-600)" style={{ flexShrink: 0 }} />
-                    <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--amber-800)' }}>
-                      Políticas del área — lectura obligatoria
-                    </span>
-                  </div>
-
-                  {/* Contenido de políticas (con scroll si es largo) */}
-                  <div style={{ padding: '12px 14px', maxHeight: 220, overflowY: 'auto', background: 'var(--amber-50)', display: 'flex', flexDirection: 'column', gap: 14 }}>
-                    {selectedAreaObj?.reservation_policy && (
-                      <div>
-                        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--amber-700)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
-                          📋 Política de Reserva
-                        </div>
-                        <div style={{ fontSize: 12, color: 'var(--ink-700)', lineHeight: 1.65, whiteSpace: 'pre-wrap' }}>
-                          {selectedAreaObj.reservation_policy}
-                        </div>
-                      </div>
-                    )}
-                    {selectedAreaObj?.usage_policy && (
-                      <div>
-                        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--amber-700)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
-                          🏛 Política de Uso
-                        </div>
-                        <div style={{ fontSize: 12, color: 'var(--ink-700)', lineHeight: 1.65, whiteSpace: 'pre-wrap' }}>
-                          {selectedAreaObj.usage_policy}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Checkbox de aceptación */}
-                  <div style={{ padding: '10px 14px', borderTop: '1px solid var(--amber-200)', background: 'white' }}>
-                    <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer' }}>
-                      <input
-                        type="checkbox"
-                        checked={policiesAccepted}
-                        onChange={e => setPoliciesAccepted(e.target.checked)}
-                        style={{ marginTop: 2, accentColor: 'var(--teal-500)', width: 15, height: 15, flexShrink: 0 }}
-                      />
-                      <span style={{ fontSize: 12, color: policiesAccepted ? 'var(--teal-700)' : 'var(--ink-600)', lineHeight: 1.4, fontWeight: policiesAccepted ? 600 : 400 }}>
-                        He leído y acepto las políticas de reserva y uso de esta área común
+                policiesAccepted ? (
+                  /* Estado: políticas aceptadas */
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: 'var(--teal-50)', border: '1px solid var(--teal-200)', borderRadius: 10 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <CheckCircle size={16} color="var(--teal-500)" style={{ flexShrink: 0 }} />
+                      <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--teal-700)' }}>
+                        Políticas del área aceptadas
                       </span>
-                    </label>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setPoliciesModalOpen(true)}
+                      style={{ fontSize: 11, color: 'var(--teal-600)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}
+                    >
+                      Ver políticas
+                    </button>
                   </div>
-                </div>
+                ) : (
+                  /* Estado: políticas pendientes de aceptar */
+                  <button
+                    type="button"
+                    onClick={() => setPoliciesModalOpen(true)}
+                    style={{
+                      width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      padding: '12px 16px', background: 'var(--amber-50)',
+                      border: '1.5px dashed var(--amber-400)', borderRadius: 10, cursor: 'pointer',
+                      transition: 'background 0.15s',
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'var(--amber-100)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'var(--amber-50)'}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <AlertCircle size={16} color="var(--amber-600)" style={{ flexShrink: 0 }} />
+                      <div style={{ textAlign: 'left' }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--amber-800)' }}>
+                          Leer y aceptar políticas del área
+                        </div>
+                        <div style={{ fontSize: 11, color: 'var(--amber-600)', marginTop: 1 }}>
+                          Obligatorio antes de enviar la solicitud
+                        </div>
+                      </div>
+                    </div>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--amber-700)' }}>Ver →</span>
+                  </button>
+                )
               )}
 
               {/* Unidad — solo para admin/tesorero */}
@@ -718,6 +716,103 @@ export default function Reservas() {
               >
                 {saving ? 'Guardando…' : isAutoApprover ? 'Crear Reserva' : 'Solicitar Reserva'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══ Modal: Lector de Políticas ══════════════════════════════════════ */}
+      {policiesModalOpen && selectedAreaObj && (
+        <div className="modal-bg open" onClick={() => setPoliciesModalOpen(false)} style={{ zIndex: 1100 }}>
+          <div
+            className="modal"
+            style={{ maxWidth: 560, maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="modal-head" style={{ background: 'var(--amber-50)', borderBottom: '1px solid var(--amber-200)', flexShrink: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <FileText size={18} color="var(--amber-600)" />
+                <div>
+                  <h3 style={{ margin: 0, fontSize: 15, color: 'var(--ink-800)' }}>Políticas del Área</h3>
+                  <div style={{ fontSize: 12, color: 'var(--amber-700)', fontWeight: 600, marginTop: 1 }}>
+                    {selectedAreaObj.name}
+                  </div>
+                </div>
+              </div>
+              <button className="modal-close" onClick={() => setPoliciesModalOpen(false)}><X size={16} /></button>
+            </div>
+
+            {/* Scrollable content */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 20 }}>
+              {selectedAreaObj?.reservation_policy && (
+                <div>
+                  <div style={{
+                    display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10,
+                    paddingBottom: 8, borderBottom: '1px solid var(--sand-100)',
+                  }}>
+                    <span style={{ fontSize: 16 }}>📋</span>
+                    <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--ink-800)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      Política de Reserva
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 13, color: 'var(--ink-700)', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>
+                    {selectedAreaObj.reservation_policy}
+                  </div>
+                </div>
+              )}
+              {selectedAreaObj?.usage_policy && (
+                <div>
+                  <div style={{
+                    display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10,
+                    paddingBottom: 8, borderBottom: '1px solid var(--sand-100)',
+                  }}>
+                    <span style={{ fontSize: 16 }}>🏛</span>
+                    <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--ink-800)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      Política de Uso
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 13, color: 'var(--ink-700)', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>
+                    {selectedAreaObj.usage_policy}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Acceptance footer — fixed at bottom */}
+            <div style={{
+              flexShrink: 0, borderTop: '2px solid var(--sand-100)',
+              padding: '14px 24px', background: 'var(--sand-50)',
+              display: 'flex', flexDirection: 'column', gap: 12,
+            }}>
+              <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={policiesAccepted}
+                  onChange={e => setPoliciesAccepted(e.target.checked)}
+                  style={{ marginTop: 3, accentColor: 'var(--teal-500)', width: 16, height: 16, flexShrink: 0 }}
+                />
+                <span style={{
+                  fontSize: 13, lineHeight: 1.45,
+                  color: policiesAccepted ? 'var(--teal-700)' : 'var(--ink-700)',
+                  fontWeight: policiesAccepted ? 700 : 400,
+                }}>
+                  He leído y acepto las políticas de reserva y uso de <strong>{selectedAreaObj.name}</strong>
+                </span>
+              </label>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button className="btn btn-secondary" onClick={() => { setPoliciesModalOpen(false); }}>
+                  Cancelar
+                </button>
+                <button
+                  className="btn btn-primary"
+                  onClick={() => { if (policiesAccepted) setPoliciesModalOpen(false); }}
+                  disabled={!policiesAccepted}
+                  style={{ opacity: policiesAccepted ? 1 : 0.5 }}
+                >
+                  <Check size={14} /> Confirmar y continuar
+                </button>
+              </div>
             </div>
           </div>
         </div>

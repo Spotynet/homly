@@ -559,6 +559,26 @@ class AmenityReservationSerializer(serializers.ModelSerializer):
 
 
 # ═══════════════════════════════════════════════════════════
+#  NOTIFICATIONS
+# ═══════════════════════════════════════════════════════════
+
+class NotificationSerializer(serializers.ModelSerializer):
+    notif_type_label = serializers.SerializerMethodField()
+
+    class Meta:
+        model  = Notification
+        fields = [
+            'id', 'notif_type', 'notif_type_label',
+            'title', 'message', 'is_read',
+            'related_reservation_id', 'created_at',
+        ]
+        read_only_fields = fields
+
+    def get_notif_type_label(self, obj):
+        return obj.get_notif_type_display()
+
+
+# ═══════════════════════════════════════════════════════════
 #  CONDOMINIO REQUEST (Landing page lead form)
 # ═══════════════════════════════════════════════════════════
 

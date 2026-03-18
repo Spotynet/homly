@@ -1,0 +1,216 @@
+import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
+import { notificationsAPI } from '../api/client';
+import { Bell, CheckCheck, Calendar, Filter } from 'lucide-react';
+import toast from 'react-hot-toast';
+
+const TYPE_CFG = {
+  reservation_new:       { icon: '📅', label: 'Nueva reserva',    color: 'var(--blue-500)',   bg: 'var(--blue-50)'   },
+  reservation_approved:  { icon: '✅', label: 'Reserva aprobada', color: 'var(--teal-600)',   bg: 'var(--teal-50)'   },
+  reservation_rejected:  { icon: '❌', label: 'Reserva rechazada',color: 'var(--coral-600)',  bg: 'var(--coral-50)'  },
+  reservation_cancelled: { icon: '🚫', label: 'Cancelada',        color: 'var(--ink-500)',    bg: 'var(--sand-50)'   },
+  general:               { icon: 'ℹ️', label: 'General',          color: 'var(--amber-600)',  bg: 'var(--amber-50)'  },
+};
+
+function timeAgo(dateStr) {
+  if (!dateStr) return '';
+  const diff = Math.floor((Date.now() - new Date(dateStr)) / 1000);
+  if (diff < 60)    return 'hace un momento';
+  if (diff < 3600)  return `hace ${Math.floor(diff / 60)} min`;
+  if (diff < 86400) return `hace ${Math.floor(diff / 3600)} h`;
+  if (diff < 86400 * 7) return `hace ${Math.floor(diff / 86400)} días`;
+  return new Date(dateStr).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+export default function Notificaciones() {
+  const { tenantId } = useAuth();
+  const navigate = useNavigate();
+
+  const [notifs,   setNotifs]   = useState([]);
+  const [loading,  setLoading]  = useState(true);
+  const [filter,   setFilter]   = useState('all'); // 'all' | 'unread'
+  const [typeFilter, setTypeFilter] = useState('all');
+
+  const loadNotifs = useCallback(async () => {
+    if (!tenantId) return;
+    setLoading(true);
+    try {
+      const r = await notificationsAPI.list(tenantId, {});
+      setNotifs(r.data || []);
+    } catch {
+      toast.error('Error al cargar notificaciones');
+    } finally {
+      setLoading(false);
+    }
+  }, [tenantId]);
+
+  useEffect(() => { loadNotifs(); }, [loadNotifs]);
+
+  const handleMarkAll = async () => {
+    await notificationsAPI.markAllRead(tenantId).catch(() => {});
+    setNotifs(prev => prev.map(n => ({ ...n, is_read: true })));
+    toast.success('Todas marcadas como leídas');
+  };
+
+  const handleClickNotif = async (n) => {
+    if (!n.is_read) {
+      await notificationsAPI.markRead(tenantId, n.id).catch(() => {});
+      setNotifs(prev => prev.map(x => x.id === n.id ? { ...x, is_read: true } : x));
+    }
+    if (n.related_reservation_id) navigate('/app/reservas');
+  };
+
+  // Apply filters
+  const visible = notifs.filter(n => {
+    if (filter === 'unread' && n.is_read) return false;
+    if (typeFilter !== 'all' && n.notif_type !== typeFilter) return false;
+    return true;
+  });
+
+  const unreadCount = notifs.filter(n => !n.is_read).length;
+
+  const typeOptions = [
+    { value: 'all', label: 'Todos los tipos' },
+    { value: 'reservation_new', label: '📅 Nueva reserva' },
+    { value: 'reservation_approved', label: '✅ Aprobada' },
+    { value: 'reservation_rejected', label: '❌ Rechazada' },
+    { value: 'reservation_cancelled', label: '🚫 Cancelada' },
+    { value: 'general', label: 'ℹ️ General' },
+  ];
+
+  return (
+    <div className="content-fade">
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
+        <div>
+          <h2 style={{ fontSize: 20, fontWeight: 800, color: 'var(--ink-800)', margin: 0 }}>Notificaciones</h2>
+          <p style={{ fontSize: 13, color: 'var(--ink-400)', margin: '4px 0 0' }}>
+            {unreadCount > 0
+              ? <><span style={{ color: 'var(--coral-500)', fontWeight: 700 }}>{unreadCount} sin leer</span> · {notifs.length} en total</>
+              : `${notifs.length} notificacion${notifs.length !== 1 ? 'es' : ''}`
+            }
+          </p>
+        </div>
+        {unreadCount > 0 && (
+          <button className="btn btn-secondary btn-sm" onClick={handleMarkAll} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <CheckCheck size={14} /> Marcar todas como leídas
+          </button>
+        )}
+      </div>
+
+      {/* Filters */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 4 }}>
+          {[['all', 'Todas'], ['unread', 'Sin leer']].map(([v, l]) => (
+            <button
+              key={v}
+              onClick={() => setFilter(v)}
+              className={`tab ${filter === v ? 'active' : ''}`}
+              style={{ padding: '5px 12px', fontSize: 12 }}
+            >
+              {l}
+              {v === 'unread' && unreadCount > 0 && (
+                <span className="badge badge-coral" style={{ marginLeft: 5, fontSize: 10, padding: '1px 5px' }}>{unreadCount}</span>
+              )}
+            </button>
+          ))}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 4 }}>
+          <Filter size={13} color="var(--ink-400)" />
+          <select
+            value={typeFilter}
+            onChange={e => setTypeFilter(e.target.value)}
+            style={{ fontSize: 12, padding: '4px 8px', border: '1px solid var(--sand-100)', borderRadius: 6, color: 'var(--ink-700)', background: 'var(--white)', cursor: 'pointer' }}
+          >
+            {typeOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+        </div>
+      </div>
+
+      {/* List */}
+      {loading ? (
+        <div className="card">
+          <div className="card-body" style={{ textAlign: 'center', padding: '50px 20px', color: 'var(--ink-400)', fontSize: 13 }}>
+            Cargando notificaciones…
+          </div>
+        </div>
+      ) : visible.length === 0 ? (
+        <div className="card">
+          <div className="card-body" style={{ textAlign: 'center', padding: '60px 20px' }}>
+            <Bell size={44} color="var(--sand-200)" style={{ display: 'block', margin: '0 auto 14px' }} />
+            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink-500)', marginBottom: 4 }}>
+              {filter === 'unread' ? 'No tienes notificaciones sin leer' : 'Sin notificaciones'}
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--ink-300)' }}>
+              Las notificaciones de reservas y avisos del condominio aparecerán aquí
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="card" style={{ overflow: 'hidden' }}>
+          {visible.map((n, idx) => {
+            const cfg = TYPE_CFG[n.notif_type] || TYPE_CFG.general;
+            return (
+              <button
+                key={n.id}
+                onClick={() => handleClickNotif(n)}
+                style={{
+                  width: '100%', display: 'flex', alignItems: 'flex-start', gap: 14,
+                  padding: '14px 20px', border: 'none', textAlign: 'left',
+                  background: n.is_read ? 'transparent' : 'var(--teal-50)',
+                  borderBottom: idx < visible.length - 1 ? '1px solid var(--sand-50)' : 'none',
+                  cursor: n.related_reservation_id ? 'pointer' : 'default',
+                  transition: 'background 0.1s',
+                }}
+                onMouseEnter={e => { if (n.related_reservation_id) e.currentTarget.style.background = n.is_read ? 'var(--sand-50)' : 'var(--teal-100)'; }}
+                onMouseLeave={e => e.currentTarget.style.background = n.is_read ? 'transparent' : 'var(--teal-50)'}
+              >
+                {/* Icon bubble */}
+                <div style={{
+                  width: 40, height: 40, borderRadius: 10, background: cfg.bg,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 18, flexShrink: 0,
+                }}>
+                  {cfg.icon}
+                </div>
+
+                {/* Content */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 13, fontWeight: n.is_read ? 500 : 700, color: 'var(--ink-800)', lineHeight: 1.4 }}>
+                      {n.title}
+                    </span>
+                    <span style={{
+                      fontSize: 10, fontWeight: 600, padding: '1px 7px', borderRadius: 20,
+                      background: cfg.bg, color: cfg.color, flexShrink: 0,
+                    }}>
+                      {cfg.label}
+                    </span>
+                  </div>
+                  {n.message && (
+                    <div style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: 3, lineHeight: 1.5 }}>
+                      {n.message}
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                    <Calendar size={11} color="var(--ink-300)" />
+                    <span style={{ fontSize: 11, color: 'var(--ink-300)' }}>{timeAgo(n.created_at)}</span>
+                    {n.related_reservation_id && (
+                      <span style={{ fontSize: 11, color: 'var(--teal-500)', fontWeight: 600 }}>Ver reserva →</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Unread dot */}
+                {!n.is_read && (
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--teal-500)', flexShrink: 0, marginTop: 6 }} />
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}

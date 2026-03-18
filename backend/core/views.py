@@ -19,6 +19,7 @@ from .models import (
     BankStatement, ClosedPeriod, ReopenRequest,
     AssemblyPosition, Committee, UnrecognizedIncome,
     AmenityReservation, CondominioRequest, EmailVerificationCode,
+    Notification,
 )
 from .email_service import send_verification_email, CODE_EXPIRY_MINUTES
 from .serializers import (
@@ -31,6 +32,7 @@ from .serializers import (
     BankStatementSerializer, ClosedPeriodSerializer, ReopenRequestSerializer,
     AssemblyPositionSerializer, CommitteeSerializer, UnrecognizedIncomeSerializer,
     DashboardSerializer, AmenityReservationSerializer, CondominioRequestSerializer,
+    NotificationSerializer,
 )
 from .permissions import IsSuperAdmin, IsTenantAdmin, IsTenantMember, IsAdminOrTesorero, IsAdminOrTesOrAuditor
 
@@ -968,6 +970,92 @@ class AmenityReservationViewSet(viewsets.ModelViewSet):
             reviewed_by=user if status == 'approved' else None,
         )
 
+    def _notify_managers(self, res, notif_type, title, message=''):
+        """Send notification to all admin/tesorero users of this tenant."""
+        manager_roles = ('admin', 'tesorero', 'superadmin')
+        tu_qs = TenantUser.objects.filter(
+            tenant_id=res.tenant_id, role__in=manager_roles,
+        ).select_related('user')
+        notifs = [
+            Notification(
+                tenant_id=res.tenant_id,
+                user=tu.user,
+                notif_type=notif_type,
+                title=title,
+                message=message,
+                related_reservation=res,
+            )
+            for tu in tu_qs
+        ]
+        if notifs:
+            Notification.objects.bulk_create(notifs)
+
+    def _notify_unit_vecinos(self, res, notif_type, title, message=''):
+        """Send notification to all vecinos linked to the reservation's unit."""
+        if not res.unit_id:
+            return
+        tu_qs = TenantUser.objects.filter(
+            tenant_id=res.tenant_id, unit_id=res.unit_id, role='vecino',
+        ).select_related('user')
+        notifs = [
+            Notification(
+                tenant_id=res.tenant_id,
+                user=tu.user,
+                notif_type=notif_type,
+                title=title,
+                message=message,
+                related_reservation=res,
+            )
+            for tu in tu_qs
+        ]
+        if notifs:
+            Notification.objects.bulk_create(notifs)
+
+    def perform_create(self, serializer):
+        from .models import TenantUser as TU, Unit
+        user = self.request.user
+        unit = None
+        role = None
+
+        if user.is_super_admin:
+            role = 'superadmin'
+        else:
+            try:
+                tu = TU.objects.get(user=user, tenant_id=self.kwargs['tenant_id'])
+                role = tu.role
+                if tu.role == 'vecino' and tu.unit_id:
+                    unit = tu.unit
+            except TU.DoesNotExist:
+                pass
+
+        if unit is None:
+            unit_id = self.request.data.get('unit_id')
+            if unit_id:
+                unit = Unit.objects.filter(
+                    id=unit_id, tenant_id=self.kwargs['tenant_id']
+                ).first()
+
+        admin_roles = ('admin', 'tesorero', 'superadmin')
+        res_status = 'approved' if role in admin_roles else 'pending'
+
+        res = serializer.save(
+            tenant_id=self.kwargs['tenant_id'],
+            requested_by=user,
+            unit=unit,
+            status=res_status,
+            reviewed_by=user if res_status == 'approved' else None,
+        )
+
+        # Notify managers when a vecino creates a pending reservation
+        if res_status == 'pending':
+            unit_label = f' — {unit.unit_name}' if unit else ''
+            self._notify_managers(
+                res,
+                notif_type='reservation_new',
+                title=f'Nueva reserva solicitada: {res.area_name}{unit_label}',
+                message=f'Fecha: {res.date}  {str(res.start_time)[:5]}–{str(res.end_time)[:5]}',
+            )
+
     @action(detail=True, methods=['post'])
     def approve(self, request, tenant_id=None, pk=None):
         res = self.get_object()
@@ -975,6 +1063,12 @@ class AmenityReservationViewSet(viewsets.ModelViewSet):
         res.reviewed_by = request.user
         res.rejection_reason = ''
         res.save()
+        self._notify_unit_vecinos(
+            res,
+            notif_type='reservation_approved',
+            title=f'✅ Tu reserva de {res.area_name} fue aprobada',
+            message=f'Fecha: {res.date}  {str(res.start_time)[:5]}–{str(res.end_time)[:5]}',
+        )
         return Response(self.get_serializer(res).data)
 
     @action(detail=True, methods=['post'])
@@ -984,6 +1078,13 @@ class AmenityReservationViewSet(viewsets.ModelViewSet):
         res.reviewed_by = request.user
         res.rejection_reason = request.data.get('reason', '')
         res.save()
+        reason_txt = f'\nMotivo: {res.rejection_reason}' if res.rejection_reason else ''
+        self._notify_unit_vecinos(
+            res,
+            notif_type='reservation_rejected',
+            title=f'❌ Tu reserva de {res.area_name} fue rechazada',
+            message=f'Fecha: {res.date}{reason_txt}',
+        )
         return Response(self.get_serializer(res).data)
 
     @action(detail=True, methods=['post'])
@@ -991,7 +1092,71 @@ class AmenityReservationViewSet(viewsets.ModelViewSet):
         res = self.get_object()
         res.status = 'cancelled'
         res.save()
+        # If cancelled by a vecino → notify managers
+        user = request.user
+        try:
+            tu = TenantUser.objects.get(user=user, tenant_id=tenant_id)
+            if tu.role == 'vecino':
+                unit_label = f' — {res.unit.unit_name}' if res.unit else ''
+                self._notify_managers(
+                    res,
+                    notif_type='reservation_cancelled',
+                    title=f'Reserva cancelada: {res.area_name}{unit_label}',
+                    message=f'Fecha: {res.date}  {str(res.start_time)[:5]}–{str(res.end_time)[:5]}',
+                )
+        except TenantUser.DoesNotExist:
+            pass
         return Response(self.get_serializer(res).data)
+
+
+# ═══════════════════════════════════════════════════════════
+#  NOTIFICATIONS
+# ═══════════════════════════════════════════════════════════
+
+class NotificationViewSet(viewsets.GenericViewSet):
+    """
+    GET  /tenants/{id}/notifications/           → list (current user)
+    GET  /tenants/{id}/notifications/unread-count/ → {count}
+    POST /tenants/{id}/notifications/{id}/mark-read/ → mark one read
+    POST /tenants/{id}/notifications/mark-all-read/  → mark all read
+    """
+    serializer_class   = NotificationSerializer
+    permission_classes = [IsTenantMember]
+
+    def get_queryset(self):
+        return Notification.objects.filter(
+            tenant_id=self.kwargs['tenant_id'],
+            user=self.request.user,
+        )
+
+    def list(self, request, tenant_id=None):
+        qs = self.get_queryset()
+        only_unread = request.query_params.get('unread') == '1'
+        if only_unread:
+            qs = qs.filter(is_read=False)
+        # cap to 100 most recent
+        qs = qs[:100]
+        return Response(self.get_serializer(qs, many=True).data)
+
+    @action(detail=False, methods=['get'], url_path='unread-count')
+    def unread_count(self, request, tenant_id=None):
+        count = self.get_queryset().filter(is_read=False).count()
+        return Response({'count': count})
+
+    @action(detail=True, methods=['post'], url_path='mark-read')
+    def mark_read(self, request, tenant_id=None, pk=None):
+        try:
+            notif = self.get_queryset().get(pk=pk)
+            notif.is_read = True
+            notif.save(update_fields=['is_read'])
+            return Response({'ok': True})
+        except Notification.DoesNotExist:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+
+    @action(detail=False, methods=['post'], url_path='mark-all-read')
+    def mark_all_read(self, request, tenant_id=None):
+        self.get_queryset().filter(is_read=False).update(is_read=True)
+        return Response({'ok': True})
 
 
 # ═══════════════════════════════════════════════════════════

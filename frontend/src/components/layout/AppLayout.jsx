@@ -1,11 +1,12 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { HomlyBrand, APP_VERSION, ROLES } from '../../utils/helpers';
+import { notificationsAPI } from '../../api/client';
 import {
   Home, Globe, FileText, ShoppingBag, Receipt, Settings,
   Users, Building, Shield, LogOut, Menu, X, Search, Calendar,
-  ChevronDown, Check, Building2,
+  ChevronDown, Check, Building2, Bell, CheckCheck,
 } from 'lucide-react';
 
 const NAV_ITEMS = {
@@ -15,54 +16,61 @@ const NAV_ITEMS = {
       { path: '/app/sistema/tenants', icon: Globe,   label: 'Tenants'  },
     ]},
     { section: 'tenant', label: 'Tenant Actual', items: [
-      { path: '/app/reservas',      icon: Calendar,    label: 'Reservas'         },
-      { path: '/app/cobranza',      icon: Receipt,     label: 'Cobranza Mensual' },
-      { path: '/app/gastos',        icon: ShoppingBag, label: 'Gastos'           },
-      { path: '/app/estado-cuenta', icon: FileText,    label: 'Estado de Cuenta' },
-      { path: '/app/config',        icon: Settings,    label: 'Configuración'    },
+      { path: '/app/reservas',       icon: Calendar,    label: 'Reservas'         },
+      { path: '/app/cobranza',       icon: Receipt,     label: 'Cobranza Mensual' },
+      { path: '/app/gastos',         icon: ShoppingBag, label: 'Gastos'           },
+      { path: '/app/estado-cuenta',  icon: FileText,    label: 'Estado de Cuenta' },
+      { path: '/app/notificaciones', icon: Bell,        label: 'Notificaciones'   },
+      { path: '/app/config',         icon: Settings,    label: 'Configuración'    },
     ]},
   ],
 
   admin: [{ section: 'main', items: [
-    { path: '/app/dashboard',     icon: Home,        label: 'Dashboard'        },
-    { path: '/app/reservas',      icon: Calendar,    label: 'Reservas'         },
-    { path: '/app/cobranza',      icon: Receipt,     label: 'Cobranza Mensual' },
-    { path: '/app/gastos',        icon: ShoppingBag, label: 'Gastos'           },
-    { path: '/app/estado-cuenta', icon: FileText,    label: 'Estado de Cuenta' },
-    { path: '/app/config',        icon: Settings,    label: 'Configuración'    },
+    { path: '/app/dashboard',       icon: Home,        label: 'Dashboard'        },
+    { path: '/app/reservas',        icon: Calendar,    label: 'Reservas'         },
+    { path: '/app/cobranza',        icon: Receipt,     label: 'Cobranza Mensual' },
+    { path: '/app/gastos',          icon: ShoppingBag, label: 'Gastos'           },
+    { path: '/app/estado-cuenta',   icon: FileText,    label: 'Estado de Cuenta' },
+    { path: '/app/notificaciones',  icon: Bell,        label: 'Notificaciones'   },
+    { path: '/app/config',          icon: Settings,    label: 'Configuración'    },
   ]}],
 
   tesorero: [{ section: 'main', items: [
-    { path: '/app/dashboard',     icon: Home,        label: 'Dashboard'        },
-    { path: '/app/reservas',      icon: Calendar,    label: 'Reservas'         },
-    { path: '/app/cobranza',      icon: Receipt,     label: 'Cobranza Mensual' },
-    { path: '/app/gastos',        icon: ShoppingBag, label: 'Gastos'           },
-    { path: '/app/estado-cuenta', icon: FileText,    label: 'Estado de Cuenta' },
-    { path: '/app/config',        icon: Settings,    label: 'Configuración'    },
+    { path: '/app/dashboard',       icon: Home,        label: 'Dashboard'        },
+    { path: '/app/reservas',        icon: Calendar,    label: 'Reservas'         },
+    { path: '/app/cobranza',        icon: Receipt,     label: 'Cobranza Mensual' },
+    { path: '/app/gastos',          icon: ShoppingBag, label: 'Gastos'           },
+    { path: '/app/estado-cuenta',   icon: FileText,    label: 'Estado de Cuenta' },
+    { path: '/app/notificaciones',  icon: Bell,        label: 'Notificaciones'   },
+    { path: '/app/config',          icon: Settings,    label: 'Configuración'    },
   ]}],
 
   contador: [{ section: 'main', items: [
-    { path: '/app/dashboard',     icon: Home,        label: 'Dashboard'        },
-    { path: '/app/cobranza',      icon: Receipt,     label: 'Cobranza Mensual' },
-    { path: '/app/gastos',        icon: ShoppingBag, label: 'Gastos'           },
-    { path: '/app/estado-cuenta', icon: FileText,    label: 'Estado de Cuenta' },
+    { path: '/app/dashboard',       icon: Home,        label: 'Dashboard'        },
+    { path: '/app/cobranza',        icon: Receipt,     label: 'Cobranza Mensual' },
+    { path: '/app/gastos',          icon: ShoppingBag, label: 'Gastos'           },
+    { path: '/app/estado-cuenta',   icon: FileText,    label: 'Estado de Cuenta' },
+    { path: '/app/notificaciones',  icon: Bell,        label: 'Notificaciones'   },
   ]}],
 
   auditor: [{ section: 'main', items: [
-    { path: '/app/dashboard',     icon: Home,        label: 'Dashboard'        },
-    { path: '/app/gastos',        icon: ShoppingBag, label: 'Gastos'           },
-    { path: '/app/estado-cuenta', icon: FileText,    label: 'Estado de Cuenta' },
+    { path: '/app/dashboard',       icon: Home,        label: 'Dashboard'        },
+    { path: '/app/gastos',          icon: ShoppingBag, label: 'Gastos'           },
+    { path: '/app/estado-cuenta',   icon: FileText,    label: 'Estado de Cuenta' },
+    { path: '/app/notificaciones',  icon: Bell,        label: 'Notificaciones'   },
   ]}],
 
   vigilante: [{ section: 'main', items: [
-    { path: '/app/dashboard', icon: Home,     label: 'Dashboard' },
-    { path: '/app/reservas',  icon: Calendar, label: 'Reservas'  },
+    { path: '/app/dashboard',       icon: Home,     label: 'Dashboard'      },
+    { path: '/app/reservas',        icon: Calendar, label: 'Reservas'       },
+    { path: '/app/notificaciones',  icon: Bell,     label: 'Notificaciones' },
   ]}],
 
   vecino: [{ section: 'main', items: [
-    { path: '/app/my-unit',       icon: Home,     label: 'Mi Unidad'        },
-    { path: '/app/reservas',      icon: Calendar, label: 'Reservas'         },
-    { path: '/app/estado-cuenta', icon: FileText, label: 'Estado de Cuenta' },
+    { path: '/app/my-unit',         icon: Home,     label: 'Mi Unidad'        },
+    { path: '/app/reservas',        icon: Calendar, label: 'Reservas'         },
+    { path: '/app/estado-cuenta',   icon: FileText, label: 'Estado de Cuenta' },
+    { path: '/app/notificaciones',  icon: Bell,     label: 'Notificaciones'   },
   ]}],
 };
 
@@ -77,6 +85,7 @@ const PAGE_TITLES = {
   users: 'Usuarios',
   'my-unit': 'Mi Unidad',
   'reservas': 'Reservas de Áreas Comunes',
+  'notificaciones': 'Notificaciones',
 };
 
 function getPageTitle(pathname) {
@@ -233,6 +242,189 @@ function TenantSwitcher({ tenantId, tenantName, userTenants, onSwitch }) {
   );
 }
 
+// ── Notification Bell + Dropdown ────────────────────────────────────────────
+function NotificationBell({ tenantId }) {
+  const navigate = useNavigate();
+  const [open,        setOpen]        = useState(false);
+  const [unread,      setUnread]      = useState(0);
+  const [notifs,      setNotifs]      = useState([]);
+  const [loadingList, setLoadingList] = useState(false);
+  const ref = useRef(null);
+
+  // Close on outside click
+  useEffect(() => {
+    if (!open) return;
+    const handle = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', handle);
+    return () => document.removeEventListener('mousedown', handle);
+  }, [open]);
+
+  // Poll unread count every 60 s
+  const fetchCount = useCallback(async () => {
+    if (!tenantId) return;
+    try {
+      const r = await notificationsAPI.unreadCount(tenantId);
+      setUnread(r.data.count || 0);
+    } catch { /* silent */ }
+  }, [tenantId]);
+
+  useEffect(() => {
+    fetchCount();
+    const id = setInterval(fetchCount, 60000);
+    return () => clearInterval(id);
+  }, [fetchCount]);
+
+  // Load list when opening
+  const handleOpen = async () => {
+    if (!tenantId) return;
+    setOpen(o => !o);
+    if (!open) {
+      setLoadingList(true);
+      try {
+        const r = await notificationsAPI.list(tenantId, {});
+        setNotifs((r.data || []).slice(0, 10));
+      } catch { /* silent */ }
+      finally { setLoadingList(false); }
+    }
+  };
+
+  const handleMarkAll = async () => {
+    if (!tenantId) return;
+    await notificationsAPI.markAllRead(tenantId).catch(() => {});
+    setNotifs(prev => prev.map(n => ({ ...n, is_read: true })));
+    setUnread(0);
+  };
+
+  const handleClickNotif = async (n) => {
+    if (!n.is_read) {
+      await notificationsAPI.markRead(tenantId, n.id).catch(() => {});
+      setNotifs(prev => prev.map(x => x.id === n.id ? { ...x, is_read: true } : x));
+      setUnread(prev => Math.max(0, prev - 1));
+    }
+    setOpen(false);
+    if (n.related_reservation_id) navigate('/app/reservas');
+  };
+
+  const TYPE_ICON = {
+    reservation_new:       '📅',
+    reservation_approved:  '✅',
+    reservation_rejected:  '❌',
+    reservation_cancelled: '🚫',
+    general:               'ℹ️',
+  };
+
+  function timeAgo(dateStr) {
+    const diff = Math.floor((Date.now() - new Date(dateStr)) / 1000);
+    if (diff < 60) return 'ahora';
+    if (diff < 3600) return `${Math.floor(diff / 60)} min`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)} h`;
+    return `${Math.floor(diff / 86400)} d`;
+  }
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button
+        onClick={handleOpen}
+        title="Notificaciones"
+        style={{
+          position: 'relative', background: 'none', border: 'none',
+          cursor: 'pointer', padding: '6px', borderRadius: 8,
+          color: 'var(--ink-500)', display: 'flex', alignItems: 'center',
+          transition: 'background 0.15s',
+        }}
+        onMouseEnter={e => e.currentTarget.style.background = 'var(--sand-100)'}
+        onMouseLeave={e => e.currentTarget.style.background = 'none'}
+      >
+        <Bell size={20} />
+        {unread > 0 && (
+          <span style={{
+            position: 'absolute', top: 2, right: 2,
+            minWidth: 16, height: 16, borderRadius: 8,
+            background: 'var(--coral-500)', color: 'white',
+            fontSize: 9, fontWeight: 800, lineHeight: '16px', textAlign: 'center',
+            padding: '0 3px',
+          }}>
+            {unread > 99 ? '99+' : unread}
+          </span>
+        )}
+      </button>
+
+      {open && (
+        <div style={{
+          position: 'absolute', top: 'calc(100% + 8px)', right: 0,
+          width: 340, maxHeight: 480,
+          background: 'var(--white)', border: '1px solid var(--sand-100)',
+          borderRadius: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.14)',
+          display: 'flex', flexDirection: 'column', zIndex: 300,
+          overflow: 'hidden',
+        }}>
+          {/* Header */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderBottom: '1px solid var(--sand-100)', flexShrink: 0 }}>
+            <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--ink-800)' }}>
+              Notificaciones {unread > 0 && <span style={{ color: 'var(--coral-500)' }}>({unread})</span>}
+            </span>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {unread > 0 && (
+                <button onClick={handleMarkAll} title="Marcar todas como leídas"
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--teal-500)', display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600 }}>
+                  <CheckCheck size={13} /> Todo leído
+                </button>
+              )}
+              <button onClick={() => { setOpen(false); navigate('/app/notificaciones'); }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-400)', fontSize: 11, fontWeight: 600 }}>
+                Ver todas →
+              </button>
+            </div>
+          </div>
+
+          {/* List */}
+          <div style={{ overflowY: 'auto', flex: 1 }}>
+            {loadingList ? (
+              <div style={{ padding: '24px 16px', textAlign: 'center', color: 'var(--ink-400)', fontSize: 12 }}>Cargando…</div>
+            ) : notifs.length === 0 ? (
+              <div style={{ padding: '32px 16px', textAlign: 'center' }}>
+                <Bell size={28} color="var(--sand-200)" style={{ display: 'block', margin: '0 auto 8px' }} />
+                <div style={{ fontSize: 13, color: 'var(--ink-400)' }}>Sin notificaciones</div>
+              </div>
+            ) : (
+              notifs.map(n => (
+                <button
+                  key={n.id}
+                  onClick={() => handleClickNotif(n)}
+                  style={{
+                    width: '100%', display: 'flex', alignItems: 'flex-start', gap: 10,
+                    padding: '11px 16px', border: 'none', background: n.is_read ? 'transparent' : 'var(--teal-50)',
+                    cursor: 'pointer', textAlign: 'left', borderBottom: '1px solid var(--sand-50)',
+                    transition: 'background 0.1s',
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = n.is_read ? 'var(--sand-50)' : 'var(--teal-100)'}
+                  onMouseLeave={e => e.currentTarget.style.background = n.is_read ? 'transparent' : 'var(--teal-50)'}
+                >
+                  <span style={{ fontSize: 18, flexShrink: 0, marginTop: 1 }}>{TYPE_ICON[n.notif_type] || 'ℹ️'}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12, fontWeight: n.is_read ? 500 : 700, color: 'var(--ink-800)', lineHeight: 1.4 }}>
+                      {n.title}
+                    </div>
+                    {n.message && (
+                      <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 2, lineHeight: 1.4 }}>
+                        {n.message}
+                      </div>
+                    )}
+                    <div style={{ fontSize: 10, color: 'var(--ink-300)', marginTop: 3 }}>{timeAgo(n.created_at)}</div>
+                  </div>
+                  {!n.is_read && (
+                    <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--teal-500)', flexShrink: 0, marginTop: 5 }} />
+                  )}
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main Layout ─────────────────────────────────────────────────────────────
 export default function AppLayout() {
   const {
@@ -373,12 +565,15 @@ export default function AppLayout() {
               {tenantName && <div className="header-subtitle">{tenantName}</div>}
             </div>
           </div>
-          {!isVecino && (
-            <div className="search-bar hidden-mobile">
-              <Search size={16} />
-              <input type="text" placeholder="Buscar..." />
-            </div>
-          )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {!isVecino && (
+              <div className="search-bar hidden-mobile">
+                <Search size={16} />
+                <input type="text" placeholder="Buscar..." />
+              </div>
+            )}
+            {tenantId && <NotificationBell tenantId={tenantId} />}
+          </div>
         </header>
 
         {/* Content */}

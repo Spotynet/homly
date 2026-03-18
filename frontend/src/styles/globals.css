@@ -745,7 +745,8 @@ tr:hover td { background: rgba(59,185,144,0.02); }
   .ec-unit-print-header { display: none; }
   body.printing-ec .ec-unit-print-header {
     display: block !important;
-    margin-bottom: 12px;
+    padding: 6px 8px 0;
+    margin-bottom: 8px;
     -webkit-print-color-adjust: exact; print-color-adjust: exact;
   }
   /* Permitir flujo multi-página: las filas no se parten */

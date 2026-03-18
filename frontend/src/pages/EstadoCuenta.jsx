@@ -369,7 +369,7 @@ export default function EstadoCuenta() {
 
             {/* ── PRINT-ONLY HEADER: logo + datos del condominio ── */}
             <div className="ec-unit-print-header">
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 20, paddingBottom: 10, borderBottom: '2px solid #0d7c6e' }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 24, paddingTop: 6, paddingBottom: 14, borderBottom: '2px solid #0d7c6e', marginBottom: 16 }}>
                 {/* Logo */}
                 {tenantData?.logo && (() => {
                   const b64 = tenantData.logo;
