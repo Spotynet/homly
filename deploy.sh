@@ -9,7 +9,7 @@ set -e  # Exit on any error
 
 PEM="$HOME/Documents/homly/homly.pem"
 EC2_USER="ubuntu"
-EC2_HOST="98.81.122.194"
+EC2_HOST="34.200.72.248"
 EC2="$EC2_USER@$EC2_HOST"
 API_URL="https://homly.com.mx/api"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
