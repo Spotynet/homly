@@ -8,7 +8,7 @@ from .models import (
     Payment, FieldPayment, GastoEntry, CajaChicaEntry,
     BankStatement, ClosedPeriod, ReopenRequest,
     AssemblyPosition, Committee, UnrecognizedIncome,
-    AmenityReservation, CondominioRequest,
+    AmenityReservation, CondominioRequest, Notification,
 )
 
 
