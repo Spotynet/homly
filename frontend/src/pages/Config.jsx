@@ -7,7 +7,7 @@ import {
   Building2, RefreshCw, Edit2, Search, Home, Lock, Pencil, UserCheck, Loader,
   Calendar, DollarSign, ShieldCheck, Receipt, ShoppingBag,
   AlertCircle, Shield, FileText, Globe, ChevronRight, TrendingUp,
-  ShieldAlert,
+  ShieldAlert, Mail,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -137,10 +137,11 @@ export default function Config() {
   const [logoCollapsed,   setLogoCollapsed]   = useState(false);
 
   // User modal — create
-  const [addUserOpen,      setAddUserOpen]      = useState(false);
-  const [addUserForm,      setAddUserForm]       = useState({});
-  const [addUserExisting,  setAddUserExisting]   = useState(null); // null|false|{id,name,email}
-  const [addUserChecking,  setAddUserChecking]   = useState(false);
+  const [addUserOpen,           setAddUserOpen]           = useState(false);
+  const [addUserForm,           setAddUserForm]            = useState({});
+  const [addUserExisting,       setAddUserExisting]        = useState(null); // null|false|{id,name,email}
+  const [addUserChecking,       setAddUserChecking]        = useState(false);
+  const [showUserEmailConfirm,  setShowUserEmailConfirm]  = useState(false);
   const addUserEmailTimer = useRef(null);
 
   // User modal — edit
@@ -386,28 +387,41 @@ export default function Config() {
     }, 500);
   };
 
-  const saveUser = async () => {
+  const saveUser = () => {
     if (!addUserForm.email) return toast.error('El email es obligatorio');
-    if (addUserExisting === false && !addUserForm.name) return toast.error('El nombre es obligatorio');
-    if (addUserExisting === false && !addUserForm.password) return toast.error('La contraseña es obligatoria');
+    // Only require name for genuinely new users (not existing ones being added to tenant)
+    const isExistingUser = addUserExisting && addUserExisting.id;
+    if (!isExistingUser && !addUserForm.name?.trim()) return toast.error('El nombre es obligatorio');
+    if (!addUserForm.role) return toast.error('El rol es obligatorio');
     if (addUserForm.role === 'vecino' && !addUserForm.unit_id)
       return toast.error('Los vecinos deben tener una unidad asignada');
+    // For new users show email confirmation; for existing users proceed directly
+    if (!isExistingUser) {
+      setShowUserEmailConfirm(true);
+    } else {
+      doCreateUser();
+    }
+  };
+
+  const doCreateUser = async () => {
+    const isExistingUser = addUserExisting && addUserExisting.id;
+    setShowUserEmailConfirm(false);
     try {
       const payload = {
-        email:     addUserForm.email,
+        email:     addUserForm.email.trim(),
         role:      addUserForm.role,
         tenant_id: tenantId,
         unit_id:   addUserForm.role === 'vecino' && addUserForm.unit_id ? addUserForm.unit_id : null,
       };
-      if (addUserExisting === false) {
-        payload.name     = addUserForm.name;
-        payload.password = addUserForm.password;
+      if (!isExistingUser) {
+        payload.name = addUserForm.name.trim();
       }
       await usersAPI.create(payload);
-      toast.success(addUserExisting ? `${addUserExisting.name} agregado al condominio` : 'Usuario creado');
+      toast.success(isExistingUser ? `${addUserExisting.name} agregado al condominio` : 'Usuario creado y bienvenida enviada por email');
       setAddUserOpen(false);
       setAddUserForm({});
       setAddUserExisting(null);
+      setTab('users');
       loadUsers();
     } catch (e) { toast.error(e.response?.data?.detail || e.response?.data?.non_field_errors?.[0] || e.response?.data?.email?.[0] || 'Error al guardar usuario'); }
   };
@@ -2086,11 +2100,11 @@ export default function Config() {
         <Modal title="Agregar Usuario" large
           onClose={() => { setAddUserOpen(false); setAddUserForm({}); setAddUserExisting(null); }}
           onSave={saveUser}
-          saveLabel={addUserExisting ? 'Agregar al Condominio' : 'Crear Usuario'}
+          saveLabel={addUserExisting && addUserExisting.id ? 'Agregar al Condominio' : 'Crear Usuario'}
           saving={saving}>
           <div className="form-grid">
 
-            {/* Email + lookup */}
+            {/* Email + lookup en tiempo real */}
             <div className="field field-full">
               <label className="field-label">Email *</label>
               <div style={{ position:'relative' }}>
@@ -2105,8 +2119,8 @@ export default function Config() {
               </div>
             </div>
 
-            {/* Existing user notice */}
-            {addUserExisting && (
+            {/* Aviso: usuario ya existe en el sistema */}
+            {addUserExisting && addUserExisting.id && (
               <div className="field field-full">
                 <div style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 14px', background:'var(--teal-50)', border:'1px solid var(--teal-100)', borderRadius:10 }}>
                   <UserCheck size={18} color="var(--teal-500)" style={{ flexShrink:0 }} />
@@ -2122,39 +2136,31 @@ export default function Config() {
               </div>
             )}
 
-            {/* Name — only for new users */}
-            {addUserExisting === false && (
-              <div className="field">
+            {/* Nombre — siempre visible, se oculta si el usuario ya existe */}
+            {!(addUserExisting && addUserExisting.id) && (
+              <div className="field field-full">
                 <label className="field-label">Nombre Completo *</label>
-                <input className="field-input" value={addUserForm.name||''} onChange={e=>setAddUserForm(f=>({...f,name:e.target.value}))} />
+                <input className="field-input"
+                  value={addUserForm.name||''}
+                  onChange={e=>setAddUserForm(f=>({...f,name:e.target.value}))}
+                  placeholder="Nombre y apellidos" />
               </div>
             )}
 
-            {/* Role — shown once email is checked */}
-            {addUserExisting !== null && (
-              <div className="field">
-                <label className="field-label">Rol</label>
-                <select className="field-select" value={addUserForm.role||'admin'}
-                  onChange={e=>setAddUserForm(f=>({...f,role:e.target.value,unit_id:e.target.value!=='vecino'?'':f.unit_id}))}>
-                  {TENANT_ROLES.map(r => {
-                    const m = ROLE_META[r];
-                    return <option key={r} value={r}>{m?.label||r} — {m?.desc||''}</option>;
-                  })}
-                </select>
-              </div>
-            )}
+            {/* Rol — siempre visible */}
+            <div className="field">
+              <label className="field-label">Rol</label>
+              <select className="field-select" value={addUserForm.role||'admin'}
+                onChange={e=>setAddUserForm(f=>({...f,role:e.target.value,unit_id:e.target.value!=='vecino'?'':f.unit_id}))}>
+                {TENANT_ROLES.map(r => {
+                  const m = ROLE_META[r];
+                  return <option key={r} value={r}>{m?.label||r} — {m?.desc||''}</option>;
+                })}
+              </select>
+            </div>
 
-            {/* Password — only for new users */}
-            {addUserExisting === false && (
-              <div className="field">
-                <label className="field-label">Contraseña Inicial *</label>
-                <input type="text" className="field-input" placeholder="Mínimo 8 caracteres"
-                  value={addUserForm.password||''} onChange={e=>setAddUserForm(f=>({...f,password:e.target.value}))} />
-              </div>
-            )}
-
-            {/* Unit — only if role is vecino */}
-            {addUserExisting !== null && addUserForm.role==='vecino' && (
+            {/* Unidad — visible cuando el rol es vecino */}
+            {(addUserForm.role||'admin')==='vecino' && (
               <div className="field field-full">
                 <label className="field-label">Unidad Asignada *</label>
                 <select className="field-select" value={addUserForm.unit_id||''} onChange={e=>setAddUserForm(f=>({...f,unit_id:e.target.value}))}>
@@ -2163,16 +2169,50 @@ export default function Config() {
                 </select>
               </div>
             )}
+
           </div>
 
-          {/* Password notice — only for new users */}
-          {addUserExisting === false && (
-            <div style={{ marginTop:16, padding:14, background:'var(--amber-50)', border:'1px solid var(--amber-100)', borderRadius:'var(--radius-md)', fontSize:13, color:'var(--ink-600)', display:'flex', alignItems:'flex-start', gap:10 }}>
-              <Lock size={16} color="var(--amber-500)" style={{ flexShrink:0, marginTop:1 }} />
-              <div><strong>Cambio obligatorio:</strong> El usuario deberá cambiar su contraseña en el primer inicio de sesión.</div>
+          {/* Aviso de acceso por código de email */}
+          <div style={{ marginTop:16, padding:14, background:'var(--teal-50)', border:'1px solid var(--teal-100)', borderRadius:'var(--radius-md)', fontSize:13, color:'var(--ink-600)', display:'flex', alignItems:'flex-start', gap:10 }}>
+            <Mail size={16} color="var(--teal-500)" style={{ flexShrink:0, marginTop:1 }} />
+            <div>
+              <strong>Acceso por código de email:</strong> El usuario recibirá un correo de bienvenida con instrucciones.
+              Para ingresar al sistema, solo necesita su correo — recibirá un código de verificación cada vez que inicie sesión.
             </div>
-          )}
+          </div>
         </Modal>
+      )}
+
+      {/* Confirm new-user email */}
+      {showUserEmailConfirm && (
+        <div className="modal-bg open" onClick={() => setShowUserEmailConfirm(false)}>
+          <div className="modal" style={{ maxWidth: 420 }} onClick={e => e.stopPropagation()}>
+            <div className="modal-head">
+              <h3 style={{ display:'flex', alignItems:'center', gap:8 }}>
+                <Mail size={18} color="var(--teal-500)" />
+                Confirmar envío de correo
+              </h3>
+              <button className="modal-close" onClick={() => setShowUserEmailConfirm(false)}><X size={16} /></button>
+            </div>
+            <div className="modal-body" style={{ padding: '20px 24px' }}>
+              <p style={{ margin:0, fontSize:14, color:'var(--ink-700)', lineHeight:1.6 }}>
+                Se creará la cuenta y se enviará un <strong>correo de bienvenida</strong> a:
+              </p>
+              <p style={{ margin:'10px 0 0', fontSize:15, fontWeight:600, color:'var(--teal-600)', wordBreak:'break-all' }}>
+                {addUserForm.email}
+              </p>
+              <p style={{ margin:'12px 0 0', fontSize:13, color:'var(--ink-500)', lineHeight:1.5 }}>
+                El correo incluirá instrucciones para acceder al sistema mediante código de verificación.
+              </p>
+            </div>
+            <div className="modal-foot">
+              <button className="btn btn-secondary" onClick={() => setShowUserEmailConfirm(false)}>Cancelar</button>
+              <button className="btn btn-primary" onClick={doCreateUser} disabled={saving}>
+                {saving ? 'Creando…' : 'Crear y enviar correo'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Edit User */}

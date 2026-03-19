@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { authAPI } from '../api/client';
-import { HomlyBrand, APP_VERSION } from '../utils/helpers';
+import { HomlyBrand } from '../utils/helpers';
 import { Building2, ChevronDown, Check, ArrowLeft } from 'lucide-react';
 
 // ── Tenant picker dropdown ──────────────────────────────────────────────────
@@ -437,9 +437,6 @@ export default function Login() {
             <Link to="/" className="text-sm text-coral-500 font-semibold hover:underline">
               ← Volver a Homly
             </Link>
-          </div>
-          <div className="mt-4 text-center">
-            <span className="badge badge-gray">Homly v{APP_VERSION}</span>
           </div>
         </div>
       </div>

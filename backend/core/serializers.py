@@ -184,22 +184,21 @@ class UserCreateSerializer(serializers.ModelSerializer):
     # validators=[] removes the auto-generated UniqueValidator on email so we can
     # handle "existing user → just add to tenant" logic inside create().
     email     = serializers.EmailField(validators=[])
-    password  = serializers.CharField(write_only=True, min_length=6, required=False, allow_blank=True)
     role      = serializers.ChoiceField(choices=TenantUser.ROLE_CHOICES, write_only=True)
     tenant_id = serializers.UUIDField(write_only=True)
     unit_id   = serializers.UUIDField(required=False, allow_null=True, write_only=True)
 
     class Meta:
         model = User
-        fields = ['id', 'email', 'name', 'password', 'role', 'tenant_id', 'unit_id']
+        fields = ['id', 'email', 'name', 'role', 'tenant_id', 'unit_id']
         read_only_fields = ['id']
         extra_kwargs = {'name': {'required': False, 'allow_blank': True}}
 
     def create(self, validated_data):
+        import secrets
         role      = validated_data.pop('role')
         tenant_id = validated_data.pop('tenant_id')
         unit_id   = validated_data.pop('unit_id', None)
-        password  = validated_data.pop('password', None)
         email     = validated_data.get('email', '').lower()
 
         # ── Existing user: just associate with the tenant ─────────────────
@@ -210,18 +209,15 @@ class UserCreateSerializer(serializers.ModelSerializer):
                     'Este usuario ya tiene acceso a este condominio.'
                 )
         except User.DoesNotExist:
-            # ── New user: require name + password ────────────────────────
-            if not password:
-                raise serializers.ValidationError(
-                    {'password': 'La contraseña es obligatoria para nuevos usuarios.'}
-                )
+            # ── New user: require name; auto-generate password (login is via email code) ──
             if not validated_data.get('name'):
                 raise serializers.ValidationError(
                     {'name': 'El nombre es obligatorio para nuevos usuarios.'}
                 )
             validated_data['email'] = email
-            user = User.objects.create_user(password=password, **validated_data)
-            user.must_change_password = True
+            auto_password = secrets.token_urlsafe(24)
+            user = User.objects.create_user(password=auto_password, **validated_data)
+            user.must_change_password = False
             user.save()
 
         tenant_user = TenantUser.objects.create(
