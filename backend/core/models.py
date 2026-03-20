@@ -205,6 +205,10 @@ class Unit(models.Model):
     owner_last_name = models.CharField(max_length=150, blank=True, default='')
     owner_email = models.EmailField(blank=True, default='')
     owner_phone = models.CharField(max_length=30, blank=True, default='')
+    coowner_first_name = models.CharField(max_length=150, blank=True, default='', help_text='Copropietario first name')
+    coowner_last_name = models.CharField(max_length=150, blank=True, default='')
+    coowner_email = models.EmailField(blank=True, default='')
+    coowner_phone = models.CharField(max_length=30, blank=True, default='')
     occupancy = models.CharField(max_length=15, choices=OCCUPANCY_CHOICES, default='propietario')
     tenant_first_name = models.CharField(max_length=150, blank=True, default='',
                                           help_text='Renter first name')

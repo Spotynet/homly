@@ -302,6 +302,7 @@ class UnitListSerializer(serializers.ModelSerializer):
         model = Unit
         fields = ['id', 'tenant', 'unit_name', 'unit_id_code',
                   'owner_first_name', 'owner_last_name', 'owner_email', 'owner_phone',
+                  'coowner_first_name', 'coowner_last_name', 'coowner_email', 'coowner_phone',
                   'occupancy', 'tenant_first_name', 'tenant_last_name',
                   'tenant_email', 'tenant_phone', 'responsible_name',
                   'admin_exempt', 'previous_debt', 'has_evidence',
@@ -318,6 +319,7 @@ class UnitSerializer(serializers.ModelSerializer):
         model = Unit
         fields = ['id', 'tenant', 'unit_name', 'unit_id_code',
                   'owner_first_name', 'owner_last_name', 'owner_email', 'owner_phone',
+                  'coowner_first_name', 'coowner_last_name', 'coowner_email', 'coowner_phone',
                   'occupancy', 'tenant_first_name', 'tenant_last_name',
                   'tenant_email', 'tenant_phone', 'responsible_name',
                   'admin_exempt', 'previous_debt', 'previous_debt_evidence',

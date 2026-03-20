@@ -369,6 +369,92 @@ class UnitViewSet(viewsets.ModelViewSet):
         unit = self.get_object()
         return Response({'evidence': unit.previous_debt_evidence or ''})
 
+    @action(detail=True, methods=['post'], url_path='create-user', permission_classes=[IsTenantAdmin])
+    def create_user(self, request, tenant_id=None, pk=None):
+        """
+        POST /api/tenants/{tenant_id}/units/{pk}/create-user/
+        Body: { "persona": "owner" | "coowner" | "tenant" }
+
+        Creates (or associates) a System User with role=vecino for the given
+        persona in this unit. Returns the TenantUser record.
+        """
+        import secrets, string as pystring
+
+        unit = self.get_object()
+        persona = request.data.get('persona', 'owner')
+
+        if persona == 'owner':
+            email = (unit.owner_email or '').strip().lower()
+            first  = unit.owner_first_name or ''
+            last   = unit.owner_last_name or ''
+        elif persona == 'coowner':
+            email = (unit.coowner_email or '').strip().lower()
+            first  = unit.coowner_first_name or ''
+            last   = unit.coowner_last_name or ''
+        elif persona == 'tenant':
+            email = (unit.tenant_email or '').strip().lower()
+            first  = unit.tenant_first_name or ''
+            last   = unit.tenant_last_name or ''
+        else:
+            return Response({'detail': 'Valor de "persona" inválido. Use: owner, coowner o tenant.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        if not email:
+            label = {'owner': 'propietario', 'coowner': 'copropietario', 'tenant': 'inquilino'}.get(persona, persona)
+            return Response({'detail': f'El {label} no tiene email registrado en esta unidad.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        full_name = f'{first} {last}'.strip() or email
+
+        # Get or create the User
+        try:
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            alphabet = pystring.ascii_letters + pystring.digits
+            tmp_pw = ''.join(secrets.choice(alphabet) for _ in range(16))
+            user = User.objects.create_user(email=email, name=full_name, password=tmp_pw)
+            user.is_active = True
+            user.must_change_password = True
+            user.save(update_fields=['is_active', 'must_change_password'])
+
+        # Associate with tenant as vecino (or update existing)
+        tenant_user, created = TenantUser.objects.get_or_create(
+            user=user,
+            tenant_id=unit.tenant_id,
+            defaults={'role': 'vecino', 'unit': unit},
+        )
+        if not created:
+            # Already a member — just update name if needed
+            if full_name and user.name != full_name:
+                user.name = full_name
+                user.save(update_fields=['name'])
+            return Response(
+                {'detail': f'El usuario ya existe en este condominio.',
+                 'tenant_user': TenantUserSerializer(tenant_user).data},
+                status=status.HTTP_200_OK,
+            )
+
+        # Send welcome invitation email (non-blocking)
+        try:
+            from .email_service import send_welcome_invitation
+            tenant_obj = Tenant.objects.get(id=unit.tenant_id)
+            unit_name = f'{unit.unit_id_code} — {unit.unit_name}'
+            send_welcome_invitation(
+                email=user.email,
+                user_name=user.name or user.email,
+                tenant_name=tenant_obj.name,
+                role='vecino',
+                unit_name=unit_name,
+            )
+        except Exception:
+            pass
+
+        return Response(
+            {'detail': 'Usuario creado y dado de alta como vecino.',
+             'tenant_user': TenantUserSerializer(tenant_user).data},
+            status=status.HTTP_201_CREATED,
+        )
+
 
 # ═══════════════════════════════════════════════════════════
 #  USERS PER TENANT

@@ -7,7 +7,7 @@ import {
   Building2, RefreshCw, Edit2, Search, Home, Lock, Pencil, UserCheck, Loader,
   Calendar, DollarSign, ShieldCheck, Receipt, ShoppingBag,
   AlertCircle, Shield, FileText, Globe, ChevronRight, TrendingUp,
-  ShieldAlert, Mail,
+  ShieldAlert, Mail, UserPlus,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -114,6 +114,9 @@ export default function Config() {
   const [unitsPageSize, setUnitsPageSize] = useState(25);
   const [unitsTotalCount, setUnitsTotalCount] = useState(0);
   const UNITS_PAGE_OPTIONS = [10, 25, 50, 100];
+  // "Dar de alta" — create user from unit persona
+  const [altaModal, setAltaModal] = useState(null); // { unit, persona } | null
+  const [altaSaving, setAltaSaving] = useState(false);
 
   // Users pagination
   const [usersPage, setUsersPage] = useState(1);
@@ -349,6 +352,10 @@ export default function Config() {
         owner_last_name: unitForm.owner_last_name || '',
         owner_email: unitForm.owner_email || '',
         owner_phone: unitForm.owner_phone || '',
+        coowner_first_name: unitForm.coowner_first_name || '',
+        coowner_last_name: unitForm.coowner_last_name || '',
+        coowner_email: unitForm.coowner_email || '',
+        coowner_phone: unitForm.coowner_phone || '',
         tenant_first_name: unitForm.tenant_first_name || '',
         tenant_last_name: unitForm.tenant_last_name || '',
         tenant_email: unitForm.tenant_email || '',
@@ -370,6 +377,24 @@ export default function Config() {
     if (!window.confirm('¿Eliminar esta unidad? Se perderán todos sus pagos asociados.')) return;
     try { await unitsAPI.delete(tenantId, id); toast.success('Unidad eliminada'); loadUnits(); }
     catch { toast.error('Error eliminando unidad'); }
+  };
+
+  const handleUnitCreateUser = async () => {
+    if (!altaModal) return;
+    setAltaSaving(true);
+    try {
+      const res = await unitsAPI.createUser(tenantId, altaModal.unit.id, altaModal.persona);
+      const msg = res.status === 201
+        ? 'Usuario creado y dado de alta como vecino.'
+        : 'El usuario ya existe y fue asociado al condominio.';
+      toast.success(msg);
+      setAltaModal(null);
+      loadUsers();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Error al dar de alta al usuario');
+    } finally {
+      setAltaSaving(false);
+    }
   };
 
   const handleAddUserEmailChange = (val) => {
@@ -846,7 +871,7 @@ export default function Config() {
               </div>
               {isAdmin && (
                 <button className="btn btn-primary" onClick={() => {
-                  setUnitForm({ unit_name:'', unit_id_code:'', owner_first_name:'', owner_last_name:'', owner_email:'', owner_phone:'', occupancy:'propietario', previous_debt:0, previous_debt_evidence:'', credit_balance:0, admin_exempt:false, tenant_first_name:'', tenant_last_name:'', tenant_email:'', tenant_phone:'' });
+                  setUnitForm({ unit_name:'', unit_id_code:'', owner_first_name:'', owner_last_name:'', owner_email:'', owner_phone:'', coowner_first_name:'', coowner_last_name:'', coowner_email:'', coowner_phone:'', occupancy:'propietario', previous_debt:0, previous_debt_evidence:'', credit_balance:0, admin_exempt:false, tenant_first_name:'', tenant_last_name:'', tenant_email:'', tenant_phone:'' });
                   setUnitModal('add');
                 }}>
                   <Plus size={14} /> Nueva Unidad
@@ -942,6 +967,7 @@ export default function Config() {
                                 setUnitForm({
                                   tenant_first_name: '', tenant_last_name: '', tenant_email: '', tenant_phone: '',
                                   owner_first_name: '', owner_last_name: '', owner_email: '', owner_phone: '',
+                                  coowner_first_name: '', coowner_last_name: '', coowner_email: '', coowner_phone: '',
                                   previous_debt: 0, credit_balance: 0, admin_exempt: false,
                                   ...u,
                                   previous_debt_evidence: '',
@@ -1917,15 +1943,50 @@ export default function Config() {
               <div style={{ fontSize:11, color:'var(--teal-600)', marginTop:4 }}>Saldo a favor acumulado antes del inicio de operaciones (reduce el adeudo inicial)</div>
             </div>
           </div>
-          <div className="form-section-label">Propietario</div>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
+            <div className="form-section-label" style={{ marginBottom:0 }}>Propietario</div>
+            {unitForm.id && unitForm.owner_email && (
+              <button type="button" className="btn btn-secondary btn-sm"
+                style={{ fontSize:11, padding:'4px 10px', display:'inline-flex', alignItems:'center', gap:5 }}
+                onClick={() => setAltaModal({ unit: unitForm, persona: 'owner' })}>
+                <UserPlus size={12}/> Dar de alta
+              </button>
+            )}
+          </div>
           <div className="form-grid" style={{ marginBottom:24 }}>
             {[['owner_first_name','Nombre','Carlos'],['owner_last_name','Apellido','Rodríguez'],['owner_email','Email','carlos@email.com'],['owner_phone','Teléfono','+52 55 1234 5678']].map(([k,l,ph])=>(
               <div className="field" key={k}><label className="field-label">{l}</label><input className="field-input" placeholder={ph} value={unitForm[k]||''} onChange={e=>setUnitForm(f=>({...f,[k]:e.target.value}))}/></div>
             ))}
           </div>
+
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
+            <div className="form-section-label" style={{ marginBottom:0, color:'var(--teal-600)' }}>Copropietario</div>
+            {unitForm.id && unitForm.coowner_email && (
+              <button type="button" className="btn btn-secondary btn-sm"
+                style={{ fontSize:11, padding:'4px 10px', display:'inline-flex', alignItems:'center', gap:5 }}
+                onClick={() => setAltaModal({ unit: unitForm, persona: 'coowner' })}>
+                <UserPlus size={12}/> Dar de alta
+              </button>
+            )}
+          </div>
+          <div className="form-grid" style={{ marginBottom:24 }}>
+            {[['coowner_first_name','Nombre','Ana'],['coowner_last_name','Apellido','García'],['coowner_email','Email','ana@email.com'],['coowner_phone','Teléfono','+52 55 0000 1111']].map(([k,l,ph])=>(
+              <div className="field" key={k}><label className="field-label">{l}</label><input className="field-input" placeholder={ph} value={unitForm[k]||''} onChange={e=>setUnitForm(f=>({...f,[k]:e.target.value}))}/></div>
+            ))}
+          </div>
+
           {unitForm.occupancy==='rentado' && (
             <div className="tenant-panel">
-              <div className="form-section-label" style={{ color:'var(--amber-500)', borderColor:'var(--teal-100)', marginTop:0 }}>Inquilino</div>
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
+                <div className="form-section-label" style={{ color:'var(--amber-500)', borderColor:'var(--teal-100)', marginTop:0, marginBottom:0 }}>Inquilino</div>
+                {unitForm.id && unitForm.tenant_email && (
+                  <button type="button" className="btn btn-secondary btn-sm"
+                    style={{ fontSize:11, padding:'4px 10px', display:'inline-flex', alignItems:'center', gap:5 }}
+                    onClick={() => setAltaModal({ unit: unitForm, persona: 'tenant' })}>
+                    <UserPlus size={12}/> Dar de alta
+                  </button>
+                )}
+              </div>
               <div className="form-grid">
                 {[['tenant_first_name','Nombre','Juan'],['tenant_last_name','Apellido','Pérez'],['tenant_email','Email','juan@email.com'],['tenant_phone','Teléfono','+52 55 8765 4321']].map(([k,l,ph])=>(
                   <div className="field" key={k}><label className="field-label">{l}</label><input className="field-input" placeholder={ph} value={unitForm[k]||''} onChange={e=>setUnitForm(f=>({...f,[k]:e.target.value}))}/></div>
@@ -1966,6 +2027,47 @@ export default function Config() {
           )}
         </Modal>
       )}
+
+      {/* Dar de alta — confirm create user from unit persona */}
+      {altaModal && (() => {
+        const { unit, persona } = altaModal;
+        const labels = { owner: 'Propietario', coowner: 'Copropietario', tenant: 'Inquilino' };
+        const emailMap = { owner: unit.owner_email, coowner: unit.coowner_email, tenant: unit.tenant_email };
+        const nameMap = {
+          owner:   `${unit.owner_first_name||''} ${unit.owner_last_name||''}`.trim(),
+          coowner: `${unit.coowner_first_name||''} ${unit.coowner_last_name||''}`.trim(),
+          tenant:  `${unit.tenant_first_name||''} ${unit.tenant_last_name||''}`.trim(),
+        };
+        return (
+          <Modal
+            title={`Dar de alta — ${labels[persona]}`}
+            onClose={() => setAltaModal(null)}
+            onSave={handleUnitCreateUser}
+            saveLabel="Dar de alta"
+            saving={altaSaving}>
+            <div style={{ display:'flex', flexDirection:'column', gap:16, padding:'4px 0' }}>
+              <div style={{ padding:'12px 16px', background:'var(--teal-50)', border:'1px solid var(--teal-100)', borderRadius:'var(--radius-md)', fontSize:13 }}>
+                <div style={{ fontWeight:700, color:'var(--teal-700)', marginBottom:6 }}>
+                  <UserPlus size={14} style={{ marginRight:6 }}/>{labels[persona]}
+                </div>
+                <div style={{ color:'var(--ink-700)' }}>
+                  <strong>Nombre:</strong> {nameMap[persona] || '—'}
+                </div>
+                <div style={{ color:'var(--ink-700)', marginTop:4 }}>
+                  <strong>Email:</strong> {emailMap[persona]}
+                </div>
+                <div style={{ color:'var(--ink-700)', marginTop:4 }}>
+                  <strong>Unidad:</strong> {unit.unit_id_code} — {unit.unit_name}
+                </div>
+              </div>
+              <p style={{ fontSize:13, color:'var(--ink-500)', margin:0 }}>
+                Se creará (o asociará) este usuario en el sistema con el perfil de <strong>Vecino</strong> vinculado a esta unidad.
+                Recibirá un correo de bienvenida con acceso al condominio.
+              </p>
+            </div>
+          </Modal>
+        );
+      })()}
 
       {/* Add Custom Field */}
       {fieldForm && (
