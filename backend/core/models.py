@@ -132,6 +132,18 @@ class Tenant(models.Model):
     addr_ciudad = models.CharField(max_length=200, blank=True, default='')
     addr_codigo_postal = models.CharField(max_length=10, blank=True, default='')
 
+    # Module visibility permissions per role
+    # Dict: { role_key: [enabled_module_keys...] }
+    # An empty dict means "all modules enabled" (defaults apply).
+    module_permissions = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text=(
+            'Per-role module visibility. Keys: admin, tesorero, contador, auditor, vigilante, vecino. '
+            'Values: list of enabled module keys. Empty dict = all defaults enabled.'
+        ),
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

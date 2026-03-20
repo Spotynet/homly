@@ -7,7 +7,7 @@ import {
   Building2, RefreshCw, Edit2, Search, Home, Lock, Pencil, UserCheck, Loader,
   Calendar, DollarSign, ShieldCheck, Receipt, ShoppingBag,
   AlertCircle, Shield, FileText, Globe, ChevronRight, TrendingUp,
-  ShieldAlert, Mail, UserPlus,
+  ShieldAlert, Mail, UserPlus, Bell, Layers,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -33,6 +33,28 @@ const ROLE_META = {
 };
 
 const TENANT_ROLES = ['admin','tesorero','contador','auditor','vigilante','vecino'];
+
+// ── Módulos del menú principal ───────────────────────────────────────────────
+const MODULE_DEFINITIONS = [
+  { key: 'dashboard',      label: 'Dashboard',          icon: Home,        desc: 'Panel principal con métricas del condominio' },
+  { key: 'reservas',       label: 'Reservas',           icon: Calendar,    desc: 'Reserva de áreas comunes' },
+  { key: 'cobranza',       label: 'Cobranza Mensual',   icon: Receipt,     desc: 'Registro y cobro de mantenimiento' },
+  { key: 'gastos',         label: 'Gastos',             icon: ShoppingBag, desc: 'Gestión de gastos y caja chica' },
+  { key: 'estado_cuenta',  label: 'Estado de Cuenta',   icon: FileText,    desc: 'Reportes y movimientos financieros' },
+  { key: 'notificaciones', label: 'Notificaciones',     icon: Bell,        desc: 'Centro de avisos y notificaciones' },
+  { key: 'config',         label: 'Configuración',      icon: Settings,    desc: 'Configuración del condominio' },
+  { key: 'my_unit',        label: 'Mi Unidad',          icon: Home,        desc: 'Vista de la unidad del residente (solo Vecino)' },
+];
+
+// Módulos disponibles por defecto para cada rol (máximo permitido)
+const ROLE_BASE_MODULES = {
+  admin:     ['dashboard', 'reservas', 'cobranza', 'gastos', 'estado_cuenta', 'notificaciones', 'config'],
+  tesorero:  ['dashboard', 'reservas', 'cobranza', 'gastos', 'estado_cuenta', 'notificaciones', 'config'],
+  contador:  ['dashboard', 'cobranza', 'gastos', 'estado_cuenta', 'notificaciones'],
+  auditor:   ['dashboard', 'gastos', 'estado_cuenta', 'notificaciones'],
+  vigilante: ['dashboard', 'reservas', 'notificaciones'],
+  vecino:    ['my_unit', 'reservas', 'estado_cuenta', 'notificaciones'],
+};
 
 // ── Generic read-only field ───────────────────────────────────────────────────
 function FieldView({ label, value, mono = false, children }) {
@@ -123,6 +145,10 @@ export default function Config() {
   const [usersPageSize, setUsersPageSize] = useState(25);
   const USERS_PAGE_OPTIONS = [25, 50, 100];
 
+  // Module permissions tab
+  const [modulePerms, setModulePerms] = useState({});
+  const [moduleSaving, setModuleSaving] = useState(false);
+
   // Field modal
   const [fieldForm, setFieldForm] = useState(null);
   const [cobCollapsed, setCobCollapsed] = useState(false);
@@ -197,6 +223,11 @@ export default function Config() {
     setTenant(null); setLoadError(null);
     loadTenant(); loadFields(); loadUsers(); loadUnits(); loadAssembly(); loadSuperAdmins();
   }, [loadTenant, loadFields, loadUsers, loadUnits, loadAssembly, loadSuperAdmins]);
+
+  // Sync modulePerms whenever tenant data changes
+  useEffect(() => {
+    if (tenant) setModulePerms(tenant.module_permissions || {});
+  }, [tenant]);
 
   // ── Save helpers ──────────────────────────────────────────────────────────
   const savePatch = async (data, onDone) => {
@@ -397,6 +428,35 @@ export default function Config() {
     }
   };
 
+  // ── Module permissions helpers ─────────────────────────────────────────────
+  const isModuleEnabled = (role, moduleKey) => {
+    const base = ROLE_BASE_MODULES[role] || [];
+    if (!base.includes(moduleKey)) return false; // not available for this role
+    if (modulePerms[role] === undefined) return true; // default: all base modules enabled
+    return modulePerms[role].includes(moduleKey);
+  };
+
+  const handleToggleModule = (role, moduleKey) => {
+    const base = ROLE_BASE_MODULES[role] || [];
+    if (!base.includes(moduleKey)) return; // can't toggle unavailable modules
+    setModulePerms(prev => {
+      const current = prev[role] !== undefined ? prev[role] : [...base];
+      const enabled = current.includes(moduleKey);
+      const updated = enabled ? current.filter(k => k !== moduleKey) : [...current, moduleKey];
+      return { ...prev, [role]: updated };
+    });
+  };
+
+  const saveModulePermissions = async () => {
+    setModuleSaving(true);
+    try {
+      await tenantsAPI.update(tenantId, { module_permissions: modulePerms });
+      setTenant(prev => ({ ...prev, module_permissions: modulePerms }));
+      toast.success('Permisos de módulos guardados');
+    } catch { toast.error('Error guardando permisos de módulos'); }
+    finally { setModuleSaving(false); }
+  };
+
   const handleAddUserEmailChange = (val) => {
     setAddUserForm(f => ({ ...f, email: val }));
     setAddUserExisting(null);
@@ -510,12 +570,13 @@ export default function Config() {
   const pagedUnits = filteredUnits.slice((unitsPage - 1) * unitsPageSize, unitsPage * unitsPageSize);
 
   const tabs = [
-    { key: 'general', label: 'General' },
-    { key: 'units',   label: 'Unidades' },
-    { key: 'fields',  label: 'Gastos y Cobranza' },
-    { key: 'users',   label: 'Usuarios' },
-    { key: 'roles',   label: 'Roles y Perfiles' },
-    { key: 'org',     label: 'Organización' },
+    { key: 'general',  label: 'General' },
+    { key: 'units',    label: 'Unidades' },
+    { key: 'fields',   label: 'Gastos y Cobranza' },
+    { key: 'users',    label: 'Usuarios' },
+    { key: 'roles',    label: 'Roles y Perfiles' },
+    { key: 'org',      label: 'Organización' },
+    { key: 'modules',  label: 'Módulos' },
   ];
 
   // ────────────────────────────────────────────────────────────────────────────
@@ -1644,6 +1705,142 @@ export default function Config() {
         </div>
         );
       })()}
+
+      {/* ══════════════════════════ TAB: MÓDULOS ══════════════════════════════ */}
+      {tab === 'modules' && (
+        <div>
+          {/* Header */}
+          <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:20, flexWrap:'wrap', gap:12 }}>
+            <div>
+              <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:4 }}>
+                <Layers size={18} color="var(--teal-600)" />
+                <h3 style={{ margin:0, fontSize:16, fontWeight:700, color:'var(--ink-800)' }}>Visibilidad de Módulos</h3>
+              </div>
+              <p style={{ margin:0, fontSize:13, color:'var(--ink-400)' }}>
+                Activa o desactiva los módulos del menú principal para cada perfil de usuario en este condominio.
+                Los módulos desactivados no serán visibles para los usuarios de ese perfil.
+              </p>
+            </div>
+            {isAdmin && (
+              <button className="btn btn-primary" onClick={saveModulePermissions} disabled={moduleSaving}>
+                <Check size={14} /> {moduleSaving ? 'Guardando…' : 'Guardar Cambios'}
+              </button>
+            )}
+          </div>
+
+          {/* Info banner */}
+          <div style={{ padding:'10px 14px', background:'var(--amber-50)', border:'1px solid var(--amber-100)', borderRadius:'var(--radius-md)', fontSize:12, color:'var(--amber-700)', display:'flex', alignItems:'center', gap:8, marginBottom:20 }}>
+            <AlertCircle size={14} style={{ flexShrink:0 }}/>
+            <span>Las celdas en gris indican que el módulo no está disponible para ese perfil (sin importar la configuración). Solo puedes activar/desactivar los módulos que aplican a cada rol.</span>
+          </div>
+
+          {/* Matrix card */}
+          <div className="card" style={{ overflowX:'auto' }}>
+            <table style={{ width:'100%', borderCollapse:'collapse', minWidth:700 }}>
+              <thead>
+                <tr style={{ background:'var(--sand-50)', borderBottom:'1px solid var(--sand-100)' }}>
+                  <th style={{ padding:'12px 16px', textAlign:'left', fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.05em', color:'var(--ink-400)', width:220 }}>
+                    Módulo
+                  </th>
+                  {TENANT_ROLES.map(role => {
+                    const meta = ROLE_META[role] || {};
+                    return (
+                      <th key={role} style={{ padding:'10px 8px', textAlign:'center', fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.05em', color: meta.color || 'var(--ink-400)', minWidth:90 }}>
+                        <span style={{ display:'inline-flex', flexDirection:'column', alignItems:'center', gap:3 }}>
+                          <span style={{ padding:'2px 8px', borderRadius:'var(--radius-full)', background: meta.bg || 'var(--sand-50)', fontSize:10, fontWeight:700 }}>
+                            {meta.label || role}
+                          </span>
+                        </span>
+                      </th>
+                    );
+                  })}
+                </tr>
+              </thead>
+              <tbody>
+                {MODULE_DEFINITIONS.map((mod, idx) => {
+                  const Icon = mod.icon;
+                  return (
+                    <tr key={mod.key} style={{ borderBottom:'1px solid var(--sand-100)', background: idx % 2 === 0 ? 'var(--white)' : 'var(--sand-50)' }}>
+                      {/* Module name + description */}
+                      <td style={{ padding:'14px 16px' }}>
+                        <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                          <span style={{ display:'inline-flex', alignItems:'center', justifyContent:'center', width:30, height:30, borderRadius:'var(--radius-sm)', background:'var(--teal-50)', flexShrink:0 }}>
+                            <Icon size={14} color="var(--teal-600)" />
+                          </span>
+                          <div>
+                            <div style={{ fontSize:13, fontWeight:600, color:'var(--ink-800)' }}>{mod.label}</div>
+                            <div style={{ fontSize:11, color:'var(--ink-400)', marginTop:1 }}>{mod.desc}</div>
+                          </div>
+                        </div>
+                      </td>
+                      {/* Toggle per role */}
+                      {TENANT_ROLES.map(role => {
+                        const base = ROLE_BASE_MODULES[role] || [];
+                        const isAvailable = base.includes(mod.key);
+                        const enabled = isModuleEnabled(role, mod.key);
+                        return (
+                          <td key={role} style={{ padding:'10px 8px', textAlign:'center' }}>
+                            {isAvailable ? (
+                              <div style={{ display:'inline-flex', flexDirection:'column', alignItems:'center', gap:4 }}>
+                                <button
+                                  type="button"
+                                  onClick={() => isAdmin && handleToggleModule(role, mod.key)}
+                                  title={enabled ? 'Clic para desactivar' : 'Clic para activar'}
+                                  style={{
+                                    position:'relative', width:40, height:22, borderRadius:11, border:'none',
+                                    background: enabled ? 'var(--teal-500)' : 'var(--sand-300)',
+                                    cursor: isAdmin ? 'pointer' : 'default',
+                                    transition:'background 0.2s',
+                                    flexShrink:0,
+                                  }}>
+                                  <span style={{
+                                    position:'absolute', top:3,
+                                    left: enabled ? 21 : 3,
+                                    width:16, height:16, borderRadius:'50%',
+                                    background:'white',
+                                    transition:'left 0.2s',
+                                    boxShadow:'0 1px 3px rgba(0,0,0,0.25)',
+                                    display:'block',
+                                  }}/>
+                                </button>
+                                <span style={{ fontSize:10, color: enabled ? 'var(--teal-600)' : 'var(--ink-300)', fontWeight:600 }}>
+                                  {enabled ? 'Visible' : 'Oculto'}
+                                </span>
+                              </div>
+                            ) : (
+                              <div style={{ display:'inline-flex', flexDirection:'column', alignItems:'center', gap:4 }}>
+                                <span style={{ display:'inline-flex', alignItems:'center', justifyContent:'center', width:40, height:22, borderRadius:11, background:'var(--sand-100)', color:'var(--ink-300)' }}>
+                                  <Lock size={10}/>
+                                </span>
+                                <span style={{ fontSize:10, color:'var(--ink-300)', fontWeight:600 }}>N/A</span>
+                              </div>
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Legend */}
+          <div style={{ display:'flex', alignItems:'center', gap:20, marginTop:14, fontSize:12, color:'var(--ink-400)', flexWrap:'wrap' }}>
+            <span style={{ display:'flex', alignItems:'center', gap:6 }}>
+              <span style={{ width:28, height:14, borderRadius:7, background:'var(--teal-500)', display:'inline-block' }}/>
+              Módulo visible para el perfil
+            </span>
+            <span style={{ display:'flex', alignItems:'center', gap:6 }}>
+              <span style={{ width:28, height:14, borderRadius:7, background:'var(--sand-300)', display:'inline-block' }}/>
+              Módulo oculto (desactivado)
+            </span>
+            <span style={{ display:'flex', alignItems:'center', gap:6 }}>
+              <Lock size={12}/> No aplica para este perfil
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* ══════════════════════════════════════════════════════════
            MODALS

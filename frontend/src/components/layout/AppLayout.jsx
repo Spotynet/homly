@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { HomlyBrand, APP_VERSION, ROLES } from '../../utils/helpers';
-import { notificationsAPI } from '../../api/client';
+import { notificationsAPI, tenantsAPI } from '../../api/client';
 import {
   Home, Globe, FileText, ShoppingBag, Receipt, Settings,
   Users, Building, Shield, LogOut, Menu, X, Calendar,
@@ -72,6 +72,18 @@ const NAV_ITEMS = {
     { path: '/app/estado-cuenta',   icon: FileText, label: 'Estado de Cuenta' },
     { path: '/app/notificaciones',  icon: Bell,     label: 'Notificaciones'   },
   ]}],
+};
+
+// Maps each nav path to its module key (for permission filtering)
+const PATH_TO_MODULE = {
+  '/app/dashboard':      'dashboard',
+  '/app/reservas':       'reservas',
+  '/app/cobranza':       'cobranza',
+  '/app/gastos':         'gastos',
+  '/app/estado-cuenta':  'estado_cuenta',
+  '/app/notificaciones': 'notificaciones',
+  '/app/config':         'config',
+  '/app/my-unit':        'my_unit',
 };
 
 const PAGE_TITLES = {
@@ -437,12 +449,35 @@ export default function AppLayout() {
   } = useAuth();
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [tenantModulePerms, setTenantModulePerms] = useState({});
   const navigate  = useNavigate();
   const location  = useLocation();
 
   const roleConfig   = ROLES[role] || ROLES.vecino;
-  const effectiveNav = NAV_ITEMS[role] || NAV_ITEMS.vecino;
   const isVecino     = role === 'vecino' || role === 'vigilante';
+
+  // Fetch tenant module permissions whenever the active tenant changes
+  useEffect(() => {
+    if (!tenantId || role === 'superadmin') { setTenantModulePerms({}); return; }
+    tenantsAPI.get(tenantId)
+      .then(r => setTenantModulePerms(r.data?.module_permissions || {}))
+      .catch(() => setTenantModulePerms({}));
+  }, [tenantId, role]);
+
+  // Filter nav based on module permissions (superadmin bypasses all filters)
+  const rawNav = NAV_ITEMS[role] || NAV_ITEMS.vecino;
+  const effectiveNav = role === 'superadmin'
+    ? rawNav
+    : rawNav.map(group => ({
+        ...group,
+        items: group.items.filter(item => {
+          const moduleKey = PATH_TO_MODULE[item.path];
+          if (!moduleKey) return true;
+          const rolePerms = tenantModulePerms[role];
+          if (rolePerms === undefined) return true; // no custom config → show all defaults
+          return rolePerms.includes(moduleKey);
+        }),
+      })).filter(group => group.items.length > 0);
 
   // Load the user's tenant list once on mount (needed for sidebar switcher)
   useEffect(() => { loadUserTenants(); }, [loadUserTenants]);
