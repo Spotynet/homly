@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { unitsAPI, reportsAPI, tenantsAPI, paymentsAPI, gastosAPI, unrecognizedIncomeAPI } from '../api/client';
 import PaginationBar from '../components/PaginationBar';
 import { statusClass, statusLabel, fmtDate, periodLabel, todayPeriod, prevPeriod, nextPeriod, ROLES } from '../utils/helpers';
-import { Search, ChevronLeft, ChevronRight, Building, Globe, DollarSign, ArrowDown, TrendingDown, AlertCircle, Calendar, Printer, ShoppingBag, FileText, Mail, X, Send } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight, Building, Globe, DollarSign, ArrowDown, TrendingDown, AlertCircle, Calendar, Printer, ShoppingBag, FileText, Mail, X, Send, Download } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 function fmt(n) {
@@ -37,6 +37,27 @@ export default function EstadoCuenta() {
   const [vecinoView, setVecinoView] = useState('cuenta');
   // vecino email self-send
   const [sendingVecinoEmail, setSendingVecinoEmail] = useState(false);
+  // receipt PDF download
+  const [downloadingReceipt, setDownloadingReceipt] = useState(null);
+
+  const handleDownloadReceipt = async (payId, period) => {
+    setDownloadingReceipt(payId);
+    try {
+      const res = await paymentsAPI.receiptPDF(tenantId, payId);
+      const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `recibo-${period}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error('No se pudo descargar el recibo.');
+    } finally {
+      setDownloadingReceipt(null);
+    }
+  };
   const handlePrintUnits = useCallback(() => {
     const prev = document.title;
     document.title = `Estado por Unidad — ${cutoff}`;
@@ -741,7 +762,27 @@ export default function EstadoCuenta() {
                             <td style={{ textAlign: 'right', fontSize: 13 }} className="credit-cell">
                               {paid > 0 ? fmt(paid) : '—'}
                             </td>
-                            <td><span className={`badge ${statusClass(p.status)}`}>{statusLabel(p.status)}</span></td>
+                            <td>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'nowrap' }}>
+                                <span className={`badge ${statusClass(p.status)}`}>{statusLabel(p.status)}</span>
+                                {p.pay?.id && (
+                                  <button
+                                    onClick={() => handleDownloadReceipt(p.pay.id, p.period)}
+                                    disabled={downloadingReceipt === p.pay.id}
+                                    title="Descargar recibo PDF"
+                                    style={{
+                                      background: 'none', border: '1px solid var(--teal-300)',
+                                      borderRadius: 5, padding: '2px 5px', cursor: 'pointer',
+                                      color: 'var(--teal-600)', display: 'flex', alignItems: 'center',
+                                      opacity: downloadingReceipt === p.pay.id ? 0.5 : 1,
+                                      flexShrink: 0,
+                                    }}
+                                  >
+                                    <Download size={11} />
+                                  </button>
+                                )}
+                              </div>
+                            </td>
                             <td style={{ textAlign: 'right' }}>
                               <span style={{
                                 fontFamily: 'var(--font-display)', fontSize: 14, fontWeight: 500,

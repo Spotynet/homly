@@ -1,13 +1,15 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { reportsAPI, tenantsAPI, assemblyAPI } from '../api/client';
+import { reportsAPI, tenantsAPI, assemblyAPI, unitsAPI } from '../api/client';
 import { periodLabel, statusClass, statusLabel, fmtDate } from '../utils/helpers';
 import {
   Home, User, DollarSign, FileText, Building2,
   Receipt, ShoppingBag, ChevronLeft, ChevronRight,
   TrendingDown, TrendingUp, Users, UserCheck, Mail, Phone,
   Wallet, Activity, CheckCircle, AlertCircle, Clock, BarChart2, Calendar,
+  Edit2, Save, X,
 } from 'lucide-react';
+import toast from 'react-hot-toast';
 
 // ─── Formatters ────────────────────────────────────────────────────────────
 function fmt(n) {
@@ -220,6 +222,11 @@ export default function MyUnit() {
   const [generalReport, setGeneralReport] = useState(null);
   const [dashLoading, setDashLoading] = useState(false);
 
+  // Mis Datos form state
+  const [myInfoForm, setMyInfoForm] = useState(null); // null = not initialized
+  const [myInfoSaving, setMyInfoSaving] = useState(false);
+  const [myInfoDirty, setMyInfoDirty] = useState(false);
+
   // ── Initial load ──────────────────────────────────────────────────────
   useEffect(() => {
     if (!tenantId) return;
@@ -235,6 +242,71 @@ export default function MyUnit() {
       setCommittees(Array.isArray(raw) ? raw : (raw?.results || []));
     }).finally(() => setLoading(false));
   }, [tenantId]);
+
+  // Initialize myInfoForm once unit data is available
+  useEffect(() => {
+    if (data?.unit && !myInfoForm) {
+      const u = data.unit;
+      setMyInfoForm({
+        occupancy: u.occupancy || '',
+        owner_first_name: u.owner_first_name || '',
+        owner_last_name: u.owner_last_name || '',
+        owner_email: u.owner_email || '',
+        owner_phone: u.owner_phone || '',
+        coowner_first_name: u.coowner_first_name || '',
+        coowner_last_name: u.coowner_last_name || '',
+        coowner_email: u.coowner_email || '',
+        coowner_phone: u.coowner_phone || '',
+        tenant_first_name: u.tenant_first_name || '',
+        tenant_last_name: u.tenant_last_name || '',
+        tenant_email: u.tenant_email || '',
+        tenant_phone: u.tenant_phone || '',
+      });
+    }
+  }, [data, myInfoForm]);
+
+  const handleMyInfoChange = (field, value) => {
+    setMyInfoForm(f => ({ ...f, [field]: value }));
+    setMyInfoDirty(true);
+  };
+
+  const handleMyInfoSave = async () => {
+    if (!myInfoForm) return;
+    setMyInfoSaving(true);
+    try {
+      const res = await unitsAPI.updateMyInfo(tenantId, myInfoForm);
+      // Update local data state with the new unit values
+      setData(prev => prev ? { ...prev, unit: { ...prev.unit, ...res.data } } : prev);
+      setMyInfoDirty(false);
+      toast.success('Información actualizada correctamente.');
+    } catch (err) {
+      const msg = err?.response?.data?.detail || 'Error al guardar los cambios.';
+      toast.error(msg);
+    } finally {
+      setMyInfoSaving(false);
+    }
+  };
+
+  const handleMyInfoReset = () => {
+    if (!data?.unit) return;
+    const u = data.unit;
+    setMyInfoForm({
+      occupancy: u.occupancy || '',
+      owner_first_name: u.owner_first_name || '',
+      owner_last_name: u.owner_last_name || '',
+      owner_email: u.owner_email || '',
+      owner_phone: u.owner_phone || '',
+      coowner_first_name: u.coowner_first_name || '',
+      coowner_last_name: u.coowner_last_name || '',
+      coowner_email: u.coowner_email || '',
+      coowner_phone: u.coowner_phone || '',
+      tenant_first_name: u.tenant_first_name || '',
+      tenant_last_name: u.tenant_last_name || '',
+      tenant_email: u.tenant_email || '',
+      tenant_phone: u.tenant_phone || '',
+    });
+    setMyInfoDirty(false);
+  };
 
   // ── Period-dependent load ─────────────────────────────────────────────
   const loadDash = useCallback(async () => {
@@ -419,6 +491,10 @@ export default function MyUnit() {
           </button>
           <button className={`tab ${activeTab === 'economico' ? 'active' : ''}`} onClick={() => setActiveTab('economico')}>
             Económicos
+          </button>
+          <button className={`tab ${activeTab === 'datos' ? 'active' : ''}`} onClick={() => setActiveTab('datos')} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <Edit2 size={13} style={{ flexShrink: 0 }} /> Mis Datos
+            {myInfoDirty && <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--coral-400)', flexShrink: 0 }} />}
           </button>
         </div>
         <PeriodNav />
@@ -1054,6 +1130,182 @@ export default function MyUnit() {
                 </div>
               </div>
             </>
+          )}
+        </div>
+      )}
+
+      {/* ════════════════════════ TAB: MIS DATOS ════════════════════════════ */}
+      {activeTab === 'datos' && myInfoForm && (
+        <div>
+          {/* Header banner */}
+          <div style={{ background: 'var(--teal-50)', border: '1px solid var(--teal-100)', borderRadius: 'var(--radius-lg)', padding: '14px 20px', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ width: 36, height: 36, borderRadius: 10, background: 'var(--teal-100)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <Edit2 size={16} color="var(--teal-700)" />
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--teal-800)' }}>Actualizar información de contacto</div>
+              <div style={{ fontSize: 12, color: 'var(--teal-600)', marginTop: 2 }}>
+                Los cambios se reflejarán en la configuración de tu unidad. Los datos de administración (cuota, código, etc.) solo pueden ser modificados por el administrador.
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+              {myInfoDirty && (
+                <button
+                  onClick={handleMyInfoReset}
+                  style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 14px', borderRadius: 8, border: '1px solid var(--sand-200)', background: 'var(--white)', cursor: 'pointer', fontSize: 13, color: 'var(--ink-500)', fontWeight: 600 }}
+                >
+                  <X size={13} /> Descartar
+                </button>
+              )}
+              <button
+                onClick={handleMyInfoSave}
+                disabled={myInfoSaving || !myInfoDirty}
+                style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 14px', borderRadius: 8, border: 'none', background: myInfoDirty ? 'var(--teal-500)' : 'var(--sand-200)', cursor: myInfoDirty ? 'pointer' : 'not-allowed', fontSize: 13, color: myInfoDirty ? 'white' : 'var(--ink-300)', fontWeight: 700 }}
+              >
+                <Save size={13} /> {myInfoSaving ? 'Guardando…' : 'Guardar cambios'}
+              </button>
+            </div>
+          </div>
+
+          {/* Ocupación */}
+          <div className="card" style={{ marginBottom: 20 }}>
+            <div className="card-head">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div className="stat-icon teal"><Home size={15} /></div>
+                <h3>Ocupación de la Unidad</h3>
+              </div>
+            </div>
+            <div className="card-body">
+              <div style={{ maxWidth: 320 }}>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--ink-500)', marginBottom: 6 }}>Tipo de ocupación</label>
+                <select
+                  value={myInfoForm.occupancy}
+                  onChange={e => handleMyInfoChange('occupancy', e.target.value)}
+                  style={{ width: '100%', padding: '9px 12px', border: '1px solid var(--sand-200)', borderRadius: 8, fontSize: 14, color: 'var(--ink-700)', background: 'var(--white)' }}
+                >
+                  <option value="">— Seleccionar —</option>
+                  <option value="propietario">Propietario habita la unidad</option>
+                  <option value="rentada">Rentada / Inquilino</option>
+                  <option value="vacía">Vacía</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* Propietario */}
+          <div className="card" style={{ marginBottom: 20 }}>
+            <div className="card-head">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div className="stat-icon blue"><User size={15} /></div>
+                <h3>Propietario</h3>
+              </div>
+            </div>
+            <div className="card-body">
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 16 }}>
+                {[
+                  { key: 'owner_first_name', label: 'Nombre', type: 'text', placeholder: 'Nombre del propietario' },
+                  { key: 'owner_last_name',  label: 'Apellido', type: 'text', placeholder: 'Apellido del propietario' },
+                  { key: 'owner_email',      label: 'Correo electrónico', type: 'email', placeholder: 'correo@ejemplo.com' },
+                  { key: 'owner_phone',      label: 'Teléfono', type: 'tel', placeholder: '+52 55 1234 5678' },
+                ].map(f => (
+                  <div key={f.key}>
+                    <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--ink-500)', marginBottom: 5 }}>{f.label}</label>
+                    <input
+                      type={f.type}
+                      value={myInfoForm[f.key]}
+                      onChange={e => handleMyInfoChange(f.key, e.target.value)}
+                      placeholder={f.placeholder}
+                      style={{ width: '100%', padding: '9px 12px', border: '1px solid var(--sand-200)', borderRadius: 8, fontSize: 14, color: 'var(--ink-700)', boxSizing: 'border-box' }}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Copropietario */}
+          <div className="card" style={{ marginBottom: 20 }}>
+            <div className="card-head">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div className="stat-icon ink"><UserCheck size={15} /></div>
+                <h3>Copropietario</h3>
+                <span className="badge badge-gray" style={{ fontSize: 11 }}>Opcional</span>
+              </div>
+            </div>
+            <div className="card-body">
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 16 }}>
+                {[
+                  { key: 'coowner_first_name', label: 'Nombre', type: 'text', placeholder: 'Nombre del copropietario' },
+                  { key: 'coowner_last_name',  label: 'Apellido', type: 'text', placeholder: 'Apellido del copropietario' },
+                  { key: 'coowner_email',      label: 'Correo electrónico', type: 'email', placeholder: 'correo@ejemplo.com' },
+                  { key: 'coowner_phone',      label: 'Teléfono', type: 'tel', placeholder: '+52 55 1234 5678' },
+                ].map(f => (
+                  <div key={f.key}>
+                    <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--ink-500)', marginBottom: 5 }}>{f.label}</label>
+                    <input
+                      type={f.type}
+                      value={myInfoForm[f.key]}
+                      onChange={e => handleMyInfoChange(f.key, e.target.value)}
+                      placeholder={f.placeholder}
+                      style={{ width: '100%', padding: '9px 12px', border: '1px solid var(--sand-200)', borderRadius: 8, fontSize: 14, color: 'var(--ink-700)', boxSizing: 'border-box' }}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Inquilino */}
+          <div className="card" style={{ marginBottom: 24 }}>
+            <div className="card-head">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div className="stat-icon amber"><User size={15} /></div>
+                <h3>Inquilino / Arrendatario</h3>
+                <span className="badge badge-amber" style={{ fontSize: 11 }}>Solo si está rentada</span>
+              </div>
+            </div>
+            <div className="card-body">
+              {myInfoForm.occupancy !== 'rentada' && (
+                <div style={{ padding: '10px 14px', background: 'var(--sand-50)', border: '1px solid var(--sand-100)', borderRadius: 8, fontSize: 13, color: 'var(--ink-400)', marginBottom: 16, fontStyle: 'italic' }}>
+                  Selecciona "Rentada / Inquilino" en ocupación para habilitar estos campos.
+                </div>
+              )}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 16, opacity: myInfoForm.occupancy === 'rentada' ? 1 : 0.45 }}>
+                {[
+                  { key: 'tenant_first_name', label: 'Nombre', type: 'text', placeholder: 'Nombre del inquilino' },
+                  { key: 'tenant_last_name',  label: 'Apellido', type: 'text', placeholder: 'Apellido del inquilino' },
+                  { key: 'tenant_email',      label: 'Correo electrónico', type: 'email', placeholder: 'correo@ejemplo.com' },
+                  { key: 'tenant_phone',      label: 'Teléfono', type: 'tel', placeholder: '+52 55 1234 5678' },
+                ].map(f => (
+                  <div key={f.key}>
+                    <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--ink-500)', marginBottom: 5 }}>{f.label}</label>
+                    <input
+                      type={f.type}
+                      value={myInfoForm[f.key]}
+                      onChange={e => handleMyInfoChange(f.key, e.target.value)}
+                      placeholder={f.placeholder}
+                      disabled={myInfoForm.occupancy !== 'rentada'}
+                      style={{ width: '100%', padding: '9px 12px', border: '1px solid var(--sand-200)', borderRadius: 8, fontSize: 14, color: 'var(--ink-700)', boxSizing: 'border-box' }}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Save footer bar */}
+          {myInfoDirty && (
+            <div style={{ position: 'sticky', bottom: 16, background: 'var(--ink-800)', borderRadius: 12, padding: '14px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 4px 24px rgba(0,0,0,0.18)', zIndex: 10 }}>
+              <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.8)' }}>Tienes cambios sin guardar</span>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={handleMyInfoReset} style={{ padding: '7px 16px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.2)', background: 'transparent', cursor: 'pointer', fontSize: 13, color: 'rgba(255,255,255,0.7)', fontWeight: 600 }}>
+                  Descartar
+                </button>
+                <button onClick={handleMyInfoSave} disabled={myInfoSaving} style={{ padding: '7px 16px', borderRadius: 8, border: 'none', background: 'var(--teal-400)', cursor: 'pointer', fontSize: 13, color: 'white', fontWeight: 700 }}>
+                  {myInfoSaving ? 'Guardando…' : '✓ Guardar'}
+                </button>
+              </div>
+            </div>
           )}
         </div>
       )}

@@ -604,7 +604,11 @@ export default function AppLayout() {
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {tenantId && <NotificationBell tenantId={tenantId} />}
+            {tenantId && (
+              role === 'superadmin' ||
+              tenantModulePerms[role] === undefined ||
+              (tenantModulePerms[role] || []).includes('notificaciones')
+            ) && <NotificationBell tenantId={tenantId} />}
           </div>
         </header>
 

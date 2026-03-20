@@ -80,6 +80,7 @@ export const PAYMENT_TYPES = {
 export function statusClass(status) {
   switch (status) {
     case 'pagado': return 'status-pagado';
+    case 'exento': return 'status-pagado';
     case 'parcial': return 'status-parcial';
     default: return 'status-pendiente';
   }
@@ -88,6 +89,7 @@ export function statusClass(status) {
 export function statusLabel(status) {
   switch (status) {
     case 'pagado': return '✓ Pagado';
+    case 'exento': return '🛡 Exento';
     case 'parcial': return '◐ Parcial';
     default: return '○ Pendiente';
   }

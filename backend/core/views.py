@@ -5,6 +5,7 @@ All endpoints for the property management system.
 import uuid
 from decimal import Decimal
 from django.db.models import Sum, Count, Q, F  # noqa: F401 - Q used in estado cuenta
+from django.http import HttpResponse
 from datetime import timedelta
 from django.utils import timezone
 from rest_framework import viewsets, status, generics, permissions
@@ -369,6 +370,44 @@ class UnitViewSet(viewsets.ModelViewSet):
         unit = self.get_object()
         return Response({'evidence': unit.previous_debt_evidence or ''})
 
+    @action(detail=False, methods=['patch'], url_path='update-my-info')
+    def update_my_info(self, request, tenant_id=None):
+        """PATCH /api/tenants/{tenant_id}/units/update-my-info/
+           Allows a vecino to update their own unit's contact information.
+           Only specific contact fields are writable; admin-only fields are ignored."""
+        try:
+            tenant_user = TenantUser.objects.select_related('unit').get(
+                user=request.user, tenant_id=tenant_id
+            )
+        except TenantUser.DoesNotExist:
+            return Response({'detail': 'No tienes acceso a este condominio.'}, status=status.HTTP_403_FORBIDDEN)
+
+        unit = tenant_user.unit
+        if not unit:
+            return Response(
+                {'detail': 'Tu usuario no tiene una unidad asignada.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Whitelist: only contact fields are allowed — admin fields are never touched
+        ALLOWED_FIELDS = {
+            'owner_first_name', 'owner_last_name', 'owner_email', 'owner_phone',
+            'coowner_first_name', 'coowner_last_name', 'coowner_email', 'coowner_phone',
+            'tenant_first_name', 'tenant_last_name', 'tenant_email', 'tenant_phone',
+            'occupancy',
+        }
+
+        updates = {k: v for k, v in request.data.items() if k in ALLOWED_FIELDS}
+        if not updates:
+            return Response({'detail': 'No hay campos válidos para actualizar.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        for field, value in updates.items():
+            setattr(unit, field, value)
+        unit.save(update_fields=list(updates.keys()) + ['updated_at'])
+
+        serializer = UnitListSerializer(unit)
+        return Response(serializer.data)
+
     @action(detail=True, methods=['post'], url_path='create-user', permission_classes=[IsTenantAdmin])
     def create_user(self, request, tenant_id=None, pk=None):
         """
@@ -596,9 +635,9 @@ def _compute_payment_status(payment, tenant, extra_fields):
         total_req_charge += ch
         total_req_received += rc
 
-    # Exenta sin pagos en campos adicionales: tipo 'excento' → pagado directamente
+    # Exenta sin pagos en campos adicionales: tipo 'excento' → exento directamente
     if is_exempt and payment.payment_type == 'excento' and not has_non_maintenance_payment:
-        return 'pagado'
+        return 'exento'
 
     if total_req_received >= total_req_charge:
         return 'pagado'
@@ -798,6 +837,39 @@ class PaymentViewSet(viewsets.ModelViewSet):
         payment.status = _compute_payment_status(payment, tenant, list(extra_fields))
         payment.save()
         return Response(PaymentSerializer(payment).data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['get'], url_path='receipt-pdf')
+    def receipt_pdf(self, request, tenant_id=None, pk=None):
+        """GET /api/tenants/{tenant_id}/payments/{id}/receipt-pdf/
+           Returns the payment receipt as a downloadable PDF.
+           Vecinos can only download receipts for their own unit."""
+        payment = self.get_object()
+        unit = payment.unit
+
+        # Vecino authorization: only their own unit
+        tu = TenantUser.objects.filter(tenant_id=tenant_id, user=request.user).first()
+        if tu and tu.role == 'vecino' and str(tu.unit_id) != str(unit.id):
+            return Response({'detail': 'No autorizado.'}, status=status.HTTP_403_FORBIDDEN)
+
+        tenant = Tenant.objects.get(id=tenant_id)
+        extra_fields = list(ExtraField.objects.filter(tenant_id=tenant_id, enabled=True))
+
+        receipt_data = _compute_receipt_email_data(payment, unit, tenant, extra_fields)
+
+        pdf_bytes = _generate_receipt_pdf(tenant, unit, payment, receipt_data)
+        if pdf_bytes is None:
+            return Response(
+                {'detail': 'No se pudo generar el PDF. Verifica que reportlab esté instalado.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        period_safe = payment.period.replace('-', '')
+        unit_safe = ''.join(c if c.isalnum() or c in '-_' else '_' for c in (unit.unit_id_code or 'unidad'))
+        filename = f'recibo_{unit_safe}_{period_safe}.pdf'
+
+        response = HttpResponse(pdf_bytes, content_type='application/pdf')
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        return response
 
     @action(detail=True, methods=['post'], url_path='send-receipt')
     def send_receipt(self, request, tenant_id=None, pk=None):
@@ -1724,10 +1796,10 @@ def _compute_statement(tenant, unit_id, start_period, cutoff_period):
             eff_status = 'pendiente' if is_past else 'futuro'
 
         if is_exempt and cargo_oblig == Decimal('0'):
-            # Período completamente exento sin campos adicionales obligatorios → pagado
-            eff_status = 'pagado'
+            # Período completamente exento sin campos adicionales obligatorios → exento
+            eff_status = 'exento'
         elif cargo_oblig > 0 and oblig_abono_capped >= cargo_oblig:
-            eff_status = 'pagado'
+            eff_status = 'exento' if is_exempt else 'pagado'
         elif maint_abono == Decimal('0') and has_non_maint_abono:
             eff_status = 'parcial'
         # Pago de mantenimiento base fija registrado de forma incompleta → Parcial
@@ -2337,6 +2409,233 @@ class SendUnitStatementEmailView(APIView):
 #  EMAIL — VECINO ENVÍA SU PROPIO ESTADO DE CUENTA
 # ═══════════════════════════════════════════════════════════
 
+def _generate_receipt_pdf(tenant, unit, payment, receipt_data):
+    """
+    Generate a single-page receipt PDF for a payment.
+    Returns bytes or None if reportlab is not installed.
+    """
+    import io as _io
+    try:
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib import colors
+        from reportlab.lib.units import cm
+        from reportlab.platypus import (
+            SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer,
+        )
+        from reportlab.lib.styles import ParagraphStyle
+        from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
+    except ImportError:
+        return None
+
+    COL_TEAL      = colors.HexColor('#0d7c6e')
+    COL_TEAL_LT   = colors.HexColor('#e6f4f2')
+    COL_CORAL     = colors.HexColor('#e84040')
+    COL_AMBER     = colors.HexColor('#d97706')
+    COL_GREEN     = colors.HexColor('#1E594F')
+    COL_INK       = colors.HexColor('#1a1a2e')
+    COL_INK_LT    = colors.HexColor('#64748b')
+    COL_SAND      = colors.HexColor('#f8f6f1')
+    COL_SAND_BRD  = colors.HexColor('#e5e0d5')
+    COL_HDR       = colors.HexColor('#1a1a2e')
+    COL_WHITE     = colors.white
+
+    STATUS_COLORS = {
+        'pagado': COL_GREEN, 'exento': COL_GREEN,
+        'parcial': COL_AMBER, 'pendiente': COL_CORAL,
+    }
+    STATUS_LABELS_MAP = {
+        'pagado': 'Pagado', 'exento': 'Exento',
+        'parcial': 'Parcial', 'pendiente': 'Pendiente',
+    }
+
+    buf = _io.BytesIO()
+    margin = 1.8 * cm
+    doc = SimpleDocTemplate(
+        buf, pagesize=A4,
+        leftMargin=margin, rightMargin=margin,
+        topMargin=1.4 * cm, bottomMargin=1.6 * cm,
+    )
+
+    W = A4[0] - 2 * margin
+
+    st_hdr_title = ParagraphStyle('HT', fontSize=13, fontName='Helvetica-Bold', textColor=COL_WHITE)
+    st_hdr_sub   = ParagraphStyle('HS', fontSize=10, fontName='Helvetica', textColor=colors.HexColor('#b2dcd8'))
+    st_hdr_right = ParagraphStyle('HR', fontSize=14, fontName='Helvetica-Bold', textColor=COL_WHITE, alignment=TA_RIGHT)
+    st_info_lbl  = ParagraphStyle('IL', fontSize=8, fontName='Helvetica', textColor=COL_INK_LT)
+    st_info_val  = ParagraphStyle('IV', fontSize=9.5, fontName='Helvetica-Bold', textColor=COL_INK, leading=12)
+    st_col_hdr   = ParagraphStyle('CH', fontSize=8.5, fontName='Helvetica-Bold', textColor=COL_WHITE, alignment=TA_CENTER)
+    st_cell      = ParagraphStyle('CE', fontSize=8.5, fontName='Helvetica', textColor=COL_INK)
+    st_cell_r    = ParagraphStyle('CR', fontSize=8.5, fontName='Helvetica', textColor=COL_INK, alignment=TA_RIGHT)
+    st_section   = ParagraphStyle('SC', fontSize=8, fontName='Helvetica-Bold', textColor=COL_TEAL)
+    st_total_lbl = ParagraphStyle('TL', fontSize=10, fontName='Helvetica-Bold', textColor=COL_WHITE)
+    st_total_val = ParagraphStyle('TV', fontSize=10, fontName='Helvetica-Bold', textColor=COL_WHITE, alignment=TA_RIGHT)
+    st_status    = ParagraphStyle('ST', fontSize=11, fontName='Helvetica-Bold', textColor=COL_WHITE, alignment=TA_CENTER)
+
+    story = []
+
+    # ── Header ──────────────────────────────────────────────────────────────
+    tenant_display = (getattr(tenant, 'razon_social', '') or tenant.name or '').strip()
+    rfc_str = getattr(tenant, 'rfc', '') or ''
+    rfc_part = f' · RFC: {rfc_str}' if rfc_str else ''
+
+    header_data = [[
+        [Paragraph(tenant_display, st_hdr_title),
+         Paragraph(f'Condominio{rfc_part}', st_hdr_sub)],
+        Paragraph('Recibo de Pago', st_hdr_right),
+    ]]
+    header_tbl = Table(header_data, colWidths=[W * 0.62, W * 0.38])
+    header_tbl.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), COL_HDR),
+        ('ROWPADDING', (0, 0), (-1, -1), 14),
+        ('LEFTPADDING', (0, 0), (0, -1), 16),
+        ('RIGHTPADDING', (-1, 0), (-1, -1), 16),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('ROUNDEDCORNERS', [8, 8, 0, 0]),
+    ]))
+    story.append(header_tbl)
+
+    # ── Info strip ──────────────────────────────────────────────────────────
+    unit_label = receipt_data.get('unit_code', '')
+    if receipt_data.get('unit_name'):
+        unit_label += f' — {receipt_data["unit_name"]}'
+    responsible = receipt_data.get('responsible', '') or '—'
+    period_str  = receipt_data.get('period_str', payment.period)
+    pay_date    = receipt_data.get('payment_date_label', '—')
+    pay_type    = receipt_data.get('payment_type_label', '—')
+    folio       = getattr(payment, 'folio', '') or ''
+
+    info_rows = [
+        [
+            [Paragraph('UNIDAD', st_info_lbl), Paragraph(unit_label or '—', st_info_val)],
+            [Paragraph('RESPONSABLE', st_info_lbl), Paragraph(responsible, st_info_val)],
+            [Paragraph('PERÍODO', st_info_lbl), Paragraph(period_str, st_info_val)],
+        ],
+        [
+            [Paragraph('FECHA DE PAGO', st_info_lbl), Paragraph(pay_date, st_info_val)],
+            [Paragraph('FORMA DE PAGO', st_info_lbl), Paragraph(pay_type, st_info_val)],
+            [Paragraph('FOLIO', st_info_lbl), Paragraph(folio or payment.period, st_info_val)],
+        ],
+    ]
+    info_tbl = Table(info_rows, colWidths=[W / 3, W / 3, W / 3])
+    info_tbl.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), COL_SAND),
+        ('ROWPADDING', (0, 0), (-1, -1), 8),
+        ('LEFTPADDING', (0, 0), (-1, -1), 12),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+        ('LINEBELOW', (0, 0), (-1, 0), 0.5, COL_SAND_BRD),
+        ('LINEAFTER', (0, 0), (-2, -1), 0.5, COL_SAND_BRD),
+        ('LINEBEFORE', (0, 0), (0, -1), 0.5, COL_SAND_BRD),
+        ('LINEAFTER', (-1, 0), (-1, -1), 0.5, COL_SAND_BRD),
+        ('LINEBELOW', (0, -1), (-1, -1), 0.5, COL_SAND_BRD),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+    ]))
+    story.append(info_tbl)
+    story.append(Spacer(1, 0.3 * cm))
+
+    # ── Detail table ────────────────────────────────────────────────────────
+    def fmt_cur(n):
+        try:
+            v = float(n)
+            sym = receipt_data.get('currency_symbol', '$')
+            return f'{sym}{v:,.2f}'
+        except Exception:
+            return '—'
+
+    col_w = [W * 0.50, W * 0.17, W * 0.17, W * 0.16]
+    tbl_header = [
+        Paragraph('Concepto', st_col_hdr),
+        Paragraph('Cargo', st_col_hdr),
+        Paragraph('Abono', st_col_hdr),
+        Paragraph('Saldo', st_col_hdr),
+    ]
+    tbl_data = [tbl_header]
+    row_styles = []
+
+    for idx, r in enumerate(receipt_data.get('rows', [])):
+        if r.get('is_section'):
+            tbl_data.append([
+                Paragraph(r.get('concept', ''), st_section),
+                '', '', '',
+            ])
+            row_styles.append(('BACKGROUND', (0, len(tbl_data) - 1), (-1, len(tbl_data) - 1), COL_TEAL_LT))
+            row_styles.append(('SPAN', (0, len(tbl_data) - 1), (-1, len(tbl_data) - 1)))
+        else:
+            charge = r.get('charge', 0) or 0
+            paid   = r.get('paid', 0) or 0
+            bal    = r.get('balance', 0) or 0
+            bg = COL_SAND if (len(tbl_data) % 2 == 0) else COL_WHITE
+            tbl_data.append([
+                Paragraph(r.get('concept', ''), st_cell),
+                Paragraph(fmt_cur(charge) if charge else '—', st_cell_r),
+                Paragraph(fmt_cur(paid) if paid else '—', st_cell_r),
+                Paragraph(fmt_cur(bal) if bal else '—', st_cell_r),
+            ])
+            row_styles.append(('BACKGROUND', (0, len(tbl_data) - 1), (-1, len(tbl_data) - 1), bg))
+
+    detail_tbl = Table(tbl_data, colWidths=col_w, repeatRows=1)
+    base_style = [
+        ('BACKGROUND', (0, 0), (-1, 0), COL_HDR),
+        ('ROWPADDING', (0, 0), (-1, -1), 6),
+        ('LEFTPADDING', (0, 0), (-1, -1), 8),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('ALIGN', (1, 1), (-1, -1), 'RIGHT'),
+        ('LINEBELOW', (0, 0), (-1, -1), 0.3, COL_SAND_BRD),
+        ('LINEBEFORE', (0, 0), (0, -1), 0.5, COL_SAND_BRD),
+        ('LINEAFTER', (-1, 0), (-1, -1), 0.5, COL_SAND_BRD),
+        ('LINEBELOW', (0, -1), (-1, -1), 0.5, COL_SAND_BRD),
+    ]
+    detail_tbl.setStyle(TableStyle(base_style + row_styles))
+    story.append(detail_tbl)
+
+    # ── Totals footer ───────────────────────────────────────────────────────
+    total_charges = receipt_data.get('total_charges', 0)
+    total_paid    = receipt_data.get('total_paid', 0)
+    saldo         = receipt_data.get('saldo', 0)
+
+    pay_status = payment.status or 'pendiente'
+    # Override with exento if unit is exempt
+    if unit.admin_exempt:
+        pay_status = 'exento'
+    st_color = STATUS_COLORS.get(pay_status, COL_CORAL)
+    st_label = STATUS_LABELS_MAP.get(pay_status, pay_status.capitalize())
+
+    totals_data = [[
+        Paragraph('Total Cargos', st_total_lbl),
+        Paragraph(fmt_cur(total_charges), st_total_val),
+        Paragraph('Total Abonos', st_total_lbl),
+        Paragraph(fmt_cur(total_paid), st_total_val),
+        Paragraph('Saldo Pendiente', st_total_lbl),
+        Paragraph(fmt_cur(saldo), st_total_val),
+        Paragraph(st_label, st_status),
+    ]]
+    col_w_tot = [W * 0.14, W * 0.13, W * 0.14, W * 0.13, W * 0.16, W * 0.13, W * 0.17]
+    totals_tbl = Table(totals_data, colWidths=col_w_tot)
+    totals_tbl.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (5, 0), COL_TEAL),
+        ('BACKGROUND', (6, 0), (6, 0), st_color),
+        ('ROWPADDING', (0, 0), (-1, -1), 10),
+        ('LEFTPADDING', (0, 0), (-1, -1), 8),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('ALIGN', (1, 0), (-1, 0), 'RIGHT'),
+        ('ROUNDEDCORNERS', [0, 0, 6, 6]),
+    ]))
+    story.append(totals_tbl)
+
+    # ── Footer note ─────────────────────────────────────────────────────────
+    story.append(Spacer(1, 0.4 * cm))
+    from datetime import date as _date
+    today_str = _date.today().strftime('%d/%m/%Y')
+    story.append(Table([[
+        Paragraph(f'Documento generado el {today_str} · {tenant_display}', ParagraphStyle('FT', fontSize=7, fontName='Helvetica', textColor=COL_INK_LT)),
+        Paragraph('Homly · Sistema de Gestión Condominial', ParagraphStyle('FR', fontSize=7, fontName='Helvetica', textColor=COL_INK_LT, alignment=TA_RIGHT)),
+    ]], colWidths=[W * 0.6, W * 0.4]))
+
+    doc.build(story)
+    return buf.getvalue()
+
+
 def _generate_unit_statement_pdf(tenant, unit, rows, total_charges, total_paid, adj_balance, from_period, to_period):
     """
     Generate an in-memory PDF for a single unit's estado de cuenta.
@@ -2390,6 +2689,7 @@ def _generate_unit_statement_pdf(tenant, unit, rows, total_charges, total_paid, 
 
     STATUS_MAP = {
         'pagado':    ('Pagado',    COL_GREEN_OK),
+        'exento':    ('Exento',    COL_GREEN_OK),
         'parcial':   ('Parcial',   COL_AMBER),
         'pendiente': ('Pendiente', COL_CORAL),
         'futuro':    ('Futuro',    COL_INK_LIGHT),

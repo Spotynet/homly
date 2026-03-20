@@ -71,6 +71,7 @@ export const unitsAPI = {
   delete: (tenantId, id) => api.delete(`/tenants/${tenantId}/units/${id}/`),
   evidence:   (tenantId, id) => api.get(`/tenants/${tenantId}/units/${id}/evidence/`),
   createUser: (tenantId, id, persona) => api.post(`/tenants/${tenantId}/units/${id}/create-user/`, { persona }),
+  updateMyInfo: (tenantId, data) => api.patch(`/tenants/${tenantId}/units/update-my-info/`, data),
 };
 
 // ─── Users ──────────────────────────────────────
@@ -92,6 +93,7 @@ export const paymentsAPI = {
   updateAdditional: (tenantId, paymentId, additionalId, data) => api.patch(`/tenants/${tenantId}/payments/${paymentId}/update-additional/${additionalId}/`, data),
   clear: (tenantId, id) => api.delete(`/tenants/${tenantId}/payments/${id}/clear/`),
   sendReceipt: (tenantId, paymentId, data) => api.post(`/tenants/${tenantId}/payments/${paymentId}/send-receipt/`, data),
+  receiptPDF: (tenantId, paymentId) => api.get(`/tenants/${tenantId}/payments/${paymentId}/receipt-pdf/`, { responseType: 'blob' }),
 };
 
 // ─── Extra Fields ───────────────────────────────

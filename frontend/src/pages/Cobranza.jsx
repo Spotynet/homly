@@ -25,6 +25,7 @@ function receiptFmt(n, currency = 'MXN') {
 function receiptStatusBadge(status) {
   const map = {
     pagado: { cls: 'badge-teal', si: 'si-pagado', label: 'Pagado' },
+    exento: { cls: 'badge-teal', si: 'si-pagado', label: 'Exento' },
     parcial: { cls: 'badge-amber', si: 'si-parcial', label: 'Parcial' },
     pendiente: { cls: 'badge-gray', si: 'si-pendiente', label: 'Pendiente' },
   };
@@ -181,10 +182,10 @@ export default function Cobranza() {
     let paid = 0, partial = 0, pending = 0, recaudo = 0;
     units.forEach(u => {
       const p = paymentMap[u.id];
-      // Unidades exentas (admin_exempt) se cuentan como pagadas en KPI
+      // Unidades exentas (admin_exempt) se cuentan como exentas en KPI
       const isExempt = !!u.admin_exempt;
-      const st = isExempt ? 'pagado' : (p?.status || 'pendiente');
-      if (st === 'pagado') paid++;
+      const st = isExempt ? 'exento' : (p?.status || 'pendiente');
+      if (st === 'pagado' || st === 'exento') paid++;
       else if (st === 'parcial') partial++;
       else pending++;
       // Suma campo a campo: field_payments + additional_payments
@@ -521,8 +522,8 @@ export default function Cobranza() {
             <tbody>
               {paged.map(u => {
                 const pay = paymentMap[u.id];
-                // Exentas siempre aparecen como pagadas
-                const st = u.admin_exempt ? 'pagado' : (pay?.status || 'pendiente');
+                // Exentas siempre aparecen como exentas
+                const st = u.admin_exempt ? 'exento' : (pay?.status || 'pendiente');
                 const effTotals = getEffectiveFieldTotals(pay);
                 const totalRec = Object.values(effTotals).reduce((s, v) => s + v, 0);
                 return (
@@ -1788,7 +1789,7 @@ export default function Cobranza() {
                     </div>
                   ) : null}
                   <div style={{ display: 'flex', justifyContent: 'center', marginTop: 16 }}>
-                    {receiptStatusBadge(isReceiptExempt ? 'pagado' : pay?.status)}
+                    {receiptStatusBadge(isReceiptExempt ? 'exento' : pay?.status)}
                   </div>
                   {pay?.evidence && <div style={{ marginTop: 12, textAlign: 'center', fontSize: 12, color: 'var(--blue-500)' }}><FileText size={14} style={{ display: 'inline', verticalAlign: -2, marginRight: 4 }} /> Evidencia adjunta</div>}
                   <div style={{ marginTop: 20, paddingTop: 14, borderTop: '1.5px solid var(--sand-100)', display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--ink-400)' }}>
