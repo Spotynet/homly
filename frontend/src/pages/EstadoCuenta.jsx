@@ -678,6 +678,7 @@ export default function EstadoCuenta() {
                       <th style={{ textAlign: 'right' }}>Abono</th>
                       <th>Estado</th>
                       <th style={{ textAlign: 'right' }}>Saldo Acum.</th>
+                      <th style={{ textAlign: 'center' }}>Recibo de Pago</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -711,6 +712,7 @@ export default function EstadoCuenta() {
                             <div style={{ fontSize: 9, color: 'var(--teal-600)', fontStyle: 'normal' }}>Abono aplicado: {fmt(prevDebtAdeudo)}</div>
                           )}
                         </td>
+                        <td></td>
                       </tr>
                     )}
                     {unitCreditBalance > 0 && (
@@ -729,6 +731,7 @@ export default function EstadoCuenta() {
                             +{fmt(unitCreditBalance)}
                           </span>
                         </td>
+                        <td></td>
                       </tr>
                     )}
                     {data.periods.map((p, i) => {
@@ -763,25 +766,7 @@ export default function EstadoCuenta() {
                               {paid > 0 ? fmt(paid) : '—'}
                             </td>
                             <td>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'nowrap' }}>
-                                <span className={`badge ${statusClass(p.status)}`}>{statusLabel(p.status)}</span>
-                                {p.pay?.id && (
-                                  <button
-                                    onClick={() => handleDownloadReceipt(p.pay.id, p.period)}
-                                    disabled={downloadingReceipt === p.pay.id}
-                                    title="Descargar recibo PDF"
-                                    style={{
-                                      background: 'none', border: '1px solid var(--teal-300)',
-                                      borderRadius: 5, padding: '2px 5px', cursor: 'pointer',
-                                      color: 'var(--teal-600)', display: 'flex', alignItems: 'center',
-                                      opacity: downloadingReceipt === p.pay.id ? 0.5 : 1,
-                                      flexShrink: 0,
-                                    }}
-                                  >
-                                    <Download size={11} />
-                                  </button>
-                                )}
-                              </div>
+                              <span className={`badge ${statusClass(p.status)}`}>{statusLabel(p.status)}</span>
                             </td>
                             <td style={{ textAlign: 'right' }}>
                               <span style={{
@@ -790,6 +775,30 @@ export default function EstadoCuenta() {
                               }}>
                                 {saldoAcum > 0 ? '-' : saldoAcum < 0 ? '+' : ''}{fmt(Math.abs(saldoAcum))}
                               </span>
+                            </td>
+                            <td style={{ textAlign: 'center' }}>
+                              {p.pay?.id ? (
+                                <button
+                                  onClick={() => handleDownloadReceipt(p.pay.id, p.period)}
+                                  disabled={downloadingReceipt === p.pay.id}
+                                  title={`Descargar recibo ${periodLabel(p.period)}`}
+                                  style={{
+                                    display: 'inline-flex', alignItems: 'center', gap: 4,
+                                    padding: '4px 10px', borderRadius: 6, cursor: 'pointer',
+                                    border: '1px solid var(--teal-300)', background: 'var(--teal-50)',
+                                    color: 'var(--teal-700)', fontSize: 11, fontWeight: 600,
+                                    opacity: downloadingReceipt === p.pay.id ? 0.55 : 1,
+                                    whiteSpace: 'nowrap', transition: 'background 0.15s',
+                                  }}
+                                  onMouseEnter={e => { if (downloadingReceipt !== p.pay.id) e.currentTarget.style.background = 'var(--teal-100)'; }}
+                                  onMouseLeave={e => { e.currentTarget.style.background = 'var(--teal-50)'; }}
+                                >
+                                  <Download size={12} />
+                                  {downloadingReceipt === p.pay.id ? 'Generando…' : 'PDF'}
+                                </button>
+                              ) : (
+                                <span style={{ fontSize: 11, color: 'var(--ink-300)' }}>—</span>
+                              )}
                             </td>
                           </tr>
                           {/* Sub-fila: abono a deuda anterior */}
@@ -808,6 +817,7 @@ export default function EstadoCuenta() {
                               <td>
                                 <span className="badge badge-coral" style={{ fontSize: 10 }}>Abono</span>
                               </td>
+                              <td></td>
                               <td></td>
                             </tr>
                           )}
@@ -828,6 +838,7 @@ export default function EstadoCuenta() {
                                 <span className="badge badge-amber" style={{ fontSize: 10 }}>Abono</span>
                               </td>
                               <td></td>
+                              <td></td>
                             </tr>
                           ))}
                         </React.Fragment>
@@ -835,7 +846,7 @@ export default function EstadoCuenta() {
                     })}
                     {data.periods.length === 0 && (
                       <tr>
-                        <td colSpan={6} style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--ink-300)', fontSize: 14 }}>
+                        <td colSpan={7} style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--ink-300)', fontSize: 14 }}>
                           Sin registros de pago
                         </td>
                       </tr>
