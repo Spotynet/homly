@@ -190,6 +190,7 @@ export const reportsAPI = {
     api.get(`/tenants/${tenantId}/estado-cuenta-pdf/`, { params: { cutoff }, responseType: 'blob' }),
   sendUnitStatementEmail: (tenantId, data) => api.post(`/tenants/${tenantId}/send-unit-statement-email/`, data),
   sendGeneralStatementEmail: (tenantId, data) => api.post(`/tenants/${tenantId}/send-statement-email/`, data),
+  sendVecinoStatementEmail: (tenantId, data) => api.post(`/tenants/${tenantId}/send-vecino-statement-email/`, data),
 };
 
 export default api;

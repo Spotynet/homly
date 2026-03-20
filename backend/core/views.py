@@ -2334,6 +2334,316 @@ class SendUnitStatementEmailView(APIView):
 
 
 # ═══════════════════════════════════════════════════════════
+#  EMAIL — VECINO ENVÍA SU PROPIO ESTADO DE CUENTA
+# ═══════════════════════════════════════════════════════════
+
+def _generate_unit_statement_pdf(tenant, unit, rows, total_charges, total_paid, adj_balance, from_period, to_period):
+    """
+    Generate an in-memory PDF for a single unit's estado de cuenta.
+    Returns bytes or None if reportlab is not installed.
+    """
+    import io
+    import base64
+    from datetime import date as _date
+    try:
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib import colors
+        from reportlab.lib.units import cm
+        from reportlab.platypus import (
+            SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, HRFlowable,
+        )
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
+    except ImportError:
+        return None
+
+    MONTHS_FULL = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+                   'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+
+    def period_lbl(p):
+        try:
+            y, m = p.split('-')
+            return f'{MONTHS_FULL[int(m)]} {y}'
+        except Exception:
+            return p or ''
+
+    def fmt_cur(n):
+        try:
+            return f'${float(n):,.2f}'
+        except Exception:
+            return '$0.00'
+
+    currency = tenant.currency or 'MXN'
+
+    # Colour palette
+    COL_TEAL       = colors.HexColor('#0d7c6e')
+    COL_TEAL_LIGHT = colors.HexColor('#e6f4f2')
+    COL_CORAL      = colors.HexColor('#e84040')
+    COL_AMBER      = colors.HexColor('#d97706')
+    COL_GREEN_OK   = colors.HexColor('#1E594F')
+    COL_INK        = colors.HexColor('#1a1a2e')
+    COL_INK_LIGHT  = colors.HexColor('#64748b')
+    COL_SAND       = colors.HexColor('#f8f6f1')
+    COL_SAND_BRD   = colors.HexColor('#e5e0d5')
+    COL_WHITE      = colors.white
+    COL_HDR_BG     = colors.HexColor('#1a1a2e')
+
+    STATUS_MAP = {
+        'pagado':    ('Pagado',    COL_GREEN_OK),
+        'parcial':   ('Parcial',   COL_AMBER),
+        'pendiente': ('Pendiente', COL_CORAL),
+        'futuro':    ('Futuro',    COL_INK_LIGHT),
+    }
+
+    buffer = io.BytesIO()
+    page_w, _ = A4
+    margin = 1.8 * cm
+    doc = SimpleDocTemplate(
+        buffer, pagesize=A4,
+        leftMargin=margin, rightMargin=margin,
+        topMargin=1.4 * cm, bottomMargin=1.6 * cm,
+    )
+
+    styles = getSampleStyleSheet()
+    st_title   = ParagraphStyle('T', fontSize=16, fontName='Helvetica-Bold', textColor=COL_INK, spaceAfter=2, leading=20)
+    st_sub     = ParagraphStyle('S', fontSize=9,  fontName='Helvetica', textColor=COL_INK_LIGHT, spaceAfter=1)
+    st_info    = ParagraphStyle('I', fontSize=8.5, fontName='Helvetica', textColor=COL_INK_LIGHT, spaceAfter=1, leading=11)
+    st_bold    = ParagraphStyle('B', fontSize=10, fontName='Helvetica-Bold', textColor=COL_INK)
+    st_center  = ParagraphStyle('C', fontSize=9,  fontName='Helvetica-Bold', textColor=COL_WHITE, alignment=TA_CENTER)
+    st_right   = ParagraphStyle('R', fontSize=9,  fontName='Helvetica', textColor=COL_INK, alignment=TA_RIGHT)
+    st_kpi_val = ParagraphStyle('KV', fontSize=13, fontName='Helvetica-Bold', textColor=COL_INK, alignment=TA_CENTER, leading=16)
+    st_kpi_lbl = ParagraphStyle('KL', fontSize=7.5, fontName='Helvetica', textColor=COL_INK_LIGHT, alignment=TA_CENTER)
+
+    story = []
+
+    # ── Header bar ──
+    tenant_display = (getattr(tenant, 'razon_social', '') or tenant.name or '').strip()
+    tenant_sub     = tenant.name if tenant_display != tenant.name else ''
+    rfc_str        = getattr(tenant, 'rfc', '') or ''
+
+    header_data = [[
+        Paragraph(f'<b>{tenant_display}</b>', ParagraphStyle('HD', fontSize=12, fontName='Helvetica-Bold', textColor=COL_WHITE)),
+        Paragraph('Estado de Cuenta', ParagraphStyle('HT', fontSize=14, fontName='Helvetica-Bold', textColor=COL_WHITE, alignment=TA_RIGHT)),
+    ]]
+    header_tbl = Table(header_data, colWidths=[None, 6*cm])
+    header_tbl.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,-1), COL_HDR_BG),
+        ('LEFTPADDING',  (0,0), (-1,-1), 12),
+        ('RIGHTPADDING', (0,0), (-1,-1), 12),
+        ('TOPPADDING',   (0,0), (-1,-1), 10),
+        ('BOTTOMPADDING',(0,0), (-1,-1), 10),
+        ('VALIGN',       (0,0), (-1,-1), 'MIDDLE'),
+    ]))
+    story.append(header_tbl)
+    story.append(Spacer(1, 0.3*cm))
+
+    # ── Unit info block ──
+    period_range_str = f'{period_lbl(from_period)} — {period_lbl(to_period)}'
+    resp_str   = unit.responsible_name or ''
+    occ_label  = 'Inquilino' if unit.occupancy == 'rentado' else 'Propietario'
+
+    info_rows = [
+        [Paragraph('<b>Unidad</b>', st_info), Paragraph(f'{unit.unit_id_code} — {unit.unit_name}', st_info)],
+        [Paragraph('<b>Responsable</b>', st_info), Paragraph(f'{resp_str} ({occ_label})', st_info)],
+        [Paragraph('<b>Período</b>', st_info), Paragraph(period_range_str, st_info)],
+        [Paragraph('<b>Moneda</b>', st_info), Paragraph(currency, st_info)],
+    ]
+    if rfc_str:
+        info_rows.insert(1, [Paragraph('<b>RFC</b>', st_info), Paragraph(rfc_str, st_info)])
+
+    info_tbl = Table(info_rows, colWidths=[3*cm, None])
+    info_tbl.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,-1), COL_SAND),
+        ('LEFTPADDING',  (0,0), (-1,-1), 8),
+        ('RIGHTPADDING', (0,0), (-1,-1), 8),
+        ('TOPPADDING',   (0,0), (-1,-1), 4),
+        ('BOTTOMPADDING',(0,0), (-1,-1), 4),
+        ('BOX', (0,0), (-1,-1), 0.5, COL_SAND_BRD),
+        ('ROWBACKGROUNDS', (0,0), (-1,-1), [COL_SAND, COL_WHITE]),
+    ]))
+    story.append(info_tbl)
+    story.append(Spacer(1, 0.35*cm))
+
+    # ── KPI row ──
+    saldo_color = COL_CORAL if adj_balance > 0.01 else COL_GREEN_OK
+    kpi_data = [[
+        Paragraph(f'<b>{fmt_cur(total_charges)}</b>', ParagraphStyle('K1', fontSize=13, fontName='Helvetica-Bold', textColor=COL_INK, alignment=TA_CENTER, leading=16)),
+        Paragraph(f'<b>{fmt_cur(total_paid)}</b>', ParagraphStyle('K2', fontSize=13, fontName='Helvetica-Bold', textColor=COL_GREEN_OK, alignment=TA_CENTER, leading=16)),
+        Paragraph(f'<b>{fmt_cur(adj_balance)}</b>', ParagraphStyle('K3', fontSize=13, fontName='Helvetica-Bold', textColor=saldo_color, alignment=TA_CENTER, leading=16)),
+    ],[
+        Paragraph('Total Cargos', st_kpi_lbl),
+        Paragraph('Total Abonado', st_kpi_lbl),
+        Paragraph('Saldo Actual', st_kpi_lbl),
+    ]]
+    kpi_tbl = Table(kpi_data, colWidths=[(page_w - 2*margin) / 3] * 3)
+    kpi_tbl.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,-1), COL_TEAL_LIGHT),
+        ('BOX', (0,0), (-1,-1), 0.5, COL_TEAL),
+        ('LINEAFTER', (0,0), (1,-1), 0.5, COL_TEAL),
+        ('TOPPADDING',   (0,0), (-1,-1), 8),
+        ('BOTTOMPADDING',(0,0), (-1,-1), 6),
+        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+    ]))
+    story.append(kpi_tbl)
+    story.append(Spacer(1, 0.4*cm))
+
+    # ── Period detail table ──
+    col_w = (page_w - 2*margin)
+    col_widths = [col_w*0.28, col_w*0.18, col_w*0.18, col_w*0.20, col_w*0.16]
+
+    detail_rows = [[
+        Paragraph('Período',           ParagraphStyle('DH', fontSize=9, fontName='Helvetica-Bold', textColor=COL_WHITE)),
+        Paragraph('Cargo',             ParagraphStyle('DH', fontSize=9, fontName='Helvetica-Bold', textColor=COL_WHITE, alignment=TA_RIGHT)),
+        Paragraph('Abono',             ParagraphStyle('DH', fontSize=9, fontName='Helvetica-Bold', textColor=COL_WHITE, alignment=TA_RIGHT)),
+        Paragraph('Saldo Acum.',       ParagraphStyle('DH', fontSize=9, fontName='Helvetica-Bold', textColor=COL_WHITE, alignment=TA_RIGHT)),
+        Paragraph('Estado',            ParagraphStyle('DH', fontSize=9, fontName='Helvetica-Bold', textColor=COL_WHITE, alignment=TA_CENTER)),
+    ]]
+
+    row_styles = []
+    for i, row in enumerate(rows or []):
+        st_key    = row.get('status', 'pendiente')
+        st_label, st_col = STATUS_MAP.get(st_key, ('—', COL_INK_LIGHT))
+        bal_val   = float(row.get('balance', 0))
+        bal_color = COL_CORAL if bal_val > 0.01 else COL_GREEN_OK
+        bg = COL_SAND if i % 2 == 0 else COL_WHITE
+
+        detail_rows.append([
+            Paragraph(row.get('period', ''), ParagraphStyle('DR', fontSize=8.5, fontName='Helvetica', textColor=COL_INK)),
+            Paragraph(fmt_cur(row.get('charges', 0)), ParagraphStyle('DR', fontSize=8.5, fontName='Helvetica', textColor=COL_INK, alignment=TA_RIGHT)),
+            Paragraph(fmt_cur(row.get('paid', 0)), ParagraphStyle('DR', fontSize=8.5, fontName='Helvetica', textColor=COL_GREEN_OK, alignment=TA_RIGHT)),
+            Paragraph(fmt_cur(bal_val), ParagraphStyle('DR', fontSize=8.5, fontName='Helvetica', textColor=bal_color, alignment=TA_RIGHT)),
+            Paragraph(st_label, ParagraphStyle('DS', fontSize=8.5, fontName='Helvetica-Bold', textColor=st_col, alignment=TA_CENTER)),
+        ])
+        row_styles.append(('BACKGROUND', (0, i+1), (-1, i+1), bg))
+
+    detail_tbl = Table(detail_rows, colWidths=col_widths)
+    base_style = [
+        ('BACKGROUND',   (0, 0), (-1, 0), COL_HDR_BG),
+        ('ROWBACKGROUNDS',(0, 1), (-1, -1), [COL_SAND, COL_WHITE]),
+        ('TOPPADDING',   (0, 0), (-1, -1), 5),
+        ('BOTTOMPADDING',(0, 0), (-1, -1), 5),
+        ('LEFTPADDING',  (0, 0), (-1, -1), 6),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+        ('LINEBELOW',    (0, 0), (-1, -1), 0.3, COL_SAND_BRD),
+        ('BOX',          (0, 0), (-1, -1), 0.5, COL_SAND_BRD),
+    ]
+    detail_tbl.setStyle(TableStyle(base_style))
+    story.append(detail_tbl)
+    story.append(Spacer(1, 0.4*cm))
+
+    # ── Footer ──
+    now_str = _date.today().strftime('%d/%m/%Y')
+    story.append(HRFlowable(width='100%', thickness=0.5, color=COL_SAND_BRD))
+    story.append(Spacer(1, 0.15*cm))
+    story.append(Paragraph(
+        f'Generado el {now_str} · Homly — La administración que tu hogar se merece',
+        ParagraphStyle('FT', fontSize=7.5, fontName='Helvetica', textColor=COL_INK_LIGHT, alignment=TA_CENTER),
+    ))
+
+    doc.build(story)
+    return buffer.getvalue()
+
+
+class SendVecinoStatementEmailView(APIView):
+    """POST /api/tenants/{tenant_id}/send-vecino-statement-email/
+       Allows a vecino (resident) to send their own unit estado de cuenta
+       to their own user email address, with the PDF attached."""
+    permission_classes = [IsTenantMember]
+
+    def post(self, request, tenant_id=None):
+        from_period = request.data.get('from_period', '')
+        to_period   = request.data.get('to_period',   _today_period())
+
+        # Get the vecino's TenantUser and unit
+        try:
+            tenant_user = TenantUser.objects.select_related('unit').get(
+                user=request.user, tenant_id=tenant_id
+            )
+        except TenantUser.DoesNotExist:
+            return Response({'detail': 'No tienes acceso a este condominio.'}, status=status.HTTP_403_FORBIDDEN)
+
+        unit = tenant_user.unit
+        if not unit:
+            return Response(
+                {'detail': 'Tu usuario no tiene una unidad asignada. Contacta al administrador.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        user_email = (request.user.email or '').strip().lower()
+        if not user_email:
+            return Response(
+                {'detail': 'Tu usuario no tiene un correo electrónico registrado.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        tenant = Tenant.objects.get(id=tenant_id)
+        start_period = from_period or tenant.operation_start_date or '2024-01'
+
+        rows, total_charges, total_paid, balance, prev_debt_adeudo = _compute_statement(
+            tenant, str(unit.id), start_period, to_period
+        )
+        prev_debt  = float(unit.previous_debt  or 0)
+        credit_bal = float(unit.credit_balance or 0)
+        adj_balance = balance + prev_debt - float(prev_debt_adeudo) - credit_bal
+
+        # Build email rows
+        email_rows = [
+            {
+                'period':  _period_label_es(r.get('period', '')),
+                'charges': r.get('charge', 0),
+                'paid':    r.get('paid', 0),
+                'balance': r.get('saldo_accum', 0),
+                'status':  r.get('status', 'pendiente'),
+            }
+            for r in (rows or [])
+        ]
+
+        # Generate PDF for this unit
+        pdf_bytes = _generate_unit_statement_pdf(
+            tenant=tenant,
+            unit=unit,
+            rows=email_rows,
+            total_charges=total_charges,
+            total_paid=total_paid,
+            adj_balance=adj_balance,
+            from_period=start_period,
+            to_period=to_period,
+        )
+
+        pdf_attachment = None
+        if pdf_bytes:
+            safe_code = ''.join(c if c.isalnum() or c in '-_' else '_' for c in (unit.unit_id_code or 'unidad'))
+            pdf_attachment = (
+                f'estado_cuenta_{safe_code}.pdf',
+                pdf_bytes,
+                'application/pdf',
+            )
+
+        from .email_service import send_unit_statement_email
+        ok = send_unit_statement_email(
+            emails=[user_email],
+            tenant_name=getattr(tenant, 'razon_social', '') or tenant.name or '',
+            unit_code=unit.unit_id_code or '',
+            unit_name=unit.unit_name or '',
+            responsible=unit.responsible_name or '',
+            period_from=_period_label_es(start_period),
+            period_to=_period_label_es(to_period),
+            rows=email_rows,
+            total_charges=total_charges,
+            total_paid=total_paid,
+            balance=adj_balance,
+            pdf_attachment=pdf_attachment,
+        )
+
+        if ok:
+            return Response({'detail': f'Estado de cuenta enviado a {user_email}'})
+        return Response(
+            {'detail': 'Error al enviar el correo. Verifica la configuración SMTP.'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+# ═══════════════════════════════════════════════════════════
 #  EMAIL — ESTADO GENERAL DE CUENTA
 # ═══════════════════════════════════════════════════════════
 

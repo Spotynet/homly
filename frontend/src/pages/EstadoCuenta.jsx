@@ -35,6 +35,8 @@ export default function EstadoCuenta() {
   const UNITS_PAGE_OPTIONS = [10, 25, 50, 100];
   // vecino-specific: which tab is active ('cuenta' | 'reporte')
   const [vecinoView, setVecinoView] = useState('cuenta');
+  // vecino email self-send
+  const [sendingVecinoEmail, setSendingVecinoEmail] = useState(false);
   const handlePrintUnits = useCallback(() => {
     const prev = document.title;
     document.title = `Estado por Unidad — ${cutoff}`;
@@ -452,8 +454,8 @@ export default function EstadoCuenta() {
                 </div>
               </div>
               <div className="ec-detail-actions" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                {/* Email controls for unit statement */}
-                {((data?.unit?.owner_email || selectedUnitInfo?.owner_email) || (data?.unit?.tenant_email || selectedUnitInfo?.tenant_email)) && (
+                {/* Email controls for unit statement — admin/tesorero only */}
+                {!isVecino && ((data?.unit?.owner_email || selectedUnitInfo?.owner_email) || (data?.unit?.tenant_email || selectedUnitInfo?.tenant_email)) && (
                   <>
                     {(data?.unit?.owner_email || selectedUnitInfo?.owner_email) && (data?.unit?.tenant_email || selectedUnitInfo?.tenant_email) && (
                       <select
@@ -494,6 +496,33 @@ export default function EstadoCuenta() {
                     </button>
                   </>
                 )}
+
+                {/* Vecino: send to own email with PDF attached */}
+                {isVecino && user?.email && (
+                  <button
+                    className="btn-outline-white"
+                    disabled={sendingVecinoEmail}
+                    title={`Enviar a ${user.email}`}
+                    onClick={async () => {
+                      setSendingVecinoEmail(true);
+                      try {
+                        const res = await reportsAPI.sendVecinoStatementEmail(tenantId, {
+                          from_period: detailFrom,
+                          to_period: detailTo,
+                        });
+                        toast.success(res.data?.detail || `Estado de cuenta enviado a ${user.email}`);
+                      } catch (err) {
+                        toast.error(err?.response?.data?.detail || 'Error al enviar el correo');
+                      } finally {
+                        setSendingVecinoEmail(false);
+                      }
+                    }}
+                  >
+                    <Send size={14} />
+                    {sendingVecinoEmail ? 'Enviando…' : `Enviar a mi correo`}
+                  </button>
+                )}
+
                 <button className="btn-outline-white" onClick={() => window.print()}>
                   <Printer size={14} /> Imprimir / PDF
                 </button>

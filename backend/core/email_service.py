@@ -446,8 +446,17 @@ def _fmt_amount(amount, symbol='$') -> str:
     return f'{symbol}{n:,.0f}'
 
 
-def _send_branded_email(subject: str, plain: str, html: str, to_emails: list[str], from_email: str | None = None) -> bool:
-    """Helper to build and send a branded email with inline logo."""
+def _send_branded_email(
+    subject: str,
+    plain: str,
+    html: str,
+    to_emails: list[str],
+    from_email: str | None = None,
+    pdf_attachment: tuple | None = None,   # (filename, bytes, 'application/pdf')
+) -> bool:
+    """Helper to build and send a branded email with inline logo.
+    Optional pdf_attachment: tuple of (filename, content_bytes, mimetype).
+    """
     if not from_email:
         from django.conf import settings as _s
         from_email = getattr(_s, 'HOMLY_NOREPLY_EMAIL', 'no-reply@homly.com.mx')
@@ -460,6 +469,9 @@ def _send_branded_email(subject: str, plain: str, html: str, to_emails: list[str
             logo_part.add_header('Content-Disposition', 'inline', filename='homly-full.png')
             logo_part.add_header('Content-ID', f'<{LOGO_CID}>')
             msg.attach(logo_part)
+        if pdf_attachment:
+            fname, fbytes, fmime = pdf_attachment
+            msg.attach(fname, fbytes, fmime)
         msg.send(fail_silently=False)
         return True
     except Exception as e:
@@ -687,8 +699,9 @@ def send_unit_statement_email(
     total_charges: float,
     total_paid: float,
     balance: float,
+    pdf_attachment: tuple | None = None,   # (filename, bytes, 'application/pdf')
 ) -> bool:
-    """Send a branded unit estado de cuenta email."""
+    """Send a branded unit estado de cuenta email, optionally with a PDF attachment."""
     c = COLORS
     logo_img = f'<img src="cid:{LOGO_CID}" alt="Homly" width="150" style="display:block;height:auto;max-width:150px;" />'
 
@@ -835,6 +848,7 @@ def send_unit_statement_email(
         plain=plain,
         html=html,
         to_emails=emails,
+        pdf_attachment=pdf_attachment,
     )
 
 
