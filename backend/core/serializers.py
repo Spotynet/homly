@@ -1,6 +1,7 @@
 """
 Homly — REST API Serializers
 """
+import json
 from rest_framework import serializers
 from django.contrib.auth import authenticate
 from .models import (
@@ -356,12 +357,31 @@ class FieldPaymentSerializer(serializers.ModelSerializer):
         read_only_fields = ['id']
 
 
+def _parse_evidence(raw):
+    """Normalise the evidence TextField to a list of {data, mime, name} dicts.
+    Handles: empty string, legacy single-base64 string, and JSON array string."""
+    if not raw:
+        return []
+    stripped = raw.strip()
+    if stripped.startswith('['):
+        try:
+            return json.loads(stripped)
+        except (json.JSONDecodeError, ValueError):
+            pass
+    # Legacy: plain base64 string — wrap as single-item list
+    return [{'data': stripped, 'mime': '', 'name': 'Evidencia adjunta'}]
+
+
 class PaymentSerializer(serializers.ModelSerializer):
     field_payments = FieldPaymentSerializer(many=True, read_only=True)
     additional_payments = serializers.JSONField(read_only=True)
     unit_code = serializers.CharField(source='unit.unit_id_code', read_only=True)
     unit_name = serializers.CharField(source='unit.unit_name', read_only=True)
     responsible = serializers.CharField(source='unit.responsible_name', read_only=True)
+    evidence = serializers.SerializerMethodField()
+
+    def get_evidence(self, obj):
+        return _parse_evidence(obj.evidence)
 
     class Meta:
         model = Payment
@@ -379,7 +399,7 @@ class PaymentCaptureSerializer(serializers.Serializer):
     payment_type = serializers.ChoiceField(choices=Payment.PAYMENT_TYPE_CHOICES)
     payment_date = serializers.DateField(required=False, allow_null=True)
     notes = serializers.CharField(required=False, allow_blank=True, default='')
-    evidence = serializers.CharField(required=False, allow_blank=True, default='')
+    evidence = serializers.ListField(child=serializers.DictField(), required=False, default=list)
     bank_reconciled = serializers.BooleanField(required=False, default=False)
     field_payments = serializers.DictField(child=serializers.DictField(), required=False)
     adeudo_payments = serializers.DictField(required=False, default=dict)

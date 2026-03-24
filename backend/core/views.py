@@ -3,6 +3,7 @@ Homly — API Views
 All endpoints for the property management system.
 """
 import uuid
+import json
 from decimal import Decimal
 from django.db.models import Sum, Count, Q, F  # noqa: F401 - Q used in estado cuenta
 from django.http import HttpResponse
@@ -694,7 +695,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
                 'payment_type': data['payment_type'],
                 'payment_date': data.get('payment_date'),
                 'notes': data.get('notes', ''),
-                'evidence': data.get('evidence', ''),
+                'evidence': json.dumps(data.get('evidence', [])),
                 'bank_reconciled': data.get('bank_reconciled', False),
                 'adeudo_payments': data.get('adeudo_payments', {}),
             }

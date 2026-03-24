@@ -260,8 +260,7 @@ export default function Cobranza() {
       payment_type: existing?.payment_type || (!!unit.admin_exempt ? 'excento' : ''),
       payment_date: existing?.payment_date || new Date().toISOString().slice(0, 10),
       notes: existing?.notes || '',
-      evidence: existing?.evidence || '',
-      evidenceFileName: '',
+      evidences: Array.isArray(existing?.evidence) ? existing.evidence : [],
       bank_reconciled: !!existing?.bank_reconciled,
       field_payments: fieldPayments,
       adeudo_payments: existingAp,
@@ -344,15 +343,18 @@ export default function Cobranza() {
   };
 
   const handleEvidence = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (file.size > 5 * 1024 * 1024) { toast.error('Máximo 5 MB'); return; }
-    const reader = new FileReader();
-    reader.onload = () => {
-      const base64 = reader.result?.split(',')[1] || '';
-      setCaptureForm(p => ({ ...p, evidence: base64, evidenceMimeType: file.type, evidenceFileName: file.name, showPreview: false }));
-    };
-    reader.readAsDataURL(file);
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    files.forEach(file => {
+      if (file.size > 5 * 1024 * 1024) { toast.error(`${file.name}: máximo 5 MB`); return; }
+      const reader = new FileReader();
+      reader.onload = () => {
+        const base64 = reader.result?.split(',')[1] || '';
+        const entry = { data: base64, mime: file.type, name: file.name };
+        setCaptureForm(p => ({ ...p, evidences: [...(p.evidences || []), entry] }));
+      };
+      reader.readAsDataURL(file);
+    });
     e.target.value = '';
   };
 
@@ -376,7 +378,7 @@ export default function Cobranza() {
       payment_type: captureForm.payment_type,
       payment_date: captureForm.payment_date || null,
       notes: captureForm.notes || '',
-      evidence: captureForm.evidence || '',
+      evidence: captureForm.evidences || [],
       bank_reconciled: !!captureForm.bank_reconciled,
       field_payments: fp,
       adeudo_payments: captureForm.adeudo_payments || {},
@@ -1487,22 +1489,30 @@ export default function Cobranza() {
                 {/* SECCIÓN 6: Evidencia */}
                 <div style={{ marginTop: 12, fontSize: 12, fontWeight: 700, color: 'var(--ink-500)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Evidencia de Pago (opcional)</div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 8 }}>
-                  <label className="btn btn-secondary btn-sm" style={{ cursor: 'pointer' }}><Upload size={14} style={{ display: 'inline', verticalAlign: -2 }} /> Adjuntar<input type="file" style={{ display: 'none' }} onChange={handleEvidence} /></label>
-                  {(captureForm.evidenceFileName || captureForm.evidence) ? (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--blue-50)', border: '1px solid var(--blue-100)', padding: '6px 12px', borderRadius: 'var(--radius-sm)' }}>
-                      <FileText size={14} />
-                      <span style={{ fontSize: 12, color: 'var(--blue-600)', fontWeight: 600 }}>{captureForm.evidenceFileName || 'Evidencia adjunta'}</span>
-                      <button type="button" className="btn btn-secondary btn-sm" style={{ padding: '3px 8px', fontSize: 11 }}
-                        onClick={() => setEvidencePopup({ b64: captureForm.evidence, mime: captureForm.evidenceMimeType || '', fileName: captureForm.evidenceFileName || 'Evidencia adjunta' })}>
-                        Ver
-                      </button>
-                      <button type="button" className="btn-ghost" style={{ color: 'var(--coral-500)', padding: 0, marginLeft: 4 }}
-                        onClick={() => setCaptureForm(p => ({ ...p, evidenceFileName: '', evidence: '', evidenceMimeType: '', showPreview: false }))}>✕</button>
-                    </div>
-                  ) : (
-                    <span style={{ fontSize: 12, color: 'var(--ink-300)' }}>Imagen, PDF u otro archivo — máx. 5 MB</span>
+                  <label className="btn btn-secondary btn-sm" style={{ cursor: 'pointer' }}>
+                    <Upload size={14} style={{ display: 'inline', verticalAlign: -2 }} /> Adjuntar
+                    <input type="file" multiple style={{ display: 'none' }} onChange={handleEvidence} />
+                  </label>
+                  {(captureForm.evidences || []).length === 0 && (
+                    <span style={{ fontSize: 12, color: 'var(--ink-300)' }}>Imagen, PDF u otro archivo — máx. 5 MB por archivo</span>
                   )}
                 </div>
+                {(captureForm.evidences || []).length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
+                    {(captureForm.evidences || []).map((ev, idx) => (
+                      <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--blue-50)', border: '1px solid var(--blue-100)', padding: '6px 12px', borderRadius: 'var(--radius-sm)' }}>
+                        <FileText size={14} style={{ flexShrink: 0 }} />
+                        <span style={{ fontSize: 12, color: 'var(--blue-600)', fontWeight: 600, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ev.name || `Evidencia ${idx + 1}`}</span>
+                        <button type="button" className="btn btn-secondary btn-sm" style={{ padding: '3px 8px', fontSize: 11, flexShrink: 0 }}
+                          onClick={() => setEvidencePopup({ b64: ev.data, mime: ev.mime || '', fileName: ev.name || `Evidencia ${idx + 1}` })}>
+                          Ver
+                        </button>
+                        <button type="button" className="btn-ghost" style={{ color: 'var(--coral-500)', padding: 0, marginLeft: 2, flexShrink: 0 }}
+                          onClick={() => setCaptureForm(p => ({ ...p, evidences: p.evidences.filter((_, i) => i !== idx) }))}>✕</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
               <div className="modal-foot">
                 <button className="btn btn-secondary" onClick={() => setShowCapture(null)}>Cancelar</button>
@@ -1791,7 +1801,16 @@ export default function Cobranza() {
                   <div style={{ display: 'flex', justifyContent: 'center', marginTop: 16 }}>
                     {receiptStatusBadge(isReceiptExempt ? 'exento' : pay?.status)}
                   </div>
-                  {pay?.evidence && <div style={{ marginTop: 12, textAlign: 'center', fontSize: 12, color: 'var(--blue-500)' }}><FileText size={14} style={{ display: 'inline', verticalAlign: -2, marginRight: 4 }} /> Evidencia adjunta</div>}
+                  {(pay?.evidence || []).length > 0 && (
+                    <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center' }}>
+                      {(pay.evidence || []).map((ev, idx) => (
+                        <button key={idx} type="button" className="btn btn-secondary btn-sm" style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 5 }}
+                          onClick={() => setEvidencePopup({ b64: ev.data, mime: ev.mime || '', fileName: ev.name || `Evidencia ${idx + 1}` })}>
+                          <FileText size={12} /> {ev.name || `Evidencia ${idx + 1}`}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   <div style={{ marginTop: 20, paddingTop: 14, borderTop: '1.5px solid var(--sand-100)', display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--ink-400)' }}>
                     <div><Calendar size={11} style={{ display: 'inline', verticalAlign: -2, marginRight: 4 }} /> <strong>Fecha de pago:</strong> {pdLabel}</div>
                     <div><FileText size={11} style={{ display: 'inline', verticalAlign: -2, marginRight: 4 }} /> <strong>Recibo creado:</strong> {new Date().toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric' })}</div>
