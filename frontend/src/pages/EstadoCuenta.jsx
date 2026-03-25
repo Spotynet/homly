@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { unitsAPI, reportsAPI, tenantsAPI, paymentsAPI, gastosAPI, unrecognizedIncomeAPI } from '../api/client';
+import { unitsAPI, reportsAPI, tenantsAPI, paymentsAPI, gastosAPI, unrecognizedIncomeAPI, extraFieldsAPI } from '../api/client';
 import PaginationBar from '../components/PaginationBar';
+import PaymentReceiptModal from '../components/PaymentReceiptModal';
 import { statusClass, statusLabel, fmtDate, periodLabel, todayPeriod, prevPeriod, nextPeriod, ROLES } from '../utils/helpers';
 import { Search, ChevronLeft, ChevronRight, Building, Globe, DollarSign, ArrowDown, TrendingDown, AlertCircle, Calendar, Printer, ShoppingBag, FileText, Mail, X, Send, Download } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -39,6 +40,10 @@ export default function EstadoCuenta() {
   const [sendingVecinoEmail, setSendingVecinoEmail] = useState(false);
   // receipt PDF download
   const [downloadingReceipt, setDownloadingReceipt] = useState(null);
+  // receipt modal (view)
+  const [showReceiptModal, setShowReceiptModal] = useState(null); // { unit, pay }
+  // extra fields (for receipt modal)
+  const [extraFields, setExtraFields] = useState([]);
 
   const handleDownloadReceipt = async (payId, period) => {
     setDownloadingReceipt(payId);
@@ -86,6 +91,9 @@ export default function EstadoCuenta() {
       setTenantData(r.data);
       const start = r.data?.operation_start_date || r.data?.created_at?.slice(0, 7) || '';
       if (start) setDetailFrom(start);
+    }).catch(() => {});
+    extraFieldsAPI.list(tenantId).then(r => {
+      setExtraFields(r.data?.results || r.data || []);
     }).catch(() => {});
   }, [tenantId, isVecino]);
 
@@ -778,24 +786,41 @@ export default function EstadoCuenta() {
                             </td>
                             <td style={{ textAlign: 'center' }}>
                               {p.pay?.id ? (
-                                <button
-                                  onClick={() => handleDownloadReceipt(p.pay.id, p.period)}
-                                  disabled={downloadingReceipt === p.pay.id}
-                                  title={`Descargar recibo ${periodLabel(p.period)}`}
-                                  style={{
-                                    display: 'inline-flex', alignItems: 'center', gap: 4,
-                                    padding: '4px 10px', borderRadius: 6, cursor: 'pointer',
-                                    border: '1px solid var(--teal-300)', background: 'var(--teal-50)',
-                                    color: 'var(--teal-700)', fontSize: 11, fontWeight: 600,
-                                    opacity: downloadingReceipt === p.pay.id ? 0.55 : 1,
-                                    whiteSpace: 'nowrap', transition: 'background 0.15s',
-                                  }}
-                                  onMouseEnter={e => { if (downloadingReceipt !== p.pay.id) e.currentTarget.style.background = 'var(--teal-100)'; }}
-                                  onMouseLeave={e => { e.currentTarget.style.background = 'var(--teal-50)'; }}
-                                >
-                                  <Download size={12} />
-                                  {downloadingReceipt === p.pay.id ? 'Generando…' : 'PDF'}
-                                </button>
+                                <div style={{ display: 'inline-flex', gap: 5 }}>
+                                  <button
+                                    onClick={() => setShowReceiptModal({ unit: data.unit, pay: p.pay })}
+                                    title={`Ver recibo ${periodLabel(p.period)}`}
+                                    style={{
+                                      display: 'inline-flex', alignItems: 'center', gap: 4,
+                                      padding: '4px 10px', borderRadius: 6, cursor: 'pointer',
+                                      border: '1px solid var(--blue-300)', background: 'var(--blue-50)',
+                                      color: 'var(--blue-700)', fontSize: 11, fontWeight: 600,
+                                      whiteSpace: 'nowrap', transition: 'background 0.15s',
+                                    }}
+                                    onMouseEnter={e => { e.currentTarget.style.background = 'var(--blue-100)'; }}
+                                    onMouseLeave={e => { e.currentTarget.style.background = 'var(--blue-50)'; }}
+                                  >
+                                    <FileText size={12} /> Ver
+                                  </button>
+                                  <button
+                                    onClick={() => handleDownloadReceipt(p.pay.id, p.period)}
+                                    disabled={downloadingReceipt === p.pay.id}
+                                    title={`Descargar recibo ${periodLabel(p.period)}`}
+                                    style={{
+                                      display: 'inline-flex', alignItems: 'center', gap: 4,
+                                      padding: '4px 10px', borderRadius: 6, cursor: 'pointer',
+                                      border: '1px solid var(--teal-300)', background: 'var(--teal-50)',
+                                      color: 'var(--teal-700)', fontSize: 11, fontWeight: 600,
+                                      opacity: downloadingReceipt === p.pay.id ? 0.55 : 1,
+                                      whiteSpace: 'nowrap', transition: 'background 0.15s',
+                                    }}
+                                    onMouseEnter={e => { if (downloadingReceipt !== p.pay.id) e.currentTarget.style.background = 'var(--teal-100)'; }}
+                                    onMouseLeave={e => { e.currentTarget.style.background = 'var(--teal-50)'; }}
+                                  >
+                                    <Download size={12} />
+                                    {downloadingReceipt === p.pay.id ? '…' : 'PDF'}
+                                  </button>
+                                </div>
                               ) : (
                                 <span style={{ fontSize: 11, color: 'var(--ink-300)' }}>—</span>
                               )}
@@ -2548,6 +2573,17 @@ function ReporteAdeudosView({ tenantData, adeudosData, adeudosLoading, cutoff, s
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── Receipt modal ── */}
+      {showReceiptModal && (
+        <PaymentReceiptModal
+          pay={showReceiptModal.pay}
+          unit={showReceiptModal.unit}
+          tc={tenantData}
+          extraFields={extraFields}
+          onClose={() => setShowReceiptModal(null)}
+        />
       )}
     </div>
   );
