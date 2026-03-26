@@ -3041,9 +3041,17 @@ class EstadoPorUnidadPDFView(APIView):
 
         cutoff_param = request.query_params.get('cutoff', '')
         cutoff = cutoff_param or _today_period()
+        unit_id_param = request.query_params.get('unit_id', '')
+        from_period_param = request.query_params.get('from_period', '')
 
         tenant = Tenant.objects.get(id=tenant_id)
-        start_period = tenant.operation_start_date or '2024-01'
+        start_period = from_period_param or tenant.operation_start_date or '2024-01'
+
+        # ── PER-UNIT statement PDF ────────────────────────────────────────────
+        if unit_id_param:
+            return self._generate_unit_statement_pdf_view(
+                request, tenant, unit_id_param, start_period, cutoff
+            )
 
         # Build unit data
         units = Unit.objects.filter(tenant_id=tenant_id).order_by('unit_id_code')
@@ -3402,6 +3410,61 @@ class EstadoPorUnidadPDFView(APIView):
 
         filename = f'estado_por_unidad_{cutoff}.pdf'
         response = HttpResponse(buffer.read(), content_type='application/pdf')
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        return response
+
+    def _generate_unit_statement_pdf_view(self, request, tenant, unit_id, start_period, cutoff):
+        """Generate and return a per-unit estado de cuenta PDF using the shared helper."""
+        from django.http import HttpResponse
+
+        unit = Unit.objects.filter(id=unit_id, tenant_id=tenant.id).first()
+        if not unit:
+            return Response({'detail': 'Unidad no encontrada.'}, status=404)
+
+        # Vecino authorization: can only download their own unit
+        tu = TenantUser.objects.filter(tenant_id=tenant.id, user=request.user).first()
+        if tu and tu.role == 'vecino' and str(tu.unit_id) != str(unit.id):
+            return Response({'detail': 'No autorizado.'}, status=403)
+
+        rows, total_charges, total_paid, balance, prev_debt_adeudo = _compute_statement(
+            tenant, str(unit.id), start_period, cutoff
+        )
+        prev_debt   = float(unit.previous_debt  or 0)
+        credit_bal  = float(unit.credit_balance or 0)
+        adj_balance = balance + prev_debt - float(prev_debt_adeudo) - credit_bal
+
+        # Convert rows to the format expected by the shared PDF helper
+        email_rows = [
+            {
+                'period':  _period_label_es(r.get('period', '')),
+                'charges': r.get('charge', 0),
+                'paid':    r.get('paid', 0),
+                'balance': r.get('saldo_accum', 0),
+                'status':  r.get('status', 'pendiente'),
+            }
+            for r in (rows or [])
+        ]
+
+        pdf_bytes = _generate_unit_statement_pdf(
+            tenant=tenant,
+            unit=unit,
+            rows=email_rows,
+            total_charges=total_charges,
+            total_paid=total_paid,
+            adj_balance=adj_balance,
+            from_period=start_period,
+            to_period=cutoff,
+        )
+
+        if pdf_bytes is None:
+            return Response(
+                {'detail': 'No se pudo generar el PDF. Verifica que reportlab esté instalado.'},
+                status=503,
+            )
+
+        safe_code = ''.join(c if c.isalnum() or c in '-_' else '_' for c in (unit.unit_id_code or 'unidad'))
+        filename = f'estado_cuenta_{safe_code}_{cutoff}.pdf'
+        response = HttpResponse(pdf_bytes, content_type='application/pdf')
         response['Content-Disposition'] = f'attachment; filename="{filename}"'
         return response
 

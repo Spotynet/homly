@@ -105,6 +105,26 @@ export default function Cobranza() {
   const [captureUnitPeriodsLoading, setCaptureUnitPeriodsLoading] = useState(false);
   const [sendingReceipt, setSendingReceipt] = useState(false);
   const [receiptEmailRecipient, setReceiptEmailRecipient] = useState('owner'); // 'owner' | 'tenant' | 'both'
+  const [downloadingReceipt, setDownloadingReceipt] = useState(null); // payId being downloaded
+
+  const handleDownloadReceipt = async (payId, period) => {
+    setDownloadingReceipt(payId);
+    try {
+      const res = await paymentsAPI.receiptPDF(tenantId, payId);
+      const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `recibo-${period}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error('No se pudo descargar el recibo.');
+    } finally {
+      setDownloadingReceipt(null);
+    }
+  };
 
   const load = async () => {
     if (!tenantId) return;
@@ -564,6 +584,17 @@ export default function Cobranza() {
                         {pay && (
                           <button className="btn btn-secondary btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }} onClick={() => setShowReceipt({ unit: u, pay })}>
                             <FileText size={12} /> Ver Recibo
+                          </button>
+                        )}
+                        {pay && (
+                          <button
+                            className="btn btn-secondary btn-sm"
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, opacity: downloadingReceipt === pay.id ? 0.6 : 1 }}
+                            disabled={downloadingReceipt === pay.id}
+                            onClick={() => handleDownloadReceipt(pay.id, period)}
+                            title="Descargar recibo como PDF"
+                          >
+                            <Printer size={12} /> {downloadingReceipt === pay.id ? '…' : 'PDF'}
                           </button>
                         )}
                         {!isReadOnly && pay && (

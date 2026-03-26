@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { unitsAPI, reportsAPI, tenantsAPI, paymentsAPI, gastosAPI, unrecognizedIncomeAPI, extraFieldsAPI } from '../api/client';
+import { unitsAPI, reportsAPI, tenantsAPI, paymentsAPI, gastosAPI, unrecognizedIncomeAPI, extraFieldsAPI, reservationsAPI } from '../api/client';
 import PaginationBar from '../components/PaginationBar';
 import PaymentReceiptModal from '../components/PaymentReceiptModal';
 import { statusClass, statusLabel, fmtDate, periodLabel, todayPeriod, prevPeriod, nextPeriod, ROLES } from '../utils/helpers';
@@ -42,8 +42,12 @@ export default function EstadoCuenta() {
   const [downloadingReceipt, setDownloadingReceipt] = useState(null);
   // receipt modal (view)
   const [showReceiptModal, setShowReceiptModal] = useState(null); // { unit, pay }
+  // reservations for the open receipt modal
+  const [receiptReservations, setReceiptReservations] = useState([]);
   // extra fields (for receipt modal)
   const [extraFields, setExtraFields] = useState([]);
+  // full unit statement PDF download
+  const [downloadingStatement, setDownloadingStatement] = useState(false);
 
   const handleDownloadReceipt = async (payId, period) => {
     setDownloadingReceipt(payId);
@@ -73,6 +77,44 @@ export default function EstadoCuenta() {
       document.body.classList.remove('printing-units');
     }, 1500);
   }, [cutoff]);
+
+  // Load approved reservations with charge when receipt modal opens
+  useEffect(() => {
+    if (!showReceiptModal || !tenantId) { setReceiptReservations([]); return; }
+    const { unit, pay } = showReceiptModal;
+    if (!unit?.id || !pay?.period) { setReceiptReservations([]); return; }
+    reservationsAPI.list(tenantId, {
+      unit_id: unit.id,
+      period: pay.period,
+      status: 'approved',
+      page_size: 200,
+    }).then(r => {
+      const all = r.data?.results || r.data || [];
+      setReceiptReservations(all.filter(r => parseFloat(r.charge_amount) > 0));
+    }).catch(() => setReceiptReservations([]));
+  }, [showReceiptModal, tenantId]);
+
+  // Download full unit statement as PDF (via backend)
+  const handleDownloadStatement = async () => {
+    if (!selectedUnit || !tenantId) return;
+    setDownloadingStatement(true);
+    try {
+      const res = await reportsAPI.estadoCuentaPDF(tenantId, detailTo || todayPeriod(), selectedUnit, detailFrom);
+      const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+      const a = document.createElement('a');
+      a.href = url;
+      const unitCode = (data?.unit?.unit_id_code || '').replace(/[^a-zA-Z0-9]/g, '_') || 'unidad';
+      a.download = `estado-cuenta-${unitCode}-${detailTo || todayPeriod()}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error('No se pudo generar el PDF del estado de cuenta.');
+    } finally {
+      setDownloadingStatement(false);
+    }
+  };
 
   // Load units + tenant info
   useEffect(() => {
@@ -552,6 +594,14 @@ export default function EstadoCuenta() {
                   </button>
                 )}
 
+                <button
+                  className="btn-outline-white"
+                  onClick={handleDownloadStatement}
+                  disabled={downloadingStatement}
+                  title="Descargar estado de cuenta como PDF"
+                >
+                  <Download size={14} /> {downloadingStatement ? 'Generando…' : 'Descargar PDF'}
+                </button>
                 <button className="btn-outline-white" onClick={() => window.print()}>
                   <Printer size={14} /> Imprimir / PDF
                 </button>
@@ -926,13 +976,6 @@ export default function EstadoCuenta() {
                       </span>
                     )}
                     {search && <span className="badge badge-amber">Filtrado: {filteredUnits.length}</span>}
-                    <button
-                      className="btn btn-outline btn-sm"
-                      onClick={() => setShowGeneralEmailModal(true)}
-                      style={{ display: 'flex', alignItems: 'center', gap: 6 }}
-                    >
-                      <Mail size={14} /> Enviar por Email
-                    </button>
                     <button
                       className="btn btn-outline btn-sm"
                       onClick={handlePrintUnits}
@@ -2582,6 +2625,7 @@ function ReporteAdeudosView({ tenantData, adeudosData, adeudosLoading, cutoff, s
           unit={showReceiptModal.unit}
           tc={tenantData}
           extraFields={extraFields}
+          reservations={receiptReservations}
           onClose={() => setShowReceiptModal(null)}
         />
       )}

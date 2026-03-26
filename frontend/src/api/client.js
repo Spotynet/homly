@@ -188,8 +188,11 @@ export const reportsAPI = {
   estadoCuenta: (tenantId, params) => api.get(`/tenants/${tenantId}/estado-cuenta/`, { params }),
   reporteGeneral: (tenantId, period) => api.get(`/tenants/${tenantId}/reporte-general/`, { params: { period } }),
   reporteAdeudos: (tenantId, params) => api.get(`/tenants/${tenantId}/reporte-adeudos/`, { params }),
-  estadoCuentaPDF: (tenantId, cutoff) =>
-    api.get(`/tenants/${tenantId}/estado-cuenta-pdf/`, { params: { cutoff }, responseType: 'blob' }),
+  estadoCuentaPDF: (tenantId, cutoff, unitId = null, fromPeriod = null) =>
+    api.get(`/tenants/${tenantId}/estado-cuenta-pdf/`, {
+      params: { cutoff, ...(unitId ? { unit_id: unitId } : {}), ...(fromPeriod ? { from_period: fromPeriod } : {}) },
+      responseType: 'blob',
+    }),
   sendUnitStatementEmail: (tenantId, data) => api.post(`/tenants/${tenantId}/send-unit-statement-email/`, data),
   sendGeneralStatementEmail: (tenantId, data) => api.post(`/tenants/${tenantId}/send-statement-email/`, data),
   sendVecinoStatementEmail: (tenantId, data) => api.post(`/tenants/${tenantId}/send-vecino-statement-email/`, data),
