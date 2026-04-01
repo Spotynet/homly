@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { unitsAPI, reportsAPI, tenantsAPI, paymentsAPI, gastosAPI, unrecognizedIncomeAPI, extraFieldsAPI, reservationsAPI } from '../api/client';
 import PaginationBar from '../components/PaginationBar';
 import PaymentReceiptModal from '../components/PaymentReceiptModal';
+import SendEmailModal from '../components/SendEmailModal';
 import { statusClass, statusLabel, fmtDate, periodLabel, todayPeriod, prevPeriod, nextPeriod, ROLES } from '../utils/helpers';
 import { Search, ChevronLeft, ChevronRight, Building, Globe, DollarSign, ArrowDown, TrendingDown, AlertCircle, Calendar, Printer, ShoppingBag, FileText, Mail, X, Send, Download } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -153,7 +154,7 @@ export default function EstadoCuenta() {
   const [listMeta, setListMeta] = useState(null);
   // Email state
   const [sendingUnitEmail, setSendingUnitEmail] = useState(false);
-  const [unitEmailRecipient, setUnitEmailRecipient] = useState('owner'); // 'owner' | 'tenant' | 'both'
+  const [showUnitEmailModal, setShowUnitEmailModal] = useState(false);
   const [showGeneralEmailModal, setShowGeneralEmailModal] = useState(false);
   const [generalEmailRecipientMode, setGeneralEmailRecipientMode] = useState('owners'); // 'owners' | 'tenants' | 'custom'
   const [generalEmailCustom, setGeneralEmailCustom] = useState('');
@@ -526,46 +527,18 @@ export default function EstadoCuenta() {
               </div>
               <div className="ec-detail-actions" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 {/* Email controls for unit statement — admin/tesorero only */}
-                {!isVecino && ((data?.unit?.owner_email || selectedUnitInfo?.owner_email) || (data?.unit?.tenant_email || selectedUnitInfo?.tenant_email)) && (
-                  <>
-                    {(data?.unit?.owner_email || selectedUnitInfo?.owner_email) && (data?.unit?.tenant_email || selectedUnitInfo?.tenant_email) && (
-                      <select
-                        value={unitEmailRecipient}
-                        onChange={e => setUnitEmailRecipient(e.target.value)}
-                        style={{ fontSize: 12, padding: '5px 8px', border: '1px solid rgba(255,255,255,0.3)', borderRadius: 6, color: 'var(--white)', background: 'rgba(255,255,255,0.1)', cursor: 'pointer' }}
-                      >
-                        <option value="owner" style={{ color: 'var(--ink-800)', background: 'var(--white)' }}>Propietario</option>
-                        <option value="tenant" style={{ color: 'var(--ink-800)', background: 'var(--white)' }}>Inquilino</option>
-                        <option value="both" style={{ color: 'var(--ink-800)', background: 'var(--white)' }}>Ambos</option>
-                      </select>
-                    )}
-                    <button
-                      className="btn-outline-white"
-                      disabled={sendingUnitEmail}
-                      onClick={async () => {
-                        const unitId = selectedUnit;
-                        const recipient = (data?.unit?.owner_email || selectedUnitInfo?.owner_email) && (data?.unit?.tenant_email || selectedUnitInfo?.tenant_email)
-                          ? unitEmailRecipient
-                          : (data?.unit?.owner_email || selectedUnitInfo?.owner_email) ? 'owner' : 'tenant';
-                        setSendingUnitEmail(true);
-                        try {
-                          const res = await reportsAPI.sendUnitStatementEmail(tenantId, {
-                            unit_id: unitId,
-                            from_period: detailFrom,
-                            to_period: detailTo,
-                            recipients: recipient,
-                          });
-                          toast.success(res.data?.detail || 'Estado de cuenta enviado');
-                        } catch (err) {
-                          toast.error(err?.response?.data?.detail || 'Error al enviar el correo');
-                        } finally {
-                          setSendingUnitEmail(false);
-                        }
-                      }}
-                    >
-                      <Mail size={14} /> {sendingUnitEmail ? 'Enviando…' : 'Enviar por Email'}
-                    </button>
-                  </>
+                {!isVecino && (
+                  (data?.unit?.owner_email || selectedUnitInfo?.owner_email) ||
+                  (data?.unit?.coowner_email || selectedUnitInfo?.coowner_email) ||
+                  (data?.unit?.tenant_email || selectedUnitInfo?.tenant_email)
+                ) && (
+                  <button
+                    className="btn-outline-white"
+                    disabled={sendingUnitEmail}
+                    onClick={() => setShowUnitEmailModal(true)}
+                  >
+                    <Mail size={14} /> {sendingUnitEmail ? 'Enviando…' : 'Enviar por Email'}
+                  </button>
                 )}
 
                 {/* Vecino: send to own email with PDF attached */}
@@ -1244,6 +1217,33 @@ export default function EstadoCuenta() {
           extraFields={extraFields}
           reservations={receiptReservations}
           onClose={() => setShowReceiptModal(null)}
+        />
+      )}
+
+      {/* ── Email modal para estado de cuenta por unidad ── */}
+      {showUnitEmailModal && (
+        <SendEmailModal
+          unit={data?.unit || null}
+          title="Enviar Estado de Cuenta"
+          isSending={sendingUnitEmail}
+          onClose={() => setShowUnitEmailModal(false)}
+          onSend={async (emails) => {
+            setSendingUnitEmail(true);
+            try {
+              const res = await reportsAPI.sendUnitStatementEmail(tenantId, {
+                unit_id: selectedUnit,
+                from_period: detailFrom,
+                to_period: detailTo,
+                emails,
+              });
+              toast.success(res.data?.detail || 'Estado de cuenta enviado');
+              setShowUnitEmailModal(false);
+            } catch (err) {
+              toast.error(err?.response?.data?.detail || 'Error al enviar el correo');
+            } finally {
+              setSendingUnitEmail(false);
+            }
+          }}
         />
       )}
     </div>

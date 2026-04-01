@@ -879,12 +879,19 @@ class PaymentViewSet(viewsets.ModelViewSet):
         payment = self.get_object()
         unit = payment.unit
 
-        recipients = request.data.get('recipients', 'owner')  # 'owner' | 'tenant' | 'both'
-        emails = []
-        if recipients in ('owner', 'both') and (unit.owner_email or '').strip():
-            emails.append(unit.owner_email.strip())
-        if recipients in ('tenant', 'both') and (unit.tenant_email or '').strip():
-            emails.append(unit.tenant_email.strip())
+        # Acepta lista explícita de emails O el campo clásico recipients
+        emails_param = request.data.get('emails')  # lista directa: ['a@b.com', ...]
+        if emails_param and isinstance(emails_param, list):
+            emails = [e.strip() for e in emails_param if isinstance(e, str) and e.strip()]
+        else:
+            recipients = request.data.get('recipients', 'owner')  # 'owner' | 'tenant' | 'both'
+            emails = []
+            if recipients in ('owner', 'both') and (unit.owner_email or '').strip():
+                emails.append(unit.owner_email.strip())
+            if recipients in ('coowner', 'both') and (unit.coowner_email or '').strip():
+                emails.append(unit.coowner_email.strip())
+            if recipients in ('tenant', 'both') and (unit.tenant_email or '').strip():
+                emails.append(unit.tenant_email.strip())
 
         if not emails:
             return Response(
@@ -2344,6 +2351,7 @@ class SendUnitStatementEmailView(APIView):
         from_period = request.data.get('from_period', '')
         to_period = request.data.get('to_period', _today_period())
         recipients = request.data.get('recipients', 'owner')  # 'owner' | 'tenant' | 'both'
+        emails_param = request.data.get('emails')  # lista directa
 
         if not unit_id:
             return Response({'detail': 'Falta unit_id.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -2352,11 +2360,17 @@ class SendUnitStatementEmailView(APIView):
         if not unit:
             return Response({'detail': 'Unidad no encontrada.'}, status=status.HTTP_404_NOT_FOUND)
 
-        emails = []
-        if recipients in ('owner', 'both') and (unit.owner_email or '').strip():
-            emails.append(unit.owner_email.strip())
-        if recipients in ('tenant', 'both') and (unit.tenant_email or '').strip():
-            emails.append(unit.tenant_email.strip())
+        # Acepta lista explícita de emails O el campo clásico recipients
+        if emails_param and isinstance(emails_param, list):
+            emails = [e.strip() for e in emails_param if isinstance(e, str) and e.strip()]
+        else:
+            emails = []
+            if recipients in ('owner', 'both') and (unit.owner_email or '').strip():
+                emails.append(unit.owner_email.strip())
+            if recipients in ('coowner', 'both') and (unit.coowner_email or '').strip():
+                emails.append(unit.coowner_email.strip())
+            if recipients in ('tenant', 'both') and (unit.tenant_email or '').strip():
+                emails.append(unit.tenant_email.strip())
 
         if not emails:
             return Response(

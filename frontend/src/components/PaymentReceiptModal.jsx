@@ -10,11 +10,12 @@
  *   onClose       – () => void
  */
 import React, { useState } from 'react';
-import { AlertCircle, Calendar, FileText, Mail, Printer, X, Download } from 'lucide-react';
+import { AlertCircle, Calendar, FileText, Mail, Printer, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import { paymentsAPI } from '../api/client';
 import { PAYMENT_TYPES, ROLES, APP_VERSION, CURRENCIES, periodLabel } from '../utils/helpers';
+import SendEmailModal from './SendEmailModal';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -110,8 +111,7 @@ export default function PaymentReceiptModal({ pay, unit, tc, extraFields = [], r
   const { tenantId, user } = useAuth();
   const [evidencePopup, setEvidencePopup] = useState(null);
   const [sendingReceipt, setSendingReceipt] = useState(false);
-  const [receiptEmailRecipient, setReceiptEmailRecipient] = useState('owner');
-  const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [showEmailModal, setShowEmailModal] = useState(false);
 
   // ── Computed receipt values ──
   const isReceiptExempt = !!unit?.admin_exempt;
@@ -174,27 +174,6 @@ export default function PaymentReceiptModal({ pay, unit, tc, extraFields = [], r
   const condominioName = tc?.razon_social || tc?.name || '';
   const roleLabel = user ? (ROLES[user.role]?.label || user.role) : '';
   const rfmt = (n) => receiptFmt(n, tc?.currency || 'MXN');
-
-  // ── PDF download ──
-  const handleDownloadPdf = async () => {
-    if (!pay?.id) return;
-    setDownloadingPdf(true);
-    try {
-      const res = await paymentsAPI.receiptPDF(tenantId, pay.id);
-      const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `recibo-${pay.period}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    } catch {
-      toast.error('No se pudo descargar el recibo.');
-    } finally {
-      setDownloadingPdf(false);
-    }
-  };
 
   // ── Print ──
   const handlePrint = () => {
@@ -439,49 +418,17 @@ export default function PaymentReceiptModal({ pay, unit, tc, extraFields = [], r
           </div>
           <div className="modal-foot" style={{ flexWrap: 'wrap', gap: 8 }}>
             <button className="btn btn-secondary" onClick={onClose}>Cerrar</button>
-            {/* Email send controls */}
-            {(unit?.owner_email || unit?.tenant_email) && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginRight: 'auto' }}>
-                {unit?.owner_email && unit?.tenant_email ? (
-                  <select
-                    value={receiptEmailRecipient}
-                    onChange={e => setReceiptEmailRecipient(e.target.value)}
-                    style={{ fontSize: 12, padding: '5px 8px', border: '1px solid var(--sand-200)', borderRadius: 6, color: 'var(--ink-700)', background: 'var(--white)' }}
-                  >
-                    <option value="owner">Propietario</option>
-                    <option value="tenant">Inquilino</option>
-                    <option value="both">Ambos</option>
-                  </select>
-                ) : (
-                  <span style={{ fontSize: 11, color: 'var(--ink-400)' }}>
-                    {unit?.owner_email || unit?.tenant_email}
-                  </span>
-                )}
-                <button
-                  className="btn btn-secondary btn-sm"
-                  disabled={sendingReceipt}
-                  onClick={async () => {
-                    if (!pay?.id) return;
-                    const recipient = (unit?.owner_email && unit?.tenant_email) ? receiptEmailRecipient : (unit?.owner_email ? 'owner' : 'tenant');
-                    setSendingReceipt(true);
-                    try {
-                      const res = await paymentsAPI.sendReceipt(tenantId, pay.id, { recipients: recipient });
-                      toast.success(res.data?.detail || 'Recibo enviado');
-                    } catch (err) {
-                      toast.error(err?.response?.data?.detail || 'Error al enviar el recibo');
-                    } finally {
-                      setSendingReceipt(false);
-                    }
-                  }}
-                  style={{ display: 'flex', alignItems: 'center', gap: 5 }}
-                >
-                  <Mail size={13} /> {sendingReceipt ? 'Enviando…' : 'Enviar por Email'}
-                </button>
-              </div>
+            {/* Botón de email — abre popup de selección de destinatarios */}
+            {(unit?.owner_email?.trim() || unit?.coowner_email?.trim() || unit?.tenant_email?.trim()) && (
+              <button
+                className="btn btn-secondary"
+                disabled={sendingReceipt}
+                onClick={() => setShowEmailModal(true)}
+                style={{ display: 'flex', alignItems: 'center', gap: 5 }}
+              >
+                <Mail size={14} /> {sendingReceipt ? 'Enviando…' : 'Enviar por Email'}
+              </button>
             )}
-            <button className="btn btn-secondary" onClick={handleDownloadPdf} disabled={downloadingPdf} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-              <Download size={14} /> {downloadingPdf ? 'Generando…' : 'Descargar PDF'}
-            </button>
             <button className="btn btn-primary" onClick={handlePrint} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
               <Printer size={14} /> Imprimir / PDF
             </button>
@@ -491,6 +438,29 @@ export default function PaymentReceiptModal({ pay, unit, tc, extraFields = [], r
 
       {/* Evidence viewer */}
       {evidencePopup && <EvidencePopup ev={evidencePopup} onClose={() => setEvidencePopup(null)} />}
+
+      {/* Popup de selección de destinatarios de email */}
+      {showEmailModal && (
+        <SendEmailModal
+          unit={unit}
+          title="Enviar Recibo de Pago"
+          isSending={sendingReceipt}
+          onClose={() => setShowEmailModal(false)}
+          onSend={async (emails) => {
+            if (!pay?.id) return;
+            setSendingReceipt(true);
+            try {
+              const res = await paymentsAPI.sendReceipt(tenantId, pay.id, { emails });
+              toast.success(res.data?.detail || 'Recibo enviado');
+              setShowEmailModal(false);
+            } catch (err) {
+              toast.error(err?.response?.data?.detail || 'Error al enviar el recibo');
+            } finally {
+              setSendingReceipt(false);
+            }
+          }}
+        />
+      )}
     </>
   );
 }
