@@ -176,21 +176,60 @@ export default function PaymentReceiptModal({ pay, unit, tc, extraFields = [], r
   const rfmt = (n) => receiptFmt(n, tc?.currency || 'MXN');
 
   // ── Print ──
+  // Imprime en una ventana nueva aislada para evitar conflictos CSS del modal
+  // (visibility/overflow/position:fixed rompen el print preview en Chromium)
   const handlePrint = () => {
     const folioNum = pay?.folio || pay?.id?.slice(0, 8)?.toUpperCase() || 'SN';
     const tenantName = (tc?.name || '').replace(/[^a-zA-Z0-9À-ÿ\s]/g, '').trim();
     const unitCode = (unit?.unit_id_code || '').replace(/[^a-zA-Z0-9]/g, '');
     const periodo = pay?.period || '';
-    const prevTitle = document.title;
-    document.title = `Recibo de pago No. ${folioNum} ${tenantName} ${unitCode} ${periodo}`;
-    const cleanup = () => {
-      document.title = prevTitle;
-      document.body.classList.remove('printing-receipt');
-      window.removeEventListener('afterprint', cleanup);
-    };
-    window.addEventListener('afterprint', cleanup);
-    document.body.classList.add('printing-receipt');
-    window.print();
+    const printTitle = `Recibo de pago No. ${folioNum} ${tenantName} ${unitCode} ${periodo}`;
+
+    const el = document.getElementById('receipt-print-area');
+    if (!el) return;
+
+    // Recolectar todas las reglas CSS del documento (variables, clases de recibo, badges, etc.)
+    let css = '';
+    Array.from(document.styleSheets).forEach(sheet => {
+      try {
+        Array.from(sheet.cssRules || []).forEach(rule => { css += rule.cssText + '\n'; });
+      } catch (_) { /* cross-origin, ignorar */ }
+    });
+
+    const win = window.open('', '_blank');
+    if (!win) return; // popup bloqueado
+
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>${printTitle}</title>
+  <style>
+    ${css}
+    body { margin: 0; padding: 0; background: white; }
+    .receipt-container {
+      border: none !important;
+      max-width: 100% !important;
+      padding: 12mm 14mm !important;
+      margin: 0 !important;
+      border-radius: 0 !important;
+    }
+    @page { size: letter; margin: 0; }
+  </style>
+</head>
+<body>${el.outerHTML}</body>
+</html>`;
+
+    win.document.write(html);
+    win.document.close();
+
+    // Imprimir una vez cargado (recursos ya están como data-URLs; fallback a readyState)
+    const doPrint = () => { win.focus(); win.print(); win.close(); };
+    if (win.document.readyState === 'complete') {
+      doPrint();
+    } else {
+      win.addEventListener('load', doPrint);
+    }
   };
 
   return (

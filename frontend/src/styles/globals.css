@@ -698,33 +698,6 @@ tr:hover td { background: rgba(59,185,144,0.02); }
 }
 
 @media print {
-  /* ── Recibo de Pago (body.printing-receipt) ────────────────────────── */
-  /* Ocultar todo; mostrar solo el modal del recibo */
-  body.printing-receipt * { visibility: hidden; }
-  body.printing-receipt .modal-bg,
-  body.printing-receipt .modal-bg * { visibility: visible; }
-  body.printing-receipt .modal-bg {
-    position: fixed; inset: 0; background: white !important;
-    display: block !important; overflow: visible !important;
-  }
-  body.printing-receipt .modal {
-    box-shadow: none !important; max-width: none !important;
-    width: 100% !important; max-height: none !important;
-    overflow: visible !important; padding: 0 !important;
-    border-radius: 0 !important; border: none !important;
-    margin: 0 !important; position: static !important;
-  }
-  body.printing-receipt .modal .modal-head,
-  body.printing-receipt .modal .modal-foot { display: none !important; }
-  body.printing-receipt .modal .modal-body {
-    overflow: visible !important; max-height: none !important; padding: 0 !important;
-  }
-  body.printing-receipt .receipt-container {
-    border: none !important; padding: 0 !important; width: 100% !important;
-  }
-  body.printing-receipt,
-  body.printing-receipt * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-
   /* ── Estado de Cuenta (body.printing-ec = evento beforeprint) ─────── */
   body.printing-ec .sidebar,
   body.printing-ec .sidebar-overlay,
