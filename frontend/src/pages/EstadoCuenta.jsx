@@ -836,41 +836,21 @@ export default function EstadoCuenta() {
                             </td>
                             <td style={{ textAlign: 'center' }}>
                               {p.pay?.id ? (
-                                <div style={{ display: 'inline-flex', gap: 5 }}>
-                                  <button
-                                    onClick={() => setShowReceiptModal({ unit: data.unit, pay: p.pay })}
-                                    title={`Ver recibo ${periodLabel(p.period)}`}
-                                    style={{
-                                      display: 'inline-flex', alignItems: 'center', gap: 4,
-                                      padding: '4px 10px', borderRadius: 6, cursor: 'pointer',
-                                      border: '1px solid var(--blue-300)', background: 'var(--blue-50)',
-                                      color: 'var(--blue-700)', fontSize: 11, fontWeight: 600,
-                                      whiteSpace: 'nowrap', transition: 'background 0.15s',
-                                    }}
-                                    onMouseEnter={e => { e.currentTarget.style.background = 'var(--blue-100)'; }}
-                                    onMouseLeave={e => { e.currentTarget.style.background = 'var(--blue-50)'; }}
-                                  >
-                                    <FileText size={12} /> Ver
-                                  </button>
-                                  <button
-                                    onClick={() => handleDownloadReceipt(p.pay.id, p.period)}
-                                    disabled={downloadingReceipt === p.pay.id}
-                                    title={`Descargar recibo ${periodLabel(p.period)}`}
-                                    style={{
-                                      display: 'inline-flex', alignItems: 'center', gap: 4,
-                                      padding: '4px 10px', borderRadius: 6, cursor: 'pointer',
-                                      border: '1px solid var(--teal-300)', background: 'var(--teal-50)',
-                                      color: 'var(--teal-700)', fontSize: 11, fontWeight: 600,
-                                      opacity: downloadingReceipt === p.pay.id ? 0.55 : 1,
-                                      whiteSpace: 'nowrap', transition: 'background 0.15s',
-                                    }}
-                                    onMouseEnter={e => { if (downloadingReceipt !== p.pay.id) e.currentTarget.style.background = 'var(--teal-100)'; }}
-                                    onMouseLeave={e => { e.currentTarget.style.background = 'var(--teal-50)'; }}
-                                  >
-                                    <Download size={12} />
-                                    {downloadingReceipt === p.pay.id ? '…' : 'PDF'}
-                                  </button>
-                                </div>
+                                <button
+                                  onClick={() => setShowReceiptModal({ unit: data.unit, pay: p.pay })}
+                                  title={`Ver recibo ${periodLabel(p.period)}`}
+                                  style={{
+                                    display: 'inline-flex', alignItems: 'center', gap: 4,
+                                    padding: '4px 10px', borderRadius: 6, cursor: 'pointer',
+                                    border: '1px solid var(--blue-300)', background: 'var(--blue-50)',
+                                    color: 'var(--blue-700)', fontSize: 11, fontWeight: 600,
+                                    whiteSpace: 'nowrap', transition: 'background 0.15s',
+                                  }}
+                                  onMouseEnter={e => { e.currentTarget.style.background = 'var(--blue-100)'; }}
+                                  onMouseLeave={e => { e.currentTarget.style.background = 'var(--blue-50)'; }}
+                                >
+                                  <FileText size={12} /> Ver recibo
+                                </button>
                               ) : (
                                 <span style={{ fontSize: 11, color: 'var(--ink-300)' }}>—</span>
                               )}
