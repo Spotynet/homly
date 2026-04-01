@@ -183,12 +183,14 @@ export default function PaymentReceiptModal({ pay, unit, tc, extraFields = [], r
     const periodo = pay?.period || '';
     const prevTitle = document.title;
     document.title = `Recibo de pago No. ${folioNum} ${tenantName} ${unitCode} ${periodo}`;
-    document.body.classList.add('printing-receipt');
-    window.print();
-    setTimeout(() => {
+    const cleanup = () => {
       document.title = prevTitle;
       document.body.classList.remove('printing-receipt');
-    }, 1500);
+      window.removeEventListener('afterprint', cleanup);
+    };
+    window.addEventListener('afterprint', cleanup);
+    document.body.classList.add('printing-receipt');
+    window.print();
   };
 
   return (
@@ -418,17 +420,15 @@ export default function PaymentReceiptModal({ pay, unit, tc, extraFields = [], r
           </div>
           <div className="modal-foot" style={{ flexWrap: 'wrap', gap: 8 }}>
             <button className="btn btn-secondary" onClick={onClose}>Cerrar</button>
-            {/* Botón de email — abre popup de selección de destinatarios */}
-            {(unit?.owner_email?.trim() || unit?.coowner_email?.trim() || unit?.tenant_email?.trim()) && (
-              <button
-                className="btn btn-secondary"
-                disabled={sendingReceipt}
-                onClick={() => setShowEmailModal(true)}
-                style={{ display: 'flex', alignItems: 'center', gap: 5 }}
-              >
-                <Mail size={14} /> {sendingReceipt ? 'Enviando…' : 'Enviar por Email'}
-              </button>
-            )}
+            {/* Botón de email — siempre visible; el popup avisa si no hay correos */}
+            <button
+              className="btn btn-secondary"
+              disabled={sendingReceipt}
+              onClick={() => setShowEmailModal(true)}
+              style={{ display: 'flex', alignItems: 'center', gap: 5 }}
+            >
+              <Mail size={14} /> {sendingReceipt ? 'Enviando…' : 'Enviar por Email'}
+            </button>
             <button className="btn btn-primary" onClick={handlePrint} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
               <Printer size={14} /> Imprimir / PDF
             </button>

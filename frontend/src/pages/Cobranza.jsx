@@ -103,8 +103,6 @@ export default function Cobranza() {
   const [addlExtraFields, setAddlExtraFields] = useState([]); // campos para pagos adicionales (sin adelanto)
   const [captureUnitPeriods, setCaptureUnitPeriods] = useState([]); // períodos con adeudo de la unidad en captura
   const [captureUnitPeriodsLoading, setCaptureUnitPeriodsLoading] = useState(false);
-  const [sendingReceipt, setSendingReceipt] = useState(false);
-  const [receiptEmailRecipient, setReceiptEmailRecipient] = useState('owner'); // 'owner' | 'tenant' | 'both'
   const [downloadingReceipt, setDownloadingReceipt] = useState(null); // payId being downloaded
 
   const handleDownloadReceipt = async (payId, period) => {
