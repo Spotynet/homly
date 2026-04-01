@@ -594,14 +594,6 @@ export default function EstadoCuenta() {
                   </button>
                 )}
 
-                <button
-                  className="btn-outline-white"
-                  onClick={handleDownloadStatement}
-                  disabled={downloadingStatement}
-                  title="Descargar estado de cuenta como PDF"
-                >
-                  <Download size={14} /> {downloadingStatement ? 'Generando…' : 'Descargar PDF'}
-                </button>
                 <button className="btn-outline-white" onClick={() => window.print()}>
                   <Printer size={14} /> Imprimir / PDF
                 </button>
@@ -1241,6 +1233,18 @@ export default function EstadoCuenta() {
             </div>
           )}
         </>
+      )}
+
+      {/* ── Receipt modal ── */}
+      {showReceiptModal && (
+        <PaymentReceiptModal
+          pay={showReceiptModal.pay}
+          unit={showReceiptModal.unit}
+          tc={tenantData}
+          extraFields={extraFields}
+          reservations={receiptReservations}
+          onClose={() => setShowReceiptModal(null)}
+        />
       )}
     </div>
   );
@@ -2596,18 +2600,6 @@ function ReporteAdeudosView({ tenantData, adeudosData, adeudosLoading, cutoff, s
             </div>
           </div>
         </div>
-      )}
-
-      {/* ── Receipt modal ── */}
-      {showReceiptModal && (
-        <PaymentReceiptModal
-          pay={showReceiptModal.pay}
-          unit={showReceiptModal.unit}
-          tc={tenantData}
-          extraFields={extraFields}
-          reservations={receiptReservations}
-          onClose={() => setShowReceiptModal(null)}
-        />
       )}
     </div>
   );
