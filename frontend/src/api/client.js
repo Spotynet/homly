@@ -198,4 +198,21 @@ export const reportsAPI = {
   sendVecinoStatementEmail: (tenantId, data) => api.post(`/tenants/${tenantId}/send-vecino-statement-email/`, data),
 };
 
+// ─── Documentos ────────────────────────────────
+export const documentsAPI = {
+  // Categorías
+  listCategories:  (tenantId)            => api.get(`/tenants/${tenantId}/document-categories/`),
+  createCategory:  (tenantId, data)      => api.post(`/tenants/${tenantId}/document-categories/`, data),
+  updateCategory:  (tenantId, id, data)  => api.patch(`/tenants/${tenantId}/document-categories/${id}/`, data),
+  deleteCategory:  (tenantId, id)        => api.delete(`/tenants/${tenantId}/document-categories/${id}/`),
+  // Documentos
+  list:            (tenantId, params)    => api.get(`/tenants/${tenantId}/documents/`, { params }),
+  get:             (tenantId, id)        => api.get(`/tenants/${tenantId}/documents/${id}/`),
+  create:          (tenantId, data)      => api.post(`/tenants/${tenantId}/documents/`, data),
+  update:          (tenantId, id, data)  => api.patch(`/tenants/${tenantId}/documents/${id}/`, data),
+  delete:          (tenantId, id)        => api.delete(`/tenants/${tenantId}/documents/${id}/`),
+  togglePublished: (tenantId, id)        => api.post(`/tenants/${tenantId}/documents/${id}/toggle-published/`),
+  duplicate:       (tenantId, id, data)  => api.post(`/tenants/${tenantId}/documents/${id}/duplicate/`, data),
+};
+
 export default api;
