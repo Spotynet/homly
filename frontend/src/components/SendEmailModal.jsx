@@ -18,7 +18,7 @@ export default function SendEmailModal({ unit, title = 'Enviar por Email', isSen
   // Construir lista de destinatarios disponibles
   const candidates = [
     unit?.owner_email?.trim()   ? { key: 'owner',   label: 'Propietario',   email: unit.owner_email.trim() }   : null,
-    unit?.coowner_email?.trim() ? { key: 'coowner', label: 'Copropietario', email: unit.coowner_email.trim() } : null,
+    unit?.coowner_email?.trim() ? { key: 'coowner', label: 'Co-Propietario', email: unit.coowner_email.trim() } : null,
     unit?.tenant_email?.trim()  ? { key: 'tenant',  label: 'Inquilino',     email: unit.tenant_email.trim() }  : null,
   ].filter(Boolean);
 

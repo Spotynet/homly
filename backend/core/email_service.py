@@ -534,6 +534,7 @@ def send_receipt_email(
     total_charges: float,
     total_paid: float,
     saldo: float,
+    pdf_attachment: tuple | None = None,   # (filename, bytes, 'application/pdf')
 ) -> bool:
     """Send a branded payment receipt email."""
     c = COLORS
@@ -682,6 +683,7 @@ def send_receipt_email(
         plain=plain,
         html=html,
         to_emails=emails,
+        pdf_attachment=pdf_attachment,
     )
 
 

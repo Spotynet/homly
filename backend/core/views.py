@@ -905,8 +905,18 @@ class PaymentViewSet(viewsets.ModelViewSet):
 
         receipt_data = _compute_receipt_email_data(payment, unit, tenant, extra_fields)
 
+        # Generate PDF attachment
+        pdf_bytes = _generate_receipt_pdf(tenant, unit, payment, receipt_data)
+        folio_label = receipt_data.get('folio') or payment.id[:8].upper()
+        period_label = receipt_data.get('period_str', '')
+        pdf_attachment = (
+            f'Recibo_{unit.unit_id_code}_{period_label}_{folio_label}.pdf',
+            pdf_bytes,
+            'application/pdf',
+        ) if pdf_bytes else None
+
         from .email_service import send_receipt_email
-        ok = send_receipt_email(emails=emails, **receipt_data)
+        ok = send_receipt_email(emails=emails, pdf_attachment=pdf_attachment, **receipt_data)
 
         if ok:
             return Response({'detail': f'Recibo enviado a {", ".join(emails)}'})
@@ -2401,6 +2411,17 @@ class SendUnitStatementEmailView(APIView):
             for r in (rows or [])
         ]
 
+        # Generate PDF attachment
+        stmt_pdf_bytes = _generate_unit_statement_pdf(
+            tenant, unit, rows, total_charges, total_paid, adj_balance,
+            start_period, to_period,
+        )
+        stmt_pdf_attachment = (
+            f'EstadoCuenta_{unit.unit_id_code}_{start_period}_{to_period}.pdf',
+            stmt_pdf_bytes,
+            'application/pdf',
+        ) if stmt_pdf_bytes else None
+
         from .email_service import send_unit_statement_email
         ok = send_unit_statement_email(
             emails=emails,
@@ -2414,6 +2435,7 @@ class SendUnitStatementEmailView(APIView):
             total_charges=total_charges,
             total_paid=total_paid,
             balance=adj_balance,
+            pdf_attachment=stmt_pdf_attachment,
         )
 
         if ok:

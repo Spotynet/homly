@@ -205,7 +205,7 @@ class Unit(models.Model):
     OCCUPANCY_CHOICES = [
         ('propietario', 'Propietario'),
         ('rentado', 'Rentado'),
-        ('vacío', 'Vacío'),
+        ('vacío', 'Sin habitar'),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

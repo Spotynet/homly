@@ -1186,7 +1186,7 @@ export default function MyUnit() {
                   <option value="">— Seleccionar —</option>
                   <option value="propietario">Propietario habita la unidad</option>
                   <option value="rentada">Rentada / Inquilino</option>
-                  <option value="vacía">Vacía</option>
+                  <option value="vacía">Sin habitar</option>
                 </select>
               </div>
             </div>
@@ -1228,15 +1228,15 @@ export default function MyUnit() {
             <div className="card-head">
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <div className="stat-icon ink"><UserCheck size={15} /></div>
-                <h3>Copropietario</h3>
+                <h3>Co-Propietario</h3>
                 <span className="badge badge-gray" style={{ fontSize: 11 }}>Opcional</span>
               </div>
             </div>
             <div className="card-body">
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 16 }}>
                 {[
-                  { key: 'coowner_first_name', label: 'Nombre', type: 'text', placeholder: 'Nombre del copropietario' },
-                  { key: 'coowner_last_name',  label: 'Apellido', type: 'text', placeholder: 'Apellido del copropietario' },
+                  { key: 'coowner_first_name', label: 'Nombre', type: 'text', placeholder: 'Nombre del co-propietario' },
+                  { key: 'coowner_last_name',  label: 'Apellido', type: 'text', placeholder: 'Apellido del co-propietario' },
                   { key: 'coowner_email',      label: 'Correo electrónico', type: 'email', placeholder: 'correo@ejemplo.com' },
                   { key: 'coowner_phone',      label: 'Teléfono', type: 'tel', placeholder: '+52 55 1234 5678' },
                 ].map(f => (

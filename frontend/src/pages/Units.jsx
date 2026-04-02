@@ -131,7 +131,7 @@ export default function Units() {
                   <td style={{ fontSize: 12, color: 'var(--ink-500)' }}>{u.owner_phone || '—'}</td>
                   <td>
                     <span className={`badge ${u.occupancy === 'propietario' ? 'badge-teal' : u.occupancy === 'rentado' ? 'badge-amber' : 'badge-gray'}`}>
-                      {u.occupancy === 'propietario' ? 'Propietario' : u.occupancy === 'rentado' ? 'Rentado' : 'Vacío'}
+                      {u.occupancy === 'propietario' ? 'Propietario' : u.occupancy === 'rentado' ? 'Rentado' : 'Sin habitar'}
                     </span>
                   </td>
                   <td style={{ fontSize: 12 }}>
@@ -218,7 +218,7 @@ export default function Units() {
                     onChange={e => setField('occupancy', e.target.value)}>
                     <option value="propietario">Propietario</option>
                     <option value="rentado">Rentado</option>
-                    <option value="vacío">Vacío</option>
+                    <option value="vacío">Sin habitar</option>
                   </select>
                 </div>
               </div>

@@ -2157,7 +2157,7 @@ export default function Config() {
           </div>
 
           <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
-            <div className="form-section-label" style={{ marginBottom:0, color:'var(--teal-600)' }}>Copropietario</div>
+            <div className="form-section-label" style={{ marginBottom:0, color:'var(--teal-600)' }}>Co-Propietario</div>
             {unitForm.id && unitForm.coowner_email && (
               <button type="button" className="btn btn-secondary btn-sm"
                 style={{ fontSize:11, padding:'4px 10px', display:'inline-flex', alignItems:'center', gap:5 }}
@@ -2228,7 +2228,7 @@ export default function Config() {
       {/* Dar de alta — confirm create user from unit persona */}
       {altaModal && (() => {
         const { unit, persona } = altaModal;
-        const labels = { owner: 'Propietario', coowner: 'Copropietario', tenant: 'Inquilino' };
+        const labels = { owner: 'Propietario', coowner: 'Co-Propietario', tenant: 'Inquilino' };
         const emailMap = { owner: unit.owner_email, coowner: unit.coowner_email, tenant: unit.tenant_email };
         const nameMap = {
           owner:   `${unit.owner_first_name||''} ${unit.owner_last_name||''}`.trim(),
