@@ -698,11 +698,11 @@ export default function Documentos() {
   const templateCount = docs.filter(d => d.is_template).length;
 
   return (
-    <div style={{ display:'flex', height:'100%', gap:0, overflow:'hidden' }}>
+    <div style={{ display:'flex', height:'calc(100vh - 68px)', margin:'-32px', overflow:'hidden' }}>
 
       {/* ── Sidebar ── */}
       <div style={{ width:220, flexShrink:0, borderRight:'1px solid var(--sand-200)',
-        background:'var(--sand-50)', display:'flex', flexDirection:'column', overflow:'auto' }}>
+        background:'var(--sand-50)', display:'flex', flexDirection:'column', overflowY:'auto' }}>
 
         <div style={{ padding:'16px 12px 8px', fontWeight:800, fontSize:12,
           color:'var(--ink-400)', letterSpacing:'.05em', textTransform:'uppercase' }}>
@@ -781,7 +781,7 @@ export default function Documentos() {
       </div>
 
       {/* ── Main content ── */}
-      <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden' }}>
+      <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden', minWidth:0 }}>
 
         {/* Top bar */}
         <div style={{ padding:'14px 20px', borderBottom:'1px solid var(--sand-200)',
