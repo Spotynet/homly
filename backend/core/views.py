@@ -907,10 +907,11 @@ class PaymentViewSet(viewsets.ModelViewSet):
 
         # Generate PDF attachment
         pdf_bytes = _generate_receipt_pdf(tenant, unit, payment, receipt_data)
-        folio_label = receipt_data.get('folio') or payment.id[:8].upper()
-        period_label = receipt_data.get('period_str', '')
+        folio_label = receipt_data.get('folio') or str(payment.id)[:8].upper()
+        period_label = (payment.period or '').replace('-', '')   # e.g. "202501"
+        unit_label = ''.join(c if c.isalnum() or c in '-_' else '_' for c in (unit.unit_id_code or 'unidad'))
         pdf_attachment = (
-            f'Recibo_{unit.unit_id_code}_{period_label}_{folio_label}.pdf',
+            f'Recibo_{unit_label}_{period_label}_{folio_label}.pdf',
             pdf_bytes,
             'application/pdf',
         ) if pdf_bytes else None
