@@ -459,7 +459,6 @@ export default function PaymentReceiptModal({ pay, unit, tc, extraFields = [], r
           </div>
           <div className="modal-foot" style={{ flexWrap: 'wrap', gap: 8 }}>
             <button className="btn btn-secondary" onClick={onClose}>Cerrar</button>
-<<<<<<< HEAD
             {/* Botón de email — siempre visible; el popup avisa si no hay correos */}
             <button
               className="btn btn-secondary"
@@ -469,48 +468,6 @@ export default function PaymentReceiptModal({ pay, unit, tc, extraFields = [], r
             >
               <Mail size={14} /> {sendingReceipt ? 'Enviando…' : 'Enviar por Email'}
             </button>
-=======
-            {/* Email send controls */}
-            {(unit?.owner_email || unit?.tenant_email) && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginRight: 'auto' }}>
-                {unit?.owner_email && unit?.tenant_email ? (
-                  <select
-                    value={receiptEmailRecipient}
-                    onChange={e => setReceiptEmailRecipient(e.target.value)}
-                    style={{ fontSize: 12, padding: '5px 8px', border: '1px solid var(--sand-200)', borderRadius: 6, color: 'var(--ink-700)', background: 'var(--white)' }}
-                  >
-                    <option value="owner">Propietario</option>
-                    <option value="tenant">Inquilino</option>
-                    <option value="both">Ambos</option>
-                  </select>
-                ) : (
-                  <span style={{ fontSize: 11, color: 'var(--ink-400)' }}>
-                    {unit?.owner_email || unit?.tenant_email}
-                  </span>
-                )}
-                <button
-                  className="btn btn-secondary btn-sm"
-                  disabled={sendingReceipt}
-                  onClick={async () => {
-                    if (!pay?.id) return;
-                    const recipient = (unit?.owner_email && unit?.tenant_email) ? receiptEmailRecipient : (unit?.owner_email ? 'owner' : 'tenant');
-                    setSendingReceipt(true);
-                    try {
-                      const res = await paymentsAPI.sendReceipt(tenantId, pay.id, { recipients: recipient });
-                      toast.success(res.data?.detail || 'Recibo enviado');
-                    } catch (err) {
-                      toast.error(err?.response?.data?.detail || 'Error al enviar el recibo');
-                    } finally {
-                      setSendingReceipt(false);
-                    }
-                  }}
-                  style={{ display: 'flex', alignItems: 'center', gap: 5 }}
-                >
-                  <Mail size={13} /> {sendingReceipt ? 'Enviando…' : 'Enviar por Email'}
-                </button>
-              </div>
-            )}
->>>>>>> 26f66ee (“update”)
             <button className="btn btn-primary" onClick={handlePrint} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
               <Printer size={14} /> Imprimir / PDF
             </button>
