@@ -4,7 +4,7 @@ import { paymentsAPI, unitsAPI, extraFieldsAPI, tenantsAPI, unrecognizedIncomeAP
 import PaginationBar from '../components/PaginationBar';
 import PaymentReceiptModal from '../components/PaymentReceiptModal';
 import { todayPeriod, periodLabel, prevPeriod, nextPeriod, tenantStartPeriod, fmtCurrency, statusClass, statusLabel, PAYMENT_TYPES, fmtDate, ROLES, CURRENCIES, APP_VERSION } from '../utils/helpers';
-import { ChevronLeft, ChevronRight, Search, Receipt, X, Users, CheckCircle, Clock, AlertCircle, DollarSign, Calendar, Building2, Upload, FileText, Check, Printer, Plus, Edit, Edit2, Trash2, Banknote, Mail } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Search, Receipt, X, Users, CheckCircle, Clock, AlertCircle, DollarSign, Calendar, Building2, Upload, FileText, Check, Plus, Edit, Edit2, Trash2, Banknote, Mail } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 function fmt(n) {
@@ -103,27 +103,6 @@ export default function Cobranza() {
   const [addlExtraFields, setAddlExtraFields] = useState([]); // campos para pagos adicionales (sin adelanto)
   const [captureUnitPeriods, setCaptureUnitPeriods] = useState([]); // períodos con adeudo de la unidad en captura
   const [captureUnitPeriodsLoading, setCaptureUnitPeriodsLoading] = useState(false);
-  const [downloadingReceipt, setDownloadingReceipt] = useState(null); // payId being downloaded
-
-  const handleDownloadReceipt = async (payId, period) => {
-    setDownloadingReceipt(payId);
-    try {
-      const res = await paymentsAPI.receiptPDF(tenantId, payId);
-      const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `recibo-${period}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    } catch {
-      toast.error('No se pudo descargar el recibo.');
-    } finally {
-      setDownloadingReceipt(null);
-    }
-  };
-
   const load = async () => {
     if (!tenantId) return;
     try {
@@ -279,6 +258,7 @@ export default function Cobranza() {
       payment_type: existing?.payment_type || (!!unit.admin_exempt ? 'excento' : ''),
       payment_date: existing?.payment_date || new Date().toISOString().slice(0, 10),
       notes: existing?.notes || '',
+      folio: existing?.folio || '',
       evidences: Array.isArray(existing?.evidence) ? existing.evidence : [],
       bank_reconciled: !!existing?.bank_reconciled,
       field_payments: fieldPayments,
@@ -397,6 +377,7 @@ export default function Cobranza() {
       payment_type: captureForm.payment_type,
       payment_date: captureForm.payment_date || null,
       notes: captureForm.notes || '',
+      folio: captureForm.folio || '',
       evidence: captureForm.evidences || [],
       bank_reconciled: !!captureForm.bank_reconciled,
       field_payments: fp,
@@ -582,17 +563,6 @@ export default function Cobranza() {
                         {pay && (
                           <button className="btn btn-secondary btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }} onClick={() => setShowReceipt({ unit: u, pay })}>
                             <FileText size={12} /> Ver Recibo
-                          </button>
-                        )}
-                        {pay && (
-                          <button
-                            className="btn btn-secondary btn-sm"
-                            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, opacity: downloadingReceipt === pay.id ? 0.6 : 1 }}
-                            disabled={downloadingReceipt === pay.id}
-                            onClick={() => handleDownloadReceipt(pay.id, period)}
-                            title="Descargar recibo como PDF"
-                          >
-                            <Printer size={12} /> {downloadingReceipt === pay.id ? '…' : 'PDF'}
                           </button>
                         )}
                         {!isReadOnly && pay && (
@@ -1493,6 +1463,11 @@ export default function Cobranza() {
                     <label className="field-label">Fecha de Pago</label>
                     <input type="date" className="field-input" value={captureForm.payment_date}
                       onChange={e => setCaptureForm({ ...captureForm, payment_date: e.target.value })} />
+                  </div>
+                  <div className="field">
+                    <label className="field-label">Folio (opcional)</label>
+                    <input className="field-input" placeholder="Ej. REC-0001" value={captureForm.folio || ''}
+                      onChange={e => setCaptureForm({ ...captureForm, folio: e.target.value })} />
                   </div>
                   <div className="field" style={{ gridColumn: '1 / -1' }}>
                     <label className="field-label">Notas (opcional)</label>

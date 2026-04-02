@@ -332,6 +332,8 @@ class Payment(models.Model):
     notes = models.TextField(blank=True, default='')
     evidence = models.TextField(blank=True, default='', help_text='Base64 evidence image')
     bank_reconciled = models.BooleanField(default=False)
+    folio = models.CharField(max_length=50, blank=True, default='',
+                             help_text='Folio / número de recibo asignado al pago')
 
     # JSONB for flexible adeudo payments across periods
     adeudo_payments = models.JSONField(default=dict, blank=True,

@@ -695,6 +695,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
                 'payment_type': data['payment_type'],
                 'payment_date': data.get('payment_date'),
                 'notes': data.get('notes', ''),
+                'folio': data.get('folio', ''),
                 'evidence': json.dumps(data.get('evidence', [])),
                 'bank_reconciled': data.get('bank_reconciled', False),
                 'adeudo_payments': data.get('adeudo_payments', {}),
