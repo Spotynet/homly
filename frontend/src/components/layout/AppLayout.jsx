@@ -6,7 +6,7 @@ import { notificationsAPI, tenantsAPI } from '../../api/client';
 import {
   Home, Globe, FileText, ShoppingBag, Receipt, Settings,
   Users, Building, Shield, LogOut, Menu, X, Calendar,
-  ChevronDown, Check, Building2, Bell, CheckCheck, BookOpen,
+  ChevronDown, Check, Building2, Bell, CheckCheck,
 } from 'lucide-react';
 
 const NAV_ITEMS = {
@@ -20,7 +20,6 @@ const NAV_ITEMS = {
       { path: '/app/cobranza',       icon: Receipt,     label: 'Cobranza Mensual' },
       { path: '/app/gastos',         icon: ShoppingBag, label: 'Gastos'           },
       { path: '/app/estado-cuenta',  icon: FileText,    label: 'Estado de Cuenta' },
-      { path: '/app/documentos',     icon: BookOpen,    label: 'Documentos'       },
       { path: '/app/notificaciones', icon: Bell,        label: 'Notificaciones'   },
       { path: '/app/config',         icon: Settings,    label: 'Configuración'    },
     ]},
@@ -32,7 +31,6 @@ const NAV_ITEMS = {
     { path: '/app/cobranza',        icon: Receipt,     label: 'Cobranza Mensual' },
     { path: '/app/gastos',          icon: ShoppingBag, label: 'Gastos'           },
     { path: '/app/estado-cuenta',   icon: FileText,    label: 'Estado de Cuenta' },
-    { path: '/app/documentos',      icon: BookOpen,    label: 'Documentos'       },
     { path: '/app/notificaciones',  icon: Bell,        label: 'Notificaciones'   },
     { path: '/app/config',          icon: Settings,    label: 'Configuración'    },
   ]}],
@@ -43,7 +41,6 @@ const NAV_ITEMS = {
     { path: '/app/cobranza',        icon: Receipt,     label: 'Cobranza Mensual' },
     { path: '/app/gastos',          icon: ShoppingBag, label: 'Gastos'           },
     { path: '/app/estado-cuenta',   icon: FileText,    label: 'Estado de Cuenta' },
-    { path: '/app/documentos',      icon: BookOpen,    label: 'Documentos'       },
     { path: '/app/notificaciones',  icon: Bell,        label: 'Notificaciones'   },
     { path: '/app/config',          icon: Settings,    label: 'Configuración'    },
   ]}],
@@ -53,7 +50,6 @@ const NAV_ITEMS = {
     { path: '/app/cobranza',        icon: Receipt,     label: 'Cobranza Mensual' },
     { path: '/app/gastos',          icon: ShoppingBag, label: 'Gastos'           },
     { path: '/app/estado-cuenta',   icon: FileText,    label: 'Estado de Cuenta' },
-    { path: '/app/documentos',      icon: BookOpen,    label: 'Documentos'       },
     { path: '/app/notificaciones',  icon: Bell,        label: 'Notificaciones'   },
   ]}],
 
@@ -61,14 +57,12 @@ const NAV_ITEMS = {
     { path: '/app/dashboard',       icon: Home,        label: 'Dashboard'        },
     { path: '/app/gastos',          icon: ShoppingBag, label: 'Gastos'           },
     { path: '/app/estado-cuenta',   icon: FileText,    label: 'Estado de Cuenta' },
-    { path: '/app/documentos',      icon: BookOpen,    label: 'Documentos'       },
     { path: '/app/notificaciones',  icon: Bell,        label: 'Notificaciones'   },
   ]}],
 
   vigilante: [{ section: 'main', items: [
     { path: '/app/dashboard',       icon: Home,        label: 'Dashboard'        },
     { path: '/app/reservas',        icon: Calendar,    label: 'Reservas'         },
-    { path: '/app/documentos',      icon: BookOpen,    label: 'Documentos'       },
     { path: '/app/notificaciones',  icon: Bell,        label: 'Notificaciones'   },
   ]}],
 
@@ -76,7 +70,6 @@ const NAV_ITEMS = {
     { path: '/app/my-unit',         icon: Home,        label: 'Mi Unidad'        },
     { path: '/app/reservas',        icon: Calendar,    label: 'Reservas'         },
     { path: '/app/estado-cuenta',   icon: FileText,    label: 'Estado de Cuenta' },
-    { path: '/app/documentos',      icon: BookOpen,    label: 'Documentos'       },
     { path: '/app/notificaciones',  icon: Bell,        label: 'Notificaciones'   },
   ]}],
 };
@@ -88,7 +81,6 @@ const PATH_TO_MODULE = {
   '/app/cobranza':       'cobranza',
   '/app/gastos':         'gastos',
   '/app/estado-cuenta':  'estado_cuenta',
-  '/app/documentos':     'documentos',
   '/app/notificaciones': 'notificaciones',
   '/app/config':         'config',
   '/app/my-unit':        'my_unit',
@@ -105,7 +97,6 @@ const PAGE_TITLES = {
   users: 'Usuarios',
   'my-unit': 'Mi Unidad',
   'reservas': 'Reservas de Áreas Comunes',
-  'documentos': 'Documentos',
   'notificaciones': 'Notificaciones',
 };
 

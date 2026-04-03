@@ -10,7 +10,6 @@ from .models import (
     BankStatement, ClosedPeriod, ReopenRequest,
     AssemblyPosition, Committee, UnrecognizedIncome,
     AmenityReservation, CondominioRequest, Notification,
-    DocumentCategory, Document,
 )
 
 
@@ -625,48 +624,3 @@ class CondominioRequestSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError('El nombre del condominio es requerido.')
         return value.strip()
 
-
-# ═══════════════════════════════════════════════════════════
-#  DOCUMENTOS
-# ═══════════════════════════════════════════════════════════
-
-class DocumentCategorySerializer(serializers.ModelSerializer):
-    document_count = serializers.SerializerMethodField()
-
-    class Meta:
-        model = DocumentCategory
-        fields = ['id', 'name', 'description', 'icon', 'color', 'order', 'created_at', 'document_count']
-        read_only_fields = ['id', 'created_at']
-
-    def get_document_count(self, obj):
-        return obj.documents.filter(published=True).count()
-
-
-class DocumentSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Document
-        fields = [
-            'id', 'category', 'title', 'description', 'doc_type',
-            'file_name', 'file_mime', 'file_data', 'file_size',
-            'content', 'is_template', 'permissions', 'published',
-            'created_by_name', 'created_at', 'updated_at',
-        ]
-        read_only_fields = ['id', 'created_at', 'updated_at', 'created_by_name']
-
-
-class DocumentListSerializer(serializers.ModelSerializer):
-    """Lightweight serializer for document lists — omits file_data and content."""
-    category_name = serializers.SerializerMethodField()
-
-    class Meta:
-        model = Document
-        fields = [
-            'id', 'category', 'category_name', 'title', 'description', 'doc_type',
-            'file_name', 'file_mime', 'file_size',
-            'is_template', 'permissions', 'published',
-            'created_by_name', 'created_at', 'updated_at',
-        ]
-        read_only_fields = ['id', 'created_at', 'updated_at', 'created_by_name']
-
-    def get_category_name(self, obj):
-        return obj.category.name if obj.category else None

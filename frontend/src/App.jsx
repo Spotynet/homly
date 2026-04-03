@@ -18,7 +18,6 @@ import Users from './pages/Users';
 import MyUnit from './pages/MyUnit';
 import Reservas from './pages/Reservas';
 import Notificaciones from './pages/Notificaciones';
-import Documentos from './pages/Documentos';
 import Registro from './pages/Registro';
 
 const LOADER = (
@@ -86,7 +85,6 @@ function AppRoutes() {
         <Route path="my-unit" element={<MyUnit />} />
         <Route path="reservas" element={<Reservas />} />
         <Route path="notificaciones" element={<Notificaciones />} />
-        <Route path="documentos" element={<Documentos />} />
       </Route>
 
       {/* Fallback */}

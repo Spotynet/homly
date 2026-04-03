@@ -10,7 +10,7 @@ import { Search, ChevronLeft, ChevronRight, Building, Globe, DollarSign, ArrowDo
 import toast from 'react-hot-toast';
 
 function fmt(n) {
-  return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 0 }).format(n ?? 0);
+  return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n ?? 0);
 }
 
 export default function EstadoCuenta() {
