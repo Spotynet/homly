@@ -175,6 +175,13 @@ export const notificationsAPI = {
   markAllRead: (tenantId)         => api.post(`/tenants/${tenantId}/notifications/mark-all-read/`),
 };
 
+// ─── Audit Logs (super-admin only) ───────────────
+export const auditLogsAPI = {
+  list:    (params) => api.get('/audit-logs/', { params: params || {} }),
+  retrieve:(id)     => api.get(`/audit-logs/${id}/`),
+  summary: ()       => api.get('/audit-logs/summary/'),
+};
+
 // ─── Super Admins ────────────────────────────────
 export const superAdminAPI = {
   list: () => api.get('/super-admins/'),

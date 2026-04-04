@@ -18,6 +18,7 @@ import Users from './pages/Users';
 import MyUnit from './pages/MyUnit';
 import Reservas from './pages/Reservas';
 import Notificaciones from './pages/Notificaciones';
+import Logs from './pages/Logs';
 import Registro from './pages/Registro';
 
 const LOADER = (
@@ -74,6 +75,7 @@ function AppRoutes() {
         {isSuperAdmin && (
           <Route path="sistema">
             <Route path="tenants" element={<Tenants />} />
+            <Route path="logs"    element={<Logs />} />
           </Route>
         )}
         <Route path="cobranza" element={<Cobranza />} />

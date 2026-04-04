@@ -677,10 +677,19 @@ class AmenityReservation(models.Model):
 
 class Notification(models.Model):
     TYPES = [
+        # Reservas
         ('reservation_new',       'Nueva Reserva Solicitada'),
         ('reservation_approved',  'Reserva Aprobada'),
         ('reservation_rejected',  'Reserva Rechazada'),
         ('reservation_cancelled', 'Reserva Cancelada'),
+        # Cobranza
+        ('payment_registered',    'Pago Registrado'),
+        ('payment_updated',       'Pago Actualizado'),
+        ('payment_deleted',       'Cobro Eliminado'),
+        # Períodos
+        ('period_closed',         'Período Cerrado'),
+        ('period_reopened',       'Período Reabierto'),
+        # General
         ('general',               'Información General'),
     ]
 
@@ -707,6 +716,77 @@ class Notification(models.Model):
 
     def __str__(self):
         return f'[{self.notif_type}] {self.title} → {self.user}'
+
+
+
+# ═══════════════════════════════════════════════════════════
+#  AUDIT LOG
+# ═══════════════════════════════════════════════════════════
+
+class AuditLog(models.Model):
+    """Immutable record of every significant action performed in the system.
+    Visible only to super-admin users."""
+
+    MODULE_CHOICES = [
+        ('auth',       'Autenticación'),
+        ('cobranza',   'Cobranza'),
+        ('gastos',     'Gastos'),
+        ('reservas',   'Reservas'),
+        ('usuarios',   'Usuarios'),
+        ('unidades',   'Unidades'),
+        ('config',     'Configuración'),
+        ('tenants',    'Tenants'),
+        ('sistema',    'Sistema'),
+    ]
+
+    ACTION_CHOICES = [
+        ('login',            'Inicio de sesión'),
+        ('create',           'Crear registro'),
+        ('update',           'Actualizar registro'),
+        ('delete',           'Eliminar registro'),
+        ('approve',          'Aprobar'),
+        ('reject',           'Rechazar'),
+        ('cancel',           'Cancelar'),
+        ('close_period',     'Cerrar período'),
+        ('reopen_period',    'Reabrir período'),
+        ('send_email',       'Enviar correo'),
+        ('toggle_status',    'Cambiar estado'),
+        ('add_payment',      'Agregar pago adicional'),
+    ]
+
+    id          = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    # Context — stored as snapshot so logs survive deletions
+    tenant      = models.ForeignKey(Tenant, on_delete=models.SET_NULL, null=True, blank=True, related_name='audit_logs')
+    tenant_name = models.CharField(max_length=200, blank=True, default='')
+    user        = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='audit_logs')
+    user_name   = models.CharField(max_length=200, blank=True, default='')
+    user_email  = models.CharField(max_length=200, blank=True, default='')
+    user_role   = models.CharField(max_length=40, blank=True, default='')
+    # What happened
+    module      = models.CharField(max_length=40, choices=MODULE_CHOICES, db_index=True)
+    action      = models.CharField(max_length=40, choices=ACTION_CHOICES, db_index=True)
+    description = models.TextField(blank=True, default='')
+    # Affected object
+    object_type = models.CharField(max_length=80, blank=True, default='')
+    object_id   = models.CharField(max_length=100, blank=True, default='')
+    object_repr = models.CharField(max_length=300, blank=True, default='')
+    # Network
+    ip_address  = models.GenericIPAddressField(null=True, blank=True)
+    # Extra structured data
+    extra_data  = models.JSONField(default=dict, blank=True)
+    created_at  = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'audit_logs'
+        ordering = ['-created_at']
+        indexes  = [
+            models.Index(fields=['tenant', '-created_at']),
+            models.Index(fields=['user',   '-created_at']),
+            models.Index(fields=['module', 'action']),
+        ]
+
+    def __str__(self):
+        return f'[{self.module}/{self.action}] {self.description[:60]}'
 
 
 # ═══════════════════════════════════════════════════════════

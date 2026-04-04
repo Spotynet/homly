@@ -8,6 +8,7 @@ from . import views
 router = DefaultRouter()
 router.register(r'tenants', views.TenantViewSet, basename='tenants')
 router.register(r'super-admins', views.SuperAdminViewSet, basename='super-admins')
+router.register(r'audit-logs', views.AuditLogViewSet, basename='audit-logs')
 
 # Nested routes under tenant
 tenant_router = DefaultRouter()

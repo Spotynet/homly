@@ -6,11 +6,20 @@ import { Bell, CheckCheck, Calendar, Filter } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const TYPE_CFG = {
-  reservation_new:       { icon: '📅', label: 'Nueva reserva',    color: 'var(--blue-500)',   bg: 'var(--blue-50)'   },
-  reservation_approved:  { icon: '✅', label: 'Reserva aprobada', color: 'var(--teal-600)',   bg: 'var(--teal-50)'   },
-  reservation_rejected:  { icon: '❌', label: 'Reserva rechazada',color: 'var(--coral-600)',  bg: 'var(--coral-50)'  },
-  reservation_cancelled: { icon: '🚫', label: 'Cancelada',        color: 'var(--ink-500)',    bg: 'var(--sand-50)'   },
-  general:               { icon: 'ℹ️', label: 'General',          color: 'var(--amber-600)',  bg: 'var(--amber-50)'  },
+  // Reservas
+  reservation_new:       { icon: '📅', label: 'Nueva reserva',     color: 'var(--blue-500)',   bg: 'var(--blue-50)'   },
+  reservation_approved:  { icon: '✅', label: 'Reserva aprobada',  color: 'var(--teal-600)',   bg: 'var(--teal-50)'   },
+  reservation_rejected:  { icon: '❌', label: 'Reserva rechazada', color: 'var(--coral-600)',  bg: 'var(--coral-50)'  },
+  reservation_cancelled: { icon: '🚫', label: 'Reserva cancelada', color: 'var(--ink-500)',    bg: 'var(--sand-50)'   },
+  // Cobranza
+  payment_registered:    { icon: '💰', label: 'Pago registrado',   color: 'var(--teal-700)',   bg: 'var(--teal-50)'   },
+  payment_updated:       { icon: '✏️', label: 'Pago actualizado',  color: 'var(--blue-600)',   bg: 'var(--blue-50)'   },
+  payment_deleted:       { icon: '🗑️', label: 'Cobro eliminado',   color: 'var(--coral-600)',  bg: 'var(--coral-50)'  },
+  // Períodos
+  period_closed:         { icon: '🔒', label: 'Período cerrado',   color: 'var(--amber-700)',  bg: 'var(--amber-50)'  },
+  period_reopened:       { icon: '🔓', label: 'Período reabierto', color: 'var(--teal-600)',   bg: 'var(--teal-50)'   },
+  // General
+  general:               { icon: 'ℹ️', label: 'General',           color: 'var(--amber-600)',  bg: 'var(--amber-50)'  },
 };
 
 function timeAgo(dateStr) {
@@ -143,7 +152,7 @@ export default function Notificaciones() {
               {filter === 'unread' ? 'No tienes notificaciones sin leer' : 'Sin notificaciones'}
             </div>
             <div style={{ fontSize: 12, color: 'var(--ink-300)' }}>
-              Las notificaciones de reservas y avisos del condominio aparecerán aquí
+              Las notificaciones de pagos, reservas y avisos del condominio aparecerán aquí
             </div>
           </div>
         </div>

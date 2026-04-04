@@ -10,6 +10,7 @@ from .models import (
     BankStatement, ClosedPeriod, ReopenRequest,
     AssemblyPosition, Committee, UnrecognizedIncome,
     AmenityReservation, CondominioRequest, Notification,
+    AuditLog,
 )
 
 
@@ -623,4 +624,30 @@ class CondominioRequestSerializer(serializers.ModelSerializer):
         if not value.strip():
             raise serializers.ValidationError('El nombre del condominio es requerido.')
         return value.strip()
+
+
+# ═══════════════════════════════════════════════════════════
+#  AUDIT LOG
+# ═══════════════════════════════════════════════════════════
+
+class AuditLogSerializer(serializers.ModelSerializer):
+    module_label = serializers.SerializerMethodField()
+    action_label = serializers.SerializerMethodField()
+
+    class Meta:
+        model  = AuditLog
+        fields = [
+            'id', 'created_at',
+            'tenant_name', 'user_name', 'user_email', 'user_role',
+            'module', 'module_label', 'action', 'action_label',
+            'description', 'object_type', 'object_id', 'object_repr',
+            'ip_address', 'extra_data',
+        ]
+        read_only_fields = fields
+
+    def get_module_label(self, obj):
+        return obj.get_module_display()
+
+    def get_action_label(self, obj):
+        return obj.get_action_display()
 

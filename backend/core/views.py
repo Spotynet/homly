@@ -21,7 +21,7 @@ from .models import (
     BankStatement, ClosedPeriod, ReopenRequest,
     AssemblyPosition, Committee, UnrecognizedIncome,
     AmenityReservation, CondominioRequest, EmailVerificationCode,
-    Notification,
+    Notification, AuditLog,
 )
 from .email_service import send_verification_email, CODE_EXPIRY_MINUTES
 from .serializers import (
@@ -34,9 +34,161 @@ from .serializers import (
     BankStatementSerializer, ClosedPeriodSerializer, ReopenRequestSerializer,
     AssemblyPositionSerializer, CommitteeSerializer, UnrecognizedIncomeSerializer,
     DashboardSerializer, AmenityReservationSerializer, CondominioRequestSerializer,
-    NotificationSerializer,
+    NotificationSerializer, AuditLogSerializer,
 )
 from .permissions import IsSuperAdmin, IsTenantAdmin, IsTenantMember, IsAdminOrTesorero, IsAdminOrTesOrAuditor
+
+
+# ═══════════════════════════════════════════════════════════
+#  NOTIFICATION HELPERS
+# ═══════════════════════════════════════════════════════════
+
+# Maps each notification type to the module key that must be enabled
+# for the recipient role (via tenant.module_permissions).
+_NOTIF_MODULE_MAP = {
+    'reservation_new':       'reservas',
+    'reservation_approved':  'reservas',
+    'reservation_rejected':  'reservas',
+    'reservation_cancelled': 'reservas',
+    'payment_registered':    'estado_cuenta',
+    'payment_updated':       'estado_cuenta',
+    'payment_deleted':       'estado_cuenta',
+    'period_closed':         'cobranza',
+    'period_reopened':       'cobranza',
+}
+
+
+def _role_has_module(module_perms, role, module_key):
+    """Return True if *role* has access to *module_key* given tenant module_permissions.
+    When module_permissions is empty / not configured, all modules are accessible."""
+    if not module_perms:
+        return True
+    role_modules = module_perms.get(role)
+    if role_modules is None:
+        return True   # role not explicitly restricted → allow
+    return module_key in role_modules
+
+
+def _notify_roles(tenant_id, roles, notif_type, title, message='', **extra_fields):
+    """Create notifications for every TenantUser whose role is in *roles*,
+    respecting the tenant's per-role module-permission configuration."""
+    required_module = _NOTIF_MODULE_MAP.get(notif_type)
+    try:
+        tenant = Tenant.objects.get(id=tenant_id)
+        module_perms = tenant.module_permissions or {}
+    except Tenant.DoesNotExist:
+        return
+
+    notifs = []
+    for role in roles:
+        if required_module and not _role_has_module(module_perms, role, required_module):
+            continue
+        for tu in TenantUser.objects.filter(tenant_id=tenant_id, role=role).select_related('user'):
+            notifs.append(Notification(
+                tenant_id=tenant_id,
+                user=tu.user,
+                notif_type=notif_type,
+                title=title,
+                message=message,
+                **extra_fields,
+            ))
+    if notifs:
+        Notification.objects.bulk_create(notifs)
+
+
+def _notify_unit_residents(tenant_id, unit_id, notif_type, title, message='', **extra_fields):
+    """Create notifications for all vecinos assigned to *unit_id*,
+    respecting tenant module permissions."""
+    if not unit_id:
+        return
+    required_module = _NOTIF_MODULE_MAP.get(notif_type)
+    try:
+        tenant = Tenant.objects.get(id=tenant_id)
+        module_perms = tenant.module_permissions or {}
+    except Tenant.DoesNotExist:
+        return
+
+    if required_module and not _role_has_module(module_perms, 'vecino', required_module):
+        return
+
+    notifs = []
+    for tu in TenantUser.objects.filter(
+        tenant_id=tenant_id, unit_id=unit_id, role='vecino'
+    ).select_related('user'):
+        notifs.append(Notification(
+            tenant_id=tenant_id,
+            user=tu.user,
+            notif_type=notif_type,
+            title=title,
+            message=message,
+            **extra_fields,
+        ))
+    if notifs:
+        Notification.objects.bulk_create(notifs)
+
+
+# ═══════════════════════════════════════════════════════════
+#  AUDIT LOG HELPERS
+# ═══════════════════════════════════════════════════════════
+
+def _get_client_ip(request):
+    """Extract real client IP from request headers."""
+    forwarded = request.META.get('HTTP_X_FORWARDED_FOR')
+    if forwarded:
+        return forwarded.split(',')[0].strip()
+    return request.META.get('REMOTE_ADDR')
+
+
+def _audit_log(request, module, action, description,
+               tenant_id=None, object_type='', object_id='',
+               object_repr='', extra_data=None):
+    """Create an AuditLog entry. Always wrapped in try/except so it
+    never interrupts the main request flow."""
+    try:
+        user    = getattr(request, 'user', None)
+        ip      = _get_client_ip(request)
+
+        # Resolve tenant snapshot
+        tenant      = None
+        tenant_name = ''
+        if tenant_id:
+            try:
+                tenant      = Tenant.objects.get(id=tenant_id)
+                tenant_name = tenant.name
+            except Tenant.DoesNotExist:
+                pass
+
+        # Resolve user snapshot
+        user_name  = ''
+        user_email = ''
+        user_role  = ''
+        if user and getattr(user, 'is_authenticated', False):
+            user_name  = getattr(user, 'name', '') or getattr(user, 'email', '')
+            user_email = getattr(user, 'email', '')
+            if tenant_id:
+                tu = TenantUser.objects.filter(tenant_id=tenant_id, user=user).first()
+                user_role = tu.role if tu else ('superadmin' if getattr(user, 'is_super_admin', False) else '')
+            elif getattr(user, 'is_super_admin', False):
+                user_role = 'superadmin'
+
+        AuditLog.objects.create(
+            tenant      = tenant,
+            tenant_name = tenant_name,
+            user        = user if user and getattr(user, 'is_authenticated', False) else None,
+            user_name   = user_name,
+            user_email  = user_email,
+            user_role   = user_role,
+            module      = module,
+            action      = action,
+            description = description,
+            object_type = object_type,
+            object_id   = str(object_id) if object_id else '',
+            object_repr = object_repr or '',
+            ip_address  = ip,
+            extra_data  = extra_data or {},
+        )
+    except Exception:
+        pass  # audit logs must never break the main flow
 
 
 # ═══════════════════════════════════════════════════════════
@@ -61,7 +213,7 @@ class LoginView(APIView):
         if tenant:
             refresh['tenant_id'] = str(tenant.id)
 
-        return Response({
+        response_data = {
             'access': str(refresh.access_token),
             'refresh': str(refresh),
             'user': UserSerializer(user).data,
@@ -69,7 +221,18 @@ class LoginView(APIView):
             'tenant_id': str(tenant.id) if tenant else None,
             'tenant_name': tenant.name if tenant else None,
             'must_change_password': user.must_change_password,
-        })
+        }
+        # Audit log — set user on request so _audit_log can read it
+        request.user = user
+        _audit_log(
+            request, module='auth', action='login',
+            description=f'Inicio de sesión: {user.email} (rol: {role})',
+            tenant_id=str(tenant.id) if tenant else None,
+            object_type='User', object_id=str(user.id),
+            object_repr=user.email,
+            extra_data={'role': role},
+        )
+        return Response(response_data)
 
 
 class RequestCodeView(APIView):
@@ -307,6 +470,24 @@ class TenantViewSet(viewsets.ModelViewSet):
             return [IsSuperAdmin()]
         return [permissions.IsAuthenticated()]
 
+    def perform_create(self, serializer):
+        obj = serializer.save()
+        _audit_log(self.request, 'tenants', 'create',
+                   f'Tenant creado: {obj.name}',
+                   object_type='Tenant', object_id=str(obj.id), object_repr=obj.name)
+
+    def perform_update(self, serializer):
+        obj = serializer.save()
+        _audit_log(self.request, 'tenants', 'update',
+                   f'Tenant actualizado: {obj.name}',
+                   object_type='Tenant', object_id=str(obj.id), object_repr=obj.name)
+
+    def perform_destroy(self, instance):
+        _audit_log(self.request, 'tenants', 'delete',
+                   f'Tenant eliminado: {instance.name}',
+                   object_type='Tenant', object_id=str(instance.id), object_repr=instance.name)
+        instance.delete()
+
 
 # ═══════════════════════════════════════════════════════════
 #  UNITS
@@ -327,8 +508,28 @@ class UnitViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         unit = serializer.save(tenant_id=self.kwargs['tenant_id'])
-        # Auto-create an inactive vecino user when the unit has an owner email
+        _audit_log(self.request, 'unidades', 'create',
+                   f'Unidad creada: {unit.unit_id_code} — {unit.unit_name}',
+                   tenant_id=self.kwargs['tenant_id'],
+                   object_type='Unit', object_id=str(unit.id),
+                   object_repr=f'{unit.unit_id_code} {unit.unit_name}')
         self._auto_create_vecino(unit)
+
+    def perform_update(self, serializer):
+        unit = serializer.save()
+        _audit_log(self.request, 'unidades', 'update',
+                   f'Unidad actualizada: {unit.unit_id_code} — {unit.unit_name}',
+                   tenant_id=self.kwargs['tenant_id'],
+                   object_type='Unit', object_id=str(unit.id),
+                   object_repr=f'{unit.unit_id_code} {unit.unit_name}')
+
+    def perform_destroy(self, instance):
+        _audit_log(self.request, 'unidades', 'delete',
+                   f'Unidad eliminada: {instance.unit_id_code} — {instance.unit_name}',
+                   tenant_id=self.kwargs['tenant_id'],
+                   object_type='Unit', object_id=str(instance.id),
+                   object_repr=f'{instance.unit_id_code} {instance.unit_name}')
+        instance.delete()
 
     def _auto_create_vecino(self, unit):
         """
@@ -510,6 +711,14 @@ class TenantUserViewSet(viewsets.ModelViewSet):
             tenant_id=self.kwargs['tenant_id']
         ).select_related('user', 'unit')
 
+    def perform_create(self, serializer):
+        instance = serializer.save()
+        _audit_log(self.request, 'usuarios', 'create',
+                   f'Usuario asignado: {instance.user.email} (rol: {instance.role})',
+                   tenant_id=self.kwargs['tenant_id'],
+                   object_type='TenantUser', object_id=str(instance.id),
+                   object_repr=f'{instance.user.email} / {instance.role}')
+
     def perform_update(self, serializer):
         """Also update the related User.name if provided in request data."""
         instance = serializer.save()
@@ -517,6 +726,19 @@ class TenantUserViewSet(viewsets.ModelViewSet):
         if name and name.strip():
             instance.user.name = name.strip()
             instance.user.save(update_fields=['name'])
+        _audit_log(self.request, 'usuarios', 'update',
+                   f'Usuario actualizado: {instance.user.email} (rol: {instance.role})',
+                   tenant_id=self.kwargs['tenant_id'],
+                   object_type='TenantUser', object_id=str(instance.id),
+                   object_repr=f'{instance.user.email} / {instance.role}')
+
+    def perform_destroy(self, instance):
+        _audit_log(self.request, 'usuarios', 'delete',
+                   f'Usuario removido: {instance.user.email} (rol: {instance.role})',
+                   tenant_id=self.kwargs['tenant_id'],
+                   object_type='TenantUser', object_id=str(instance.id),
+                   object_repr=f'{instance.user.email} / {instance.role}')
+        instance.delete()
 
     @action(detail=True, methods=['post'], url_path='toggle-active')
     def toggle_active(self, request, tenant_id=None, pk=None):
@@ -723,6 +945,32 @@ class PaymentViewSet(viewsets.ModelViewSet):
         payment.status = _compute_payment_status(payment, tenant, list(extra_fields))
         payment.save()
 
+        # ── Notify vecinos of the unit ──────────────────────────
+        try:
+            unit_obj = payment.unit
+            period_label = payment.period  # e.g. "2025-03"
+            notif_type = 'payment_registered' if created else 'payment_updated'
+            notif_title = (
+                f'Pago registrado — {unit_obj.unit_id_code}'
+                if created else
+                f'Pago actualizado — {unit_obj.unit_id_code}'
+            )
+            notif_msg = f'Período: {period_label}'
+            _notify_unit_residents(tenant_id, str(unit_obj.id), notif_type, notif_title, notif_msg)
+        except Exception:
+            pass  # notifications must never break the main flow
+        # ────────────────────────────────────────────────────────
+
+        # ── Audit log ───────────────────────────────────────────
+        _audit_log(
+            request, 'cobranza', 'create' if created else 'update',
+            f'{"Pago registrado" if created else "Pago actualizado"}: unidad {payment.unit.unit_id_code}, período {payment.period}',
+            tenant_id=tenant_id,
+            object_type='Payment', object_id=str(payment.id),
+            object_repr=f'{payment.unit.unit_id_code} / {payment.period}',
+        )
+        # ────────────────────────────────────────────────────────
+
         return Response(
             PaymentSerializer(payment).data,
             status=status.HTTP_200_OK if not created else status.HTTP_201_CREATED
@@ -781,8 +1029,40 @@ class PaymentViewSet(viewsets.ModelViewSet):
     def clear_payment(self, request, tenant_id=None, pk=None):
         """DELETE /api/tenants/{tenant_id}/payments/{id}/clear/"""
         payment = self.get_object()
+        # Capture data before deletion for the notification
+        try:
+            unit_obj   = payment.unit
+            period_lbl = payment.period
+            unit_id_str = str(unit_obj.id)
+            notif_title = f'Cobro eliminado — {unit_obj.unit_id_code}'
+            notif_msg   = f'Período: {period_lbl}'
+        except Exception:
+            unit_id_str = notif_title = notif_msg = None
+
+        # Capture repr before deletion for audit
+        pay_id   = str(payment.id)
+        pay_repr = f'{payment.unit.unit_id_code} / {payment.period}'
+
         payment.field_payments.all().delete()
         payment.delete()
+
+        # Notify vecinos after deletion
+        if unit_id_str:
+            try:
+                _notify_unit_residents(tenant_id, unit_id_str, 'payment_deleted', notif_title, notif_msg)
+            except Exception:
+                pass
+
+        # ── Audit log ───────────────────────────────────────────
+        _audit_log(
+            request, 'cobranza', 'delete',
+            f'Cobro eliminado: {pay_repr}',
+            tenant_id=tenant_id,
+            object_type='Payment', object_id=pay_id,
+            object_repr=pay_repr,
+        )
+        # ────────────────────────────────────────────────────────
+
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=True, methods=['delete'], url_path='delete-additional/(?P<additional_id>[^/.]+)')
@@ -944,7 +1224,36 @@ class GastoEntryViewSet(viewsets.ModelViewSet):
         return qs
 
     def perform_create(self, serializer):
-        serializer.save(tenant_id=self.kwargs['tenant_id'])
+        instance = serializer.save(tenant_id=self.kwargs['tenant_id'])
+        _audit_log(
+            self.request, 'gastos', 'create',
+            f'Gasto registrado: {instance.field.name if instance.field else ""} — período {instance.period}',
+            tenant_id=self.kwargs['tenant_id'],
+            object_type='GastoEntry', object_id=str(instance.id),
+            object_repr=f'{instance.field.name if instance.field else ""} / {instance.period}',
+        )
+
+    def perform_update(self, serializer):
+        instance = serializer.save()
+        _audit_log(
+            self.request, 'gastos', 'update',
+            f'Gasto actualizado: {instance.field.name if instance.field else ""} — período {instance.period}',
+            tenant_id=self.kwargs['tenant_id'],
+            object_type='GastoEntry', object_id=str(instance.id),
+            object_repr=f'{instance.field.name if instance.field else ""} / {instance.period}',
+        )
+
+    def perform_destroy(self, instance):
+        desc = f'{instance.field.name if instance.field else ""} / {instance.period}'
+        obj_id = str(instance.id)
+        instance.delete()
+        _audit_log(
+            self.request, 'gastos', 'delete',
+            f'Gasto eliminado: {desc}',
+            tenant_id=self.kwargs['tenant_id'],
+            object_type='GastoEntry', object_id=obj_id,
+            object_repr=desc,
+        )
 
 
 # ═══════════════════════════════════════════════════════════
@@ -964,7 +1273,36 @@ class CajaChicaViewSet(viewsets.ModelViewSet):
         return qs
 
     def perform_create(self, serializer):
-        serializer.save(tenant_id=self.kwargs['tenant_id'])
+        instance = serializer.save(tenant_id=self.kwargs['tenant_id'])
+        _audit_log(
+            self.request, 'gastos', 'create',
+            f'Caja chica registrada — período {instance.period}',
+            tenant_id=self.kwargs['tenant_id'],
+            object_type='CajaChicaEntry', object_id=str(instance.id),
+            object_repr=f'CajaChica / {instance.period}',
+        )
+
+    def perform_update(self, serializer):
+        instance = serializer.save()
+        _audit_log(
+            self.request, 'gastos', 'update',
+            f'Caja chica actualizada — período {instance.period}',
+            tenant_id=self.kwargs['tenant_id'],
+            object_type='CajaChicaEntry', object_id=str(instance.id),
+            object_repr=f'CajaChica / {instance.period}',
+        )
+
+    def perform_destroy(self, instance):
+        desc = f'CajaChica / {instance.period}'
+        obj_id = str(instance.id)
+        instance.delete()
+        _audit_log(
+            self.request, 'gastos', 'delete',
+            f'Caja chica eliminada: {desc}',
+            tenant_id=self.kwargs['tenant_id'],
+            object_type='CajaChicaEntry', object_id=obj_id,
+            object_repr=desc,
+        )
 
 
 # ═══════════════════════════════════════════════════════════
@@ -995,9 +1333,25 @@ class ClosedPeriodViewSet(viewsets.ModelViewSet):
         return ClosedPeriod.objects.filter(tenant_id=self.kwargs['tenant_id'])
 
     def perform_create(self, serializer):
-        serializer.save(
-            tenant_id=self.kwargs['tenant_id'],
-            closed_by=self.request.user
+        tenant_id = self.kwargs['tenant_id']
+        obj = serializer.save(tenant_id=tenant_id, closed_by=self.request.user)
+        # Notify all roles that have access to the cobranza module
+        try:
+            _notify_roles(
+                tenant_id,
+                roles=('admin', 'tesorero', 'contador', 'auditor'),
+                notif_type='period_closed',
+                title=f'Período {obj.period} cerrado',
+                message=f'El período {obj.period} ha sido cerrado. Ya no se pueden registrar pagos.',
+            )
+        except Exception:
+            pass
+        _audit_log(
+            self.request, 'cobranza', 'close_period',
+            f'Período {obj.period} cerrado',
+            tenant_id=tenant_id,
+            object_type='ClosedPeriod', object_id=str(obj.id),
+            object_repr=obj.period,
         )
 
 
@@ -1023,6 +1377,24 @@ class ReopenRequestViewSet(viewsets.ModelViewSet):
         req.save()
         # Remove closed period
         ClosedPeriod.objects.filter(tenant_id=tenant_id, period=req.period).delete()
+        # Notify roles with access to cobranza
+        try:
+            _notify_roles(
+                tenant_id,
+                roles=('admin', 'tesorero', 'contador', 'auditor'),
+                notif_type='period_reopened',
+                title=f'Período {req.period} reabierto',
+                message=f'La solicitud de reapertura fue aprobada. Ya se pueden registrar pagos en {req.period}.',
+            )
+        except Exception:
+            pass
+        _audit_log(
+            request, 'cobranza', 'reopen_period',
+            f'Solicitud de reapertura aprobada: período {req.period}',
+            tenant_id=tenant_id,
+            object_type='ReopenRequest', object_id=str(req.id),
+            object_repr=req.period,
+        )
         return Response(ReopenRequestSerializer(req).data)
 
     @action(detail=True, methods=['post'])
@@ -1032,6 +1404,13 @@ class ReopenRequestViewSet(viewsets.ModelViewSet):
         req.resolved_by = request.user
         req.resolved_at = timezone.now()
         req.save()
+        _audit_log(
+            request, 'cobranza', 'reject',
+            f'Solicitud de reapertura rechazada: período {req.period}',
+            tenant_id=tenant_id,
+            object_type='ReopenRequest', object_id=str(req.id),
+            object_repr=req.period,
+        )
         return Response(ReopenRequestSerializer(req).data)
 
 
@@ -1134,45 +1513,26 @@ class AmenityReservationViewSet(viewsets.ModelViewSet):
         return qs
 
     def _notify_managers(self, res, notif_type, title, message=''):
-        """Send notification to all admin/tesorero users of this tenant."""
-        manager_roles = ('admin', 'tesorero', 'superadmin')
-        tu_qs = TenantUser.objects.filter(
-            tenant_id=res.tenant_id, role__in=manager_roles,
-        ).select_related('user')
-        notifs = [
-            Notification(
-                tenant_id=res.tenant_id,
-                user=tu.user,
-                notif_type=notif_type,
-                title=title,
-                message=message,
-                related_reservation=res,
-            )
-            for tu in tu_qs
-        ]
-        if notifs:
-            Notification.objects.bulk_create(notifs)
+        """Notify admin/tesorero users respecting their module permissions."""
+        _notify_roles(
+            res.tenant_id,
+            roles=('admin', 'tesorero'),
+            notif_type=notif_type,
+            title=title,
+            message=message,
+            related_reservation=res,
+        )
 
     def _notify_unit_vecinos(self, res, notif_type, title, message=''):
-        """Send notification to all vecinos linked to the reservation's unit."""
-        if not res.unit_id:
-            return
-        tu_qs = TenantUser.objects.filter(
-            tenant_id=res.tenant_id, unit_id=res.unit_id, role='vecino',
-        ).select_related('user')
-        notifs = [
-            Notification(
-                tenant_id=res.tenant_id,
-                user=tu.user,
-                notif_type=notif_type,
-                title=title,
-                message=message,
-                related_reservation=res,
-            )
-            for tu in tu_qs
-        ]
-        if notifs:
-            Notification.objects.bulk_create(notifs)
+        """Notify vecinos of the reservation's unit respecting module permissions."""
+        _notify_unit_residents(
+            res.tenant_id,
+            unit_id=str(res.unit_id) if res.unit_id else None,
+            notif_type=notif_type,
+            title=title,
+            message=message,
+            related_reservation=res,
+        )
 
     def perform_create(self, serializer):
         from .models import TenantUser as TU, Unit
@@ -1228,6 +1588,14 @@ class AmenityReservationViewSet(viewsets.ModelViewSet):
                 message=f'Fecha: {res.date}  {time_str}',
             )
 
+        _audit_log(
+            self.request, 'reservas', 'create',
+            f'Reserva creada ({res_status}): {res.area_name} — {res.date} {time_str}',
+            tenant_id=self.kwargs['tenant_id'],
+            object_type='AmenityReservation', object_id=str(res.id),
+            object_repr=f'{res.area_name} / {res.date}',
+        )
+
     @action(detail=True, methods=['post'])
     def approve(self, request, tenant_id=None, pk=None):
         res = self.get_object()
@@ -1240,6 +1608,13 @@ class AmenityReservationViewSet(viewsets.ModelViewSet):
             notif_type='reservation_approved',
             title=f'✅ Tu reserva de {res.area_name} fue aprobada',
             message=f'Fecha: {res.date}  {str(res.start_time)[:5]}–{str(res.end_time)[:5]}',
+        )
+        _audit_log(
+            request, 'reservas', 'approve',
+            f'Reserva aprobada: {res.area_name} — {res.date}',
+            tenant_id=tenant_id,
+            object_type='AmenityReservation', object_id=str(res.id),
+            object_repr=f'{res.area_name} / {res.date}',
         )
         return Response(self.get_serializer(res).data)
 
@@ -1256,6 +1631,13 @@ class AmenityReservationViewSet(viewsets.ModelViewSet):
             notif_type='reservation_rejected',
             title=f'❌ Tu reserva de {res.area_name} fue rechazada',
             message=f'Fecha: {res.date}{reason_txt}',
+        )
+        _audit_log(
+            request, 'reservas', 'reject',
+            f'Reserva rechazada: {res.area_name} — {res.date}',
+            tenant_id=tenant_id,
+            object_type='AmenityReservation', object_id=str(res.id),
+            object_repr=f'{res.area_name} / {res.date}',
         )
         return Response(self.get_serializer(res).data)
 
@@ -1292,6 +1674,13 @@ class AmenityReservationViewSet(viewsets.ModelViewSet):
                 title=f'Reserva cancelada: {res.area_name}{unit_label}',
                 message=cancel_msg,
             )
+        _audit_log(
+            request, 'reservas', 'cancel',
+            f'Reserva cancelada: {res.area_name} — {res.date}',
+            tenant_id=tenant_id,
+            object_type='AmenityReservation', object_id=str(res.id),
+            object_repr=f'{res.area_name} / {res.date}',
+        )
         return Response(self.get_serializer(res).data)
 
 
@@ -1343,6 +1732,110 @@ class NotificationViewSet(viewsets.GenericViewSet):
     def mark_all_read(self, request, tenant_id=None):
         self.get_queryset().filter(is_read=False).update(is_read=True)
         return Response({'ok': True})
+
+
+# ═══════════════════════════════════════════════════════════
+#  AUDIT LOG VIEWSET  (super-admin only)
+# ═══════════════════════════════════════════════════════════
+
+class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    GET  /api/audit-logs/           → list (with filters)
+    GET  /api/audit-logs/{id}/      → retrieve
+    GET  /api/audit-logs/summary/   → counts per module / action (last 30 days)
+    Super-admin access only.
+    """
+    serializer_class   = AuditLogSerializer
+    permission_classes = [IsSuperAdmin]
+
+    def get_queryset(self):
+        qs = AuditLog.objects.select_related('tenant', 'user').all()
+
+        # ── Filters ────────────────────────────────────────────
+        tenant_id = self.request.query_params.get('tenant_id')
+        if tenant_id:
+            qs = qs.filter(tenant_id=tenant_id)
+
+        module = self.request.query_params.get('module')
+        if module:
+            qs = qs.filter(module=module)
+
+        action = self.request.query_params.get('action')
+        if action:
+            qs = qs.filter(action=action)
+
+        user_q = self.request.query_params.get('user')
+        if user_q:
+            qs = qs.filter(
+                Q(user_name__icontains=user_q) | Q(user_email__icontains=user_q)
+            )
+
+        date_from = self.request.query_params.get('date_from')
+        if date_from:
+            qs = qs.filter(created_at__date__gte=date_from)
+
+        date_to = self.request.query_params.get('date_to')
+        if date_to:
+            qs = qs.filter(created_at__date__lte=date_to)
+
+        search = self.request.query_params.get('search', '').strip()
+        if search:
+            qs = qs.filter(
+                Q(description__icontains=search) |
+                Q(object_repr__icontains=search) |
+                Q(user_name__icontains=search) |
+                Q(tenant_name__icontains=search)
+            )
+
+        return qs
+
+    def list(self, request, *args, **kwargs):
+        qs     = self.get_queryset()
+        total  = qs.count()
+        # Pagination
+        try:
+            page     = max(1, int(request.query_params.get('page', 1)))
+            per_page = max(10, min(200, int(request.query_params.get('per_page', 50))))
+        except (ValueError, TypeError):
+            page, per_page = 1, 50
+        offset  = (page - 1) * per_page
+        sliced  = qs[offset: offset + per_page]
+        serializer = self.get_serializer(sliced, many=True)
+        return Response({
+            'count':    total,
+            'page':     page,
+            'per_page': per_page,
+            'results':  serializer.data,
+        })
+
+    @action(detail=False, methods=['get'], url_path='summary')
+    def summary(self, request):
+        """Returns total counts per module and action for quick stats."""
+        from django.db.models import Count as DjCount
+        from datetime import date, timedelta
+        since = timezone.now() - timedelta(days=30)
+        qs = AuditLog.objects.filter(created_at__gte=since)
+
+        by_module = (
+            qs.values('module')
+              .annotate(count=DjCount('id'))
+              .order_by('-count')
+        )
+        by_action = (
+            qs.values('action')
+              .annotate(count=DjCount('id'))
+              .order_by('-count')
+        )
+        total_today = AuditLog.objects.filter(
+            created_at__date=date.today()
+        ).count()
+
+        return Response({
+            'total_today':  total_today,
+            'total_30d':    qs.count(),
+            'by_module':    list(by_module),
+            'by_action':    list(by_action),
+        })
 
 
 # ═══════════════════════════════════════════════════════════

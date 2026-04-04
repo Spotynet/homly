@@ -6,14 +6,15 @@ import { notificationsAPI, tenantsAPI } from '../../api/client';
 import {
   Home, Globe, FileText, ShoppingBag, Receipt, Settings,
   Users, Building, Shield, LogOut, Menu, X, Calendar,
-  ChevronDown, Check, Building2, Bell, CheckCheck,
+  ChevronDown, Check, Building2, Bell, CheckCheck, Activity,
 } from 'lucide-react';
 
 const NAV_ITEMS = {
   superadmin: [
     { section: 'system', label: 'Sistema', items: [
-      { path: '/app/dashboard',       icon: Home,    label: 'Dashboard' },
-      { path: '/app/sistema/tenants', icon: Globe,   label: 'Tenants'  },
+      { path: '/app/dashboard',       icon: Home,     label: 'Dashboard' },
+      { path: '/app/sistema/tenants', icon: Globe,    label: 'Tenants'  },
+      { path: '/app/sistema/logs',    icon: Activity, label: 'Logs del Sistema' },
     ]},
     { section: 'tenant', label: 'Tenant Actual', items: [
       { path: '/app/reservas',       icon: Calendar,    label: 'Reservas'         },
@@ -89,6 +90,7 @@ const PATH_TO_MODULE = {
 const PAGE_TITLES = {
   dashboard: 'Dashboard',
   'sistema/tenants': 'Gestión de Tenants',
+  'sistema/logs': 'Logs del Sistema',
   cobranza: 'Cobranza Mensual',
   gastos: 'Gastos del Condominio',
   'estado-cuenta': 'Estado de Cuenta',
@@ -321,10 +323,19 @@ function NotificationBell({ tenantId }) {
   };
 
   const TYPE_ICON = {
+    // Reservas
     reservation_new:       '📅',
     reservation_approved:  '✅',
     reservation_rejected:  '❌',
     reservation_cancelled: '🚫',
+    // Cobranza
+    payment_registered:    '💰',
+    payment_updated:       '✏️',
+    payment_deleted:       '🗑️',
+    // Períodos
+    period_closed:         '🔒',
+    period_reopened:       '🔓',
+    // General
     general:               'ℹ️',
   };
 
