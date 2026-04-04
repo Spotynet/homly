@@ -203,9 +203,10 @@ class LoginView(APIView):
         serializer = LoginSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        user = serializer.validated_data['user']
-        role = serializer.validated_data['role']
-        tenant = serializer.validated_data.get('tenant')
+        user       = serializer.validated_data['user']
+        role       = serializer.validated_data['role']
+        tenant     = serializer.validated_data.get('tenant')
+        profile_id = serializer.validated_data.get('profile_id', '')
 
         refresh = RefreshToken.for_user(user)
         # Add custom claims
@@ -221,6 +222,7 @@ class LoginView(APIView):
             'tenant_id': str(tenant.id) if tenant else None,
             'tenant_name': tenant.name if tenant else None,
             'must_change_password': user.must_change_password,
+            'profile_id': profile_id or '',
         }
         # Audit log — set user on request so _audit_log can read it
         request.user = user
@@ -288,9 +290,10 @@ class LoginWithCodeView(APIView):
         serializer = LoginWithCodeSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        user   = serializer.validated_data['user']
-        role   = serializer.validated_data['role']
-        tenant = serializer.validated_data.get('tenant')
+        user       = serializer.validated_data['user']
+        role       = serializer.validated_data['role']
+        tenant     = serializer.validated_data.get('tenant')
+        profile_id = serializer.validated_data.get('profile_id', '')
 
         # Code-only auth: no passwords. Clear must_change_password so we never prompt.
         if user.must_change_password:
@@ -310,6 +313,7 @@ class LoginWithCodeView(APIView):
             'tenant_id': str(tenant.id) if tenant else None,
             'tenant_name': tenant.name if tenant else None,
             'must_change_password': False,  # Code-only: never prompt for password
+            'profile_id': profile_id or '',
         })
 
 
@@ -340,6 +344,7 @@ class SwitchTenantView(APIView):
         if not tenant_id:
             return Response({'detail': 'tenant_id requerido.'}, status=400)
         user = request.user
+        profile_id = ''
         if user.is_super_admin:
             try:
                 tenant = Tenant.objects.get(id=tenant_id)
@@ -353,8 +358,9 @@ class SwitchTenantView(APIView):
                 )
             except TenantUser.DoesNotExist:
                 return Response({'detail': 'No tienes acceso a este condominio.'}, status=403)
-            tenant = tu.tenant
-            role   = tu.role
+            tenant     = tu.tenant
+            role       = tu.role
+            profile_id = tu.profile_id or ''
         refresh = RefreshToken.for_user(user)
         refresh['role']      = role
         refresh['tenant_id'] = str(tenant.id)
@@ -366,6 +372,7 @@ class SwitchTenantView(APIView):
             'tenant_id':            str(tenant.id),
             'tenant_name':          tenant.name,
             'must_change_password': user.must_change_password,
+            'profile_id':           profile_id,
         })
 
 
@@ -709,10 +716,34 @@ class TenantUserViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         return TenantUser.objects.filter(
             tenant_id=self.kwargs['tenant_id']
-        ).select_related('user', 'unit')
+        ).select_related('user', 'unit', 'tenant')
+
+    def _resolve_role_from_profile(self, profile_id, tenant_id):
+        """
+        Given a profile_id, look it up in the tenant's custom_profiles and
+        return the base_role (used as the actual Django/DRF permission role).
+        Returns None if not found.
+        """
+        if not profile_id:
+            return None
+        try:
+            tenant = Tenant.objects.get(id=tenant_id)
+            for p in (tenant.custom_profiles or []):
+                if str(p.get('id', '')) == str(profile_id):
+                    return p.get('base_role')
+        except Tenant.DoesNotExist:
+            pass
+        return None
 
     def perform_create(self, serializer):
-        instance = serializer.save()
+        profile_id = self.request.data.get('profile_id', '')
+        role = serializer.validated_data.get('role')
+        # If a custom profile is selected, override role with its base_role
+        if profile_id:
+            base_role = self._resolve_role_from_profile(profile_id, self.kwargs['tenant_id'])
+            if base_role:
+                role = base_role
+        instance = serializer.save(role=role, profile_id=profile_id)
         _audit_log(self.request, 'usuarios', 'create',
                    f'Usuario asignado: {instance.user.email} (rol: {instance.role})',
                    tenant_id=self.kwargs['tenant_id'],
@@ -721,7 +752,18 @@ class TenantUserViewSet(viewsets.ModelViewSet):
 
     def perform_update(self, serializer):
         """Also update the related User.name if provided in request data."""
-        instance = serializer.save()
+        profile_id = self.request.data.get('profile_id', None)
+        kwargs = {}
+        if profile_id is not None:
+            kwargs['profile_id'] = profile_id
+            if profile_id:
+                base_role = self._resolve_role_from_profile(profile_id, self.kwargs['tenant_id'])
+                if base_role:
+                    kwargs['role'] = base_role
+            else:
+                # Profile cleared — role from the request payload takes over
+                pass
+        instance = serializer.save(**kwargs)
         name = self.request.data.get('name')
         if name and name.strip():
             instance.user.name = name.strip()
@@ -1559,7 +1601,22 @@ class AmenityReservationViewSet(viewsets.ModelViewSet):
                 ).first()
 
         admin_roles = ('admin', 'tesorero', 'superadmin')
-        res_status = 'approved' if role in admin_roles else 'pending'
+
+        # Determine approval status based on tenant's reservation_settings
+        try:
+            tenant_obj = Tenant.objects.get(id=self.kwargs['tenant_id'])
+            approval_mode = (tenant_obj.reservation_settings or {}).get(
+                'approval_mode', 'require_vecinos'
+            )
+        except Tenant.DoesNotExist:
+            approval_mode = 'require_vecinos'
+
+        if approval_mode == 'auto_approve_all':
+            res_status = 'approved'
+        elif approval_mode == 'require_all':
+            res_status = 'pending'
+        else:  # 'require_vecinos' (default): admins auto-approve, others pending
+            res_status = 'approved' if role in admin_roles else 'pending'
 
         res = serializer.save(
             tenant_id=self.kwargs['tenant_id'],

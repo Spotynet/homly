@@ -456,27 +456,48 @@ export default function AppLayout() {
   const {
     user, role, tenantId, tenantName,
     userTenants, loadUserTenants, switchTenant,
-    logout, isSuperAdmin,
+    logout, isSuperAdmin, profileId,
   } = useAuth();
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [tenantModulePerms, setTenantModulePerms] = useState({});
+  const [customProfiles,    setCustomProfiles]    = useState([]);
   const navigate  = useNavigate();
   const location  = useLocation();
 
-  const roleConfig   = ROLES[role] || ROLES.vecino;
-  const isVecino     = role === 'vecino' || role === 'vigilante';
+  const isVecino = role === 'vecino' || role === 'vigilante';
 
-  // Fetch tenant module permissions whenever the active tenant changes
+  // Fetch tenant data (module permissions + custom profiles) whenever the active tenant changes
   useEffect(() => {
-    if (!tenantId || role === 'superadmin') { setTenantModulePerms({}); return; }
+    if (!tenantId || role === 'superadmin') {
+      setTenantModulePerms({});
+      setCustomProfiles([]);
+      return;
+    }
     tenantsAPI.get(tenantId)
-      .then(r => setTenantModulePerms(r.data?.module_permissions || {}))
-      .catch(() => setTenantModulePerms({}));
+      .then(r => {
+        setTenantModulePerms(r.data?.module_permissions || {});
+        setCustomProfiles(Array.isArray(r.data?.custom_profiles) ? r.data.custom_profiles : []);
+      })
+      .catch(() => { setTenantModulePerms({}); setCustomProfiles([]); });
   }, [tenantId, role]);
 
-  // Filter nav based on module permissions (superadmin bypasses all filters)
-  const rawNav = NAV_ITEMS[role] || NAV_ITEMS.vecino;
+  // Resolve the active custom profile (if any)
+  const activeProfile = profileId
+    ? customProfiles.find(p => String(p.id) === String(profileId)) || null
+    : null;
+
+  // Determine effective role for nav selection:
+  // If user has a custom profile, use its base_role for the nav structure.
+  const navRole = activeProfile ? (activeProfile.base_role || role) : role;
+
+  // Role display info — use profile label/color when applicable
+  const roleConfig = activeProfile
+    ? { label: activeProfile.label, color: activeProfile.color || 'var(--teal-500)' }
+    : (ROLES[role] || ROLES.vecino);
+
+  // Filter nav based on module permissions or custom profile modules
+  const rawNav = NAV_ITEMS[navRole] || NAV_ITEMS.vecino;
   const effectiveNav = role === 'superadmin'
     ? rawNav
     : rawNav.map(group => ({
@@ -484,6 +505,16 @@ export default function AppLayout() {
         items: group.items.filter(item => {
           const moduleKey = PATH_TO_MODULE[item.path];
           if (!moduleKey) return true;
+
+          // Custom profile: filter by profile's own modules list
+          if (activeProfile) {
+            const profileModules = activeProfile.modules || [];
+            // If profile has no modules configured, fall back to base role defaults
+            if (profileModules.length === 0) return true;
+            return profileModules.includes(moduleKey);
+          }
+
+          // Standard role: filter by tenant module_permissions config
           const rolePerms = tenantModulePerms[role];
           if (rolePerms === undefined) return true; // no custom config → show all defaults
           return rolePerms.includes(moduleKey);
@@ -617,8 +648,9 @@ export default function AppLayout() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             {tenantId && (
               role === 'superadmin' ||
-              tenantModulePerms[role] === undefined ||
-              (tenantModulePerms[role] || []).includes('notificaciones')
+              activeProfile
+                ? (activeProfile?.modules?.length === 0 || (activeProfile?.modules || []).includes('notificaciones'))
+                : (tenantModulePerms[role] === undefined || (tenantModulePerms[role] || []).includes('notificaciones'))
             ) && <NotificationBell tenantId={tenantId} />}
           </div>
         </header>

@@ -11,6 +11,7 @@ export function AuthProvider({ children }) {
   const [userTenants,        setUserTenants]        = useState([]); // [{id, name}]
   const [loading,            setLoading]            = useState(true);
   const [mustChangePassword, setMustChangePassword] = useState(false);
+  const [profileId,          setProfileId]          = useState('');
 
   // ── Restore session from localStorage ────────────────────────────────────
   useEffect(() => {
@@ -20,6 +21,7 @@ export function AuthProvider({ children }) {
     const savedTenant    = localStorage.getItem('tenant_id');
     const savedTenantName= localStorage.getItem('tenant_name');
     const savedMustChange= localStorage.getItem('must_change_password');
+    const savedProfileId = localStorage.getItem('profile_id');
 
     if (token && savedUser) {
       setUser(JSON.parse(savedUser));
@@ -27,6 +29,7 @@ export function AuthProvider({ children }) {
       setTenantId(savedTenant && savedTenant !== 'null' ? savedTenant : null);
       setTenantName(savedTenantName && savedTenantName !== 'null' ? savedTenantName : null);
       setMustChangePassword(savedMustChange === 'true');
+      setProfileId(savedProfileId || '');
     }
     setLoading(false);
   }, []);
@@ -38,6 +41,7 @@ export function AuthProvider({ children }) {
     localStorage.setItem('user',          JSON.stringify(data.user));
     localStorage.setItem('role',                data.role);
     localStorage.setItem('must_change_password', data.must_change_password ? 'true' : 'false');
+    localStorage.setItem('profile_id', data.profile_id || '');
     if (data.tenant_id) {
       localStorage.setItem('tenant_id',   data.tenant_id);
       localStorage.setItem('tenant_name', data.tenant_name);
@@ -58,6 +62,7 @@ export function AuthProvider({ children }) {
     setTenantId(data.tenant_id);
     setTenantName(data.tenant_name);
     setMustChangePassword(data.must_change_password);
+    setProfileId(data.profile_id || '');
     return data;
   }, []);
 
@@ -72,6 +77,7 @@ export function AuthProvider({ children }) {
     setTenantId(data.tenant_id);
     setTenantName(data.tenant_name);
     setMustChangePassword(data.must_change_password);
+    setProfileId(data.profile_id || '');
     return data;
   }, []);
 
@@ -94,6 +100,7 @@ export function AuthProvider({ children }) {
     setTenantId(data.tenant_id);
     setTenantName(data.tenant_name);
     setMustChangePassword(data.must_change_password);
+    setProfileId(data.profile_id || '');
     return data;
   }, []);
 
@@ -106,11 +113,13 @@ export function AuthProvider({ children }) {
     setTenantName(null);
     setUserTenants([]);
     setMustChangePassword(false);
+    setProfileId('');
   }, []);
 
   const value = {
     user, role, tenantId, tenantName, userTenants, loading,
     mustChangePassword, setMustChangePassword,
+    profileId, setProfileId,
     login, loginWithCode, logout, switchTenant, loadUserTenants,
     isAuthenticated: !!user,
     isSuperAdmin: role === 'superadmin',

@@ -144,6 +144,25 @@ class Tenant(models.Model):
         ),
     )
 
+    # Configurable behaviour for the reservations module.
+    # approval_mode choices:
+    #   "require_vecinos"   → vecinos/vigilantes need admin approval (default)
+    #   "require_all"       → every request (including admin/tesorero) goes through approval
+    #   "auto_approve_all"  → all requests are auto-approved (no approval step)
+    reservation_settings = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text='Reservation-module behaviour settings: approval_mode, etc.',
+    )
+
+    # Custom role profiles defined by the tenant admin.
+    # List of: {id, label, color, base_role, modules:[]}
+    custom_profiles = models.JSONField(
+        default=list,
+        blank=True,
+        help_text='Custom role profiles with per-module access configuration.',
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -180,6 +199,8 @@ class TenantUser(models.Model):
     unit = models.ForeignKey('Unit', on_delete=models.SET_NULL, null=True, blank=True,
                              related_name='assigned_users',
                              help_text='Required for vecino role')
+    # ID referencing a custom profile in tenant.custom_profiles (blank = using built-in role)
+    profile_id = models.CharField(max_length=100, blank=True, default='')
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

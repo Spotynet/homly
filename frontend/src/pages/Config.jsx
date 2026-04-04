@@ -146,8 +146,15 @@ export default function Config() {
   const USERS_PAGE_OPTIONS = [25, 50, 100];
 
   // Module permissions tab
-  const [modulePerms, setModulePerms] = useState({});
-  const [moduleSaving, setModuleSaving] = useState(false);
+  const [modulePerms,          setModulePerms]          = useState({});
+  const [moduleSaving,         setModuleSaving]         = useState(false);
+  const [reservationSettings,  setReservationSettings]  = useState({ approval_mode: 'require_vecinos' });
+  const [customProfiles,       setCustomProfiles]       = useState([]);
+
+  // Custom profile modal
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
+  const [profileForm,      setProfileForm]      = useState(null); // null = closed; object = open
+  const [profileSaving,    setProfileSaving]    = useState(false);
 
   // Field modal
   const [fieldForm, setFieldForm] = useState(null);
@@ -224,9 +231,13 @@ export default function Config() {
     loadTenant(); loadFields(); loadUsers(); loadUnits(); loadAssembly(); loadSuperAdmins();
   }, [loadTenant, loadFields, loadUsers, loadUnits, loadAssembly, loadSuperAdmins]);
 
-  // Sync modulePerms whenever tenant data changes
+  // Sync modulePerms + reservationSettings + customProfiles whenever tenant data changes
   useEffect(() => {
-    if (tenant) setModulePerms(tenant.module_permissions || {});
+    if (tenant) {
+      setModulePerms(tenant.module_permissions || {});
+      setReservationSettings(tenant.reservation_settings || { approval_mode: 'require_vecinos' });
+      setCustomProfiles(Array.isArray(tenant.custom_profiles) ? tenant.custom_profiles : []);
+    }
   }, [tenant]);
 
   // ── Save helpers ──────────────────────────────────────────────────────────
@@ -450,10 +461,19 @@ export default function Config() {
   const saveModulePermissions = async () => {
     setModuleSaving(true);
     try {
-      await tenantsAPI.update(tenantId, { module_permissions: modulePerms });
-      setTenant(prev => ({ ...prev, module_permissions: modulePerms }));
-      toast.success('Permisos de módulos guardados');
-    } catch { toast.error('Error guardando permisos de módulos'); }
+      await tenantsAPI.update(tenantId, {
+        module_permissions:   modulePerms,
+        reservation_settings: reservationSettings,
+        custom_profiles:      customProfiles,
+      });
+      setTenant(prev => ({
+        ...prev,
+        module_permissions:   modulePerms,
+        reservation_settings: reservationSettings,
+        custom_profiles:      customProfiles,
+      }));
+      toast.success('Configuración de módulos guardada');
+    } catch { toast.error('Error guardando configuración de módulos'); }
     finally { setModuleSaving(false); }
   };
 
@@ -513,20 +533,22 @@ export default function Config() {
 
   const openEditUser = (u) => {
     setEditUserId(u.id);
-    setEditUserForm({ name: u.user_name || '', role: u.role || 'vecino', unit_id: u.unit || '' });
+    setEditUserForm({ name: u.user_name || '', role: u.role || 'vecino', unit_id: u.unit || '', profile_id: u.profile_id || '' });
     setEditUserOpen(true);
   };
 
   const saveEditUser = async () => {
     if (!editUserForm.name?.trim())
       return toast.error('El nombre es obligatorio');
-    if (editUserForm.role === 'vecino' && !editUserForm.unit_id)
+    // If no custom profile, require role; if profile set, backend resolves role from base_role
+    if (!editUserForm.profile_id && editUserForm.role === 'vecino' && !editUserForm.unit_id)
       return toast.error('Los vecinos deben tener una unidad asignada');
     try {
       await usersAPI.update(tenantId, editUserId, {
-        name: editUserForm.name.trim(),
-        role: editUserForm.role,
-        unit: editUserForm.role === 'vecino' ? (editUserForm.unit_id || null) : null,
+        name:       editUserForm.name.trim(),
+        role:       editUserForm.role,
+        unit:       editUserForm.role === 'vecino' ? (editUserForm.unit_id || null) : null,
+        profile_id: editUserForm.profile_id || '',
       });
       toast.success('Usuario actualizado');
       setEditUserOpen(false);
@@ -1359,6 +1381,9 @@ export default function Config() {
                             const name = u.user_name || u.name || u.user_email || '—';
                             const email = u.user_email || u.email || '—';
                             const meta = ROLE_META[u.role] || { label: u.role, color:'var(--ink-500)', bg:'var(--sand-100)' };
+                            const activeProfile = u.profile_id
+                              ? customProfiles.find(p => String(p.id) === String(u.profile_id))
+                              : null;
                             return (
                               <tr key={u.id}>
                                 <td style={{ fontWeight:600, fontSize:13 }}>
@@ -1376,10 +1401,17 @@ export default function Config() {
                                 </td>
                                 <td style={{ fontSize:13, color:'var(--ink-500)' }}>{email}</td>
                                 <td>
-                                  <span className="badge" style={{ background:meta.bg, color:meta.color, fontSize:11 }}>
-                                    <span className="badge-dot" style={{ background:meta.color }} />
-                                    {meta.label}
-                                  </span>
+                                  {activeProfile ? (
+                                    <span className="badge" style={{ background: activeProfile.color + '22', color: activeProfile.color, fontSize:11, border:`1px solid ${activeProfile.color}44` }}>
+                                      <span className="badge-dot" style={{ background: activeProfile.color }} />
+                                      {activeProfile.label}
+                                    </span>
+                                  ) : (
+                                    <span className="badge" style={{ background:meta.bg, color:meta.color, fontSize:11 }}>
+                                      <span className="badge-dot" style={{ background:meta.color }} />
+                                      {meta.label}
+                                    </span>
+                                  )}
                                 </td>
                                 <td style={{ fontSize:13 }}>
                                   {u.role === 'vecino'
@@ -1838,6 +1870,168 @@ export default function Config() {
             <span style={{ display:'flex', alignItems:'center', gap:6 }}>
               <Lock size={12}/> No aplica para este perfil
             </span>
+          </div>
+
+          {/* ── Reservation Settings ─────────────────────────────────────── */}
+          <div style={{
+            marginTop: 28, padding: '20px 22px',
+            background: 'var(--white)', border: '1px solid var(--sand-100)',
+            borderRadius: 'var(--radius-lg)',
+          }}>
+            <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:16 }}>
+              <span style={{ display:'inline-flex', alignItems:'center', justifyContent:'center', width:32, height:32, borderRadius:'var(--radius-sm)', background:'var(--teal-50)', flexShrink:0 }}>
+                <Calendar size={15} color="var(--teal-600)" />
+              </span>
+              <div>
+                <div style={{ fontSize:14, fontWeight:700, color:'var(--ink-800)' }}>Configuración de Reservas</div>
+                <div style={{ fontSize:12, color:'var(--ink-400)', marginTop:1 }}>Define cómo se gestionan las solicitudes de reserva de áreas comunes</div>
+              </div>
+            </div>
+
+            <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+              {[
+                {
+                  value: 'require_vecinos',
+                  label: 'Requerir aprobación solo para vecinos',
+                  desc: 'Los vecinos y vigilantes envían solicitudes que deben aprobar admin / tesorero. Admins y tesoreros crean reservas auto-aprobadas.',
+                },
+                {
+                  value: 'require_all',
+                  label: 'Requerir aprobación para todos',
+                  desc: 'Cualquier solicitud (incluidos admin y tesorero) queda en estado Pendiente hasta ser aprobada manualmente.',
+                },
+                {
+                  value: 'auto_approve_all',
+                  label: 'Auto-aprobar todas las reservas',
+                  desc: 'Todas las solicitudes se aprueban automáticamente sin pasar por revisión.',
+                },
+              ].map(opt => {
+                const active = (reservationSettings.approval_mode || 'require_vecinos') === opt.value;
+                return (
+                  <label
+                    key={opt.value}
+                    style={{
+                      display:'flex', alignItems:'flex-start', gap:12,
+                      padding:'12px 14px', borderRadius:'var(--radius-md)',
+                      border:`1.5px solid ${active ? 'var(--teal-400)' : 'var(--sand-100)'}`,
+                      background: active ? 'var(--teal-50)' : 'var(--white)',
+                      cursor: isAdmin ? 'pointer' : 'default',
+                      transition:'all 0.15s',
+                    }}
+                  >
+                    <input
+                      type="radio"
+                      name="approval_mode"
+                      value={opt.value}
+                      checked={active}
+                      disabled={!isAdmin}
+                      onChange={() => isAdmin && setReservationSettings(s => ({ ...s, approval_mode: opt.value }))}
+                      style={{ marginTop:3, accentColor:'var(--teal-500)', flexShrink:0 }}
+                    />
+                    <div>
+                      <div style={{ fontSize:13, fontWeight:active ? 700 : 600, color: active ? 'var(--teal-700)' : 'var(--ink-700)' }}>
+                        {opt.label}
+                      </div>
+                      <div style={{ fontSize:12, color:'var(--ink-400)', marginTop:2, lineHeight:1.4 }}>
+                        {opt.desc}
+                      </div>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* ── Custom Profiles ─────────────────────────────────────── */}
+          <div style={{ marginTop: 28, padding: '20px 22px', background: 'var(--white)', border: '1px solid var(--sand-100)', borderRadius: 'var(--radius-lg)' }}>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
+              <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                <span style={{ display:'inline-flex', alignItems:'center', justifyContent:'center', width:32, height:32, borderRadius:'var(--radius-sm)', background:'var(--teal-50)', flexShrink:0 }}>
+                  <Users size={15} color="var(--teal-600)" />
+                </span>
+                <div>
+                  <div style={{ fontSize:14, fontWeight:700, color:'var(--ink-800)' }}>Perfiles Personalizados</div>
+                  <div style={{ fontSize:12, color:'var(--ink-400)', marginTop:1 }}>Crea perfiles con acceso a módulos específicos y asígnalos a usuarios del condominio</div>
+                </div>
+              </div>
+              {isAdmin && (
+                <button className="btn btn-primary" style={{ fontSize:12 }}
+                  onClick={() => {
+                    setProfileForm({ label:'', color:'#0d9488', base_role:'tesorero', modules: [] });
+                    setProfileModalOpen(true);
+                  }}>
+                  <Plus size={13} /> Nuevo Perfil
+                </button>
+              )}
+            </div>
+
+            {customProfiles.length === 0 ? (
+              <div style={{ padding:'28px 0', textAlign:'center', color:'var(--ink-400)' }}>
+                <Users size={32} style={{ display:'block', margin:'0 auto 10px', opacity:0.3 }} />
+                <div style={{ fontSize:13, fontWeight:600 }}>No hay perfiles personalizados</div>
+                <div style={{ fontSize:12, marginTop:4 }}>Crea un perfil para asignar accesos específicos a usuarios</div>
+              </div>
+            ) : (
+              <table style={{ width:'100%', borderCollapse:'collapse' }}>
+                <thead>
+                  <tr style={{ background:'var(--sand-50)', borderBottom:'1px solid var(--sand-100)' }}>
+                    {['Perfil','Rol Base','Módulos','Acciones'].map(h => (
+                      <th key={h} style={{ padding:'9px 12px', textAlign:'left', fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.05em', color:'var(--ink-400)' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {customProfiles.map((p, idx) => {
+                    const baseMeta = ROLE_META[p.base_role] || {};
+                    const modCount = (p.modules || []).length;
+                    return (
+                      <tr key={p.id || idx} style={{ borderBottom:'1px solid var(--sand-100)', background: idx % 2 === 0 ? 'var(--white)' : 'var(--sand-50)' }}>
+                        <td style={{ padding:'11px 12px' }}>
+                          <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                            <span style={{ display:'inline-block', width:10, height:10, borderRadius:'50%', background: p.color || 'var(--teal-500)', flexShrink:0 }} />
+                            <span style={{ fontWeight:700, fontSize:13, color:'var(--ink-800)' }}>{p.label}</span>
+                          </div>
+                        </td>
+                        <td style={{ padding:'11px 12px' }}>
+                          <span style={{ padding:'2px 8px', borderRadius:'var(--radius-full)', background: baseMeta.bg || 'var(--sand-100)', color: baseMeta.color || 'var(--ink-500)', fontSize:11, fontWeight:700 }}>
+                            {baseMeta.label || p.base_role}
+                          </span>
+                        </td>
+                        <td style={{ padding:'11px 12px' }}>
+                          <span style={{ fontSize:12, color:'var(--ink-500)' }}>
+                            {modCount === 0 ? 'Todos (rol base)' : `${modCount} módulo${modCount !== 1 ? 's' : ''}`}
+                          </span>
+                        </td>
+                        <td style={{ padding:'11px 12px' }}>
+                          {isAdmin && (
+                            <div style={{ display:'flex', gap:4 }}>
+                              <button className="btn-ghost" style={{ color:'var(--teal-600)' }} title="Editar"
+                                onClick={() => { setProfileForm({ ...p }); setProfileModalOpen(true); }}>
+                                <Pencil size={13} />
+                              </button>
+                              <button className="btn-ghost" style={{ color:'var(--coral-500)' }} title="Eliminar"
+                                onClick={() => {
+                                  if (window.confirm(`¿Eliminar el perfil "${p.label}"? Los usuarios asignados a este perfil quedarán con su rol base.`)) {
+                                    setCustomProfiles(prev => prev.filter(x => x.id !== p.id));
+                                  }
+                                }}>
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+
+            {isAdmin && customProfiles.length > 0 && (
+              <div style={{ marginTop:14, fontSize:12, color:'var(--ink-400)' }}>
+                Recuerda guardar los cambios con el botón <strong>Guardar Cambios</strong> de la parte superior.
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -2530,13 +2724,41 @@ export default function Config() {
             <div className="field">
               <label className="field-label">Rol</label>
               <select className="field-select" value={editUserForm.role||'vecino'}
-                onChange={e => setEditUserForm(f => ({ ...f, role: e.target.value, unit_id: e.target.value !== 'vecino' ? '' : f.unit_id }))}>
+                onChange={e => setEditUserForm(f => ({ ...f, role: e.target.value, profile_id: '', unit_id: e.target.value !== 'vecino' ? '' : f.unit_id }))}>
                 {TENANT_ROLES.map(r => {
                   const m = ROLE_META[r];
                   return <option key={r} value={r}>{m?.label||r} — {m?.desc||''}</option>;
                 })}
               </select>
             </div>
+            {/* Custom profile selector */}
+            {customProfiles.length > 0 && (
+              <div className="field field-full">
+                <label className="field-label">Perfil Personalizado <span style={{ fontWeight:400, color:'var(--ink-400)' }}>(opcional — sobrescribe visibilidad de módulos)</span></label>
+                <select className="field-select" value={editUserForm.profile_id||''}
+                  onChange={e => setEditUserForm(f => ({ ...f, profile_id: e.target.value }))}>
+                  <option value="">— Sin perfil personalizado —</option>
+                  {customProfiles.filter(p => {
+                    // Only show profiles compatible with the selected role's base permissions
+                    const baseRole = p.base_role;
+                    if (!baseRole) return false;
+                    // Admin can use any profile; vecino can only use vecino-based profiles; etc.
+                    const roleOrder = ['vecino','vigilante','auditor','contador','tesorero','admin'];
+                    const selectedIdx = roleOrder.indexOf(editUserForm.role || 'vecino');
+                    const profileIdx  = roleOrder.indexOf(baseRole);
+                    return profileIdx >= 0;
+                  }).map(p => {
+                    const m = ROLE_META[p.base_role] || {};
+                    return <option key={p.id} value={p.id}>{p.label} (base: {m.label || p.base_role})</option>;
+                  })}
+                </select>
+                {editUserForm.profile_id && (
+                  <div style={{ fontSize:11, color:'var(--ink-400)', marginTop:4 }}>
+                    El perfil personalizado determina los módulos visibles. Los permisos de backend corresponden al rol base del perfil.
+                  </div>
+                )}
+              </div>
+            )}
             {editUserForm.role === 'vecino' && (
               <div className="field field-full">
                 <label className="field-label">Unidad Asignada *</label>
@@ -2555,6 +2777,144 @@ export default function Config() {
           </div>
         </Modal>
       )}
+
+      {/* Profile Modal */}
+      {profileModalOpen && profileForm && (() => {
+        const isEdit   = !!(profileForm.id);
+        const baseModules = ROLE_BASE_MODULES[profileForm.base_role] || [];
+        const profileModules = profileForm.modules || [];
+
+        const toggleModule = (key) => {
+          setProfileForm(f => {
+            const mods = f.modules || [];
+            return { ...f, modules: mods.includes(key) ? mods.filter(m => m !== key) : [...mods, key] };
+          });
+        };
+
+        const saveProfile = async () => {
+          if (!profileForm.label?.trim()) return toast.error('El nombre del perfil es obligatorio');
+          if (!profileForm.base_role)     return toast.error('Selecciona un rol base');
+          setProfileSaving(true);
+          try {
+            const entry = { ...profileForm };
+            if (!entry.id) {
+              // Generate a simple unique ID
+              entry.id = `prof_${Date.now()}_${Math.random().toString(36).slice(2,7)}`;
+            }
+            setCustomProfiles(prev => {
+              const exists = prev.findIndex(p => p.id === entry.id);
+              if (exists >= 0) { const next = [...prev]; next[exists] = entry; return next; }
+              return [...prev, entry];
+            });
+            setProfileModalOpen(false);
+            setProfileForm(null);
+            toast.success(isEdit ? 'Perfil actualizado' : 'Perfil creado — recuerda guardar los cambios');
+          } finally { setProfileSaving(false); }
+        };
+
+        const PRESET_COLORS = [
+          '#0d9488','#0ea5e9','#7c3aed','#db2777','#ea580c','#ca8a04','#16a34a','#64748b'
+        ];
+
+        return (
+          <Modal
+            title={isEdit ? 'Editar Perfil' : 'Nuevo Perfil Personalizado'}
+            large
+            onClose={() => { setProfileModalOpen(false); setProfileForm(null); }}
+            onSave={saveProfile}
+            saving={profileSaving}
+            saveLabel={isEdit ? 'Guardar Cambios' : 'Crear Perfil'}
+          >
+            <div className="form-grid">
+              {/* Name */}
+              <div className="field field-full">
+                <label className="field-label">Nombre del Perfil *</label>
+                <input className="field-input" placeholder="Ej: Supervisor de Mantenimiento, Coordinador…"
+                  value={profileForm.label || ''}
+                  onChange={e => setProfileForm(f => ({ ...f, label: e.target.value }))} />
+              </div>
+
+              {/* Color */}
+              <div className="field">
+                <label className="field-label">Color identificador</label>
+                <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap', marginTop:4 }}>
+                  {PRESET_COLORS.map(c => (
+                    <button key={c}
+                      onClick={() => setProfileForm(f => ({ ...f, color: c }))}
+                      style={{
+                        width:26, height:26, borderRadius:'50%', border: profileForm.color === c ? '3px solid var(--ink-800)' : '2px solid transparent',
+                        background:c, cursor:'pointer', outline:'none', flexShrink:0,
+                        boxShadow: profileForm.color === c ? '0 0 0 1px white inset' : 'none',
+                      }} />
+                  ))}
+                  <input type="color" value={profileForm.color || '#0d9488'}
+                    onChange={e => setProfileForm(f => ({ ...f, color: e.target.value }))}
+                    style={{ width:28, height:28, border:'none', padding:0, borderRadius:4, cursor:'pointer' }} />
+                </div>
+              </div>
+
+              {/* Base role */}
+              <div className="field">
+                <label className="field-label">Rol Base *</label>
+                <select className="field-select"
+                  value={profileForm.base_role || ''}
+                  onChange={e => setProfileForm(f => ({ ...f, base_role: e.target.value, modules: [] }))}>
+                  <option value="">— Selecciona un rol —</option>
+                  {['admin','tesorero','contador','auditor','vigilante','vecino'].map(r => {
+                    const m = ROLE_META[r] || {};
+                    return <option key={r} value={r}>{m.label || r}</option>;
+                  })}
+                </select>
+                <div style={{ fontSize:11, color:'var(--ink-400)', marginTop:4, lineHeight:1.4 }}>
+                  El rol base determina los permisos de backend. Los módulos configurados aquí controlan la visibilidad del menú.
+                </div>
+              </div>
+            </div>
+
+            {/* Module toggles */}
+            {profileForm.base_role && (
+              <div style={{ marginTop:20 }}>
+                <div style={{ fontSize:13, fontWeight:700, color:'var(--ink-700)', marginBottom:10 }}>
+                  Módulos visibles para este perfil
+                </div>
+                <div style={{ fontSize:12, color:'var(--ink-400)', marginBottom:12, lineHeight:1.4 }}>
+                  Selecciona qué módulos del menú estarán disponibles. Si no seleccionas ninguno, se usarán los módulos predeterminados del rol base.
+                </div>
+                <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(200px, 1fr))', gap:8 }}>
+                  {MODULE_DEFINITIONS.filter(mod => baseModules.includes(mod.key)).map(mod => {
+                    const Icon    = mod.icon;
+                    const checked = profileModules.includes(mod.key);
+                    return (
+                      <label key={mod.key}
+                        style={{
+                          display:'flex', alignItems:'center', gap:10, padding:'10px 12px',
+                          borderRadius:'var(--radius-md)', cursor:'pointer',
+                          border:`1.5px solid ${checked ? 'var(--teal-400)' : 'var(--sand-100)'}`,
+                          background: checked ? 'var(--teal-50)' : 'var(--white)',
+                          transition:'all 0.15s',
+                        }}>
+                        <input type="checkbox" checked={checked} onChange={() => toggleModule(mod.key)}
+                          style={{ accentColor:'var(--teal-500)', flexShrink:0 }} />
+                        <span style={{ display:'inline-flex', alignItems:'center', justifyContent:'center', width:24, height:24, borderRadius:6, background: checked ? 'var(--teal-100)' : 'var(--sand-100)', flexShrink:0 }}>
+                          <Icon size={12} color={checked ? 'var(--teal-700)' : 'var(--ink-400)'} />
+                        </span>
+                        <div>
+                          <div style={{ fontSize:12, fontWeight:checked ? 700 : 600, color: checked ? 'var(--teal-700)' : 'var(--ink-600)' }}>{mod.label}</div>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+                {profileModules.length === 0 && (
+                  <div style={{ marginTop:10, padding:'8px 12px', background:'var(--amber-50)', border:'1px solid var(--amber-100)', borderRadius:'var(--radius-md)', fontSize:12, color:'var(--amber-700)' }}>
+                    Sin selección → el perfil hereda todos los módulos del rol base ({(ROLE_BASE_MODULES[profileForm.base_role] || []).length} módulos)
+                  </div>
+                )}
+              </div>
+            )}
+          </Modal>
+        );
+      })()}
 
       {/* Committee modal */}
       {cmtForm && (

@@ -73,6 +73,7 @@ class LoginSerializer(serializers.Serializer):
         data['role']        = tenant_user.role
         data['tenant']      = tenant_user.tenant
         data['tenant_user'] = tenant_user
+        data['profile_id']  = tenant_user.profile_id
         return data
 
 
@@ -171,6 +172,7 @@ class LoginWithCodeSerializer(serializers.Serializer):
         data['role']        = tenant_user.role
         data['tenant']      = tenant_user.tenant
         data['tenant_user'] = tenant_user
+        data['profile_id']  = tenant_user.profile_id
         return data
 
 
@@ -280,11 +282,32 @@ class TenantUserSerializer(serializers.ModelSerializer):
     unit_code             = serializers.CharField(source='unit.unit_id_code',         read_only=True, default=None)
     must_change_password  = serializers.BooleanField(source='user.must_change_password', read_only=True)
     is_active             = serializers.BooleanField(source='user.is_active',         read_only=True)
+    profile_label         = serializers.SerializerMethodField()
+    profile_color         = serializers.SerializerMethodField()
+
+    def _find_profile(self, obj):
+        """Look up the custom profile entry from the tenant's custom_profiles list."""
+        if not obj.profile_id:
+            return None
+        profiles = (obj.tenant.custom_profiles or []) if obj.tenant else []
+        for p in profiles:
+            if str(p.get('id', '')) == str(obj.profile_id):
+                return p
+        return None
+
+    def get_profile_label(self, obj):
+        profile = self._find_profile(obj)
+        return profile['label'] if profile else None
+
+    def get_profile_color(self, obj):
+        profile = self._find_profile(obj)
+        return profile['color'] if profile else None
 
     class Meta:
         model = TenantUser
         fields = ['id', 'user', 'user_name', 'user_email', 'role', 'unit',
-                  'unit_code', 'must_change_password', 'is_active', 'created_at']
+                  'unit_code', 'must_change_password', 'is_active',
+                  'profile_id', 'profile_label', 'profile_color', 'created_at']
         read_only_fields = ['id', 'created_at']
 
 

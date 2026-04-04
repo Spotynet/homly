@@ -4,6 +4,7 @@ import { reservationsAPI, tenantsAPI, unitsAPI } from '../api/client';
 import {
   Calendar, ChevronLeft, ChevronRight, Plus, X, Check,
   Clock, CheckCircle, AlertCircle, Ban, RefreshCw, FileText,
+  Eye, User,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -92,7 +93,6 @@ function AreaCard({ area, reservations, selected, onSelect }) {
 export default function Reservas() {
   const { tenantId, isAdmin, isVecino, isReadOnly, role, user } = useAuth();
   const autoApproveRoles = ['admin', 'tesorero', 'superadmin'];
-  const isAutoApprover   = autoApproveRoles.includes(role);
   const canManage        = isAdmin || role === 'tesorero'; // admin, superadmin, tesorero can approve/reject
   const canCancelOwn     = !canManage && !isReadOnly;      // vecino, vigilante can cancel their own
   const showActionsCol   = canManage || canCancelOwn;
@@ -110,6 +110,12 @@ export default function Reservas() {
   const [loading,      setLoading]      = useState(false);
   const [resStatusFilter, setResStatusFilter] = useState('all');
 
+  // Vecino view toggle: "mine" (only own reservations in list) vs "all" (calendar availability)
+  const [myResOnly, setMyResOnly] = useState(true);
+
+  // Tenant reservation settings (approval mode)
+  const [approvalMode, setApprovalMode] = useState('require_vecinos'); // default
+
   // New reservation modal
   const [modalOpen,         setModalOpen]         = useState(false);
   const [form,              setForm]              = useState({ area_id: '', unit_id: '', date: '', start_time: '', end_time: '', notes: '' });
@@ -122,7 +128,7 @@ export default function Reservas() {
   const [rejectId,      setRejectId]      = useState(null);
   const [rejectReason,  setRejectReason]  = useState('');
 
-  // ── Load areas ─────────────────────────────────────────────────────────
+  // ── Load tenant (areas + reservation_settings) ─────────────────────────
   const loadAreas = useCallback(async () => {
     if (!tenantId) return;
     try {
@@ -132,6 +138,9 @@ export default function Reservas() {
         ? raw.filter(a => typeof a === 'object' && a !== null)
         : [];
       setAreas(all.filter(a => a.active !== false && a.reservations_enabled));
+      // Load approval mode from tenant settings
+      const mode = res.data?.reservation_settings?.approval_mode || 'require_vecinos';
+      setApprovalMode(mode);
     } catch { setAreas([]); }
   }, [tenantId]);
 
@@ -178,8 +187,10 @@ export default function Reservas() {
 
   // ── Filtered list ─────────────────────────────────────────────────────
   const visibleRes = reservations.filter(r => {
-    if (selectedDay  && r.date   !== selectedDay)      return false;
+    if (selectedDay && r.date !== selectedDay) return false;
     if (resStatusFilter !== 'all' && r.status !== resStatusFilter) return false;
+    // Vecinos in "Mis reservas" mode: show only their own
+    if (isVecino && myResOnly && r.requested_by !== user?.id) return false;
     return true;
   });
 
@@ -255,10 +266,20 @@ export default function Reservas() {
     } finally { setSaving(false); }
   };
 
+  // ── Derived flags ────────────────────────────────────────────────────────
+  // Whether THIS user's new reservation will be auto-approved
+  const isAutoApprover = (() => {
+    if (approvalMode === 'auto_approve_all') return true;
+    if (approvalMode === 'require_all') return false;
+    // require_vecinos (default): admins auto-approve, vecinos/vigilantes don't
+    return autoApproveRoles.includes(role);
+  })();
+
   // ── Selected area object ───────────────────────────────────────────────
   const selectedAreaObj = areas.find(a => a.id === form.area_id);
   const hasPolicies = !!(selectedAreaObj?.reservation_policy || selectedAreaObj?.usage_policy);
   const pendingCount = reservations.filter(r => r.status === 'pending').length;
+  const myPendingCount = reservations.filter(r => r.status === 'pending' && r.requested_by === user?.id).length;
 
   // ── Render ─────────────────────────────────────────────────────────────
   return (
@@ -313,15 +334,52 @@ export default function Reservas() {
           <h2 style={{ fontSize: 20, fontWeight: 800, color: 'var(--ink-800)', margin: 0 }}>Reservas de Áreas Comunes</h2>
           <p style={{ fontSize: 13, color: 'var(--ink-400)', margin: '4px 0 0' }}>
             {MONTHS_ES[calMonth]} {calYear}
-            {pendingCount > 0 && (
+            {canManage && pendingCount > 0 && (
               <span style={{ marginLeft: 8, background: 'var(--amber-50)', color: 'var(--amber-700)', border: '1px solid var(--amber-100)', borderRadius: 20, padding: '1px 8px', fontSize: 11, fontWeight: 700 }}>
-                {pendingCount} pendiente{pendingCount !== 1 ? 's' : ''}
-                {canManage ? ' de revisión' : ''}
+                {pendingCount} pendiente{pendingCount !== 1 ? 's' : ''} de revisión
+              </span>
+            )}
+            {isVecino && myPendingCount > 0 && (
+              <span style={{ marginLeft: 8, background: 'var(--amber-50)', color: 'var(--amber-700)', border: '1px solid var(--amber-100)', borderRadius: 20, padding: '1px 8px', fontSize: 11, fontWeight: 700 }}>
+                {myPendingCount} reserva{myPendingCount !== 1 ? 's' : ''} en espera
               </span>
             )}
           </p>
         </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          {/* Vecino view toggle */}
+          {isVecino && (
+            <div style={{ display: 'flex', background: 'var(--sand-100)', borderRadius: 8, padding: 3, gap: 2 }}>
+              <button
+                onClick={() => setMyResOnly(true)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 5,
+                  padding: '5px 12px', borderRadius: 6, border: 'none',
+                  background: myResOnly ? 'var(--white)' : 'transparent',
+                  color: myResOnly ? 'var(--teal-600)' : 'var(--ink-400)',
+                  fontWeight: myResOnly ? 700 : 500, fontSize: 12,
+                  cursor: 'pointer', boxShadow: myResOnly ? '0 1px 4px rgba(0,0,0,0.08)' : 'none',
+                  transition: 'all 0.15s',
+                }}
+              >
+                <User size={13} /> Mis Reservas
+              </button>
+              <button
+                onClick={() => setMyResOnly(false)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 5,
+                  padding: '5px 12px', borderRadius: 6, border: 'none',
+                  background: !myResOnly ? 'var(--white)' : 'transparent',
+                  color: !myResOnly ? 'var(--teal-600)' : 'var(--ink-400)',
+                  fontWeight: !myResOnly ? 700 : 500, fontSize: 12,
+                  cursor: 'pointer', boxShadow: !myResOnly ? '0 1px 4px rgba(0,0,0,0.08)' : 'none',
+                  transition: 'all 0.15s',
+                }}
+              >
+                <Eye size={13} /> Disponibilidad
+              </button>
+            </div>
+          )}
           <button className="btn btn-secondary btn-sm" onClick={loadReservations}>
             <RefreshCw size={14} style={loading ? { animation: 'spin 0.8s linear infinite' } : {}} />
             Actualizar
@@ -333,6 +391,27 @@ export default function Reservas() {
           )}
         </div>
       </div>
+
+      {/* ── Vecino: info sobre modo de aprobación ─────────────────────── */}
+      {isVecino && (
+        <div style={{
+          marginBottom: 16, padding: '10px 14px', borderRadius: 10,
+          background: isAutoApprover ? 'var(--teal-50)' : 'var(--amber-50)',
+          border: `1px solid ${isAutoApprover ? 'var(--teal-200)' : 'var(--amber-200)'}`,
+          display: 'flex', alignItems: 'center', gap: 10, fontSize: 13,
+        }}>
+          {isAutoApprover
+            ? <CheckCircle size={16} color="var(--teal-500)" style={{ flexShrink: 0 }} />
+            : <Clock size={16} color="var(--amber-600)" style={{ flexShrink: 0 }} />
+          }
+          <span style={{ color: isAutoApprover ? 'var(--teal-700)' : 'var(--amber-800)', fontWeight: 500 }}>
+            {isAutoApprover
+              ? 'Las reservas que solicites serán aprobadas automáticamente.'
+              : 'Tus solicitudes de reserva requieren autorización por parte de la administración.'
+            }
+          </span>
+        </div>
+      )}
 
       {/* ── Area cards ─────────────────────────────────────────────────── */}
       {areas.length > 0 && (
@@ -390,6 +469,11 @@ export default function Reservas() {
               setSelectedDay(null);
             }}><ChevronRight size={16} /></button>
           </div>
+          {isVecino && !myResOnly && (
+            <div style={{ padding: '6px 12px 0', fontSize: 11, color: 'var(--ink-400)', textAlign: 'center' }}>
+              Vista de disponibilidad — todas las áreas
+            </div>
+          )}
           <div className="card-body" style={{ padding: '8px 12px 16px' }}>
             {/* Encabezados días */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2, marginBottom: 4 }}>
@@ -457,14 +541,21 @@ export default function Reservas() {
         <div className="reservas-list">
           {/* Filtros */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, flexWrap: 'wrap', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+              {isVecino && (
+                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-400)', marginRight: 4 }}>
+                  {myResOnly ? 'Mis reservas' : 'Todas las áreas'}:
+                </span>
+              )}
               {[['all','Todas'],['pending','Pendientes'],['approved','Aprobadas'],['rejected','Rechazadas'],['cancelled','Canceladas']].map(([v,l]) => (
                 <button key={v} className={`tab ${resStatusFilter === v ? 'active' : ''}`}
                   style={{ padding: '4px 10px', fontSize: 12 }}
                   onClick={() => setResStatusFilter(v)}>
                   {l}
-                  {v === 'pending' && pendingCount > 0 && (
-                    <span className="badge badge-amber" style={{ marginLeft: 5, fontSize: 10, padding: '1px 5px' }}>{pendingCount}</span>
+                  {v === 'pending' && (isVecino ? myPendingCount : pendingCount) > 0 && (
+                    <span className="badge badge-amber" style={{ marginLeft: 5, fontSize: 10, padding: '1px 5px' }}>
+                      {isVecino ? myPendingCount : pendingCount}
+                    </span>
                   )}
                 </button>
               ))}
@@ -491,7 +582,9 @@ export default function Reservas() {
                     ? `Sin reservas para el ${fmtDate(selectedDay)}`
                     : resStatusFilter !== 'all'
                       ? `Sin reservas con estado "${STATUS_CFG[resStatusFilter]?.label || resStatusFilter}"`
-                      : 'Sin reservas este mes'}
+                      : isVecino && myResOnly
+                        ? 'No tienes reservas este mes — usa "Nueva Reserva" para solicitar un área'
+                        : 'Sin reservas este mes'}
                 </div>
               </div>
             </div>
@@ -712,6 +805,26 @@ export default function Reservas() {
                   value={form.notes}
                   onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
               </div>
+
+              {/* Aprobación info para vecinos */}
+              {isVecino && (
+                <div style={{
+                  padding: '10px 14px', borderRadius: 10, fontSize: 12,
+                  background: isAutoApprover ? 'var(--teal-50)' : 'var(--amber-50)',
+                  border: `1px solid ${isAutoApprover ? 'var(--teal-200)' : 'var(--amber-200)'}`,
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  color: isAutoApprover ? 'var(--teal-700)' : 'var(--amber-800)',
+                }}>
+                  {isAutoApprover
+                    ? <CheckCircle size={14} color="var(--teal-500)" style={{ flexShrink: 0 }} />
+                    : <Clock size={14} color="var(--amber-600)" style={{ flexShrink: 0 }} />
+                  }
+                  {isAutoApprover
+                    ? 'Tu reserva será aprobada automáticamente.'
+                    : 'Tu solicitud quedará pendiente hasta que la administración la autorice.'
+                  }
+                </div>
+              )}
 
               {/* Cargo */}
               {selectedAreaObj?.charge_enabled && (
