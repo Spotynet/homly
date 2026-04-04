@@ -146,6 +146,7 @@ export default function Config() {
   const USERS_PAGE_OPTIONS = [25, 50, 100];
   const [userSearch, setUserSearch] = useState('');
   const [userRoleFilter, setUserRoleFilter] = useState('all');
+  const [userStatusFilter, setUserStatusFilter] = useState('all'); // 'all' | 'active' | 'pending'
   const [userSort, setUserSort] = useState({ col: 'name', dir: 'asc' });
 
   // Unit delete/inactivate modal
@@ -1421,22 +1422,31 @@ export default function Config() {
           .filter(u => {
             const name  = (u.user_name || u.name || '').toLowerCase();
             const email = (u.user_email || u.email || '').toLowerCase();
-            const matchQ    = !q || name.includes(q) || email.includes(q);
-            const matchRole = userRoleFilter === 'all' || u.role === userRoleFilter;
-            return matchQ && matchRole;
+            const matchQ      = !q || name.includes(q) || email.includes(q);
+            const matchRole   = userRoleFilter === 'all' || u.role === userRoleFilter;
+            const matchStatus = userStatusFilter === 'all'
+              || (userStatusFilter === 'pending' && u.must_change_password)
+              || (userStatusFilter === 'active'  && !u.must_change_password);
+            return matchQ && matchRole && matchStatus;
           })
           .sort((a, b) => {
-            const dir = userSort.dir === 'asc' ? 1 : -1;
-            const col = userSort.col;
-            const nameA = (a.user_name || a.name || a.user_email || '').toLowerCase();
-            const nameB = (b.user_name || b.name || b.user_email || '').toLowerCase();
+            const dir  = userSort.dir === 'asc' ? 1 : -1;
+            const col  = userSort.col;
+            const nameA  = (a.user_name || a.name || a.user_email || '').toLowerCase();
+            const nameB  = (b.user_name || b.name || b.user_email || '').toLowerCase();
             const emailA = (a.user_email || a.email || '').toLowerCase();
             const emailB = (b.user_email || b.email || '').toLowerCase();
-            const roleA = a.role || '';
-            const roleB = b.role || '';
-            if (col === 'name')  return nameA < nameB  ? -dir : nameA  > nameB  ? dir : 0;
-            if (col === 'email') return emailA < emailB ? -dir : emailA > emailB ? dir : 0;
-            if (col === 'role')  return roleA < roleB  ? -dir : roleA  > roleB  ? dir : 0;
+            const roleA  = a.role || '';
+            const roleB  = b.role || '';
+            const unitA  = (() => { const ux = units.find(x => String(x.id) === String(a.unit)); return ux ? (ux.unit_id_code || '') : ''; })().toLowerCase();
+            const unitB  = (() => { const ux = units.find(x => String(x.id) === String(b.unit)); return ux ? (ux.unit_id_code || '') : ''; })().toLowerCase();
+            const statA  = a.must_change_password ? 1 : 0;
+            const statB  = b.must_change_password ? 1 : 0;
+            if (col === 'name')   return nameA  < nameB  ? -dir : nameA  > nameB  ? dir : 0;
+            if (col === 'email')  return emailA < emailB ? -dir : emailA > emailB ? dir : 0;
+            if (col === 'role')   return roleA  < roleB  ? -dir : roleA  > roleB  ? dir : 0;
+            if (col === 'unit')   return unitA  < unitB  ? -dir : unitA  > unitB  ? dir : 0;
+            if (col === 'status') return (statA - statB) * dir;
             return 0;
           });
 
@@ -1486,10 +1496,19 @@ export default function Config() {
                     return <option key={r} value={r}>{m ? m.label : r}</option>;
                   })}
                 </select>
+                <select
+                  value={userStatusFilter}
+                  onChange={e => { setUserStatusFilter(e.target.value); setUsersPage(1); }}
+                  style={{ height:34, border:'1px solid var(--sand-200)', borderRadius:8, fontSize:13, color:'var(--ink-700)', padding:'0 10px', background:'var(--white)' }}
+                >
+                  <option value="all">Todos los estatus</option>
+                  <option value="active">Activa</option>
+                  <option value="pending">Cambio pendiente</option>
+                </select>
                 <span style={{ fontSize:13, color:'var(--ink-400)' }}>
                   {filtered.length === 0
                     ? '0 usuarios'
-                    : q || userRoleFilter !== 'all'
+                    : q || userRoleFilter !== 'all' || userStatusFilter !== 'all'
                       ? `${filtered.length} resultado${filtered.length !== 1 ? 's' : ''} de ${tenantUsers.length}`
                       : `${uStart}–${uEnd} de ${tenantUsers.length} usuario${tenantUsers.length !== 1 ? 's' : ''}`}
                 </span>
@@ -1524,8 +1543,12 @@ export default function Config() {
                             <th style={{ cursor:'pointer', userSelect:'none' }} onClick={() => toggleSort('role')}>
                               Rol <SortIcon col="role" />
                             </th>
-                            <th>Unidad</th>
-                            <th>Contraseña</th>
+                            <th style={{ cursor:'pointer', userSelect:'none' }} onClick={() => toggleSort('unit')}>
+                              Unidad <SortIcon col="unit" />
+                            </th>
+                            <th style={{ cursor:'pointer', userSelect:'none' }} onClick={() => toggleSort('status')}>
+                              Estatus <SortIcon col="status" />
+                            </th>
                             {isAdmin && <th style={{ width:100, textAlign:'center' }}>Acciones</th>}
                           </tr>
                         </thead>
