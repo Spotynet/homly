@@ -4,6 +4,7 @@ All endpoints for the property management system.
 """
 import uuid
 import json
+import threading
 from decimal import Decimal
 from django.db.models import Sum, Count, Q, F  # noqa: F401 - Q used in estado cuenta
 from django.http import HttpResponse
@@ -23,7 +24,7 @@ from .models import (
     AmenityReservation, CondominioRequest, EmailVerificationCode,
     Notification, AuditLog,
 )
-from .email_service import send_verification_email, CODE_EXPIRY_MINUTES
+from .email_service import send_verification_email, send_notification_email, CODE_EXPIRY_MINUTES
 from .serializers import (
     LoginSerializer, RequestCodeSerializer, LoginWithCodeSerializer,
     UserSerializer, UserCreateSerializer,
@@ -71,7 +72,8 @@ def _role_has_module(module_perms, role, module_key):
 
 def _notify_roles(tenant_id, roles, notif_type, title, message='', **extra_fields):
     """Create notifications for every TenantUser whose role is in *roles*,
-    respecting the tenant's per-role module-permission configuration."""
+    respecting the tenant's per-role module-permission configuration.
+    Also sends a branded alert email to each recipient in a background thread."""
     required_module = _NOTIF_MODULE_MAP.get(notif_type)
     try:
         tenant = Tenant.objects.get(id=tenant_id)
@@ -80,6 +82,7 @@ def _notify_roles(tenant_id, roles, notif_type, title, message='', **extra_field
         return
 
     notifs = []
+    recipients = []   # list of (email, user_name)
     for role in roles:
         if required_module and not _role_has_module(module_perms, role, required_module):
             continue
@@ -92,13 +95,29 @@ def _notify_roles(tenant_id, roles, notif_type, title, message='', **extra_field
                 message=message,
                 **extra_fields,
             ))
+            if tu.user.email:
+                recipients.append((tu.user.email, tu.user.name or tu.user.email))
     if notifs:
         Notification.objects.bulk_create(notifs)
+    if recipients:
+        tenant_name = tenant.name
+        def _send_all():
+            for email, user_name in recipients:
+                send_notification_email(
+                    email=email,
+                    user_name=user_name,
+                    notif_type=notif_type,
+                    title=title,
+                    message=message,
+                    tenant_name=tenant_name,
+                )
+        threading.Thread(target=_send_all, daemon=True).start()
 
 
 def _notify_unit_residents(tenant_id, unit_id, notif_type, title, message='', **extra_fields):
     """Create notifications for all vecinos assigned to *unit_id*,
-    respecting tenant module permissions."""
+    respecting tenant module permissions.
+    Also sends a branded alert email to each resident in a background thread."""
     if not unit_id:
         return
     required_module = _NOTIF_MODULE_MAP.get(notif_type)
@@ -112,6 +131,7 @@ def _notify_unit_residents(tenant_id, unit_id, notif_type, title, message='', **
         return
 
     notifs = []
+    recipients = []   # list of (email, user_name)
     for tu in TenantUser.objects.filter(
         tenant_id=tenant_id, unit_id=unit_id, role='vecino'
     ).select_related('user'):
@@ -123,8 +143,23 @@ def _notify_unit_residents(tenant_id, unit_id, notif_type, title, message='', **
             message=message,
             **extra_fields,
         ))
+        if tu.user.email:
+            recipients.append((tu.user.email, tu.user.name or tu.user.email))
     if notifs:
         Notification.objects.bulk_create(notifs)
+    if recipients:
+        tenant_name = tenant.name
+        def _send_all():
+            for email, user_name in recipients:
+                send_notification_email(
+                    email=email,
+                    user_name=user_name,
+                    notif_type=notif_type,
+                    title=title,
+                    message=message,
+                    tenant_name=tenant_name,
+                )
+        threading.Thread(target=_send_all, daemon=True).start()
 
 
 # ═══════════════════════════════════════════════════════════

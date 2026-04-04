@@ -7,7 +7,7 @@ import {
   Building2, RefreshCw, Edit2, Search, Home, Lock, Pencil, UserCheck, Loader,
   Calendar, DollarSign, ShieldCheck, Receipt, ShoppingBag,
   AlertCircle, Shield, FileText, Globe, ChevronRight, TrendingUp,
-  ShieldAlert, Mail, UserPlus, Bell, Layers,
+  ShieldAlert, Mail, UserPlus, Bell, Layers, Eye, EyeOff,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -440,21 +440,29 @@ export default function Config() {
   };
 
   // ── Module permissions helpers ─────────────────────────────────────────────
-  const isModuleEnabled = (role, moduleKey) => {
-    const base = ROLE_BASE_MODULES[role] || [];
-    if (!base.includes(moduleKey)) return false; // not available for this role
-    if (modulePerms[role] === undefined) return true; // default: all base modules enabled
-    return modulePerms[role].includes(moduleKey);
+  // Levels: "write" (visible+leer+escribir) | "read" (visible+leer) | "hidden" (sin acceso)
+  // Backward-compatible: old format was {role: [moduleKeys]} — treated as "write" for listed keys.
+
+  const getModuleAccess = (roleKey, moduleKey) => {
+    const base = ROLE_BASE_MODULES[roleKey] || [];
+    if (!base.includes(moduleKey)) return 'na'; // not applicable for this role
+    const perms = modulePerms[roleKey];
+    if (perms === undefined) return 'write'; // no config → full access by default
+    if (Array.isArray(perms))                // old array format → backward compat
+      return perms.includes(moduleKey) ? 'write' : 'hidden';
+    return perms[moduleKey] ?? 'write';      // new object format, default write
   };
 
-  const handleToggleModule = (role, moduleKey) => {
-    const base = ROLE_BASE_MODULES[role] || [];
-    if (!base.includes(moduleKey)) return; // can't toggle unavailable modules
+  const setModuleAccess = (roleKey, moduleKey, level) => {
+    const base = ROLE_BASE_MODULES[roleKey] || [];
+    if (!base.includes(moduleKey)) return;
     setModulePerms(prev => {
-      const current = prev[role] !== undefined ? prev[role] : [...base];
-      const enabled = current.includes(moduleKey);
-      const updated = enabled ? current.filter(k => k !== moduleKey) : [...current, moduleKey];
-      return { ...prev, [role]: updated };
+      // Migrate old array format on first edit
+      const current = prev[roleKey];
+      const normalized = Array.isArray(current)
+        ? Object.fromEntries(base.map(k => [k, current.includes(k) ? 'write' : 'hidden']))
+        : (current || {});
+      return { ...prev, [roleKey]: { ...normalized, [moduleKey]: level } };
     });
   };
 
@@ -1548,6 +1556,91 @@ export default function Config() {
               </div>
             </div>
           </div>
+
+          {/* ── Perfiles Personalizados ─────────────────────────────── */}
+          <div className="card">
+            <div className="card-head">
+              <h3>Perfiles Personalizados</h3>
+              {isAdmin && (
+                <button className="btn btn-primary btn-sm"
+                  onClick={() => {
+                    setProfileForm({ label:'', color:'#0d9488', base_role:'tesorero', modules: [] });
+                    setProfileModalOpen(true);
+                  }}>
+                  <Plus size={14}/> Nuevo Perfil
+                </button>
+              )}
+            </div>
+            <div className="card-body" style={{ paddingTop: customProfiles.length === 0 ? 20 : 0 }}>
+              {customProfiles.length === 0 ? (
+                <div style={{ padding:'24px 0', textAlign:'center', color:'var(--ink-400)' }}>
+                  <Users size={32} style={{ display:'block', margin:'0 auto 10px', opacity:0.3 }} />
+                  <div style={{ fontSize:13, fontWeight:600 }}>No hay perfiles personalizados</div>
+                  <div style={{ fontSize:12, marginTop:4 }}>Crea un perfil para asignar accesos específicos a usuarios</div>
+                </div>
+              ) : (
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        {['Perfil','Rol Base','Módulos','Acciones'].map(h => (
+                          <th key={h}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {customProfiles.map((p, idx) => {
+                        const baseMeta = ROLE_META[p.base_role] || {};
+                        const modCount = (p.modules || []).length;
+                        return (
+                          <tr key={p.id || idx}>
+                            <td style={{ fontWeight:600 }}>
+                              <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                                <span style={{ display:'inline-block', width:10, height:10, borderRadius:'50%', background: p.color || 'var(--teal-500)', flexShrink:0 }} />
+                                {p.label}
+                              </div>
+                            </td>
+                            <td>
+                              <span className="badge" style={{ background: baseMeta.bg || 'var(--sand-100)', color: baseMeta.color || 'var(--ink-500)' }}>
+                                <span className="badge-dot" style={{ background: baseMeta.color || 'var(--ink-400)' }} />
+                                {baseMeta.label || p.base_role}
+                              </span>
+                            </td>
+                            <td style={{ fontSize:13, color:'var(--ink-500)' }}>
+                              {modCount === 0 ? 'Todos (rol base)' : `${modCount} módulo${modCount !== 1 ? 's' : ''}`}
+                            </td>
+                            <td>
+                              {isAdmin && (
+                                <div style={{ display:'flex', gap:4 }}>
+                                  <button className="btn-ghost" style={{ color:'var(--teal-600)' }} title="Editar"
+                                    onClick={() => { setProfileForm({ ...p }); setProfileModalOpen(true); }}>
+                                    <Pencil size={13}/>
+                                  </button>
+                                  <button className="btn-ghost" style={{ color:'var(--coral-500)' }} title="Eliminar"
+                                    onClick={() => {
+                                      if (window.confirm(`¿Eliminar el perfil "${p.label}"? Los usuarios asignados quedarán con su rol base.`)) {
+                                        setCustomProfiles(prev => prev.filter(x => x.id !== p.id));
+                                      }
+                                    }}>
+                                    <Trash2 size={13}/>
+                                  </button>
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {isAdmin && customProfiles.length > 0 && (
+                <div style={{ marginTop:12, padding:'8px 0', fontSize:12, color:'var(--ink-400)', borderTop:'1px solid var(--sand-100)' }}>
+                  Los cambios en perfiles se guardan al hacer clic en <strong>Guardar Cambios</strong> en el tab de Módulos.
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
@@ -1805,46 +1898,51 @@ export default function Config() {
                           </div>
                         </div>
                       </td>
-                      {/* Toggle per role */}
-                      {TENANT_ROLES.map(role => {
-                        const base = ROLE_BASE_MODULES[role] || [];
-                        const isAvailable = base.includes(mod.key);
-                        const enabled = isModuleEnabled(role, mod.key);
+                      {/* Permission level per role */}
+                      {TENANT_ROLES.map(roleKey => {
+                        const access = getModuleAccess(roleKey, mod.key);
+                        const LEVELS = [
+                          { key:'hidden', Icon:EyeOff, label:'Oculto',   activeColor:'var(--coral-500)', activeBg:'var(--coral-50)'  },
+                          { key:'read',   Icon:Eye,    label:'Lectura',   activeColor:'var(--blue-600)',  activeBg:'var(--blue-50)'   },
+                          { key:'write',  Icon:Pencil, label:'Completo',  activeColor:'var(--teal-600)',  activeBg:'var(--teal-50)'   },
+                        ];
+                        const active = LEVELS.find(l => l.key === access);
                         return (
-                          <td key={role} style={{ padding:'10px 8px', textAlign:'center' }}>
-                            {isAvailable ? (
-                              <div style={{ display:'inline-flex', flexDirection:'column', alignItems:'center', gap:4 }}>
-                                <button
-                                  type="button"
-                                  onClick={() => isAdmin && handleToggleModule(role, mod.key)}
-                                  title={enabled ? 'Clic para desactivar' : 'Clic para activar'}
-                                  style={{
-                                    position:'relative', width:40, height:22, borderRadius:11, border:'none',
-                                    background: enabled ? 'var(--teal-500)' : 'var(--sand-300)',
-                                    cursor: isAdmin ? 'pointer' : 'default',
-                                    transition:'background 0.2s',
-                                    flexShrink:0,
-                                  }}>
-                                  <span style={{
-                                    position:'absolute', top:3,
-                                    left: enabled ? 21 : 3,
-                                    width:16, height:16, borderRadius:'50%',
-                                    background:'white',
-                                    transition:'left 0.2s',
-                                    boxShadow:'0 1px 3px rgba(0,0,0,0.25)',
-                                    display:'block',
-                                  }}/>
-                                </button>
-                                <span style={{ fontSize:10, color: enabled ? 'var(--teal-600)' : 'var(--ink-300)', fontWeight:600 }}>
-                                  {enabled ? 'Visible' : 'Oculto'}
-                                </span>
-                              </div>
-                            ) : (
-                              <div style={{ display:'inline-flex', flexDirection:'column', alignItems:'center', gap:4 }}>
-                                <span style={{ display:'inline-flex', alignItems:'center', justifyContent:'center', width:40, height:22, borderRadius:11, background:'var(--sand-100)', color:'var(--ink-300)' }}>
+                          <td key={roleKey} style={{ padding:'8px 6px', textAlign:'center' }}>
+                            {access === 'na' ? (
+                              <div style={{ display:'inline-flex', flexDirection:'column', alignItems:'center', gap:3 }}>
+                                <span style={{ display:'inline-flex', alignItems:'center', justifyContent:'center', width:66, height:24, borderRadius:8, background:'var(--sand-100)', color:'var(--ink-300)' }}>
                                   <Lock size={10}/>
                                 </span>
-                                <span style={{ fontSize:10, color:'var(--ink-300)', fontWeight:600 }}>N/A</span>
+                                <span style={{ fontSize:9, color:'var(--ink-300)', fontWeight:600 }}>N/A</span>
+                              </div>
+                            ) : (
+                              <div style={{ display:'inline-flex', flexDirection:'column', alignItems:'center', gap:3 }}>
+                                {/* Pill with 3 buttons */}
+                                <div style={{ display:'inline-flex', borderRadius:8, overflow:'hidden', border:'1px solid var(--sand-200)' }}>
+                                  {LEVELS.map(({ key, Icon: LvIcon, label, activeColor, activeBg }) => {
+                                    const isActive = access === key;
+                                    return (
+                                      <button key={key} type="button"
+                                        title={label}
+                                        onClick={() => isAdmin && setModuleAccess(roleKey, mod.key, key)}
+                                        style={{
+                                          width:22, height:22, border:'none', padding:0,
+                                          display:'flex', alignItems:'center', justifyContent:'center',
+                                          background: isActive ? activeBg : 'var(--white)',
+                                          color: isActive ? activeColor : 'var(--ink-200)',
+                                          cursor: isAdmin ? 'pointer' : 'default',
+                                          transition:'all 0.12s',
+                                          borderRight: key !== 'write' ? '1px solid var(--sand-200)' : 'none',
+                                        }}>
+                                        <LvIcon size={10}/>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                                <span style={{ fontSize:9, fontWeight:700, color: active?.activeColor || 'var(--ink-400)' }}>
+                                  {active?.label}
+                                </span>
                               </div>
                             )}
                           </td>
@@ -1858,17 +1956,22 @@ export default function Config() {
           </div>
 
           {/* Legend */}
-          <div style={{ display:'flex', alignItems:'center', gap:20, marginTop:14, fontSize:12, color:'var(--ink-400)', flexWrap:'wrap' }}>
-            <span style={{ display:'flex', alignItems:'center', gap:6 }}>
-              <span style={{ width:28, height:14, borderRadius:7, background:'var(--teal-500)', display:'inline-block' }}/>
-              Módulo visible para el perfil
+          <div style={{ display:'flex', alignItems:'center', gap:16, marginTop:14, fontSize:11, color:'var(--ink-500)', flexWrap:'wrap' }}>
+            <span style={{ display:'flex', alignItems:'center', gap:5 }}>
+              <EyeOff size={12} color="var(--coral-500)"/>
+              <span style={{ color:'var(--coral-600)', fontWeight:600 }}>Oculto</span> — sin acceso ni visibilidad
             </span>
-            <span style={{ display:'flex', alignItems:'center', gap:6 }}>
-              <span style={{ width:28, height:14, borderRadius:7, background:'var(--sand-300)', display:'inline-block' }}/>
-              Módulo oculto (desactivado)
+            <span style={{ display:'flex', alignItems:'center', gap:5 }}>
+              <Eye size={12} color="var(--blue-600)"/>
+              <span style={{ color:'var(--blue-700)', fontWeight:600 }}>Lectura</span> — visible, solo consulta
             </span>
-            <span style={{ display:'flex', alignItems:'center', gap:6 }}>
-              <Lock size={12}/> No aplica para este perfil
+            <span style={{ display:'flex', alignItems:'center', gap:5 }}>
+              <Pencil size={12} color="var(--teal-600)"/>
+              <span style={{ color:'var(--teal-700)', fontWeight:600 }}>Completo</span> — lectura + escritura
+            </span>
+            <span style={{ display:'flex', alignItems:'center', gap:5 }}>
+              <Lock size={12} color="var(--ink-300)"/>
+              <span style={{ color:'var(--ink-400)' }}>N/A</span> — no aplica para este rol
             </span>
           </div>
 
@@ -1942,97 +2045,6 @@ export default function Config() {
             </div>
           </div>
 
-          {/* ── Custom Profiles ─────────────────────────────────────── */}
-          <div style={{ marginTop: 28, padding: '20px 22px', background: 'var(--white)', border: '1px solid var(--sand-100)', borderRadius: 'var(--radius-lg)' }}>
-            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
-              <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-                <span style={{ display:'inline-flex', alignItems:'center', justifyContent:'center', width:32, height:32, borderRadius:'var(--radius-sm)', background:'var(--teal-50)', flexShrink:0 }}>
-                  <Users size={15} color="var(--teal-600)" />
-                </span>
-                <div>
-                  <div style={{ fontSize:14, fontWeight:700, color:'var(--ink-800)' }}>Perfiles Personalizados</div>
-                  <div style={{ fontSize:12, color:'var(--ink-400)', marginTop:1 }}>Crea perfiles con acceso a módulos específicos y asígnalos a usuarios del condominio</div>
-                </div>
-              </div>
-              {isAdmin && (
-                <button className="btn btn-primary" style={{ fontSize:12 }}
-                  onClick={() => {
-                    setProfileForm({ label:'', color:'#0d9488', base_role:'tesorero', modules: [] });
-                    setProfileModalOpen(true);
-                  }}>
-                  <Plus size={13} /> Nuevo Perfil
-                </button>
-              )}
-            </div>
-
-            {customProfiles.length === 0 ? (
-              <div style={{ padding:'28px 0', textAlign:'center', color:'var(--ink-400)' }}>
-                <Users size={32} style={{ display:'block', margin:'0 auto 10px', opacity:0.3 }} />
-                <div style={{ fontSize:13, fontWeight:600 }}>No hay perfiles personalizados</div>
-                <div style={{ fontSize:12, marginTop:4 }}>Crea un perfil para asignar accesos específicos a usuarios</div>
-              </div>
-            ) : (
-              <table style={{ width:'100%', borderCollapse:'collapse' }}>
-                <thead>
-                  <tr style={{ background:'var(--sand-50)', borderBottom:'1px solid var(--sand-100)' }}>
-                    {['Perfil','Rol Base','Módulos','Acciones'].map(h => (
-                      <th key={h} style={{ padding:'9px 12px', textAlign:'left', fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.05em', color:'var(--ink-400)' }}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {customProfiles.map((p, idx) => {
-                    const baseMeta = ROLE_META[p.base_role] || {};
-                    const modCount = (p.modules || []).length;
-                    return (
-                      <tr key={p.id || idx} style={{ borderBottom:'1px solid var(--sand-100)', background: idx % 2 === 0 ? 'var(--white)' : 'var(--sand-50)' }}>
-                        <td style={{ padding:'11px 12px' }}>
-                          <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                            <span style={{ display:'inline-block', width:10, height:10, borderRadius:'50%', background: p.color || 'var(--teal-500)', flexShrink:0 }} />
-                            <span style={{ fontWeight:700, fontSize:13, color:'var(--ink-800)' }}>{p.label}</span>
-                          </div>
-                        </td>
-                        <td style={{ padding:'11px 12px' }}>
-                          <span style={{ padding:'2px 8px', borderRadius:'var(--radius-full)', background: baseMeta.bg || 'var(--sand-100)', color: baseMeta.color || 'var(--ink-500)', fontSize:11, fontWeight:700 }}>
-                            {baseMeta.label || p.base_role}
-                          </span>
-                        </td>
-                        <td style={{ padding:'11px 12px' }}>
-                          <span style={{ fontSize:12, color:'var(--ink-500)' }}>
-                            {modCount === 0 ? 'Todos (rol base)' : `${modCount} módulo${modCount !== 1 ? 's' : ''}`}
-                          </span>
-                        </td>
-                        <td style={{ padding:'11px 12px' }}>
-                          {isAdmin && (
-                            <div style={{ display:'flex', gap:4 }}>
-                              <button className="btn-ghost" style={{ color:'var(--teal-600)' }} title="Editar"
-                                onClick={() => { setProfileForm({ ...p }); setProfileModalOpen(true); }}>
-                                <Pencil size={13} />
-                              </button>
-                              <button className="btn-ghost" style={{ color:'var(--coral-500)' }} title="Eliminar"
-                                onClick={() => {
-                                  if (window.confirm(`¿Eliminar el perfil "${p.label}"? Los usuarios asignados a este perfil quedarán con su rol base.`)) {
-                                    setCustomProfiles(prev => prev.filter(x => x.id !== p.id));
-                                  }
-                                }}>
-                                <Trash2 size={13} />
-                              </button>
-                            </div>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            )}
-
-            {isAdmin && customProfiles.length > 0 && (
-              <div style={{ marginTop:14, fontSize:12, color:'var(--ink-400)' }}>
-                Recuerda guardar los cambios con el botón <strong>Guardar Cambios</strong> de la parte superior.
-              </div>
-            )}
-          </div>
         </div>
       )}
 
@@ -2780,14 +2792,26 @@ export default function Config() {
 
       {/* Profile Modal */}
       {profileModalOpen && profileForm && (() => {
-        const isEdit   = !!(profileForm.id);
+        const isEdit     = !!(profileForm.id);
         const baseModules = ROLE_BASE_MODULES[profileForm.base_role] || [];
-        const profileModules = profileForm.modules || [];
 
-        const toggleModule = (key) => {
+        // Normalise modules to object format { key: "write"|"read"|"hidden" }
+        const normalizeMods = (mods, base) => {
+          if (!mods || (Array.isArray(mods) && mods.length === 0)) return {};
+          if (Array.isArray(mods))
+            return Object.fromEntries(base.map(k => [k, mods.includes(k) ? 'write' : 'hidden']));
+          return mods;
+        };
+        const profileModules = normalizeMods(profileForm.modules, baseModules);
+        const hasAnyConfig   = Object.keys(profileModules).length > 0;
+
+        const getProfileAccess = (key) => profileModules[key] ?? 'write'; // default write
+
+        const setProfileAccess = (key, level) => {
           setProfileForm(f => {
-            const mods = f.modules || [];
-            return { ...f, modules: mods.includes(key) ? mods.filter(m => m !== key) : [...mods, key] };
+            const base = ROLE_BASE_MODULES[f.base_role] || [];
+            const current = normalizeMods(f.modules, base);
+            return { ...f, modules: { ...current, [key]: level } };
           });
         };
 
@@ -2858,7 +2882,7 @@ export default function Config() {
                 <label className="field-label">Rol Base *</label>
                 <select className="field-select"
                   value={profileForm.base_role || ''}
-                  onChange={e => setProfileForm(f => ({ ...f, base_role: e.target.value, modules: [] }))}>
+                  onChange={e => setProfileForm(f => ({ ...f, base_role: e.target.value, modules: {} }))}>
                   <option value="">— Selecciona un rol —</option>
                   {['admin','tesorero','contador','auditor','vigilante','vecino'].map(r => {
                     const m = ROLE_META[r] || {};
@@ -2866,50 +2890,89 @@ export default function Config() {
                   })}
                 </select>
                 <div style={{ fontSize:11, color:'var(--ink-400)', marginTop:4, lineHeight:1.4 }}>
-                  El rol base determina los permisos de backend. Los módulos configurados aquí controlan la visibilidad del menú.
+                  El rol base determina los permisos de backend. Configura abajo el nivel de acceso por módulo.
                 </div>
               </div>
             </div>
 
-            {/* Module toggles */}
+            {/* Module permission levels */}
             {profileForm.base_role && (
               <div style={{ marginTop:20 }}>
-                <div style={{ fontSize:13, fontWeight:700, color:'var(--ink-700)', marginBottom:10 }}>
-                  Módulos visibles para este perfil
+                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
+                  <div style={{ fontSize:13, fontWeight:700, color:'var(--ink-700)' }}>
+                    Permisos por módulo
+                  </div>
+                  {/* Mini legend */}
+                  <div style={{ display:'flex', gap:10, fontSize:10, color:'var(--ink-400)' }}>
+                    {[
+                      { Icon:EyeOff, label:'Oculto',  color:'var(--coral-500)' },
+                      { Icon:Eye,    label:'Lectura',  color:'var(--blue-600)'  },
+                      { Icon:Pencil, label:'Completo', color:'var(--teal-600)'  },
+                    ].map(({ Icon: I, label, color }) => (
+                      <span key={label} style={{ display:'flex', alignItems:'center', gap:3 }}>
+                        <I size={10} color={color}/> <span style={{ color }}>{label}</span>
+                      </span>
+                    ))}
+                  </div>
                 </div>
-                <div style={{ fontSize:12, color:'var(--ink-400)', marginBottom:12, lineHeight:1.4 }}>
-                  Selecciona qué módulos del menú estarán disponibles. Si no seleccionas ninguno, se usarán los módulos predeterminados del rol base.
-                </div>
-                <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(200px, 1fr))', gap:8 }}>
+
+                {!hasAnyConfig && (
+                  <div style={{ marginBottom:10, padding:'8px 12px', background:'var(--amber-50)', border:'1px solid var(--amber-100)', borderRadius:'var(--radius-md)', fontSize:12, color:'var(--amber-700)' }}>
+                    Sin configuración → el perfil hereda el acceso completo del rol base. Ajusta módulos individuales abajo.
+                  </div>
+                )}
+
+                <div style={{ display:'grid', gap:6 }}>
                   {MODULE_DEFINITIONS.filter(mod => baseModules.includes(mod.key)).map(mod => {
-                    const Icon    = mod.icon;
-                    const checked = profileModules.includes(mod.key);
+                    const Icon   = mod.icon;
+                    const access = getProfileAccess(mod.key);
+                    const LEVELS = [
+                      { key:'hidden', LvIcon:EyeOff, label:'Oculto',   activeColor:'var(--coral-500)', activeBg:'var(--coral-50)'  },
+                      { key:'read',   LvIcon:Eye,    label:'Lectura',   activeColor:'var(--blue-600)',  activeBg:'var(--blue-50)'   },
+                      { key:'write',  LvIcon:Pencil, label:'Completo',  activeColor:'var(--teal-600)',  activeBg:'var(--teal-50)'   },
+                    ];
+                    const active = LEVELS.find(l => l.key === access);
                     return (
-                      <label key={mod.key}
-                        style={{
-                          display:'flex', alignItems:'center', gap:10, padding:'10px 12px',
-                          borderRadius:'var(--radius-md)', cursor:'pointer',
-                          border:`1.5px solid ${checked ? 'var(--teal-400)' : 'var(--sand-100)'}`,
-                          background: checked ? 'var(--teal-50)' : 'var(--white)',
-                          transition:'all 0.15s',
-                        }}>
-                        <input type="checkbox" checked={checked} onChange={() => toggleModule(mod.key)}
-                          style={{ accentColor:'var(--teal-500)', flexShrink:0 }} />
-                        <span style={{ display:'inline-flex', alignItems:'center', justifyContent:'center', width:24, height:24, borderRadius:6, background: checked ? 'var(--teal-100)' : 'var(--sand-100)', flexShrink:0 }}>
-                          <Icon size={12} color={checked ? 'var(--teal-700)' : 'var(--ink-400)'} />
+                      <div key={mod.key} style={{
+                        display:'flex', alignItems:'center', gap:12, padding:'10px 14px',
+                        borderRadius:'var(--radius-md)',
+                        border:`1.5px solid ${access === 'hidden' ? 'var(--coral-100)' : access === 'read' ? 'var(--blue-100)' : 'var(--teal-100)'}`,
+                        background: access === 'hidden' ? 'var(--coral-50)' : access === 'read' ? 'var(--blue-50)' : 'var(--teal-50)',
+                        transition:'all 0.15s',
+                      }}>
+                        {/* Module icon + label */}
+                        <span style={{ display:'inline-flex', alignItems:'center', justifyContent:'center', width:28, height:28, borderRadius:7, background:'white', flexShrink:0 }}>
+                          <Icon size={13} color={active?.activeColor || 'var(--ink-400)'} />
                         </span>
-                        <div>
-                          <div style={{ fontSize:12, fontWeight:checked ? 700 : 600, color: checked ? 'var(--teal-700)' : 'var(--ink-600)' }}>{mod.label}</div>
+                        <div style={{ flex:1, minWidth:0 }}>
+                          <div style={{ fontSize:12, fontWeight:700, color:'var(--ink-800)' }}>{mod.label}</div>
+                          <div style={{ fontSize:11, color:'var(--ink-400)', marginTop:1 }}>{mod.desc}</div>
                         </div>
-                      </label>
+                        {/* 3-level pill */}
+                        <div style={{ display:'inline-flex', borderRadius:8, overflow:'hidden', border:'1px solid rgba(0,0,0,0.08)', flexShrink:0 }}>
+                          {LEVELS.map(({ key, LvIcon, label, activeColor, activeBg }) => {
+                            const isActive = access === key;
+                            return (
+                              <button key={key} type="button" title={label}
+                                onClick={() => setProfileAccess(mod.key, key)}
+                                style={{
+                                  display:'flex', alignItems:'center', gap:4,
+                                  padding:'5px 10px', border:'none',
+                                  background: isActive ? activeBg : 'white',
+                                  color: isActive ? activeColor : 'var(--ink-300)',
+                                  cursor:'pointer', fontSize:11, fontWeight: isActive ? 700 : 500,
+                                  transition:'all 0.12s',
+                                  borderRight: key !== 'write' ? '1px solid rgba(0,0,0,0.08)' : 'none',
+                                }}>
+                                <LvIcon size={11}/> {label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
                     );
                   })}
                 </div>
-                {profileModules.length === 0 && (
-                  <div style={{ marginTop:10, padding:'8px 12px', background:'var(--amber-50)', border:'1px solid var(--amber-100)', borderRadius:'var(--radius-md)', fontSize:12, color:'var(--amber-700)' }}>
-                    Sin selección → el perfil hereda todos los módulos del rol base ({(ROLE_BASE_MODULES[profileForm.base_role] || []).length} módulos)
-                  </div>
-                )}
               </div>
             )}
           </Modal>

@@ -988,3 +988,177 @@ def send_general_statement_email(
         html=html,
         to_emails=emails,
     )
+
+
+# ─── Notification Alert Email ───────────────────────────────────────────────
+
+# Metadata per notification type: (emoji, label, accent_color)
+NOTIF_META: dict[str, tuple[str, str, str]] = {
+    'reservation_new':       ('📅', 'Nueva Reserva',         '#3B82F6'),  # blue
+    'reservation_approved':  ('✅', 'Reserva Aprobada',      '#10B981'),  # green
+    'reservation_rejected':  ('❌', 'Reserva Rechazada',     '#EF4444'),  # red
+    'reservation_cancelled': ('🚫', 'Reserva Cancelada',     '#F59E0B'),  # amber
+    'payment_registered':    ('💳', 'Pago Registrado',       '#10B981'),  # green
+    'payment_updated':       ('✏️',  'Pago Actualizado',      '#3B82F6'),  # blue
+    'payment_deleted':       ('🗑️',  'Pago Eliminado',        '#EF4444'),  # red
+    'period_closed':         ('🔒', 'Período Cerrado',        '#8B5CF6'),  # purple
+    'period_reopened':       ('🔓', 'Período Reabierto',      '#F59E0B'),  # amber
+    'general':               ('🔔', 'Notificación',          '#F76F57'),  # homly orange
+}
+
+
+def _build_notification_html(
+    user_name: str,
+    notif_type: str,
+    title: str,
+    message: str,
+    tenant_name: str,
+    app_url: str,
+) -> str:
+    """Branded HTML for a notification alert email."""
+    c = COLORS
+    logo_img = f'<img src="cid:{LOGO_CID}" alt="Homly" width="160" style="display:block;height:auto;max-width:160px;" />'
+    emoji, type_label, accent = NOTIF_META.get(notif_type, NOTIF_META['general'])
+    # Lighten accent for background (use a fixed soft tint — inline CSS can't do alpha easily)
+    accent_light = '#F0F9FF' if accent == '#3B82F6' else \
+                   '#F0FDF4' if accent == '#10B981' else \
+                   '#FEF2F2' if accent == '#EF4444' else \
+                   '#FFFBEB' if accent == '#F59E0B' else \
+                   '#F5F3FF' if accent == '#8B5CF6' else \
+                   '#FFF7ED'
+
+    # Escape message line breaks to <br>
+    message_html = message.replace('\n', '<br>')
+
+    first_name = user_name.split()[0] if user_name else 'Usuario'
+
+    return f"""<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{type_label} — {tenant_name}</title>
+</head>
+<body style="margin:0;padding:0;font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background-color:{c['cream_outer']};">
+  <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background-color:{c['cream_outer']};padding:40px 20px;">
+    <tr>
+      <td align="center">
+        <table width="100%" cellpadding="0" cellspacing="0" role="presentation"
+          style="max-width:480px;background:{c['cream']};border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(26,22,18,0.08);">
+
+          <!-- Header logo -->
+          <tr>
+            <td style="background:{c['cream']};padding:28px 28px 16px;text-align:center;">
+              {logo_img}
+              <p style="margin:8px 0 0;font-size:12px;font-weight:600;color:{c['ink_600']};letter-spacing:0.04em;">Property Management</p>
+            </td>
+          </tr>
+
+          <!-- Accent banner -->
+          <tr>
+            <td style="padding:0 28px 0;">
+              <table width="100%" cellpadding="0" cellspacing="0" role="presentation"
+                style="background:{accent};border-radius:12px;padding:16px 20px;">
+                <tr>
+                  <td>
+                    <p style="margin:0;font-size:11px;font-weight:700;color:rgba(255,255,255,0.8);text-transform:uppercase;letter-spacing:0.08em;">{type_label}</p>
+                    <p style="margin:4px 0 0;font-size:18px;font-weight:800;color:#FFFFFF;line-height:1.3;">{emoji} {title}</p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Body -->
+          <tr>
+            <td style="padding:24px 28px;">
+              <p style="margin:0 0 18px;font-size:14px;color:{c['ink_800']};line-height:1.5;">
+                Hola <strong>{first_name}</strong>,
+              </p>
+              <!-- Message box -->
+              <table width="100%" cellpadding="0" cellspacing="0" role="presentation"
+                style="background:{accent_light};border-left:4px solid {accent};border-radius:0 8px 8px 0;padding:14px 16px;margin-bottom:20px;">
+                <tr>
+                  <td>
+                    <p style="margin:0;font-size:13px;color:{c['ink_800']};line-height:1.6;">{message_html}</p>
+                  </td>
+                </tr>
+              </table>
+              <p style="margin:0 0 6px;font-size:13px;color:{c['ink_600']};line-height:1.5;">
+                Ingresa a <strong style="color:{c['green']};">Homly</strong> para ver los detalles completos y tomar acción si es necesario.
+              </p>
+              <p style="margin:0;font-size:12px;color:{c['ink_600']};">
+                Condominio: <strong>{tenant_name}</strong>
+              </p>
+
+              <!-- CTA -->
+              <table width="100%" cellpadding="0" cellspacing="0" role="presentation">
+                <tr>
+                  <td style="padding:24px 0 0;text-align:center;">
+                    <a href="{app_url}"
+                      style="display:inline-block;background:{c['orange']};color:#FFFFFF;font-weight:700;
+                        font-size:14px;padding:14px 32px;border-radius:10px;text-decoration:none;letter-spacing:0.02em;">
+                      Ingresar a Homly →
+                    </a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="padding:18px 28px;background:{c['cream']};border-top:1px solid #E8DFD1;text-align:center;">
+              <p style="margin:0;font-size:12px;color:{c['ink_600']};line-height:1.5;">
+                Este aviso fue generado automáticamente por Homly.<br>Si no esperabas este correo puedes ignorarlo.
+              </p>
+              <p style="margin:10px 0 0;font-size:11px;color:{c['ink_600']};">
+                © Homly — La administración que tu hogar se merece
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>"""
+
+
+def send_notification_email(
+    email: str,
+    user_name: str,
+    notif_type: str,
+    title: str,
+    message: str,
+    tenant_name: str = '',
+) -> bool:
+    """
+    Send a notification alert email to a single user.
+
+    Args:
+        email:       Recipient email address.
+        user_name:   Display name used in the greeting.
+        notif_type:  One of the keys in NOTIF_META (e.g. 'payment_registered').
+        title:       Short notification title (same as the in-app notification title).
+        message:     Body of the notification (same as the in-app message).
+        tenant_name: Condominium / tenant display name shown in the email.
+
+    Returns True on success, False if the send failed.
+    """
+    app_url  = getattr(settings, 'HOMLY_APP_URL',      'https://homly.com.mx/login')
+    _, type_label, _ = NOTIF_META.get(notif_type, NOTIF_META['general'])
+    subject  = f'{type_label} — {title}'
+    if tenant_name:
+        subject = f'[{tenant_name}] {subject}'
+
+    plain = (
+        f'Hola {user_name},\n\n'
+        f'{message}\n\n'
+        f'Ingresa a Homly para ver los detalles: {app_url}\n\n'
+        f'Condominio: {tenant_name}\n'
+        f'© Homly — La administración que tu hogar se merece'
+    )
+    html = _build_notification_html(user_name, notif_type, title, message, tenant_name, app_url)
+    return _send_branded_email(subject=subject, plain=plain, html=html, to_emails=[email])

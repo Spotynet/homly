@@ -496,6 +496,15 @@ export default function AppLayout() {
     ? { label: activeProfile.label, color: activeProfile.color || 'var(--teal-500)' }
     : (ROLES[role] || ROLES.vecino);
 
+  // Helper: resolve visibility from a perms entry (handles old array + new object formats)
+  const isModuleVisible = (permsEntry, moduleKey) => {
+    if (!permsEntry) return true; // no config → show
+    if (Array.isArray(permsEntry)) return permsEntry.includes(moduleKey); // old format
+    // New format: object { moduleKey: "write"|"read"|"hidden" }
+    const val = permsEntry[moduleKey];
+    return val === undefined || val !== 'hidden'; // default: visible unless explicitly hidden
+  };
+
   // Filter nav based on module permissions or custom profile modules
   const rawNav = NAV_ITEMS[navRole] || NAV_ITEMS.vecino;
   const effectiveNav = role === 'superadmin'
@@ -506,18 +515,16 @@ export default function AppLayout() {
           const moduleKey = PATH_TO_MODULE[item.path];
           if (!moduleKey) return true;
 
-          // Custom profile: filter by profile's own modules list
+          // Custom profile: filter by profile's own modules config
           if (activeProfile) {
-            const profileModules = activeProfile.modules || [];
-            // If profile has no modules configured, fall back to base role defaults
-            if (profileModules.length === 0) return true;
-            return profileModules.includes(moduleKey);
+            const profileMods = activeProfile.modules;
+            // Empty / no config → show all base role defaults
+            if (!profileMods || (Array.isArray(profileMods) && profileMods.length === 0) || (typeof profileMods === 'object' && !Array.isArray(profileMods) && Object.keys(profileMods).length === 0)) return true;
+            return isModuleVisible(profileMods, moduleKey);
           }
 
           // Standard role: filter by tenant module_permissions config
-          const rolePerms = tenantModulePerms[role];
-          if (rolePerms === undefined) return true; // no custom config → show all defaults
-          return rolePerms.includes(moduleKey);
+          return isModuleVisible(tenantModulePerms[role], moduleKey);
         }),
       })).filter(group => group.items.length > 0);
 
@@ -648,9 +655,9 @@ export default function AppLayout() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             {tenantId && (
               role === 'superadmin' ||
-              activeProfile
-                ? (activeProfile?.modules?.length === 0 || (activeProfile?.modules || []).includes('notificaciones'))
-                : (tenantModulePerms[role] === undefined || (tenantModulePerms[role] || []).includes('notificaciones'))
+              (activeProfile
+                ? isModuleVisible(activeProfile.modules, 'notificaciones')
+                : isModuleVisible(tenantModulePerms[role], 'notificaciones'))
             ) && <NotificationBell tenantId={tenantId} />}
           </div>
         </header>
