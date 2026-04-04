@@ -527,7 +527,13 @@ export default function Cobranza() {
                 // Exentas siempre aparecen como exentas
                 const st = u.admin_exempt ? 'exento' : (pay?.status || 'pendiente');
                 const effTotals = getEffectiveFieldTotals(pay);
-                const totalRec = Object.values(effTotals).reduce((s, v) => s + v, 0);
+                let totalRec = Object.values(effTotals).reduce((s, v) => s + v, 0);
+                // Sumar también pagos de adeudos registrados en la unidad
+                Object.values(pay?.adeudo_payments || {}).forEach(fieldMap => {
+                  Object.values(fieldMap || {}).forEach(amt => {
+                    totalRec += parseFloat(amt) || 0;
+                  });
+                });
                 return (
                   <tr key={u.id}>
                     <td>
@@ -586,19 +592,54 @@ export default function Cobranza() {
                           </button>
                         )}
                         {!isReadOnly && (
-                          <button className="btn btn-primary btn-sm" onClick={() => openCapture(u)}>
-                            <Receipt size={12} /> {pay ? 'Editar' : 'Capturar'}
+                          <button
+                            className="btn btn-sm"
+                            title={pay ? 'Editar cobro' : 'Capturar pago'}
+                            onClick={() => openCapture(u)}
+                            style={{
+                              display: 'inline-flex', alignItems: 'center', gap: 5,
+                              background: pay ? 'var(--teal-600)' : 'var(--teal-500)',
+                              color: 'white',
+                              border: 'none',
+                              fontWeight: 700,
+                              letterSpacing: '0.01em',
+                              boxShadow: '0 1px 4px rgba(0,0,0,0.10)',
+                              padding: '5px 12px',
+                              borderRadius: 8,
+                              fontSize: 12,
+                              transition: 'background 0.15s, box-shadow 0.15s',
+                            }}
+                            onMouseEnter={e => { e.currentTarget.style.background = 'var(--teal-700)'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.16)'; }}
+                            onMouseLeave={e => { e.currentTarget.style.background = pay ? 'var(--teal-600)' : 'var(--teal-500)'; e.currentTarget.style.boxShadow = '0 1px 4px rgba(0,0,0,0.10)'; }}
+                          >
+                            {pay ? <Edit2 size={12} /> : <Receipt size={12} />}
+                            {pay ? 'Editar' : 'Capturar'}
                           </button>
                         )}
                         {!isReadOnly && pay && (
-                          <button className="btn btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: 'var(--coral-50)', color: 'var(--coral-600)', border: '1px solid var(--coral-200)' }}
+                          <button
+                            title="Eliminar cobro"
                             onClick={async () => {
                               if (window.confirm(`¿Eliminar el cobro de ${u.unit_id_code} — ${u.unit_name}? Esta acción no se puede deshacer.`)) {
                                 try { await paymentsAPI.clear(tenantId, pay.id); toast.success('Cobro eliminado'); load(); }
                                 catch (e) { toast.error(e.response?.data?.detail || 'Error al eliminar'); }
                               }
-                            }}>
-                            <Trash2 size={12} /> Eliminar cobro
+                            }}
+                            style={{
+                              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                              width: 30, height: 30, padding: 0,
+                              background: 'var(--coral-50)',
+                              color: 'var(--coral-500)',
+                              border: '1.5px solid var(--coral-200)',
+                              borderRadius: 8,
+                              cursor: 'pointer',
+                              transition: 'background 0.15s, color 0.15s, border-color 0.15s',
+                              flexShrink: 0,
+                            }}
+                            onMouseEnter={e => { e.currentTarget.style.background = 'var(--coral-500)'; e.currentTarget.style.color = 'white'; e.currentTarget.style.borderColor = 'var(--coral-500)'; }}
+                            onMouseLeave={e => { e.currentTarget.style.background = 'var(--coral-50)'; e.currentTarget.style.color = 'var(--coral-500)'; e.currentTarget.style.borderColor = 'var(--coral-200)'; }}
+                          >
+                            <Trash2 size={13} />
                           </button>
                         )}
                       </div>
