@@ -69,9 +69,11 @@ export const unitsAPI = {
   create: (tenantId, data) => api.post(`/tenants/${tenantId}/units/`, data),
   update: (tenantId, id, data) => api.patch(`/tenants/${tenantId}/units/${id}/`, data),
   delete: (tenantId, id) => api.delete(`/tenants/${tenantId}/units/${id}/`),
-  evidence:   (tenantId, id) => api.get(`/tenants/${tenantId}/units/${id}/evidence/`),
-  createUser: (tenantId, id, persona) => api.post(`/tenants/${tenantId}/units/${id}/create-user/`, { persona }),
-  updateMyInfo: (tenantId, data) => api.patch(`/tenants/${tenantId}/units/update-my-info/`, data),
+  evidence:    (tenantId, id) => api.get(`/tenants/${tenantId}/units/${id}/evidence/`),
+  createUser:  (tenantId, id, persona) => api.post(`/tenants/${tenantId}/units/${id}/create-user/`, { persona }),
+  updateMyInfo:(tenantId, data) => api.patch(`/tenants/${tenantId}/units/update-my-info/`, data),
+  inactivate:  (tenantId, id) => api.post(`/tenants/${tenantId}/units/${id}/inactivate/`),
+  activate:    (tenantId, id) => api.post(`/tenants/${tenantId}/units/${id}/activate/`),
 };
 
 // ─── Users ──────────────────────────────────────

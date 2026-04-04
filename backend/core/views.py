@@ -566,12 +566,58 @@ class UnitViewSet(viewsets.ModelViewSet):
                    object_repr=f'{unit.unit_id_code} {unit.unit_name}')
 
     def perform_destroy(self, instance):
+        from .models import Payment as _Payment
+        # Bloquear eliminación si la unidad tiene registros de pago o adeudo previo
+        has_records = _Payment.objects.filter(unit=instance).exists()
+        has_previous_debt = (instance.previous_debt or 0) != 0
+
+        if has_records or has_previous_debt:
+            from rest_framework.exceptions import ValidationError
+            raise ValidationError({
+                'code': 'has_records',
+                'detail': (
+                    'Esta unidad tiene historial de pagos o adeudo registrado. '
+                    'No puede eliminarse. Puedes inactivarla para dejarla de solo lectura.'
+                ),
+            })
         _audit_log(self.request, 'unidades', 'delete',
                    f'Unidad eliminada: {instance.unit_id_code} — {instance.unit_name}',
                    tenant_id=self.kwargs['tenant_id'],
                    object_type='Unit', object_id=str(instance.id),
                    object_repr=f'{instance.unit_id_code} {instance.unit_name}')
         instance.delete()
+
+    @action(detail=True, methods=['post'], url_path='inactivate', permission_classes=[IsTenantAdmin])
+    def inactivate(self, request, tenant_id=None, pk=None):
+        """POST /api/tenants/{tenant_id}/units/{id}/inactivate/
+           Marca la unidad como inactiva (solo lectura). No elimina datos."""
+        unit = self.get_object()
+        if not unit.is_active:
+            return Response({'detail': 'La unidad ya está inactiva.'}, status=status.HTTP_200_OK)
+        unit.is_active = False
+        unit.save(update_fields=['is_active', 'updated_at'])
+        _audit_log(request, 'unidades', 'inactivate',
+                   f'Unidad inactivada: {unit.unit_id_code} — {unit.unit_name}',
+                   tenant_id=tenant_id,
+                   object_type='Unit', object_id=str(unit.id),
+                   object_repr=f'{unit.unit_id_code} {unit.unit_name}')
+        return Response(UnitListSerializer(unit).data)
+
+    @action(detail=True, methods=['post'], url_path='activate', permission_classes=[IsTenantAdmin])
+    def activate(self, request, tenant_id=None, pk=None):
+        """POST /api/tenants/{tenant_id}/units/{id}/activate/
+           Reactiva una unidad previamente inactivada."""
+        unit = self.get_object()
+        if unit.is_active:
+            return Response({'detail': 'La unidad ya está activa.'}, status=status.HTTP_200_OK)
+        unit.is_active = True
+        unit.save(update_fields=['is_active', 'updated_at'])
+        _audit_log(request, 'unidades', 'activate',
+                   f'Unidad reactivada: {unit.unit_id_code} — {unit.unit_name}',
+                   tenant_id=tenant_id,
+                   object_type='Unit', object_id=str(unit.id),
+                   object_repr=f'{unit.unit_id_code} {unit.unit_name}')
+        return Response(UnitListSerializer(unit).data)
 
     def _auto_create_vecino(self, unit):
         """
@@ -641,9 +687,18 @@ class UnitViewSet(viewsets.ModelViewSet):
             'occupancy',
         }
 
+        VALID_OCCUPANCY = {'propietario', 'rentado', 'vacío'}
+
         updates = {k: v for k, v in request.data.items() if k in ALLOWED_FIELDS}
         if not updates:
             return Response({'detail': 'No hay campos válidos para actualizar.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Validate occupancy value if provided
+        if 'occupancy' in updates and updates['occupancy'] not in VALID_OCCUPANCY:
+            return Response(
+                {'detail': f'Valor de ocupación inválido. Use: {", ".join(sorted(VALID_OCCUPANCY))}'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         for field, value in updates.items():
             setattr(unit, field, value)

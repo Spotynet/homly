@@ -140,10 +140,17 @@ export default function Config() {
   const [altaModal, setAltaModal] = useState(null); // { unit, persona } | null
   const [altaSaving, setAltaSaving] = useState(false);
 
-  // Users pagination
+  // Users pagination + search/filter/sort
   const [usersPage, setUsersPage] = useState(1);
   const [usersPageSize, setUsersPageSize] = useState(25);
   const USERS_PAGE_OPTIONS = [25, 50, 100];
+  const [userSearch, setUserSearch] = useState('');
+  const [userRoleFilter, setUserRoleFilter] = useState('all');
+  const [userSort, setUserSort] = useState({ col: 'name', dir: 'asc' });
+
+  // Unit delete/inactivate modal
+  const [unitActionModal, setUnitActionModal] = useState(null); // null | { unit, mode: 'confirm_delete' | 'has_records' }
+  const [unitActionWorking, setUnitActionWorking] = useState(false);
 
   // Module permissions tab
   const [modulePerms,          setModulePerms]          = useState({});
@@ -415,10 +422,56 @@ export default function Config() {
     } catch (e) { toast.error(e.response?.data?.unit_id_code?.[0] || 'Error guardando unidad'); }
   };
 
-  const handleUnitDelete = async (id) => {
-    if (!window.confirm('¿Eliminar esta unidad? Se perderán todos sus pagos asociados.')) return;
-    try { await unitsAPI.delete(tenantId, id); toast.success('Unidad eliminada'); loadUnits(); }
-    catch { toast.error('Error eliminando unidad'); }
+  const handleUnitDelete = async (unit) => {
+    // Try hard delete; backend returns 400 if unit has records → show inactivate modal instead
+    setUnitActionModal({ unit, mode: 'confirm_delete' });
+  };
+
+  const confirmUnitDelete = async () => {
+    if (!unitActionModal) return;
+    setUnitActionWorking(true);
+    try {
+      await unitsAPI.delete(tenantId, unitActionModal.unit.id);
+      toast.success('Unidad eliminada');
+      setUnitActionModal(null);
+      loadUnits();
+    } catch (e) {
+      const code = e?.response?.data?.code || e?.response?.data?.[0]?.code;
+      if (code === 'has_records' || e?.response?.status === 400) {
+        // Has payment history — switch to inactivate offer
+        setUnitActionModal(prev => ({ ...prev, mode: 'has_records' }));
+      } else {
+        toast.error(e?.response?.data?.detail || 'Error eliminando unidad');
+        setUnitActionModal(null);
+      }
+    } finally {
+      setUnitActionWorking(false);
+    }
+  };
+
+  const confirmUnitInactivate = async () => {
+    if (!unitActionModal) return;
+    setUnitActionWorking(true);
+    try {
+      await unitsAPI.inactivate(tenantId, unitActionModal.unit.id);
+      toast.success('Unidad inactivada — historial conservado en solo lectura');
+      setUnitActionModal(null);
+      loadUnits();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || 'Error inactivando unidad');
+    } finally {
+      setUnitActionWorking(false);
+    }
+  };
+
+  const handleUnitActivate = async (unit) => {
+    try {
+      await unitsAPI.activate(tenantId, unit.id);
+      toast.success('Unidad reactivada');
+      loadUnits();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || 'Error reactivando unidad');
+    }
   };
 
   const handleUnitCreateUser = async () => {
@@ -1005,10 +1058,15 @@ export default function Config() {
                         <td>{u.owner_first_name} {u.owner_last_name}</td>
                         <td style={{ fontSize:13, color:'var(--ink-500)' }}>{u.owner_email || '—'}</td>
                         <td>
-                          <span className={`badge ${u.occupancy==='propietario'?'badge-teal':'badge-amber'}`}>
-                            <span className="badge-dot" style={{ background: u.occupancy==='propietario'?'var(--teal-500)':'var(--amber-500)' }} />
-                            {u.occupancy==='propietario'?'Propietario':'Rentado'}
-                          </span>
+                          <div style={{ display:'flex', gap:4, flexWrap:'wrap' }}>
+                            <span className={`badge ${u.occupancy==='propietario'?'badge-teal':u.occupancy==='rentado'?'badge-amber':'badge-gray'}`}>
+                              <span className="badge-dot" style={{ background: u.occupancy==='propietario'?'var(--teal-500)':u.occupancy==='rentado'?'var(--amber-500)':'var(--ink-300)' }} />
+                              {u.occupancy==='propietario'?'Propietario':u.occupancy==='rentado'?'Rentado':'Sin habitar'}
+                            </span>
+                            {u.is_active === false && (
+                              <span className="badge" style={{ background:'var(--sand-100)', color:'var(--ink-400)', fontSize:10 }}>Inactiva</span>
+                            )}
+                          </div>
                         </td>
                         <td style={{ fontSize:13 }}>
                           {u.occupancy==='rentado'
@@ -1071,7 +1129,12 @@ export default function Config() {
                                   } catch { /* silencioso: el usuario puede re-subir si falla */ }
                                 }
                               }}><Edit2 size={14}/></button>
-                              <button className="btn-ghost" style={{ color:'var(--coral-500)' }} onClick={() => handleUnitDelete(u.id)}><Trash2 size={14}/></button>
+                              {u.is_active === false
+                                ? <button className="btn-ghost" style={{ color:'var(--teal-600)' }} title="Reactivar unidad" onClick={() => handleUnitActivate(u)}>
+                                    <RefreshCw size={14}/>
+                                  </button>
+                                : <button className="btn-ghost" style={{ color:'var(--coral-500)' }} title="Eliminar / inactivar" onClick={() => handleUnitDelete(u)}><Trash2 size={14}/></button>
+                              }
                             </div>
                           </td>
                         )}
@@ -1342,12 +1405,48 @@ export default function Config() {
 
       {/* ════ USUARIOS ════ */}
       {tab === 'users' && (() => {
-        const pagedUsers = tenantUsers.slice((usersPage - 1) * usersPageSize, usersPage * usersPageSize);
-        const totalUserPages = Math.max(1, Math.ceil(tenantUsers.length / usersPageSize));
+        // ── Sort helper ──────────────────────────────────────────────────────
+        const toggleSort = (col) => {
+          setUserSort(prev => prev.col === col ? { col, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { col, dir: 'asc' });
+          setUsersPage(1);
+        };
+        const SortIcon = ({ col }) => {
+          if (userSort.col !== col) return <span style={{ color:'var(--ink-200)', fontSize:10, marginLeft:3 }}>⇅</span>;
+          return <span style={{ color:'var(--teal-600)', fontSize:10, marginLeft:3 }}>{userSort.dir === 'asc' ? '↑' : '↓'}</span>;
+        };
+
+        // ── Filter + sort ────────────────────────────────────────────────────
+        const q = userSearch.trim().toLowerCase();
+        const filtered = tenantUsers
+          .filter(u => {
+            const name  = (u.user_name || u.name || '').toLowerCase();
+            const email = (u.user_email || u.email || '').toLowerCase();
+            const matchQ    = !q || name.includes(q) || email.includes(q);
+            const matchRole = userRoleFilter === 'all' || u.role === userRoleFilter;
+            return matchQ && matchRole;
+          })
+          .sort((a, b) => {
+            const dir = userSort.dir === 'asc' ? 1 : -1;
+            const col = userSort.col;
+            const nameA = (a.user_name || a.name || a.user_email || '').toLowerCase();
+            const nameB = (b.user_name || b.name || b.user_email || '').toLowerCase();
+            const emailA = (a.user_email || a.email || '').toLowerCase();
+            const emailB = (b.user_email || b.email || '').toLowerCase();
+            const roleA = a.role || '';
+            const roleB = b.role || '';
+            if (col === 'name')  return nameA < nameB  ? -dir : nameA  > nameB  ? dir : 0;
+            if (col === 'email') return emailA < emailB ? -dir : emailA > emailB ? dir : 0;
+            if (col === 'role')  return roleA < roleB  ? -dir : roleA  > roleB  ? dir : 0;
+            return 0;
+          });
+
+        const totalUserPages = Math.max(1, Math.ceil(filtered.length / usersPageSize));
+        const safePage = Math.min(usersPage, totalUserPages);
+        const pagedUsers = filtered.slice((safePage - 1) * usersPageSize, safePage * usersPageSize);
         const userPageNums = (() => {
           if (totalUserPages <= 7) return Array.from({ length: totalUserPages }, (_, i) => i + 1);
-          const lo = Math.max(2, usersPage - 2);
-          const hi = Math.min(totalUserPages - 1, usersPage + 2);
+          const lo = Math.max(2, safePage - 2);
+          const hi = Math.min(totalUserPages - 1, safePage + 2);
           const arr = [1];
           if (lo > 2) arr.push('…');
           for (let p = lo; p <= hi; p++) arr.push(p);
@@ -1355,32 +1454,78 @@ export default function Config() {
           arr.push(totalUserPages);
           return arr;
         })();
-        const uStart = (usersPage - 1) * usersPageSize + 1;
-        const uEnd   = Math.min(usersPage * usersPageSize, tenantUsers.length);
+        const uStart = filtered.length === 0 ? 0 : (safePage - 1) * usersPageSize + 1;
+        const uEnd   = Math.min(safePage * usersPageSize, filtered.length);
+
+        const allRoles = [...new Set(tenantUsers.map(u => u.role))].sort();
+
         return (
           <div>
-            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16, flexWrap:'wrap', gap:12 }}>
-              <p style={{ fontSize:14, color:'var(--ink-400)' }}>
-                {tenantUsers.length === 0
-                  ? '0 usuarios'
-                  : `${uStart}–${uEnd} de ${tenantUsers.length} usuario${tenantUsers.length !== 1 ? 's' : ''}`}
-              </p>
+            {/* Toolbar */}
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16, flexWrap:'wrap', gap:10 }}>
+              {/* Buscador + filtro */}
+              <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+                <div style={{ position:'relative' }}>
+                  <Search size={14} style={{ position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', color:'var(--ink-300)', pointerEvents:'none' }} />
+                  <input
+                    type="text"
+                    placeholder="Buscar por nombre o email…"
+                    value={userSearch}
+                    onChange={e => { setUserSearch(e.target.value); setUsersPage(1); }}
+                    style={{ paddingLeft:32, paddingRight:10, height:34, border:'1px solid var(--sand-200)', borderRadius:8, fontSize:13, color:'var(--ink-700)', width:220, background:'var(--white)' }}
+                  />
+                </div>
+                <select
+                  value={userRoleFilter}
+                  onChange={e => { setUserRoleFilter(e.target.value); setUsersPage(1); }}
+                  style={{ height:34, border:'1px solid var(--sand-200)', borderRadius:8, fontSize:13, color:'var(--ink-700)', padding:'0 10px', background:'var(--white)' }}
+                >
+                  <option value="all">Todos los roles</option>
+                  {allRoles.map(r => {
+                    const m = ROLE_META[r];
+                    return <option key={r} value={r}>{m ? m.label : r}</option>;
+                  })}
+                </select>
+                <span style={{ fontSize:13, color:'var(--ink-400)' }}>
+                  {filtered.length === 0
+                    ? '0 usuarios'
+                    : q || userRoleFilter !== 'all'
+                      ? `${filtered.length} resultado${filtered.length !== 1 ? 's' : ''} de ${tenantUsers.length}`
+                      : `${uStart}–${uEnd} de ${tenantUsers.length} usuario${tenantUsers.length !== 1 ? 's' : ''}`}
+                </span>
+              </div>
               {isAdmin && (
                 <button className="btn btn-primary" onClick={() => { setAddUserForm({ role:'admin' }); setAddUserExisting(null); setAddUserOpen(true); }}>
                   <Plus size={14} /> Nuevo Usuario
                 </button>
               )}
             </div>
+
             <div className="card">
               {tenantUsers.length === 0
                 ? <div className="card-body" style={{ color:'var(--ink-300)', fontSize:13 }}>Sin usuarios registrados.</div>
-                : (
+                : filtered.length === 0
+                  ? <div className="card-body" style={{ color:'var(--ink-300)', fontSize:13, textAlign:'center', padding:32 }}>
+                      <Search size={28} style={{ display:'block', margin:'0 auto 10px', opacity:0.25 }} />
+                      No se encontraron usuarios con esos filtros.
+                    </div>
+                  : (
                   <>
                     <div className="table-wrap">
                       <table>
                         <thead>
                           <tr>
-                            <th>Nombre</th><th>Email</th><th>Rol</th><th>Unidad</th><th>Contraseña</th>
+                            <th style={{ cursor:'pointer', userSelect:'none' }} onClick={() => toggleSort('name')}>
+                              Nombre <SortIcon col="name" />
+                            </th>
+                            <th style={{ cursor:'pointer', userSelect:'none' }} onClick={() => toggleSort('email')}>
+                              Email <SortIcon col="email" />
+                            </th>
+                            <th style={{ cursor:'pointer', userSelect:'none' }} onClick={() => toggleSort('role')}>
+                              Rol <SortIcon col="role" />
+                            </th>
+                            <th>Unidad</th>
+                            <th>Contraseña</th>
                             {isAdmin && <th style={{ width:100, textAlign:'center' }}>Acciones</th>}
                           </tr>
                         </thead>
@@ -1458,9 +1603,9 @@ export default function Config() {
                       </table>
                     </div>
 
-                    {tenantUsers.length > usersPageSize && (
+                    {filtered.length > usersPageSize && (
                       <div className="pag-bar">
-                        <span className="pag-left">Mostrando {uStart}–{uEnd} de {tenantUsers.length}</span>
+                        <span className="pag-left">Mostrando {uStart}–{uEnd} de {filtered.length}</span>
                         <div className="pag-right">
                           <div className="pag-per-page">
                             Mostrar
@@ -1470,15 +1615,15 @@ export default function Config() {
                             por página
                           </div>
                           <div className="pag-btns">
-                            <button className="pag-btn" disabled={usersPage <= 1} onClick={() => setUsersPage(1)} title="Primera página">«</button>
-                            <button className="pag-btn" disabled={usersPage <= 1} onClick={() => setUsersPage(p => p - 1)} title="Anterior">‹</button>
+                            <button className="pag-btn" disabled={safePage <= 1} onClick={() => setUsersPage(1)} title="Primera página">«</button>
+                            <button className="pag-btn" disabled={safePage <= 1} onClick={() => setUsersPage(p => p - 1)} title="Anterior">‹</button>
                             {userPageNums.map((p, i) =>
                               p === '…'
                                 ? <span key={`el-${i}`} style={{ padding:'0 4px', color:'var(--ink-300)', lineHeight:'28px' }}>…</span>
-                                : <button key={p} className={`pag-btn ${p === usersPage ? 'active' : ''}`} onClick={() => setUsersPage(p)}>{p}</button>
+                                : <button key={p} className={`pag-btn ${p === safePage ? 'active' : ''}`} onClick={() => setUsersPage(p)}>{p}</button>
                             )}
-                            <button className="pag-btn" disabled={usersPage >= totalUserPages} onClick={() => setUsersPage(p => p + 1)} title="Siguiente">›</button>
-                            <button className="pag-btn" disabled={usersPage >= totalUserPages} onClick={() => setUsersPage(totalUserPages)} title="Última página">»</button>
+                            <button className="pag-btn" disabled={safePage >= totalUserPages} onClick={() => setUsersPage(p => p + 1)} title="Siguiente">›</button>
+                            <button className="pag-btn" disabled={safePage >= totalUserPages} onClick={() => setUsersPage(totalUserPages)} title="Última página">»</button>
                           </div>
                         </div>
                       </div>
@@ -2303,8 +2448,9 @@ export default function Config() {
             <div className="field">
               <label className="field-label">Tipo de Ocupación</label>
               <select className="field-select" value={unitForm.occupancy||'propietario'} onChange={e=>setUnitForm(f=>({...f,occupancy:e.target.value}))}>
-                <option value="propietario">Propietario</option>
-                <option value="rentado">Rentado</option>
+                <option value="propietario">Propietario habita la unidad</option>
+                <option value="rentado">Rentada / Inquilino</option>
+                <option value="vacío">Sin habitar</option>
               </select>
             </div>
             <div className="field">
@@ -2471,6 +2617,62 @@ export default function Config() {
           </Modal>
         );
       })()}
+
+      {/* ── Unit delete / inactivate confirmation modal ── */}
+      {unitActionModal && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.45)', zIndex:1100, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
+          <div style={{ background:'var(--white)', borderRadius:16, padding:28, maxWidth:440, width:'100%', boxShadow:'0 20px 60px rgba(0,0,0,0.2)' }}>
+            {unitActionModal.mode === 'confirm_delete' ? (
+              <>
+                <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:16 }}>
+                  <div style={{ width:36, height:36, borderRadius:10, background:'var(--coral-50)', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                    <Trash2 size={18} color="var(--coral-500)" />
+                  </div>
+                  <div>
+                    <div style={{ fontWeight:700, fontSize:15, color:'var(--ink-800)' }}>Eliminar unidad</div>
+                    <div style={{ fontSize:12, color:'var(--ink-400)' }}>{unitActionModal.unit.unit_id_code} — {unitActionModal.unit.unit_name}</div>
+                  </div>
+                </div>
+                <p style={{ fontSize:13, color:'var(--ink-600)', lineHeight:1.6, marginBottom:20 }}>
+                  ¿Estás seguro de que deseas eliminar esta unidad permanentemente? Si tiene registros de pagos o adeudos, se ofrecerá la opción de inactivarla en lugar de eliminarla.
+                </p>
+                <div style={{ display:'flex', gap:8, justifyContent:'flex-end' }}>
+                  <button className="btn btn-secondary" disabled={unitActionWorking} onClick={() => setUnitActionModal(null)}>Cancelar</button>
+                  <button className="btn" style={{ background:'var(--coral-500)', color:'#fff', opacity: unitActionWorking ? 0.7 : 1 }}
+                    disabled={unitActionWorking} onClick={confirmUnitDelete}>
+                    {unitActionWorking ? 'Eliminando…' : 'Eliminar'}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:16 }}>
+                  <div style={{ width:36, height:36, borderRadius:10, background:'var(--amber-50)', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                    <AlertCircle size={18} color="var(--amber-600)" />
+                  </div>
+                  <div>
+                    <div style={{ fontWeight:700, fontSize:15, color:'var(--ink-800)' }}>No se puede eliminar</div>
+                    <div style={{ fontSize:12, color:'var(--ink-400)' }}>{unitActionModal.unit.unit_id_code} — {unitActionModal.unit.unit_name}</div>
+                  </div>
+                </div>
+                <div style={{ padding:'12px 14px', background:'var(--amber-50)', border:'1px solid var(--amber-200)', borderRadius:10, marginBottom:16, fontSize:13, color:'var(--amber-800)', lineHeight:1.6 }}>
+                  Esta unidad tiene historial de pagos o adeudos registrados. No es posible eliminarla para preservar la integridad del historial.
+                </div>
+                <p style={{ fontSize:13, color:'var(--ink-600)', lineHeight:1.6, marginBottom:20 }}>
+                  Puedes <strong>inactivarla</strong> para que quede de solo lectura. El historial se conserva y no se generarán nuevos cargos.
+                </p>
+                <div style={{ display:'flex', gap:8, justifyContent:'flex-end' }}>
+                  <button className="btn btn-secondary" disabled={unitActionWorking} onClick={() => setUnitActionModal(null)}>Cancelar</button>
+                  <button className="btn" style={{ background:'var(--amber-500)', color:'#fff', opacity: unitActionWorking ? 0.7 : 1 }}
+                    disabled={unitActionWorking} onClick={confirmUnitInactivate}>
+                    {unitActionWorking ? 'Inactivando…' : 'Inactivar unidad'}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Add Custom Field */}
       {fieldForm && (

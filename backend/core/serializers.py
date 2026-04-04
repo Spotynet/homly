@@ -331,7 +331,7 @@ class UnitListSerializer(serializers.ModelSerializer):
                   'occupancy', 'tenant_first_name', 'tenant_last_name',
                   'tenant_email', 'tenant_phone', 'responsible_name',
                   'admin_exempt', 'previous_debt', 'has_evidence',
-                  'credit_balance',
+                  'credit_balance', 'is_active',
                   'created_at', 'updated_at']
         read_only_fields = ['id', 'created_at', 'updated_at']
 
@@ -348,7 +348,7 @@ class UnitSerializer(serializers.ModelSerializer):
                   'occupancy', 'tenant_first_name', 'tenant_last_name',
                   'tenant_email', 'tenant_phone', 'responsible_name',
                   'admin_exempt', 'previous_debt', 'previous_debt_evidence',
-                  'credit_balance',
+                  'credit_balance', 'is_active',
                   'created_at', 'updated_at']
         read_only_fields = ['id', 'created_at', 'updated_at']
 

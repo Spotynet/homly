@@ -591,7 +591,7 @@ export default function MyUnit() {
           </div>
 
           {/* Inquilino (si aplica) */}
-          {unit.occupancy === 'rentada' && (
+          {unit.occupancy === 'rentado' && (
             <div className="card" style={{ marginBottom: 20 }}>
               <div className="card-head">
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -1185,8 +1185,8 @@ export default function MyUnit() {
                 >
                   <option value="">— Seleccionar —</option>
                   <option value="propietario">Propietario habita la unidad</option>
-                  <option value="rentada">Rentada / Inquilino</option>
-                  <option value="vacía">Sin habitar</option>
+                  <option value="rentado">Rentada / Inquilino</option>
+                  <option value="vacío">Sin habitar</option>
                 </select>
               </div>
             </div>
@@ -1265,12 +1265,12 @@ export default function MyUnit() {
               </div>
             </div>
             <div className="card-body">
-              {myInfoForm.occupancy !== 'rentada' && (
+              {myInfoForm.occupancy !== 'rentado' && (
                 <div style={{ padding: '10px 14px', background: 'var(--sand-50)', border: '1px solid var(--sand-100)', borderRadius: 8, fontSize: 13, color: 'var(--ink-400)', marginBottom: 16, fontStyle: 'italic' }}>
                   Selecciona "Rentada / Inquilino" en ocupación para habilitar estos campos.
                 </div>
               )}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 16, opacity: myInfoForm.occupancy === 'rentada' ? 1 : 0.45 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 16, opacity: myInfoForm.occupancy === 'rentado' ? 1 : 0.45 }}>
                 {[
                   { key: 'tenant_first_name', label: 'Nombre', type: 'text', placeholder: 'Nombre del inquilino' },
                   { key: 'tenant_last_name',  label: 'Apellido', type: 'text', placeholder: 'Apellido del inquilino' },
@@ -1284,7 +1284,7 @@ export default function MyUnit() {
                       value={myInfoForm[f.key]}
                       onChange={e => handleMyInfoChange(f.key, e.target.value)}
                       placeholder={f.placeholder}
-                      disabled={myInfoForm.occupancy !== 'rentada'}
+                      disabled={myInfoForm.occupancy !== 'rentado'}
                       style={{ width: '100%', padding: '9px 12px', border: '1px solid var(--sand-200)', borderRadius: 8, fontSize: 14, color: 'var(--ink-700)', boxSizing: 'border-box' }}
                     />
                   </div>
