@@ -6,7 +6,7 @@ import { notificationsAPI, tenantsAPI } from '../../api/client';
 import {
   Home, Globe, FileText, ShoppingBag, Receipt, Settings,
   Users, Building, Shield, LogOut, Menu, X, Calendar,
-  ChevronDown, Check, Building2, Bell, CheckCheck, Activity,
+  ChevronDown, Check, Building2, Bell, CheckCheck, Activity, Lock,
 } from 'lucide-react';
 
 const NAV_ITEMS = {
@@ -17,33 +17,36 @@ const NAV_ITEMS = {
       { path: '/app/sistema/logs',    icon: Activity, label: 'Logs del Sistema' },
     ]},
     { section: 'tenant', label: 'Tenant Actual', items: [
-      { path: '/app/reservas',       icon: Calendar,    label: 'Reservas'         },
-      { path: '/app/cobranza',       icon: Receipt,     label: 'Cobranza Mensual' },
-      { path: '/app/gastos',         icon: ShoppingBag, label: 'Gastos'           },
-      { path: '/app/estado-cuenta',  icon: FileText,    label: 'Estado de Cuenta' },
-      { path: '/app/notificaciones', icon: Bell,        label: 'Notificaciones'   },
-      { path: '/app/config',         icon: Settings,    label: 'Configuración'    },
+      { path: '/app/reservas',         icon: Calendar,    label: 'Reservas'          },
+      { path: '/app/cobranza',         icon: Receipt,     label: 'Cobranza Mensual'  },
+      { path: '/app/gastos',           icon: ShoppingBag, label: 'Gastos'            },
+      { path: '/app/estado-cuenta',    icon: FileText,    label: 'Estado de Cuenta'  },
+      { path: '/app/cierre-periodo',   icon: Lock,        label: 'Cierre de Período' },
+      { path: '/app/notificaciones',   icon: Bell,        label: 'Notificaciones'    },
+      { path: '/app/config',           icon: Settings,    label: 'Configuración'     },
     ]},
   ],
 
   admin: [{ section: 'main', items: [
-    { path: '/app/dashboard',       icon: Home,        label: 'Dashboard'        },
-    { path: '/app/reservas',        icon: Calendar,    label: 'Reservas'         },
-    { path: '/app/cobranza',        icon: Receipt,     label: 'Cobranza Mensual' },
-    { path: '/app/gastos',          icon: ShoppingBag, label: 'Gastos'           },
-    { path: '/app/estado-cuenta',   icon: FileText,    label: 'Estado de Cuenta' },
-    { path: '/app/notificaciones',  icon: Bell,        label: 'Notificaciones'   },
-    { path: '/app/config',          icon: Settings,    label: 'Configuración'    },
+    { path: '/app/dashboard',        icon: Home,        label: 'Dashboard'          },
+    { path: '/app/reservas',         icon: Calendar,    label: 'Reservas'           },
+    { path: '/app/cobranza',         icon: Receipt,     label: 'Cobranza Mensual'   },
+    { path: '/app/gastos',           icon: ShoppingBag, label: 'Gastos'             },
+    { path: '/app/estado-cuenta',    icon: FileText,    label: 'Estado de Cuenta'   },
+    { path: '/app/cierre-periodo',   icon: Lock,        label: 'Cierre de Período'  },
+    { path: '/app/notificaciones',   icon: Bell,        label: 'Notificaciones'     },
+    { path: '/app/config',           icon: Settings,    label: 'Configuración'      },
   ]}],
 
   tesorero: [{ section: 'main', items: [
-    { path: '/app/dashboard',       icon: Home,        label: 'Dashboard'        },
-    { path: '/app/reservas',        icon: Calendar,    label: 'Reservas'         },
-    { path: '/app/cobranza',        icon: Receipt,     label: 'Cobranza Mensual' },
-    { path: '/app/gastos',          icon: ShoppingBag, label: 'Gastos'           },
-    { path: '/app/estado-cuenta',   icon: FileText,    label: 'Estado de Cuenta' },
-    { path: '/app/notificaciones',  icon: Bell,        label: 'Notificaciones'   },
-    { path: '/app/config',          icon: Settings,    label: 'Configuración'    },
+    { path: '/app/dashboard',        icon: Home,        label: 'Dashboard'          },
+    { path: '/app/reservas',         icon: Calendar,    label: 'Reservas'           },
+    { path: '/app/cobranza',         icon: Receipt,     label: 'Cobranza Mensual'   },
+    { path: '/app/gastos',           icon: ShoppingBag, label: 'Gastos'             },
+    { path: '/app/estado-cuenta',    icon: FileText,    label: 'Estado de Cuenta'   },
+    { path: '/app/cierre-periodo',   icon: Lock,        label: 'Cierre de Período'  },
+    { path: '/app/notificaciones',   icon: Bell,        label: 'Notificaciones'     },
+    { path: '/app/config',           icon: Settings,    label: 'Configuración'      },
   ]}],
 
   contador: [{ section: 'main', items: [
@@ -77,14 +80,15 @@ const NAV_ITEMS = {
 
 // Maps each nav path to its module key (for permission filtering)
 const PATH_TO_MODULE = {
-  '/app/dashboard':      'dashboard',
-  '/app/reservas':       'reservas',
-  '/app/cobranza':       'cobranza',
-  '/app/gastos':         'gastos',
-  '/app/estado-cuenta':  'estado_cuenta',
-  '/app/notificaciones': 'notificaciones',
-  '/app/config':         'config',
-  '/app/my-unit':        'my_unit',
+  '/app/dashboard':       'dashboard',
+  '/app/reservas':        'reservas',
+  '/app/cobranza':        'cobranza',
+  '/app/gastos':          'gastos',
+  '/app/estado-cuenta':   'estado_cuenta',
+  '/app/cierre-periodo':  'cierre_periodo',
+  '/app/notificaciones':  'notificaciones',
+  '/app/config':          'config',
+  '/app/my-unit':         'my_unit',
 };
 
 const PAGE_TITLES = {
@@ -94,6 +98,7 @@ const PAGE_TITLES = {
   cobranza: 'Cobranza Mensual',
   gastos: 'Gastos del Condominio',
   'estado-cuenta': 'Estado de Cuenta',
+  'cierre-periodo': 'Cierre de Período',
   config: 'Configuración',
   units: 'Unidades',
   users: 'Usuarios',

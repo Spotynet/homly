@@ -138,6 +138,11 @@ export const periodsAPI = {
   requestReopen: (tenantId, data) => api.post(`/tenants/${tenantId}/reopen-requests/`, data),
   approveReopen: (tenantId, id) => api.post(`/tenants/${tenantId}/reopen-requests/${id}/approve/`),
   rejectReopen: (tenantId, id) => api.post(`/tenants/${tenantId}/reopen-requests/${id}/reject/`),
+  // Period closure workflow
+  closureList:   (tenantId) => api.get(`/tenants/${tenantId}/period-closure-requests/`),
+  initiateClosure: (tenantId, data) => api.post(`/tenants/${tenantId}/period-closure-requests/initiate/`, data),
+  approveStep:   (tenantId, id, data) => api.post(`/tenants/${tenantId}/period-closure-requests/${id}/approve_step/`, data || {}),
+  rejectStep:    (tenantId, id, data) => api.post(`/tenants/${tenantId}/period-closure-requests/${id}/reject_step/`,  data || {}),
 };
 
 // ─── Bank Statements ────────────────────────────

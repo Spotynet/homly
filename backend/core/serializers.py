@@ -8,6 +8,7 @@ from .models import (
     User, Tenant, TenantUser, Unit, ExtraField,
     Payment, FieldPayment, GastoEntry, CajaChicaEntry,
     BankStatement, ClosedPeriod, ReopenRequest,
+    PeriodClosureRequest, PeriodClosureStep,
     AssemblyPosition, Committee, UnrecognizedIncome,
     AmenityReservation, CondominioRequest, Notification,
     AuditLog,
@@ -496,6 +497,28 @@ class ReopenRequestSerializer(serializers.ModelSerializer):
         fields = ['id', 'tenant', 'period', 'requested_by', 'requested_by_name',
                   'reason', 'status', 'resolved_by', 'created_at', 'resolved_at']
         read_only_fields = ['id', 'created_at', 'resolved_at']
+
+
+class PeriodClosureStepSerializer(serializers.ModelSerializer):
+    approver_name = serializers.CharField(source='approver.name', read_only=True, default=None)
+    approver_email = serializers.CharField(source='approver.email', read_only=True, default=None)
+
+    class Meta:
+        model  = PeriodClosureStep
+        fields = ['id', 'order', 'approver', 'approver_name', 'approver_email',
+                  'label', 'status', 'actioned_at', 'notes']
+        read_only_fields = ['id', 'actioned_at']
+
+
+class PeriodClosureRequestSerializer(serializers.ModelSerializer):
+    steps              = PeriodClosureStepSerializer(many=True, read_only=True)
+    initiated_by_name  = serializers.CharField(source='initiated_by.name', read_only=True, default=None)
+
+    class Meta:
+        model  = PeriodClosureRequest
+        fields = ['id', 'tenant', 'period', 'initiated_by', 'initiated_by_name',
+                  'status', 'notes', 'created_at', 'completed_at', 'steps']
+        read_only_fields = ['id', 'created_at', 'completed_at', 'status']
 
 
 class AssemblyPositionSerializer(serializers.ModelSerializer):

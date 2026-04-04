@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { gastosAPI, cajaChicaAPI, extraFieldsAPI, tenantsAPI } from '../api/client';
+import { gastosAPI, cajaChicaAPI, extraFieldsAPI, tenantsAPI, periodsAPI } from '../api/client';
 import { todayPeriod, periodLabel, prevPeriod, nextPeriod, fmtDate, PAYMENT_TYPES } from '../utils/helpers';
-import { ChevronLeft, ChevronRight, Plus, Edit, Trash2, X, ShoppingBag, DollarSign, Printer, Check, AlertCircle } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Edit, Trash2, X, ShoppingBag, DollarSign, Printer, Check, AlertCircle, Lock } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const GASTO_PAYMENT_TYPES = [
@@ -356,22 +356,28 @@ export default function Gastos() {
   const [form, setForm] = useState({});
   const [gastosCollapsed, setGastosCollapsed] = useState(false);
   const [cajaCollapsed, setCajaCollapsed] = useState(false);
+  const [closedPeriods, setClosedPeriods] = useState([]);
 
   const load = async () => {
     if (!tenantId) return;
-    const [g, cc, ef, tn] = await Promise.all([
+    const [g, cc, ef, tn, cp] = await Promise.all([
       gastosAPI.list(tenantId, { period, page_size: 9999 }),
       cajaChicaAPI.list(tenantId, { period, page_size: 9999 }),
       extraFieldsAPI.list(tenantId, { page_size: 9999 }),
       tenantsAPI.get(tenantId).catch(() => ({ data: null })),
+      periodsAPI.closedList(tenantId).catch(() => ({ data: [] })),
     ]);
     setGastos(g.data.results || g.data);
     setCajaChica(cc.data.results || cc.data);
     setFields((ef.data.results || ef.data).filter(f => f.field_type === 'gastos' && f.enabled && f.show_in_gastos !== false));
     setTenant(tn.data);
+    const cpList = Array.isArray(cp.data) ? cp.data : (cp.data?.results || []);
+    setClosedPeriods(cpList);
   };
 
   useEffect(() => { load(); }, [tenantId, period]);
+
+  const isPeriodClosed = closedPeriods.some(cp => cp.period === period);
 
   // Separar conciliados y no conciliados
   const gastosConciliados    = gastos.filter(g => g.bank_reconciled);
@@ -477,8 +483,18 @@ export default function Gastos() {
             />
             <button className="period-nav-btn" onClick={() => setPeriod(nextPeriod(period))}><ChevronRight size={16} /></button>
           </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            {!isReadOnly && (
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            {isPeriodClosed && (
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', gap: 5,
+                padding: '4px 12px', borderRadius: 20,
+                background: 'var(--coral-50)', color: 'var(--coral-700)',
+                fontSize: 12, fontWeight: 700, border: '1px solid var(--coral-100)',
+              }}>
+                <Lock size={11}/> Período cerrado
+              </span>
+            )}
+            {!isReadOnly && !isPeriodClosed && (
               <button className="btn btn-primary btn-sm" onClick={() => {
                 setForm({ amount: '', field: '', payment_type: 'transferencia', doc_number: '', gasto_date: '', provider_name: '', provider_rfc: '', provider_invoice: '', bank_reconciled: false, notes: '' });
                 setModal('gasto');
@@ -486,7 +502,7 @@ export default function Gastos() {
                 <Plus size={14} /> Nuevo Gasto
               </button>
             )}
-            {!isReadOnly && (
+            {!isReadOnly && !isPeriodClosed && (
               <button className="btn btn-outline btn-sm" style={{ borderColor: 'var(--purple-200, var(--sand-200))', color: 'var(--purple-700, var(--ink-700))' }}
                 onClick={() => { setForm({ amount: '', description: '', payment_type: 'efectivo' }); setModal('caja'); }}>
                 <Plus size={14} /> Caja Chica
@@ -517,7 +533,7 @@ export default function Gastos() {
               <>
                 <GastosTable
                   rows={gastosConciliados}
-                  isReadOnly={isReadOnly}
+                  isReadOnly={isReadOnly || isPeriodClosed}
                   onEdit={g => { setForm(g); setModal('gasto'); }}
                   onDelete={handleDeleteGasto}
                   showBadge={false}
@@ -551,7 +567,7 @@ export default function Gastos() {
               <>
                 <GastosTable
                   rows={gastosNoConciliados}
-                  isReadOnly={isReadOnly}
+                  isReadOnly={isReadOnly || isPeriodClosed}
                   onEdit={g => { setForm(g); setModal('gasto'); }}
                   onDelete={handleDeleteGasto}
                   showBadge={false}

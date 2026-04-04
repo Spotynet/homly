@@ -21,6 +21,7 @@ tenant_router.register(r'caja-chica', views.CajaChicaViewSet, basename='caja-chi
 tenant_router.register(r'bank-statements', views.BankStatementViewSet, basename='bank-statements')
 tenant_router.register(r'closed-periods', views.ClosedPeriodViewSet, basename='closed-periods')
 tenant_router.register(r'reopen-requests', views.ReopenRequestViewSet, basename='reopen-requests')
+tenant_router.register(r'period-closure-requests', views.PeriodClosureRequestViewSet, basename='period-closure-requests')
 tenant_router.register(r'assembly-positions', views.AssemblyPositionViewSet, basename='assembly-positions')
 tenant_router.register(r'committees', views.CommitteeViewSet, basename='committees')
 tenant_router.register(r'unrecognized-income', views.UnrecognizedIncomeViewSet, basename='unrecognized-income')

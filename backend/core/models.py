@@ -163,6 +163,14 @@ class Tenant(models.Model):
         help_text='Custom role profiles with per-module access configuration.',
     )
 
+    # Period closure approval flow configuration.
+    # Structure: {"enabled": bool, "steps": [{"order": int, "user_id": str, "user_name": str, "label": str}]}
+    closure_flow = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text='Period closure approval flow: enabled flag and ordered list of approver steps.',
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -557,6 +565,68 @@ class ReopenRequest(models.Model):
 
     def __str__(self):
         return f'Reopen: {self.period} ({self.status})'
+
+
+# ═══════════════════════════════════════════════════════════
+#  PERIOD CLOSURE REQUEST (Multi-step approval workflow)
+# ═══════════════════════════════════════════════════════════
+
+class PeriodClosureRequest(models.Model):
+    """
+    A request to close a period via a configurable multi-step approval workflow.
+    When all steps are approved, a ClosedPeriod record is automatically created.
+    """
+    STATUS_CHOICES = [
+        ('in_progress', 'En proceso'),
+        ('completed',   'Completado'),
+        ('rejected',    'Rechazado'),
+    ]
+
+    id           = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant       = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='closure_requests')
+    period       = models.CharField(max_length=7, db_index=True)
+    initiated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='initiated_closures')
+    status       = models.CharField(max_length=15, choices=STATUS_CHOICES, default='in_progress')
+    notes        = models.TextField(blank=True, default='')
+    created_at   = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = 'period_closure_requests'
+        ordering = ['-created_at']
+        indexes  = [models.Index(fields=['tenant', 'period'])]
+
+    def __str__(self):
+        return f'ClosureRequest {self.period} [{self.status}] — {self.tenant.name}'
+
+
+class PeriodClosureStep(models.Model):
+    """
+    One approval step within a PeriodClosureRequest.
+    Each step corresponds to a specific user who must approve (or reject) the closure.
+    """
+    STATUS_CHOICES = [
+        ('pending',  'Pendiente'),
+        ('approved', 'Aprobado'),
+        ('rejected', 'Rechazado'),
+    ]
+
+    id              = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    closure_request = models.ForeignKey(PeriodClosureRequest, on_delete=models.CASCADE, related_name='steps')
+    order           = models.PositiveSmallIntegerField()
+    approver        = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='closure_steps')
+    label           = models.CharField(max_length=200, blank=True, default='')
+    status          = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending')
+    actioned_at     = models.DateTimeField(null=True, blank=True)
+    notes           = models.TextField(blank=True, default='')
+
+    class Meta:
+        db_table = 'period_closure_steps'
+        ordering = ['order']
+        unique_together = ['closure_request', 'order']
+
+    def __str__(self):
+        return f'Step {self.order} [{self.status}] — {self.closure_request}'
 
 
 # ═══════════════════════════════════════════════════════════

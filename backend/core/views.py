@@ -20,6 +20,7 @@ from .models import (
     User, Tenant, TenantUser, Unit, ExtraField,
     Payment, FieldPayment, GastoEntry, CajaChicaEntry,
     BankStatement, ClosedPeriod, ReopenRequest,
+    PeriodClosureRequest, PeriodClosureStep,
     AssemblyPosition, Committee, UnrecognizedIncome,
     AmenityReservation, CondominioRequest, EmailVerificationCode,
     Notification, AuditLog,
@@ -33,6 +34,7 @@ from .serializers import (
     PaymentSerializer, PaymentCaptureSerializer, AddAdditionalPaymentSerializer, FieldPaymentSerializer,
     GastoEntrySerializer, CajaChicaEntrySerializer,
     BankStatementSerializer, ClosedPeriodSerializer, ReopenRequestSerializer,
+    PeriodClosureRequestSerializer,
     AssemblyPositionSerializer, CommitteeSerializer, UnrecognizedIncomeSerializer,
     DashboardSerializer, AmenityReservationSerializer, CondominioRequestSerializer,
     NotificationSerializer, AuditLogSerializer,
@@ -1355,7 +1357,14 @@ class GastoEntryViewSet(viewsets.ModelViewSet):
             qs = qs.filter(period=period)
         return qs
 
+    def _check_gasto_period_open(self, period):
+        if ClosedPeriod.objects.filter(tenant_id=self.kwargs['tenant_id'], period=period).exists():
+            from rest_framework.exceptions import ValidationError
+            raise ValidationError({'detail': f'El período {period} está cerrado y no acepta nuevos registros.'})
+
     def perform_create(self, serializer):
+        period = serializer.validated_data.get('period', '')
+        self._check_gasto_period_open(period)
         instance = serializer.save(tenant_id=self.kwargs['tenant_id'])
         _audit_log(
             self.request, 'gastos', 'create',
@@ -1366,6 +1375,8 @@ class GastoEntryViewSet(viewsets.ModelViewSet):
         )
 
     def perform_update(self, serializer):
+        period = serializer.validated_data.get('period', serializer.instance.period)
+        self._check_gasto_period_open(period)
         instance = serializer.save()
         _audit_log(
             self.request, 'gastos', 'update',
@@ -1376,6 +1387,7 @@ class GastoEntryViewSet(viewsets.ModelViewSet):
         )
 
     def perform_destroy(self, instance):
+        self._check_gasto_period_open(instance.period)
         desc = f'{instance.field.name if instance.field else ""} / {instance.period}'
         obj_id = str(instance.id)
         instance.delete()
@@ -1404,7 +1416,14 @@ class CajaChicaViewSet(viewsets.ModelViewSet):
             qs = qs.filter(period=period)
         return qs
 
+    def _check_caja_period_open(self, period):
+        if ClosedPeriod.objects.filter(tenant_id=self.kwargs['tenant_id'], period=period).exists():
+            from rest_framework.exceptions import ValidationError
+            raise ValidationError({'detail': f'El período {period} está cerrado y no acepta nuevos registros.'})
+
     def perform_create(self, serializer):
+        period = serializer.validated_data.get('period', '')
+        self._check_caja_period_open(period)
         instance = serializer.save(tenant_id=self.kwargs['tenant_id'])
         _audit_log(
             self.request, 'gastos', 'create',
@@ -1415,6 +1434,8 @@ class CajaChicaViewSet(viewsets.ModelViewSet):
         )
 
     def perform_update(self, serializer):
+        period = serializer.validated_data.get('period', serializer.instance.period)
+        self._check_caja_period_open(period)
         instance = serializer.save()
         _audit_log(
             self.request, 'gastos', 'update',
@@ -1425,6 +1446,7 @@ class CajaChicaViewSet(viewsets.ModelViewSet):
         )
 
     def perform_destroy(self, instance):
+        self._check_caja_period_open(instance.period)
         desc = f'CajaChica / {instance.period}'
         obj_id = str(instance.id)
         instance.delete()
@@ -1544,6 +1566,277 @@ class ReopenRequestViewSet(viewsets.ModelViewSet):
             object_repr=req.period,
         )
         return Response(ReopenRequestSerializer(req).data)
+
+
+# ═══════════════════════════════════════════════════════════
+#  PERIOD CLOSURE REQUEST (multi-step approval workflow)
+# ═══════════════════════════════════════════════════════════
+
+class PeriodClosureRequestViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    Read + custom actions for period closure approval workflow.
+    Routes: /api/tenants/{tenant_id}/period-closure-requests/
+    Actions:
+      POST   /initiate/           — Start a new closure request for a period
+      POST   /{pk}/approve_step/  — Approve the current pending step (must be assigned approver)
+      POST   /{pk}/reject_step/   — Reject the current step, cancels the whole request
+    """
+    serializer_class   = PeriodClosureRequestSerializer
+    permission_classes = [IsTenantMember]
+
+    def get_queryset(self):
+        return (
+            PeriodClosureRequest.objects
+            .filter(tenant_id=self.kwargs['tenant_id'])
+            .prefetch_related('steps__approver')
+        )
+
+    # ── helpers ──────────────────────────────────────────────────
+
+    def _get_tenant(self):
+        return Tenant.objects.get(pk=self.kwargs['tenant_id'])
+
+    def _is_admin_or_tesorero(self, request, tenant_id):
+        return TenantUser.objects.filter(
+            tenant_id=tenant_id,
+            user=request.user,
+            role__in=['admin', 'tesorero'],
+        ).exists()
+
+    # ── initiate ─────────────────────────────────────────────────
+
+    @action(detail=False, methods=['post'])
+    def initiate(self, request, tenant_id=None):
+        """
+        Body: { "period": "YYYY-MM", "notes": "optional" }
+        Creates a PeriodClosureRequest + one PeriodClosureStep per flow step.
+        If the closure_flow has no steps configured, immediately closes the period
+        (direct admin close — backwards-compatible with old behaviour).
+        """
+        period = request.data.get('period', '').strip()
+        if not period:
+            return Response({'detail': 'El campo period es requerido.'}, status=400)
+
+        # Must be admin or tesorero to initiate
+        if not self._is_admin_or_tesorero(request, tenant_id):
+            return Response({'detail': 'Solo administradores o tesoreros pueden iniciar el cierre.'}, status=403)
+
+        # Cannot initiate if period is already closed
+        if ClosedPeriod.objects.filter(tenant_id=tenant_id, period=period).exists():
+            return Response({'detail': f'El período {period} ya está cerrado.'}, status=400)
+
+        # Cannot initiate if there is already an in_progress request for this period
+        if PeriodClosureRequest.objects.filter(tenant_id=tenant_id, period=period, status='in_progress').exists():
+            return Response({'detail': f'Ya existe una solicitud de cierre en proceso para {period}.'}, status=400)
+
+        tenant = self._get_tenant()
+        flow = tenant.closure_flow or {}
+        steps_config = flow.get('steps', [])
+
+        # If no flow configured → direct close (simple mode)
+        if not steps_config:
+            cp, _ = ClosedPeriod.objects.get_or_create(
+                tenant_id=tenant_id, period=period,
+                defaults={'closed_by': request.user},
+            )
+            try:
+                _notify_roles(
+                    tenant_id,
+                    roles=('admin', 'tesorero', 'contador', 'auditor'),
+                    notif_type='period_closed',
+                    title=f'Período {period} cerrado',
+                    message=f'El período {period} ha sido cerrado.',
+                )
+            except Exception:
+                pass
+            _audit_log(
+                request, 'cierre_periodo', 'close_period',
+                f'Período {period} cerrado directamente (sin flujo configurado)',
+                tenant_id=tenant_id,
+                object_type='ClosedPeriod', object_id=str(cp.id),
+                object_repr=period,
+            )
+            return Response({'detail': f'Período {period} cerrado exitosamente.', 'period': period}, status=201)
+
+        # Create the closure request
+        closure = PeriodClosureRequest.objects.create(
+            tenant_id=tenant_id,
+            period=period,
+            initiated_by=request.user,
+            status='in_progress',
+            notes=request.data.get('notes', ''),
+        )
+        for step_cfg in sorted(steps_config, key=lambda s: s.get('order', 0)):
+            try:
+                approver = User.objects.get(pk=step_cfg['user_id'])
+            except (User.DoesNotExist, KeyError):
+                approver = None
+            PeriodClosureStep.objects.create(
+                closure_request=closure,
+                order=step_cfg.get('order', 1),
+                approver=approver,
+                label=step_cfg.get('label', ''),
+                status='pending',
+            )
+
+        # Notify the first approver
+        first_step = closure.steps.order_by('order').first()
+        if first_step and first_step.approver and first_step.approver.email:
+            try:
+                from .email_service import send_notification_email
+                send_notification_email(
+                    email=first_step.approver.email,
+                    user_name=first_step.approver.name or first_step.approver.email,
+                    notif_type='period_closed',
+                    title=f'Solicitud de cierre — período {period}',
+                    message=f'Se requiere tu aprobación para cerrar el período {period} en {tenant.name}.',
+                    tenant_name=tenant.name,
+                )
+            except Exception:
+                pass
+
+        _audit_log(
+            request, 'cierre_periodo', 'initiate_closure',
+            f'Solicitud de cierre iniciada para período {period}',
+            tenant_id=tenant_id,
+            object_type='PeriodClosureRequest', object_id=str(closure.id),
+            object_repr=period,
+        )
+        return Response(PeriodClosureRequestSerializer(closure).data, status=201)
+
+    # ── approve_step ─────────────────────────────────────────────
+
+    @action(detail=True, methods=['post'], url_path='approve_step')
+    def approve_step(self, request, tenant_id=None, pk=None):
+        """
+        Body: { "notes": "optional comment" }
+        The current user must be the assigned approver for the next pending step.
+        If all steps are approved, the period is automatically closed.
+        """
+        closure = self.get_object()
+        if closure.status != 'in_progress':
+            return Response({'detail': 'Esta solicitud ya no está en proceso.'}, status=400)
+
+        pending_step = closure.steps.filter(status='pending').order_by('order').first()
+        if not pending_step:
+            return Response({'detail': 'No hay pasos pendientes en esta solicitud.'}, status=400)
+
+        if pending_step.approver_id != request.user.pk:
+            return Response({'detail': 'No eres el aprobador asignado para este paso.'}, status=403)
+
+        pending_step.status      = 'approved'
+        pending_step.actioned_at = timezone.now()
+        pending_step.notes       = request.data.get('notes', '')
+        pending_step.save()
+
+        # Check if all steps are now approved
+        all_approved = not closure.steps.filter(status='pending').exists()
+        if all_approved:
+            closure.status       = 'completed'
+            closure.completed_at = timezone.now()
+            closure.save()
+            # Close the period
+            cp, _ = ClosedPeriod.objects.get_or_create(
+                tenant_id=tenant_id, period=closure.period,
+                defaults={'closed_by': request.user},
+            )
+            try:
+                _notify_roles(
+                    tenant_id,
+                    roles=('admin', 'tesorero', 'contador', 'auditor'),
+                    notif_type='period_closed',
+                    title=f'Período {closure.period} cerrado',
+                    message=f'El período {closure.period} ha sido cerrado tras completar el flujo de aprobación.',
+                )
+            except Exception:
+                pass
+            _audit_log(
+                request, 'cierre_periodo', 'close_period',
+                f'Período {closure.period} cerrado (flujo completado)',
+                tenant_id=tenant_id,
+                object_type='ClosedPeriod', object_id=str(cp.id),
+                object_repr=closure.period,
+            )
+        else:
+            # Notify next approver
+            next_step = closure.steps.filter(status='pending').order_by('order').first()
+            if next_step and next_step.approver and next_step.approver.email:
+                try:
+                    tenant = self._get_tenant()
+                    from .email_service import send_notification_email
+                    send_notification_email(
+                        email=next_step.approver.email,
+                        user_name=next_step.approver.name or next_step.approver.email,
+                        notif_type='period_closed',
+                        title=f'Solicitud de cierre — período {closure.period}',
+                        message=(
+                            f'Se requiere tu aprobación para cerrar el período {closure.period} '
+                            f'en {tenant.name}. El paso anterior ya fue aprobado.'
+                        ),
+                        tenant_name=tenant.name,
+                    )
+                except Exception:
+                    pass
+            _audit_log(
+                request, 'cierre_periodo', 'approve_step',
+                f'Paso {pending_step.order} aprobado para cierre de período {closure.period}',
+                tenant_id=tenant_id,
+                object_type='PeriodClosureStep', object_id=str(pending_step.id),
+                object_repr=closure.period,
+            )
+
+        return Response(PeriodClosureRequestSerializer(closure).data)
+
+    # ── reject_step ──────────────────────────────────────────────
+
+    @action(detail=True, methods=['post'], url_path='reject_step')
+    def reject_step(self, request, tenant_id=None, pk=None):
+        """
+        Body: { "notes": "reason for rejection" }
+        Rejects the current pending step and cancels the entire closure request.
+        """
+        closure = self.get_object()
+        if closure.status != 'in_progress':
+            return Response({'detail': 'Esta solicitud ya no está en proceso.'}, status=400)
+
+        pending_step = closure.steps.filter(status='pending').order_by('order').first()
+        if not pending_step:
+            return Response({'detail': 'No hay pasos pendientes en esta solicitud.'}, status=400)
+
+        if pending_step.approver_id != request.user.pk:
+            return Response({'detail': 'No eres el aprobador asignado para este paso.'}, status=403)
+
+        pending_step.status      = 'rejected'
+        pending_step.actioned_at = timezone.now()
+        pending_step.notes       = request.data.get('notes', '')
+        pending_step.save()
+
+        closure.status       = 'rejected'
+        closure.completed_at = timezone.now()
+        closure.save()
+
+        try:
+            _notify_roles(
+                tenant_id,
+                roles=('admin', 'tesorero'),
+                notif_type='general',
+                title=f'Cierre de período {closure.period} rechazado',
+                message=(
+                    f'La solicitud de cierre para el período {closure.period} fue rechazada '
+                    f'en el paso {pending_step.order}: {pending_step.notes}'
+                ),
+            )
+        except Exception:
+            pass
+
+        _audit_log(
+            request, 'cierre_periodo', 'reject_step',
+            f'Solicitud de cierre de período {closure.period} rechazada en paso {pending_step.order}',
+            tenant_id=tenant_id,
+            object_type='PeriodClosureRequest', object_id=str(closure.id),
+            object_repr=closure.period,
+        )
+        return Response(PeriodClosureRequestSerializer(closure).data)
 
 
 # ═══════════════════════════════════════════════════════════

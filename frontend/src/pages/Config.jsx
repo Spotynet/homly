@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { tenantsAPI, extraFieldsAPI, assemblyAPI, usersAPI, unitsAPI, superAdminAPI, authAPI } from '../api/client';
+import { tenantsAPI, extraFieldsAPI, assemblyAPI, usersAPI, unitsAPI, superAdminAPI, authAPI, periodsAPI } from '../api/client';
 import { CURRENCIES, getStatesForCountry, COUNTRIES } from '../utils/helpers';
 import {
   Settings, Plus, Trash2, Check, X, Upload, Users,
@@ -8,6 +8,7 @@ import {
   Calendar, DollarSign, ShieldCheck, Receipt, ShoppingBag,
   AlertCircle, Shield, FileText, Globe, ChevronRight, TrendingUp,
   ShieldAlert, Mail, UserPlus, Bell, Layers, Eye, EyeOff,
+  ListOrdered, ArrowUp, ArrowDown, CheckCircle2,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -36,20 +37,21 @@ const TENANT_ROLES = ['admin','tesorero','contador','auditor','vigilante','vecin
 
 // ── Módulos del menú principal ───────────────────────────────────────────────
 const MODULE_DEFINITIONS = [
-  { key: 'dashboard',      label: 'Dashboard',          icon: Home,        desc: 'Panel principal con métricas del condominio' },
-  { key: 'reservas',       label: 'Reservas',           icon: Calendar,    desc: 'Reserva de áreas comunes' },
-  { key: 'cobranza',       label: 'Cobranza Mensual',   icon: Receipt,     desc: 'Registro y cobro de mantenimiento' },
-  { key: 'gastos',         label: 'Gastos',             icon: ShoppingBag, desc: 'Gestión de gastos y caja chica' },
-  { key: 'estado_cuenta',  label: 'Estado de Cuenta',   icon: FileText,    desc: 'Reportes y movimientos financieros' },
-  { key: 'notificaciones', label: 'Notificaciones',     icon: Bell,        desc: 'Centro de avisos y notificaciones' },
-  { key: 'config',         label: 'Configuración',      icon: Settings,    desc: 'Configuración del condominio' },
-  { key: 'my_unit',        label: 'Mi Unidad',          icon: Home,        desc: 'Vista de la unidad del residente (solo Vecino)' },
+  { key: 'dashboard',       label: 'Dashboard',           icon: Home,         desc: 'Panel principal con métricas del condominio' },
+  { key: 'reservas',        label: 'Reservas',            icon: Calendar,     desc: 'Reserva de áreas comunes' },
+  { key: 'cobranza',        label: 'Cobranza Mensual',    icon: Receipt,      desc: 'Registro y cobro de mantenimiento' },
+  { key: 'gastos',          label: 'Gastos',              icon: ShoppingBag,  desc: 'Gestión de gastos y caja chica' },
+  { key: 'estado_cuenta',   label: 'Estado de Cuenta',    icon: FileText,     desc: 'Reportes y movimientos financieros' },
+  { key: 'cierre_periodo',  label: 'Cierre de Período',   icon: Lock,         desc: 'Cierre y flujo de aprobación de períodos contables' },
+  { key: 'notificaciones',  label: 'Notificaciones',      icon: Bell,         desc: 'Centro de avisos y notificaciones' },
+  { key: 'config',          label: 'Configuración',       icon: Settings,     desc: 'Configuración del condominio' },
+  { key: 'my_unit',         label: 'Mi Unidad',           icon: Home,         desc: 'Vista de la unidad del residente (solo Vecino)' },
 ];
 
 // Módulos disponibles por defecto para cada rol (máximo permitido)
 const ROLE_BASE_MODULES = {
-  admin:     ['dashboard', 'reservas', 'cobranza', 'gastos', 'estado_cuenta', 'notificaciones', 'config'],
-  tesorero:  ['dashboard', 'reservas', 'cobranza', 'gastos', 'estado_cuenta', 'notificaciones', 'config'],
+  admin:     ['dashboard', 'reservas', 'cobranza', 'gastos', 'estado_cuenta', 'cierre_periodo', 'notificaciones', 'config'],
+  tesorero:  ['dashboard', 'reservas', 'cobranza', 'gastos', 'estado_cuenta', 'cierre_periodo', 'notificaciones', 'config'],
   contador:  ['dashboard', 'cobranza', 'gastos', 'estado_cuenta', 'notificaciones'],
   auditor:   ['dashboard', 'gastos', 'estado_cuenta', 'notificaciones'],
   vigilante: ['dashboard', 'reservas', 'notificaciones'],
@@ -159,6 +161,13 @@ export default function Config() {
   const [reservationSettings,  setReservationSettings]  = useState({ approval_mode: 'require_vecinos' });
   const [customProfiles,       setCustomProfiles]       = useState([]);
 
+  // Period closure flow configuration
+  const [closureFlow,       setClosureFlow]       = useState({ enabled: false, steps: [] });
+  const [closureFlowSaving, setClosureFlowSaving] = useState(false);
+  const [addingFlowStep,    setAddingFlowStep]    = useState(false);
+  const [newFlowStepUser,   setNewFlowStepUser]   = useState('');
+  const [newFlowStepLabel,  setNewFlowStepLabel]  = useState('');
+
   // Custom profile modal
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [profileForm,      setProfileForm]      = useState(null); // null = closed; object = open
@@ -239,12 +248,14 @@ export default function Config() {
     loadTenant(); loadFields(); loadUsers(); loadUnits(); loadAssembly(); loadSuperAdmins();
   }, [loadTenant, loadFields, loadUsers, loadUnits, loadAssembly, loadSuperAdmins]);
 
-  // Sync modulePerms + reservationSettings + customProfiles whenever tenant data changes
+  // Sync modulePerms + reservationSettings + customProfiles + closureFlow whenever tenant data changes
   useEffect(() => {
     if (tenant) {
       setModulePerms(tenant.module_permissions || {});
       setReservationSettings(tenant.reservation_settings || { approval_mode: 'require_vecinos' });
       setCustomProfiles(Array.isArray(tenant.custom_profiles) ? tenant.custom_profiles : []);
+      const cf = tenant.closure_flow || {};
+      setClosureFlow({ enabled: cf.enabled || false, steps: Array.isArray(cf.steps) ? cf.steps : [] });
     }
   }, [tenant]);
 
@@ -1805,6 +1816,195 @@ export default function Config() {
               {isAdmin && customProfiles.length > 0 && (
                 <div style={{ marginTop:12, padding:'8px 0', fontSize:12, color:'var(--ink-400)', borderTop:'1px solid var(--sand-100)' }}>
                   Los cambios en perfiles se guardan al hacer clic en <strong>Guardar Cambios</strong> en el tab de Módulos.
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* ── Flujo de Cierre de Período ──────────────────────────── */}
+          <div className="card">
+            <div className="card-head">
+              <h3 style={{ display:'flex', alignItems:'center', gap:8 }}>
+                <Lock size={16} style={{ color:'var(--teal-600)' }}/> Flujo de Cierre de Período
+              </h3>
+              {isAdmin && (
+                <label style={{ display:'flex', alignItems:'center', gap:8, fontSize:13, cursor:'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={closureFlow.enabled}
+                    onChange={e => setClosureFlow(prev => ({ ...prev, enabled: e.target.checked }))}
+                  />
+                  Flujo habilitado
+                </label>
+              )}
+            </div>
+            <div className="card-body">
+              <p style={{ fontSize:13, color:'var(--ink-400)', marginBottom:16 }}>
+                Configura una cadena de aprobaciones requeridas antes de que un período contable pueda cerrarse.
+                Si no hay pasos configurados, el administrador o tesorero puede cerrar directamente.
+              </p>
+
+              {/* Steps list */}
+              <div style={{ display:'flex', flexDirection:'column', gap:8, marginBottom:16 }}>
+                {closureFlow.steps.length === 0 && (
+                  <div style={{ padding:'16px 0', textAlign:'center', color:'var(--ink-300)', fontSize:13 }}>
+                    <ListOrdered size={28} style={{ display:'block', margin:'0 auto 8px', opacity:0.3 }} />
+                    No hay pasos configurados — el cierre es directo (sin aprobaciones).
+                  </div>
+                )}
+                {closureFlow.steps.map((step, idx) => {
+                  const approverUser = tenantUsers.find(u => u.user === step.user_id || u.id === step.user_id);
+                  return (
+                    <div key={idx} style={{
+                      display:'flex', alignItems:'center', gap:10,
+                      background:'var(--sand-50)', borderRadius:8, padding:'10px 14px',
+                      border:'1px solid var(--sand-100)',
+                    }}>
+                      <span style={{
+                        width:24, height:24, borderRadius:'50%',
+                        background:'var(--teal-600)', color:'#fff',
+                        display:'flex', alignItems:'center', justifyContent:'center',
+                        fontSize:11, fontWeight:700, flexShrink:0,
+                      }}>{idx + 1}</span>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ fontWeight:600, fontSize:13 }}>{step.label || `Paso ${idx + 1}`}</div>
+                        <div style={{ fontSize:11, color:'var(--ink-400)' }}>
+                          {approverUser?.name || step.user_name || 'Usuario no encontrado'}
+                          {approverUser?.email ? ` · ${approverUser.email}` : ''}
+                        </div>
+                      </div>
+                      {isAdmin && (
+                        <div style={{ display:'flex', gap:4 }}>
+                          <button
+                            className="btn btn-sm"
+                            disabled={idx === 0}
+                            style={{ padding:'3px 7px', opacity: idx === 0 ? 0.4 : 1 }}
+                            onClick={() => {
+                              setClosureFlow(prev => {
+                                const s = [...prev.steps];
+                                [s[idx - 1], s[idx]] = [s[idx], s[idx - 1]];
+                                return { ...prev, steps: s.map((x, i) => ({ ...x, order: i + 1 })) };
+                              });
+                            }}>
+                            <ArrowUp size={12}/>
+                          </button>
+                          <button
+                            className="btn btn-sm"
+                            disabled={idx === closureFlow.steps.length - 1}
+                            style={{ padding:'3px 7px', opacity: idx === closureFlow.steps.length - 1 ? 0.4 : 1 }}
+                            onClick={() => {
+                              setClosureFlow(prev => {
+                                const s = [...prev.steps];
+                                [s[idx], s[idx + 1]] = [s[idx + 1], s[idx]];
+                                return { ...prev, steps: s.map((x, i) => ({ ...x, order: i + 1 })) };
+                              });
+                            }}>
+                            <ArrowDown size={12}/>
+                          </button>
+                          <button
+                            className="btn btn-sm btn-danger"
+                            style={{ padding:'3px 7px' }}
+                            onClick={() => {
+                              setClosureFlow(prev => ({
+                                ...prev,
+                                steps: prev.steps.filter((_, i) => i !== idx).map((x, i) => ({ ...x, order: i + 1 })),
+                              }));
+                            }}>
+                            <Trash2 size={12}/>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Add step form */}
+              {isAdmin && (addingFlowStep ? (
+                <div style={{
+                  background:'var(--sand-50)', borderRadius:8, padding:14,
+                  border:'1px solid var(--sand-200)', display:'flex', flexDirection:'column', gap:10,
+                }}>
+                  <div style={{ fontWeight:600, fontSize:13 }}>Agregar paso de aprobación</div>
+                  <div style={{ display:'flex', gap:10, flexWrap:'wrap' }}>
+                    <div style={{ flex:1, minWidth:160 }}>
+                      <label style={{ fontSize:11, color:'var(--ink-400)', display:'block', marginBottom:4 }}>Aprobador *</label>
+                      <select
+                        className="input"
+                        value={newFlowStepUser}
+                        onChange={e => setNewFlowStepUser(e.target.value)}
+                        style={{ width:'100%' }}>
+                        <option value="">— Seleccionar usuario —</option>
+                        {tenantUsers.filter(tu => ['admin','tesorero','contador'].includes(tu.role)).map(tu => (
+                          <option key={tu.user} value={tu.user}>{tu.name} ({ROLE_META[tu.role]?.label || tu.role})</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div style={{ flex:1, minWidth:140 }}>
+                      <label style={{ fontSize:11, color:'var(--ink-400)', display:'block', marginBottom:4 }}>Etiqueta del paso</label>
+                      <input
+                        className="input"
+                        placeholder="ej. Aprobación Tesorero"
+                        value={newFlowStepLabel}
+                        onChange={e => setNewFlowStepLabel(e.target.value)}
+                        style={{ width:'100%' }}
+                      />
+                    </div>
+                  </div>
+                  <div style={{ display:'flex', gap:8 }}>
+                    <button
+                      className="btn btn-primary btn-sm"
+                      disabled={!newFlowStepUser}
+                      onClick={() => {
+                        const selectedUser = tenantUsers.find(tu => tu.user === newFlowStepUser);
+                        setClosureFlow(prev => ({
+                          ...prev,
+                          steps: [
+                            ...prev.steps,
+                            {
+                              order: prev.steps.length + 1,
+                              user_id: newFlowStepUser,
+                              user_name: selectedUser?.name || '',
+                              label: newFlowStepLabel || `Paso ${prev.steps.length + 1}`,
+                            },
+                          ],
+                        }));
+                        setNewFlowStepUser('');
+                        setNewFlowStepLabel('');
+                        setAddingFlowStep(false);
+                      }}>
+                      <Check size={13}/> Agregar paso
+                    </button>
+                    <button className="btn btn-sm" onClick={() => { setAddingFlowStep(false); setNewFlowStepUser(''); setNewFlowStepLabel(''); }}>
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button className="btn btn-sm" onClick={() => setAddingFlowStep(true)}>
+                  <Plus size={13}/> Agregar paso de aprobación
+                </button>
+              ))}
+
+              {/* Save button */}
+              {isAdmin && (
+                <div style={{ marginTop:16, borderTop:'1px solid var(--sand-100)', paddingTop:12, display:'flex', justifyContent:'flex-end' }}>
+                  <button
+                    className="btn btn-primary btn-sm"
+                    disabled={closureFlowSaving}
+                    onClick={async () => {
+                      setClosureFlowSaving(true);
+                      try {
+                        await tenantsAPI.update(tenantId, { closure_flow: closureFlow });
+                        toast.success('Flujo de cierre guardado');
+                        loadTenant();
+                      } catch (e) {
+                        toast.error(e.response?.data?.detail || 'Error al guardar');
+                      } finally { setClosureFlowSaving(false); }
+                    }}>
+                    {closureFlowSaving ? <Loader size={13} className="spin"/> : <Check size={13}/>}
+                    {' '}Guardar Flujo
+                  </button>
                 </div>
               )}
             </div>

@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { paymentsAPI, unitsAPI, extraFieldsAPI, tenantsAPI, unrecognizedIncomeAPI, reservationsAPI, reportsAPI } from '../api/client';
+import { paymentsAPI, unitsAPI, extraFieldsAPI, tenantsAPI, unrecognizedIncomeAPI, reservationsAPI, reportsAPI, periodsAPI } from '../api/client';
 import PaginationBar from '../components/PaginationBar';
 import PaymentReceiptModal from '../components/PaymentReceiptModal';
 import { todayPeriod, periodLabel, prevPeriod, nextPeriod, tenantStartPeriod, fmtCurrency, statusClass, statusLabel, PAYMENT_TYPES, fmtDate, ROLES, CURRENCIES, APP_VERSION } from '../utils/helpers';
-import { ChevronLeft, ChevronRight, Search, Receipt, X, Users, CheckCircle, Clock, AlertCircle, DollarSign, Calendar, Building2, Upload, FileText, Check, Plus, Edit, Edit2, Trash2, Banknote, Mail } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Search, Receipt, X, Users, CheckCircle, Clock, AlertCircle, DollarSign, Calendar, Building2, Upload, FileText, Check, Plus, Edit, Edit2, Trash2, Banknote, Mail, Lock } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 function fmt(n) {
@@ -103,15 +103,17 @@ export default function Cobranza() {
   const [addlExtraFields, setAddlExtraFields] = useState([]); // campos para pagos adicionales (sin adelanto)
   const [captureUnitPeriods, setCaptureUnitPeriods] = useState([]); // períodos con adeudo de la unidad en captura
   const [captureUnitPeriodsLoading, setCaptureUnitPeriodsLoading] = useState(false);
+  const [closedPeriods, setClosedPeriods] = useState([]);
   const load = async () => {
     if (!tenantId) return;
     try {
-      const [uRes, pRes, efRes, tRes, uiRes] = await Promise.all([
+      const [uRes, pRes, efRes, tRes, uiRes, cpRes] = await Promise.all([
         unitsAPI.list(tenantId, { page_size: 9999 }),
         paymentsAPI.list(tenantId, { period, page_size: 9999 }),
         extraFieldsAPI.list(tenantId, { page_size: 9999 }).catch(() => ({ data: [] })),
         tenantsAPI.get(tenantId).catch(() => ({ data: null })),
         unrecognizedIncomeAPI.list(tenantId, { period, page_size: 9999 }).catch(() => ({ data: [] })),
+        periodsAPI.closedList(tenantId).catch(() => ({ data: [] })),
       ]);
       setUnits(uRes.data.results || uRes.data);
       setPayments(pRes.data.results || pRes.data);
@@ -120,10 +122,13 @@ export default function Cobranza() {
       setAddlExtraFields(rawEFs.filter(f => f.enabled && (!f.field_type || f.field_type === 'normal') && f.show_in_additional !== false));
       setTenantData(tRes.data);
       setUnrecognizedIncome(Array.isArray(uiRes.data) ? uiRes.data : (uiRes.data?.results || []));
+      setClosedPeriods(Array.isArray(cpRes.data) ? cpRes.data : (cpRes.data?.results || []));
     } catch (err) { console.error(err); }
   };
 
   useEffect(() => { load(); }, [tenantId, period]);
+
+  const isPeriodClosed = closedPeriods.some(cp => cp.period === period);
 
   // Load approved reservations with charge when receipt opens
   useEffect(() => {
@@ -430,6 +435,16 @@ export default function Cobranza() {
               <AlertCircle size={12} /> Período inicial del tenant
             </span>
           )}
+          {isPeriodClosed && (
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: 5,
+              padding: '3px 10px', borderRadius: 20, marginLeft: 8,
+              background: 'var(--coral-50)', color: 'var(--coral-700)',
+              fontSize: 11, fontWeight: 700, border: '1px solid var(--coral-100)',
+            }}>
+              <Lock size={10}/> Período cerrado
+            </span>
+          )}
         </div>
         <div style={{ flex: 1, minWidth: 220, position: 'relative' }}>
           <Search size={14} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--ink-400)' }} />
@@ -571,7 +586,7 @@ export default function Cobranza() {
                             <FileText size={12} /> Ver Recibo
                           </button>
                         )}
-                        {!isReadOnly && pay && (
+                        {!isReadOnly && !isPeriodClosed && pay && (
                           <button className="btn btn-secondary btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }} onClick={() => {
                             setAddPaymentForm({
                               extraFieldPayments: Object.fromEntries(addlExtraFields.map(ef => [ef.id, ''])),
@@ -591,7 +606,7 @@ export default function Cobranza() {
                             <Edit size={12} /> Pagos adicionales ({(pay.additional_payments || []).length})
                           </button>
                         )}
-                        {!isReadOnly && (
+                        {!isReadOnly && !isPeriodClosed && (
                           <button
                             className="btn btn-sm"
                             title={pay ? 'Editar cobro' : 'Capturar pago'}
