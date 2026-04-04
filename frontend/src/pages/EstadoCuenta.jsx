@@ -155,10 +155,6 @@ export default function EstadoCuenta() {
   // Email state
   const [sendingUnitEmail, setSendingUnitEmail] = useState(false);
   const [showUnitEmailModal, setShowUnitEmailModal] = useState(false);
-  const [showGeneralEmailModal, setShowGeneralEmailModal] = useState(false);
-  const [generalEmailRecipientMode, setGeneralEmailRecipientMode] = useState('owners'); // 'owners' | 'tenants' | 'custom'
-  const [generalEmailCustom, setGeneralEmailCustom] = useState('');
-  const [sendingGeneralEmail, setSendingGeneralEmail] = useState(false);
 
   useEffect(() => {
     if (!tenantId || selectedUnit) return;
@@ -1180,6 +1176,7 @@ export default function EstadoCuenta() {
               startPeriod={startPeriod}
               search={adeudosSearch}
               setSearch={setAdeudosSearch}
+              tenantId={tenantId}
             />
           )}
 
@@ -2131,8 +2128,12 @@ function ReporteGeneralView({ tenantData, generalData, genLoading, cutoff, setCu
 /* ═══════════════════════════════════════════════════════════
    REPORTE DE ADEUDOS — deuda por unidad con corte de período
    ═══════════════════════════════════════════════════════════ */
-function ReporteAdeudosView({ tenantData, adeudosData, adeudosLoading, cutoff, setCutoff, startPeriod, search = '', setSearch }) {
+function ReporteAdeudosView({ tenantData, adeudosData, adeudosLoading, cutoff, setCutoff, startPeriod, search = '', setSearch, tenantId }) {
   const [expanded, setExpanded] = useState({});
+  const [showGeneralEmailModal, setShowGeneralEmailModal] = useState(false);
+  const [generalEmailRecipientMode, setGeneralEmailRecipientMode] = useState('owners');
+  const [generalEmailCustom, setGeneralEmailCustom] = useState('');
+  const [sendingGeneralEmail, setSendingGeneralEmail] = useState(false);
   const toggle = (id) => setExpanded(prev => ({ ...prev, [id]: !prev[id] }));
 
   const units = adeudosData?.units || [];
@@ -2572,9 +2573,9 @@ function ReporteAdeudosView({ tenantData, adeudosData, adeudosLoading, cutoff, s
                 onClick={async () => {
                   let emails = [];
                   if (generalEmailRecipientMode === 'owners') {
-                    emails = unitSummaries.map(u => u.unit?.owner_email).filter(Boolean);
+                    emails = units.map(u => u.unit?.owner_email).filter(Boolean);
                   } else if (generalEmailRecipientMode === 'tenants') {
-                    emails = unitSummaries.map(u => u.unit?.tenant_email).filter(Boolean);
+                    emails = units.map(u => u.unit?.tenant_email).filter(Boolean);
                   } else {
                     emails = generalEmailCustom.split(/[,\n]+/).map(e => e.trim()).filter(Boolean);
                   }
