@@ -1215,7 +1215,7 @@ def send_registration_notification(request_data: dict) -> bool:
     ubicacion_parts = [p for p in [ciudad, estado, pais] if p]
     ubicacion       = ', '.join(ubicacion_parts) or '—'
 
-    logo_img = _logo_img_tag()
+    logo_img = f'<img src="cid:{LOGO_CID}" alt="Homly" width="160" style="display:block;height:auto;max-width:160px;" />'
 
     # ── 1. Confirmation email to applicant ────────────────────────────────────
     subject_confirm = '¡Recibimos tu solicitud! Homly estará contigo pronto'
@@ -1260,7 +1260,7 @@ def send_registration_notification(request_data: dict) -> bool:
         </p>
       </td></tr>
       <tr><td style="background:{c['cream']};padding:18px 40px;text-align:center;border-top:1px solid #E8DFD1;">
-        <p style="margin:0;font-size:12px;color:#B8B0A5;">© {2025} Homly · La administración que tu hogar se merece</p>
+        <p style="margin:0;font-size:12px;color:#B8B0A5;">© Homly · La administración que tu hogar se merece</p>
       </td></tr>
     </table>
   </td></tr>

@@ -631,7 +631,7 @@ export default function Cobranza() {
                             {pay ? 'Editar' : 'Capturar'}
                           </button>
                         )}
-                        {!isReadOnly && pay && (
+                        {!isReadOnly && !isPeriodClosed && pay && (
                           <button
                             title="Eliminar cobro"
                             onClick={async () => {
@@ -900,31 +900,33 @@ export default function Cobranza() {
             </div>
             <div className="modal-foot">
               <button className="btn btn-secondary" onClick={() => setShowAddPaymentModal(null)}>Cancelar</button>
-              <button className="btn btn-primary" onClick={async () => {
-                if (!addPaymentForm.payment_type) { toast.error('La Forma de Pago es obligatoria.'); return; }
-                const fpx = addPaymentForm.extraFieldPayments || {};
-                const totalAmount = Object.values(fpx).reduce((a, v) => a + (parseFloat(v) || 0), 0);
-                if (totalAmount <= 0) { toast.error('Ingresa al menos un monto mayor a cero.'); return; }
-                setSaving(true);
-                try {
-                  const fp = {};
-                  Object.entries(fpx).forEach(([k, v]) => {
-                    const amt = parseFloat(v) || 0;
-                    if (amt > 0) fp[k] = { received: amt };
-                  });
-                  await paymentsAPI.addAdditional(tenantId, showAddPaymentModal.pay.id, {
-                    field_payments: fp,
-                    payment_type: addPaymentForm.payment_type,
-                    payment_date: addPaymentForm.payment_date || null,
-                    notes: addPaymentForm.notes || '',
-                    bank_reconciled: !!addPaymentForm.bank_reconciled,
-                  });
-                  toast.success('Pago adicional registrado');
-                  setShowAddPaymentModal(null);
-                  load();
-                } catch (err) { toast.error(err.response?.data?.detail || 'Error al registrar'); }
-                finally { setSaving(false); }
-              }} disabled={saving}>{saving ? 'Guardando…' : 'Guardar Pago Adicional'}</button>
+              {!isPeriodClosed && (
+                <button className="btn btn-primary" onClick={async () => {
+                  if (!addPaymentForm.payment_type) { toast.error('La Forma de Pago es obligatoria.'); return; }
+                  const fpx = addPaymentForm.extraFieldPayments || {};
+                  const totalAmount = Object.values(fpx).reduce((a, v) => a + (parseFloat(v) || 0), 0);
+                  if (totalAmount <= 0) { toast.error('Ingresa al menos un monto mayor a cero.'); return; }
+                  setSaving(true);
+                  try {
+                    const fp = {};
+                    Object.entries(fpx).forEach(([k, v]) => {
+                      const amt = parseFloat(v) || 0;
+                      if (amt > 0) fp[k] = { received: amt };
+                    });
+                    await paymentsAPI.addAdditional(tenantId, showAddPaymentModal.pay.id, {
+                      field_payments: fp,
+                      payment_type: addPaymentForm.payment_type,
+                      payment_date: addPaymentForm.payment_date || null,
+                      notes: addPaymentForm.notes || '',
+                      bank_reconciled: !!addPaymentForm.bank_reconciled,
+                    });
+                    toast.success('Pago adicional registrado');
+                    setShowAddPaymentModal(null);
+                    load();
+                  } catch (err) { toast.error(err.response?.data?.detail || 'Error al registrar'); }
+                  finally { setSaving(false); }
+                }} disabled={saving}>{saving ? 'Guardando…' : 'Guardar Pago Adicional'}</button>
+              )}
             </div>
           </div>
         </div>
@@ -963,30 +965,39 @@ export default function Cobranza() {
                           {ap.bank_reconciled && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: 'var(--teal-600)' }}>🏦</span>}
                         </div>
                         <div style={{ display: 'flex', gap: 6 }}>
-                          <button className="btn btn-secondary btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
-                            onClick={() => setEditingAdditional(isEditing ? null : {
-                              id: ap.id,
-                              extraFieldPayments: { ...Object.fromEntries(Object.entries(fp).map(([k, v]) => [k, (v && v.received != null ? v.received : v) ?? ''])) },
-                              payment_type: ap.payment_type || '',
-                              payment_date: ap.payment_date || '',
-                              notes: ap.notes || '',
-                              bank_reconciled: !!ap.bank_reconciled,
-                            })}>
-                            <Edit size={12} /> {isEditing ? 'Cancelar' : 'Editar'}
-                          </button>
-                          <button className="btn btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'var(--coral-50)', color: 'var(--coral-600)', border: '1px solid var(--coral-200)' }}
-                            onClick={async () => {
-                              if (!window.confirm('¿Eliminar este pago adicional?')) return;
-                              try {
-                                const res = await paymentsAPI.deleteAdditional(tenantId, pay.id, ap.id);
-                                setShowAdditionalPaymentsModal(prev => ({ ...prev, pay: res.data }));
-                                setEditingAdditional(null);
-                                toast.success('Pago adicional eliminado');
-                                load();
-                              } catch (e) { toast.error(e.response?.data?.detail || 'Error al eliminar'); }
-                            }}>
-                            <Trash2 size={12} /> Eliminar
-                          </button>
+                          {!isPeriodClosed && (
+                            <button className="btn btn-secondary btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                              onClick={() => setEditingAdditional(isEditing ? null : {
+                                id: ap.id,
+                                extraFieldPayments: { ...Object.fromEntries(Object.entries(fp).map(([k, v]) => [k, (v && v.received != null ? v.received : v) ?? ''])) },
+                                payment_type: ap.payment_type || '',
+                                payment_date: ap.payment_date || '',
+                                notes: ap.notes || '',
+                                bank_reconciled: !!ap.bank_reconciled,
+                              })}>
+                              <Edit size={12} /> {isEditing ? 'Cancelar' : 'Editar'}
+                            </button>
+                          )}
+                          {!isPeriodClosed && (
+                            <button className="btn btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'var(--coral-50)', color: 'var(--coral-600)', border: '1px solid var(--coral-200)' }}
+                              onClick={async () => {
+                                if (!window.confirm('¿Eliminar este pago adicional?')) return;
+                                try {
+                                  const res = await paymentsAPI.deleteAdditional(tenantId, pay.id, ap.id);
+                                  setShowAdditionalPaymentsModal(prev => ({ ...prev, pay: res.data }));
+                                  setEditingAdditional(null);
+                                  toast.success('Pago adicional eliminado');
+                                  load();
+                                } catch (e) { toast.error(e.response?.data?.detail || 'Error al eliminar'); }
+                              }}>
+                              <Trash2 size={12} /> Eliminar
+                            </button>
+                          )}
+                          {isPeriodClosed && (
+                            <span style={{ fontSize: 11, color: 'var(--ink-400)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                              <Lock size={11} /> Período cerrado
+                            </span>
+                          )}
                         </div>
                       </div>
                       {!isEditing && (

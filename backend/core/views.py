@@ -1254,6 +1254,27 @@ class PaymentViewSet(viewsets.ModelViewSet):
         payment.save()
         return Response(PaymentSerializer(payment).data, status=status.HTTP_200_OK)
 
+    def _check_payment_period_open(self, payment):
+        """Raise ValidationError if payment's period is closed."""
+        if ClosedPeriod.objects.filter(
+            tenant_id=payment.tenant_id, period=payment.period
+        ).exists():
+            from rest_framework.exceptions import ValidationError
+            raise ValidationError({
+                'detail': f'El período {payment.period} está cerrado. '
+                          'No se pueden modificar ni eliminar registros de un período cerrado.'
+            })
+
+    def perform_update(self, serializer):
+        # Prevent editing payments in closed periods
+        self._check_payment_period_open(serializer.instance)
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        # Prevent deleting payments in closed periods
+        self._check_payment_period_open(instance)
+        instance.delete()
+
     @action(detail=True, methods=['get'], url_path='receipt-pdf')
     def receipt_pdf(self, request, tenant_id=None, pk=None):
         """GET /api/tenants/{tenant_id}/payments/{id}/receipt-pdf/
