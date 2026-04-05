@@ -139,62 +139,89 @@ function SvgGauge({ pct = 0, color = 'var(--teal-400)', size = 200 }) {
 
 // ─── SVG: Donut multi-segmento ─────────────────────────────────────────────
 function SvgDonutMulti({ segments = [], size = 140 }) {
+  const sw = 18;           // stroke width del anillo
+  const gap = 0.03;        // pequeña separación en radianes entre segmentos
   const total = segments.reduce((a, b) => a + (b.value || 0), 0);
+  const cx = size / 2;
+  const cy = size / 2;
+  const r  = (size - sw - 4) / 2;
+
   if (total === 0) {
     return (
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-        <circle cx={size / 2} cy={size / 2} r={(size - 16) / 2}
-          fill="none" stroke="var(--sand-100)" strokeWidth={16} />
+        <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--sand-100)" strokeWidth={sw} />
       </svg>
     );
   }
 
-  const cx = size / 2;
-  const cy = size / 2;
-  const r = (size - 20) / 2;
-  const ir = r * 0.60;
-  let current = -Math.PI / 2; // empieza arriba
+  // Caso especial: un solo segmento → círculo completo (arc de punto a punto no renderiza)
+  if (segments.filter(s => (s.value || 0) > 0).length === 1) {
+    const seg = segments.find(s => (s.value || 0) > 0);
+    return (
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+        <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--sand-50)" strokeWidth={sw} />
+        <circle cx={cx} cy={cy} r={r} fill="none" stroke={seg.color} strokeWidth={sw}
+          style={{ transition: 'all 0.5s ease' }}>
+          <title>{seg.label}: {fmt(seg.value)}</title>
+        </circle>
+      </svg>
+    );
+  }
 
-  const arcs = segments.map(seg => {
-    const frac = (seg.value || 0) / total;
-    const sweep = frac * 2 * Math.PI;
-    const start = current;
-    const end = start + sweep;
-    current = end;
+  // Múltiples segmentos → arcos individuales con pequeña separación visual
+  const circ = 2 * Math.PI * r;
+  let angle = -Math.PI / 2; // empieza arriba
 
-    const x1 = cx + r * Math.cos(start);
-    const y1 = cy + r * Math.sin(start);
-    const x2 = cx + r * Math.cos(end);
-    const y2 = cy + r * Math.sin(end);
-    const ix1 = cx + ir * Math.cos(end);
-    const iy1 = cy + ir * Math.sin(end);
-    const ix2 = cx + ir * Math.cos(start);
-    const iy2 = cy + ir * Math.sin(start);
-    const lg = sweep > Math.PI ? 1 : 0;
+  const arcs = segments
+    .filter(seg => (seg.value || 0) > 0)
+    .map(seg => {
+      const frac   = seg.value / total;
+      const sweep  = frac * 2 * Math.PI - gap;
+      const start  = angle + gap / 2;
+      const end    = start + sweep;
+      angle += frac * 2 * Math.PI;
 
-    const path = sweep < 0.001
-      ? ''
-      : `M ${x1} ${y1} A ${r} ${r} 0 ${lg} 1 ${x2} ${y2} L ${ix1} ${iy1} A ${ir} ${ir} 0 ${lg} 0 ${ix2} ${iy2} Z`;
+      // Longitud de arco proporcional al segmento, recortando el gap en strokeDasharray
+      const arcLen = (sweep / (2 * Math.PI)) * circ;
 
-    return { ...seg, path, frac };
-  });
+      // Ángulo de inicio para la transformación rotate del elemento
+      const startDeg = (start * 180) / Math.PI + 90; // +90 porque SVG 0° es derecha
+
+      return { ...seg, arcLen, circ, startDeg };
+    });
 
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-      {arcs.map((arc, i) =>
-        arc.path ? (
-          <path key={i} d={arc.path} fill={arc.color}
-            style={{ transition: 'all 0.5s ease' }}>
-            <title>{arc.label}: {fmt(arc.value)}</title>
-          </path>
-        ) : null
-      )}
+      {/* Anillo de fondo */}
+      <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--sand-100)" strokeWidth={sw} />
+      {arcs.map((arc, i) => (
+        <circle
+          key={i}
+          cx={cx} cy={cy} r={r}
+          fill="none"
+          stroke={arc.color}
+          strokeWidth={sw}
+          strokeLinecap="butt"
+          strokeDasharray={`${arc.arcLen} ${arc.circ}`}
+          style={{
+            transform: `rotate(${arc.startDeg}deg)`,
+            transformOrigin: `${cx}px ${cy}px`,
+            transition: 'stroke-dasharray 0.5s ease',
+          }}
+        >
+          <title>{arc.label}: {fmt(arc.value)}</title>
+        </circle>
+      ))}
     </svg>
   );
 }
 
 // ─── Gauge Card ────────────────────────────────────────────────────────────
-function GaugeCard({ title, pct, color, value, max, subLeft, subRight, icon: Icon }) {
+// breakdown: [{ label, value, color, note? }]  — barras debajo del gauge
+function GaugeCard({ title, pct, color, subLeft, subRight, icon: Icon, breakdown }) {
+  const maxBreak = breakdown?.length
+    ? Math.max(...breakdown.map(b => b.value), 1)
+    : 1;
   return (
     <div className="card" style={{ display: 'flex', flexDirection: 'column' }}>
       <div className="card-head">
@@ -203,34 +230,63 @@ function GaugeCard({ title, pct, color, value, max, subLeft, subRight, icon: Ico
           {title}
         </h3>
       </div>
-      <div className="card-body" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+      <div className="card-body" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0 }}>
+
+        {/* ── Gauge semicircular ── */}
         <div style={{ position: 'relative', width: '100%', display: 'flex', justifyContent: 'center' }}>
-          <SvgGauge pct={pct} color={color} size={220} />
-          {/* Porcentaje centrado debajo del gauge */}
+          <SvgGauge pct={pct} color={color} size={200} />
           <div style={{
             position: 'absolute', bottom: -4, left: '50%', transform: 'translateX(-50%)',
             textAlign: 'center',
           }}>
-            <div style={{
-              fontFamily: 'var(--font-display)', fontSize: 32, fontWeight: 800,
-              color: color, lineHeight: 1,
-            }}>
+            <div style={{ fontFamily: 'var(--font-display)', fontSize: 30, fontWeight: 800, color, lineHeight: 1 }}>
               {pct}%
             </div>
           </div>
         </div>
-        {/* Sub-labels: izquierda y derecha */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', marginTop: 20, paddingTop: 12, borderTop: '1px solid var(--sand-100)' }}>
-          <div style={{ textAlign: 'center', flex: 1 }}>
-            <div style={{ fontSize: 11, color: 'var(--ink-400)', marginBottom: 2 }}>{subLeft?.label}</div>
-            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink-700)' }}>{subLeft?.value}</div>
+
+        {/* ── Totales izq / der ── */}
+        {(subLeft || subRight) && (
+          <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', marginTop: 18, paddingTop: 12, borderTop: '1px solid var(--sand-100)' }}>
+            {subLeft && (
+              <div style={{ textAlign: 'center', flex: 1 }}>
+                <div style={{ fontSize: 10, color: 'var(--ink-400)', marginBottom: 2 }}>{subLeft.label}</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink-700)' }}>{subLeft.value}</div>
+              </div>
+            )}
+            {subLeft && subRight && <div style={{ width: 1, background: 'var(--sand-100)' }} />}
+            {subRight && (
+              <div style={{ textAlign: 'center', flex: 1 }}>
+                <div style={{ fontSize: 10, color: 'var(--ink-400)', marginBottom: 2 }}>{subRight.label}</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink-700)' }}>{subRight.value}</div>
+              </div>
+            )}
           </div>
-          <div style={{ width: 1, background: 'var(--sand-100)' }} />
-          <div style={{ textAlign: 'center', flex: 1 }}>
-            <div style={{ fontSize: 11, color: 'var(--ink-400)', marginBottom: 2 }}>{subRight?.label}</div>
-            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink-700)' }}>{subRight?.value}</div>
+        )}
+
+        {/* ── Breakdown: barras conciliado / no conciliado ── */}
+        {breakdown && breakdown.length > 0 && (
+          <div style={{ width: '100%', marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--sand-100)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {breakdown.map((b, i) => {
+              const bPct = maxBreak > 0 ? Math.round((b.value / maxBreak) * 100) : 0;
+              return (
+                <div key={i}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                      <span style={{ width: 10, height: 10, borderRadius: 3, background: b.color, flexShrink: 0, display: 'inline-block' }} />
+                      <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-600)' }}>{b.label}</span>
+                      {b.note && <span style={{ fontSize: 10, color: 'var(--ink-400)' }}>{b.note}</span>}
+                    </div>
+                    <span style={{ fontSize: 13, fontWeight: 800, color: b.color }}>{b.fmtVal}</span>
+                  </div>
+                  <div style={{ height: 8, background: 'var(--sand-100)', borderRadius: 6, overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${bPct}%`, background: b.color, borderRadius: 6, transition: 'width 0.6s ease' }} />
+                  </div>
+                </div>
+              );
+            })}
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
@@ -406,12 +462,17 @@ export default function Dashboard() {
   const ingConceptos   = rd.ingresos_conceptos
     ? Object.values(rd.ingresos_conceptos).reduce((a, c) => a + (parseFloat(c.total) || 0), 0)
     : (s.ingreso_adicional ?? 0);
-  // Ingresos no identificados (no asignados a ninguna unidad)
+  // Ingresos no identificados (depósitos en banco sin asignar a unidad)
   const ingNoId        = parseFloat(rd.ingresos_no_identificados ?? 0);
+  // Ingresos registrados en sistema pero NO conciliados con banco (bank_reconciled=False)
+  const ingNoConc      = parseFloat(rd.ingresos_no_reconciled ?? 0);
   // Total ingresos conciliados con banco = mismo número que Reporte General
   const totalIngresos  = parseFloat(rd.total_ingresos_reconciled ?? (s.total_ingresos ?? s.total_collected ?? 0));
   // Gastos conciliados con banco = mismo número que Reporte General
   const gastos         = parseFloat(rd.total_egresos_reconciled ?? s.total_gastos_conciliados ?? 0);
+  // Gastos registrados en sistema pero NO conciliados con banco
+  const gastosTotal    = parseFloat(s.total_gastos ?? s.total_gastos_conciliados ?? gastos);
+  const gastosNoConc   = Math.max(0, gastosTotal - gastos);
   // Saldos bancarios (del reporte general)
   const saldoInicial   = parseFloat(gr?.saldo_inicial ?? 0);
   const saldoFinal     = parseFloat(gr?.saldo_final ?? 0);
@@ -1038,21 +1099,64 @@ export default function Dashboard() {
           {/* Gauges: Eficiencia de Cobranza + Ratio de Gastos */}
           <SectionLabel>Indicadores de Eficiencia</SectionLabel>
           <div className="grid-2" style={{ marginBottom: 20 }}>
+
+            {/* ── Eficiencia de Cobranza ── */}
             <GaugeCard
               title="Eficiencia de Cobranza"
               pct={pctCobVsCargos}
               color={effColor}
               icon={Receipt}
-              subLeft={{ label: 'Cobrado', value: fmtDec(cobranza) }}
+              subLeft={{ label: 'Total cobrado', value: fmtDec(totalIngresos + ingNoConc) }}
               subRight={{ label: 'Cargos esperados', value: fmtDec(cargosFijos) }}
+              breakdown={[
+                {
+                  label: 'Conciliados con banco',
+                  note: 'identificados',
+                  value: totalIngresos - ingNoId,
+                  fmtVal: fmtDec(totalIngresos - ingNoId),
+                  color: 'var(--teal-500)',
+                },
+                ...(ingNoId > 0 ? [{
+                  label: 'No identificados',
+                  note: 'en banco sin asignar',
+                  value: ingNoId,
+                  fmtVal: fmtDec(ingNoId),
+                  color: 'var(--amber-400)',
+                }] : []),
+                ...(ingNoConc > 0 ? [{
+                  label: 'Sin conciliar',
+                  note: 'registrados, pend. banco',
+                  value: ingNoConc,
+                  fmtVal: fmtDec(ingNoConc),
+                  color: 'var(--blue-400)',
+                }] : []),
+              ]}
             />
+
+            {/* ── Ratio Egresos vs Ingresos ── */}
             <GaugeCard
               title="Ratio Egresos vs Ingresos"
               pct={pctGastosVsIng}
               color={gvColor}
               icon={ShoppingBag}
-              subLeft={{ label: 'Egresos conciliados', value: fmtDec(gastos) }}
+              subLeft={{ label: 'Total egresos', value: fmtDec(gastosTotal) }}
               subRight={{ label: 'Total ingresos', value: fmtDec(totalIngresos) }}
+              breakdown={[
+                {
+                  label: 'Egresos conciliados',
+                  note: 'con banco',
+                  value: gastos,
+                  fmtVal: fmtDec(gastos),
+                  color: 'var(--coral-500)',
+                },
+                ...(gastosNoConc > 0 ? [{
+                  label: 'Sin conciliar',
+                  note: 'registrados, pend. banco',
+                  value: gastosNoConc,
+                  fmtVal: fmtDec(gastosNoConc),
+                  color: 'var(--coral-200)',
+                }] : []),
+              ]}
             />
           </div>
 
@@ -1060,48 +1164,69 @@ export default function Dashboard() {
           <SectionLabel>Composición y Estatus</SectionLabel>
           <div className="grid-2" style={{ marginBottom: 20 }}>
             {/* Donut multi: composición de ingresos */}
-            <div className="card">
-              <div className="card-head">
-                <h3>Composición de Ingresos</h3>
-                <span style={{ fontSize: 11, color: 'var(--ink-400)' }}>conciliados</span>
-              </div>
-              <div className="card-body">
-                {incomeSegments.length === 0 ? (
-                  <div style={{ textAlign: 'center', color: 'var(--ink-300)', fontSize: 13, fontStyle: 'italic', padding: '20px 0' }}>
-                    Sin ingresos registrados en este período
+            {(() => {
+              // Todos los segmentos de ingresos (conciliados + no conciliados)
+              const allIncomeSegs = [
+                { label: 'Mantenimiento',          value: cobranza,     color: 'var(--teal-500)' },
+                ...(ingAdelanto  > 0 ? [{ label: 'Adelantos mant.',        value: ingAdelanto,  color: 'var(--teal-300)' }] : []),
+                ...(ingConceptos > 0 ? [{ label: 'Conceptos adicionales',   value: ingConceptos, color: 'var(--blue-400)' }] : []),
+                ...(ingNoId      > 0 ? [{ label: 'No identificados',        value: ingNoId,      color: 'var(--amber-400)' }] : []),
+                ...(ingNoConc    > 0 ? [{ label: 'Sin conciliar',           value: ingNoConc,    color: 'var(--blue-300)' }] : []),
+              ].filter(s => s.value > 0);
+              const grandTotal = allIncomeSegs.reduce((a, b) => a + b.value, 0);
+              return (
+                <div className="card">
+                  <div className="card-head">
+                    <h3>Composición de Ingresos</h3>
+                    <span style={{ fontSize: 11, color: 'var(--ink-400)' }}>
+                      {grandTotal > 0 ? fmtDec(grandTotal) : 'sin datos'}
+                    </span>
                   </div>
-                ) : (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
-                    <div style={{ flexShrink: 0 }}>
-                      <SvgDonutMulti segments={incomeSegments} size={140} />
-                    </div>
-                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 10 }}>
-                      {incomeSegments.map((seg, i) => {
-                        const total2 = incomeSegments.reduce((a, b) => a + b.value, 0);
-                        const pct2 = total2 > 0 ? Math.round((seg.value / total2) * 100) : 0;
-                        return (
-                          <div key={i}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                              <span style={{ width: 10, height: 10, borderRadius: '50%', background: seg.color, flexShrink: 0 }} />
-                              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-600)', flex: 1 }}>{seg.label}</span>
-                              <span style={{ fontSize: 11, color: 'var(--ink-400)', fontWeight: 600 }}>{pct2}%</span>
-                            </div>
-                            <div style={{ height: 4, background: 'var(--sand-100)', borderRadius: 4, overflow: 'hidden', marginLeft: 18 }}>
-                              <div style={{ height: '100%', width: `${pct2}%`, background: seg.color, borderRadius: 4, transition: 'width 0.5s ease' }} />
-                            </div>
-                            <div style={{ fontSize: 11, color: 'var(--ink-500)', marginLeft: 18, marginTop: 2 }}>{fmtDec(seg.value)}</div>
-                          </div>
-                        );
-                      })}
-                      <div style={{ paddingTop: 8, borderTop: '1px solid var(--sand-100)', fontSize: 12, fontWeight: 700, color: 'var(--ink-700)', display: 'flex', justifyContent: 'space-between' }}>
-                        <span>Total</span>
-                        <span>{fmtDec(incomeSegments.reduce((a, b) => a + b.value, 0))}</span>
+                  <div className="card-body">
+                    {grandTotal === 0 ? (
+                      <div style={{ textAlign: 'center', color: 'var(--ink-300)', fontSize: 13, fontStyle: 'italic', padding: '24px 0' }}>
+                        Sin ingresos registrados en este período
                       </div>
-                    </div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 }}>
+
+                        {/* Donut centrado + total en el centro */}
+                        <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <SvgDonutMulti segments={allIncomeSegs} size={160} />
+                          <div style={{
+                            position: 'absolute', textAlign: 'center',
+                            pointerEvents: 'none',
+                          }}>
+                            <div style={{ fontSize: 10, color: 'var(--ink-400)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Total</div>
+                            <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--ink-800)' }}>{fmtDec(grandTotal)}</div>
+                          </div>
+                        </div>
+
+                        {/* Leyenda con mini barras */}
+                        <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 9 }}>
+                          {allIncomeSegs.map((seg, i) => {
+                            const pct2 = grandTotal > 0 ? Math.round((seg.value / grandTotal) * 100) : 0;
+                            return (
+                              <div key={i}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                                  <span style={{ width: 10, height: 10, borderRadius: 3, background: seg.color, flexShrink: 0 }} />
+                                  <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-600)', flex: 1 }}>{seg.label}</span>
+                                  <span style={{ fontSize: 11, color: 'var(--ink-500)', fontWeight: 700 }}>{fmtDec(seg.value)}</span>
+                                  <span style={{ fontSize: 11, color: 'var(--ink-400)', minWidth: 32, textAlign: 'right' }}>{pct2}%</span>
+                                </div>
+                                <div style={{ height: 6, background: 'var(--sand-100)', borderRadius: 6, overflow: 'hidden' }}>
+                                  <div style={{ height: '100%', width: `${pct2}%`, background: seg.color, borderRadius: 6, transition: 'width 0.5s ease' }} />
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-            </div>
+                </div>
+              );
+            })()}
 
             {/* Barras: estatus de unidades */}
             <div className="card">
