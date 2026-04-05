@@ -3,6 +3,7 @@ import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { HomlyBrand, APP_VERSION, ROLES } from '../../utils/helpers';
 import { notificationsAPI, tenantsAPI } from '../../api/client';
+import { ROLE_BASE_MODULES } from '../../constants/modulePermissions';
 import {
   Home, Globe, FileText, ShoppingBag, Receipt, Settings,
   Users, Building, Shield, LogOut, Menu, X, Calendar,
@@ -501,10 +502,20 @@ export default function AppLayout() {
     ? { label: activeProfile.label, color: activeProfile.color || 'var(--teal-500)' }
     : (ROLES[role] || ROLES.vecino);
 
-  // Helper: resolve visibility from a perms entry (handles old array + new object formats)
-  const isModuleVisible = (permsEntry, moduleKey) => {
+  // Helper: resolve visibility from a perms entry (handles old array + new object formats).
+  // roleKey is needed to check ROLE_BASE_MODULES for new modules missing from old-format arrays.
+  const isModuleVisible = (permsEntry, moduleKey, roleKey) => {
     if (!permsEntry) return true; // no config → show
-    if (Array.isArray(permsEntry)) return permsEntry.includes(moduleKey); // old format
+    if (Array.isArray(permsEntry)) {
+      // Old array format: explicit allowlist of visible modules.
+      // If module is in the array → visible.
+      if (permsEntry.includes(moduleKey)) return true;
+      // If module is NOT in the array but IS in the role's base modules, it means the
+      // module was added after this tenant saved their permissions. Default to visible
+      // so new features appear automatically without forcing admins to re-save config.
+      if (roleKey && ROLE_BASE_MODULES[roleKey]?.includes(moduleKey)) return true;
+      return false;
+    }
     // New format: object { moduleKey: "write"|"read"|"hidden" }
     const val = permsEntry[moduleKey];
     return val === undefined || val !== 'hidden'; // default: visible unless explicitly hidden
@@ -525,11 +536,11 @@ export default function AppLayout() {
             const profileMods = activeProfile.modules;
             // Empty / no config → show all base role defaults
             if (!profileMods || (Array.isArray(profileMods) && profileMods.length === 0) || (typeof profileMods === 'object' && !Array.isArray(profileMods) && Object.keys(profileMods).length === 0)) return true;
-            return isModuleVisible(profileMods, moduleKey);
+            return isModuleVisible(profileMods, moduleKey, activeProfile.base_role);
           }
 
           // Standard role: filter by tenant module_permissions config
-          return isModuleVisible(tenantModulePerms[role], moduleKey);
+          return isModuleVisible(tenantModulePerms[role], moduleKey, role);
         }),
       })).filter(group => group.items.length > 0);
 
@@ -661,8 +672,8 @@ export default function AppLayout() {
             {tenantId && (
               role === 'superadmin' ||
               (activeProfile
-                ? isModuleVisible(activeProfile.modules, 'notificaciones')
-                : isModuleVisible(tenantModulePerms[role], 'notificaciones'))
+                ? isModuleVisible(activeProfile.modules, 'notificaciones', activeProfile.base_role)
+                : isModuleVisible(tenantModulePerms[role], 'notificaciones', role))
             ) && <NotificationBell tenantId={tenantId} />}
           </div>
         </header>

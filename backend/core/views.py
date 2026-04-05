@@ -1597,6 +1597,8 @@ class PeriodClosureRequestViewSet(viewsets.ReadOnlyModelViewSet):
         return Tenant.objects.get(pk=self.kwargs['tenant_id'])
 
     def _is_admin_or_tesorero(self, request, tenant_id):
+        if request.user.is_super_admin:
+            return True
         return TenantUser.objects.filter(
             tenant_id=tenant_id,
             user=request.user,
@@ -4455,7 +4457,17 @@ class CondominioRequestView(APIView):
     def post(self, request):
         serializer = CondominioRequestSerializer(data=request.data)
         if serializer.is_valid():
-            serializer.save()
+            instance = serializer.save()
+            # Send confirmation to applicant + internal alert — run in background
+            # so a slow SMTP server never blocks the API response.
+            import threading
+            from .email_service import send_registration_notification
+            def _send():
+                try:
+                    send_registration_notification(serializer.validated_data)
+                except Exception:
+                    pass  # log silently — registration is already saved
+            threading.Thread(target=_send, daemon=True).start()
             return Response(
                 {'message': 'Solicitud recibida. Nos pondremos en contacto pronto.'},
                 status=status.HTTP_201_CREATED,

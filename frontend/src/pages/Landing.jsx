@@ -43,6 +43,33 @@ const IconShield = () => (
     <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
   </svg>
 );
+const IconCalendar = () => (
+  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#E85D43" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+  </svg>
+);
+const IconFileText = () => (
+  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#E85D43" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+    <line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>
+  </svg>
+);
+const IconLock = () => (
+  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#E85D43" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+  </svg>
+);
+const IconShoppingBag = () => (
+  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#E85D43" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/>
+    <path d="M16 10a4 4 0 0 1-8 0"/>
+  </svg>
+);
+const IconStar = ({ color = '#E85D43', size = 14 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill={color} stroke={color} strokeWidth="1" strokeLinecap="round" strokeLinejoin="round">
+    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+  </svg>
+);
 const IconCheck = ({ color = '#E85D43', size = 18 }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
     <polyline points="20 6 9 17 4 12"/>
@@ -286,33 +313,48 @@ export default function Landing() {
             {
               icon: <IconChart />,
               title: 'Dashboard Financiero',
-              desc: 'Visualiza el estado financiero de tu condominio en tiempo real. Ingresos, egresos y saldo disponible al instante.',
+              desc: 'Panel en tiempo real con ingresos, egresos, saldo disponible, tasa de cobranza y evolución mensual del condominio.',
               highlight: true,
             },
             {
               icon: <IconReceipt />,
-              title: 'Cobros y Recibos',
-              desc: 'Registra pagos, genera recibos automáticamente y lleva un historial completo de cada unidad.',
+              title: 'Cobranza de Mantenimiento',
+              desc: 'Registra pagos manualmente o por lotes, genera recibos PDF con folio y mantén el historial completo de cada unidad.',
+            },
+            {
+              icon: <IconShoppingBag />,
+              title: 'Gastos y Caja Chica',
+              desc: 'Controla gastos ordinarios y caja chica por categorías, adjunta comprobantes y lleva el libro contable al día.',
+            },
+            {
+              icon: <IconCalendar />,
+              title: 'Reservas de Áreas Comunes',
+              desc: 'Sistema de reservas para salón de eventos, alberca, gimnasio y más. Calendario interactivo con control de disponibilidad.',
+            },
+            {
+              icon: <IconFileText />,
+              title: 'Estado de Cuenta y Reportes',
+              desc: 'Estado de cuenta detallado por unidad con exportación a PDF. Saldo acumulado, movimientos y comprobantes descargables.',
+            },
+            {
+              icon: <IconLock />,
+              title: 'Cierre de Período',
+              desc: 'Cierra períodos contables con un flujo de aprobación multiusuario. Una vez cerrado, no se permiten más registros para ese mes.',
             },
             {
               icon: <IconUsers />,
-              title: 'Roles y Permisos',
-              desc: 'Cada usuario accede solo a lo que le corresponde. Admin, tesorero, contador, auditor o vecino.',
+              title: 'Roles y Perfiles Personalizados',
+              desc: 'Crea perfiles de acceso a la medida. Admin, tesorero, contador, auditor, vigilante y vecino, cada uno con permisos exactos.',
             },
             {
               icon: <IconBell />,
-              title: 'Avisos y Comunicados',
-              desc: 'Centraliza la comunicación del condominio. Mantén a todos informados sin grupos de WhatsApp.',
-            },
-            {
-              icon: <IconShield />,
-              title: 'Control de Acceso',
-              desc: 'Registro de entradas y salidas para vigilantes. Historial completo y acceso seguro.',
+              title: 'Notificaciones y Avisos',
+              desc: 'Centraliza la comunicación: avisos generales, alertas de cobranza y notificaciones de sistema directamente en la plataforma.',
             },
             {
               icon: <HomlyIsotipo size={28} />,
               title: 'Multi-condominio',
-              desc: 'Administra varios condominios desde una sola cuenta. Ideal para administradoras profesionales.',
+              desc: 'Administra múltiples condominios desde una sola cuenta. Ideal para administradoras profesionales con portafolio de inmuebles.',
             },
           ].map((f, i) => (
             <div key={i} style={{
@@ -362,24 +404,94 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* ── TESTIMONIAL QUOTE ── */}
-      <section className="landing-section" style={{ maxWidth: 900, margin: '0 auto', textAlign: 'center' }}>
-        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 8 }}>
-          <LogoFull iconSize={64} nameHeight={36} />
+      {/* ── TESTIMONIALS CAROUSEL ── */}
+      <section className="landing-section" style={{ overflow: 'hidden' }}>
+        <div className="landing-section-inner" style={{ paddingBottom: 0 }}>
+          <div style={{ textAlign: 'center', marginBottom: 40 }}>
+            <div style={tagStyle}>Testimonios</div>
+            <h2 style={{ fontSize: 'clamp(26px, 4vw, 40px)', fontWeight: 800, color: '#124A36', marginTop: 16, letterSpacing: '-1px' }}>
+              Lo que dicen nuestros usuarios
+            </h2>
+          </div>
         </div>
-        <blockquote style={{
-          fontSize: 'clamp(20px, 3vw, 32px)',
-          fontWeight: 700,
-          color: '#124A36',
-          lineHeight: 1.45,
-          letterSpacing: '-0.5px',
-          margin: '32px 0',
+
+        {/* Horizontal scroll track */}
+        <div style={{
+          display: 'flex',
+          overflowX: 'auto',
+          gap: 20,
+          padding: '4px 48px 32px',
+          scrollSnapType: 'x mandatory',
+          WebkitOverflowScrolling: 'touch',
+          scrollbarWidth: 'none',
+          msOverflowStyle: 'none',
         }}>
-          "Antes perdíamos horas en hojas de Excel. Ahora el condominio se administra solo."
-        </blockquote>
-        <div style={{ fontSize: 14, color: '#9E9588', fontWeight: 600 }}>
-          Administrador, Residencial Los Pinos · Ciudad de México
+          {[
+            {
+              quote: 'Antes perdíamos horas en hojas de Excel. Ahora el condominio se administra prácticamente solo. Recomiendo Homly al 100%.',
+              name: 'María Fernanda G.',
+              role: 'Presidenta de Mesa Directiva',
+              condo: 'Residencial Los Pinos · CDMX',
+            },
+            {
+              quote: 'La cobranza era un caos total. Hoy tenemos visibilidad completa de quién debe y quién ya pagó, con solo un clic.',
+              name: 'Roberto Salas',
+              role: 'Tesorero',
+              condo: 'Privada Jardines · Monterrey',
+            },
+            {
+              quote: 'El cierre de período y el flujo de aprobaciones nos da la seguridad que necesitábamos. Los reportes PDF son excelentes.',
+              name: 'Claudia Herrera',
+              role: 'Administradora Externa',
+              condo: 'Torre Mirador · Guadalajara',
+            },
+            {
+              quote: 'Como vecino, puedo ver mi estado de cuenta, mis pagos y reservar áreas comunes sin tener que hablarle a nadie. Muy conveniente.',
+              name: 'Jorge Medina',
+              role: 'Propietario · Unidad 3B',
+              condo: 'Condominio Arboledas · Querétaro',
+            },
+            {
+              quote: 'Administro 4 condominios y con Homly los tengo todos en una sola plataforma. Me ahorra horas cada semana.',
+              name: 'Lucía Vargas',
+              role: 'Directora · LV Administraciones',
+              condo: 'Portafolio multi-condominio',
+            },
+            {
+              quote: 'El control de gastos y caja chica es muy fácil de usar. Subir comprobantes y ver el resumen por categoría es justo lo que necesitábamos.',
+              name: 'Andrés Campos',
+              role: 'Secretario de Comité',
+              condo: 'Fraccionamiento Las Palmas · Mérida',
+            },
+          ].map((t, i) => (
+            <div key={i} style={{
+              ...cardStyle,
+              minWidth: 320,
+              maxWidth: 340,
+              flexShrink: 0,
+              scrollSnapAlign: 'start',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 16,
+            }}>
+              {/* Stars */}
+              <div style={{ display: 'flex', gap: 3 }}>
+                {[...Array(5)].map((_, s) => <IconStar key={s} />)}
+              </div>
+              {/* Quote */}
+              <p style={{ fontSize: 14, color: '#443D33', lineHeight: 1.7, fontStyle: 'italic', margin: 0 }}>
+                "{t.quote}"
+              </p>
+              {/* Author */}
+              <div style={{ marginTop: 'auto', paddingTop: 12, borderTop: '1px solid #F3EDE4' }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: '#1A1612' }}>{t.name}</div>
+                <div style={{ fontSize: 12, color: '#9E9588', marginTop: 2 }}>{t.role}</div>
+                <div style={{ fontSize: 12, color: '#C5BAB0', marginTop: 1 }}>{t.condo}</div>
+              </div>
+            </div>
+          ))}
         </div>
+        <style>{`.landing-testimonials-scroll::-webkit-scrollbar { display: none; }`}</style>
       </section>
 
       {/* ── CTA FINAL ── */}

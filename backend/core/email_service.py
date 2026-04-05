@@ -453,15 +453,17 @@ def _send_branded_email(
     to_emails: list[str],
     from_email: str | None = None,
     pdf_attachment: tuple | None = None,   # (filename, bytes, 'application/pdf')
+    cc_emails: list[str] | None = None,    # CC recipients
 ) -> bool:
     """Helper to build and send a branded email with inline logo.
     Optional pdf_attachment: tuple of (filename, content_bytes, mimetype).
+    Optional cc_emails: list of CC addresses.
     """
     if not from_email:
         from django.conf import settings as _s
         from_email = getattr(_s, 'HOMLY_NOREPLY_EMAIL', 'no-reply@homly.com.mx')
     try:
-        msg = EmailMultiAlternatives(subject=subject, body=plain, from_email=from_email, to=to_emails)
+        msg = EmailMultiAlternatives(subject=subject, body=plain, from_email=from_email, to=to_emails, cc=cc_emails or [])
         msg.attach_alternative(html, 'text/html')
         logo_data = _read_logo_bytes('homly-full.png')
         if logo_data:
@@ -1162,3 +1164,176 @@ def send_notification_email(
     )
     html = _build_notification_html(user_name, notif_type, title, message, tenant_name, app_url)
     return _send_branded_email(subject=subject, plain=plain, html=html, to_emails=[email])
+
+
+# ═══════════════════════════════════════════════════════════
+#  LANDING REGISTRATION REQUEST — confirmation + internal alert
+# ═══════════════════════════════════════════════════════════
+
+def send_registration_notification(request_data: dict) -> bool:
+    """Send two emails when a new condominium registration is submitted
+    through the landing page /registro form:
+
+    1. Confirmation email → applicant (admin_email)
+       FROM: no-reply@homly.com.mx
+       CC:   ctorres@spotynet.com   (internal copy so the team is notified)
+
+    2. Internal alert → no-reply@homly.com.mx
+       FROM: no-reply@homly.com.mx
+       CC:   ctorres@spotynet.com
+       (summary of the lead details for the operations mailbox)
+
+    Returns True only if both sends succeed.
+    """
+    c           = COLORS
+    from_email  = getattr(settings, 'HOMLY_NOREPLY_EMAIL', 'no-reply@homly.com.mx')
+    cc_email    = 'ctorres@spotynet.com'
+    internal_to = 'no-reply@homly.com.mx'
+
+    nombre      = request_data.get('admin_nombre', '')
+    apellido    = request_data.get('admin_apellido', '')
+    full_name   = f'{nombre} {apellido}'.strip() or 'Administrador'
+    admin_email = request_data.get('admin_email', '')
+    condo       = request_data.get('condominio_nombre', '')
+    pais        = request_data.get('condominio_pais', '')
+    estado      = request_data.get('condominio_estado', '')
+    ciudad      = request_data.get('condominio_ciudad', '')
+    unidades    = request_data.get('condominio_unidades', '')
+    tipo_admin  = request_data.get('condominio_tipo_admin', '')
+    currency    = request_data.get('condominio_currency', '')
+    mensaje     = request_data.get('mensaje', '')
+    cargo       = request_data.get('admin_cargo', '')
+    telefono    = request_data.get('admin_telefono', '')
+
+    tipo_labels = {
+        'mesa_directiva': 'Mesa Directiva',
+        'administrador':  'Administrador Externo',
+        'comite':         'Comité',
+    }
+    tipo_label = tipo_labels.get(tipo_admin, tipo_admin)
+
+    ubicacion_parts = [p for p in [ciudad, estado, pais] if p]
+    ubicacion       = ', '.join(ubicacion_parts) or '—'
+
+    logo_img = _logo_img_tag()
+
+    # ── 1. Confirmation email to applicant ────────────────────────────────────
+    subject_confirm = '¡Recibimos tu solicitud! Homly estará contigo pronto'
+    plain_confirm = (
+        f'Hola {full_name},\n\n'
+        f'Recibimos la solicitud de registro de {condo}.\n'
+        f'Nuestro equipo revisará la información y se pondrá en contacto contigo '
+        f'en menos de 24 horas para comenzar la configuración de tu cuenta.\n\n'
+        f'Condominio: {condo}\n'
+        f'Ubicación: {ubicacion}\n'
+        f'Unidades: {unidades}\n\n'
+        f'Si tienes alguna duda escríbenos a hola@homly.com.mx\n\n'
+        f'© Homly — La administración que tu hogar se merece'
+    )
+    html_confirm = f"""<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:{c['cream_outer']};font-family:'Segoe UI',Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:{c['cream_outer']};padding:32px 0;">
+  <tr><td align="center">
+    <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.07);">
+      <tr><td style="background:{c['green']};padding:28px 32px;text-align:center;border-bottom:3px solid {c['orange']};">
+        {logo_img}
+        <p style="margin:10px 0 0;font-size:12px;font-weight:600;color:rgba(253,251,247,0.6);letter-spacing:0.06em;">GESTIÓN DE CONDOMINIOS</p>
+      </td></tr>
+      <tr><td style="padding:36px 40px 28px;">
+        <h1 style="margin:0 0 8px;font-size:22px;font-weight:800;color:{c['green']};letter-spacing:-0.5px;">¡Solicitud recibida!</h1>
+        <p style="margin:0 0 24px;font-size:15px;color:{c['ink_600']};line-height:1.65;">
+          Hola <strong>{full_name}</strong>, recibimos los datos del condominio <strong>{condo}</strong>.
+          Nuestro equipo se pondrá en contacto contigo en las próximas <strong>24 horas</strong>.
+        </p>
+        <table width="100%" cellpadding="0" cellspacing="0" style="background:{c['cream']};border-radius:12px;overflow:hidden;margin-bottom:24px;">
+          <tr><td colspan="2" style="padding:12px 16px;font-size:11px;font-weight:700;color:{c['orange']};letter-spacing:0.7px;text-transform:uppercase;border-bottom:1px solid #E8DFD1;">Datos de tu solicitud</td></tr>
+          <tr><td style="padding:10px 16px;font-size:13px;color:{c['ink_600']};font-weight:500;width:40%;border-bottom:1px solid #F3EDE4;">Condominio</td><td style="padding:10px 16px;font-size:13px;font-weight:700;color:{c['ink_800']};border-bottom:1px solid #F3EDE4;">{condo}</td></tr>
+          <tr><td style="padding:10px 16px;font-size:13px;color:{c['ink_600']};font-weight:500;border-bottom:1px solid #F3EDE4;">Ubicación</td><td style="padding:10px 16px;font-size:13px;font-weight:700;color:{c['ink_800']};border-bottom:1px solid #F3EDE4;">{ubicacion}</td></tr>
+          <tr><td style="padding:10px 16px;font-size:13px;color:{c['ink_600']};font-weight:500;border-bottom:1px solid #F3EDE4;">Unidades</td><td style="padding:10px 16px;font-size:13px;font-weight:700;color:{c['ink_800']};border-bottom:1px solid #F3EDE4;">{unidades}</td></tr>
+          <tr><td style="padding:10px 16px;font-size:13px;color:{c['ink_600']};font-weight:500;">Tipo de admin.</td><td style="padding:10px 16px;font-size:13px;font-weight:700;color:{c['ink_800']};">{tipo_label}</td></tr>
+        </table>
+        <p style="font-size:13px;color:{c['ink_600']};line-height:1.65;margin:0 0 8px;">
+          ¿Alguna pregunta? Escríbenos a
+          <a href="mailto:hola@homly.com.mx" style="color:{c['orange']};font-weight:600;text-decoration:none;">hola@homly.com.mx</a>
+        </p>
+      </td></tr>
+      <tr><td style="background:{c['cream']};padding:18px 40px;text-align:center;border-top:1px solid #E8DFD1;">
+        <p style="margin:0;font-size:12px;color:#B8B0A5;">© {2025} Homly · La administración que tu hogar se merece</p>
+      </td></tr>
+    </table>
+  </td></tr>
+</table>
+</body></html>"""
+
+    ok1 = _send_branded_email(
+        subject=subject_confirm,
+        plain=plain_confirm,
+        html=html_confirm,
+        to_emails=[admin_email],
+        from_email=from_email,
+        cc_emails=[cc_email],
+    ) if admin_email else True
+
+    # ── 2. Internal alert to operations mailbox ───────────────────────────────
+    subject_internal = f'🏠 Nueva solicitud de registro: {condo}'
+    rows = [
+        ('Condominio',        condo),
+        ('Ubicación',         ubicacion),
+        ('Unidades',          str(unidades)),
+        ('Moneda',            currency),
+        ('Tipo de admin.',    tipo_label),
+        ('Nombre',            full_name),
+        ('Correo',            admin_email),
+        ('Teléfono',          telefono or '—'),
+        ('Cargo',             cargo or '—'),
+        ('Mensaje',           mensaje or '—'),
+    ]
+    rows_html = ''.join(
+        f'<tr><td style="padding:9px 14px;font-size:13px;color:{c["ink_600"]};font-weight:500;width:40%;border-bottom:1px solid #F3EDE4;">{k}</td>'
+        f'<td style="padding:9px 14px;font-size:13px;font-weight:700;color:{c["ink_800"]};border-bottom:1px solid #F3EDE4;">{v}</td></tr>'
+        for k, v in rows
+    )
+    plain_internal = (
+        f'Nueva solicitud de registro\n\n'
+        + '\n'.join(f'{k}: {v}' for k, v in rows)
+        + f'\n\n© Homly — Sistema de gestión'
+    )
+    html_internal = f"""<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;background:{c['cream_outer']};font-family:'Segoe UI',Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:{c['cream_outer']};padding:32px 0;">
+  <tr><td align="center">
+    <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.07);">
+      <tr><td style="background:{c['green']};padding:24px 32px;text-align:center;border-bottom:3px solid {c['orange']};">
+        {logo_img}
+        <p style="margin:8px 0 0;font-size:12px;color:rgba(253,251,247,0.6);font-weight:600;letter-spacing:0.06em;">ALERTA INTERNA · NUEVA SOLICITUD</p>
+      </td></tr>
+      <tr><td style="padding:28px 36px 20px;">
+        <h2 style="margin:0 0 6px;font-size:18px;font-weight:800;color:{c['green']};">Nueva solicitud: {condo}</h2>
+        <p style="margin:0 0 20px;font-size:14px;color:{c['ink_600']};">Se recibió una nueva solicitud de registro a través de la landing page.</p>
+        <table width="100%" cellpadding="0" cellspacing="0" style="background:{c['cream']};border-radius:12px;overflow:hidden;">
+          <tr><td colspan="2" style="padding:11px 14px;font-size:11px;font-weight:700;color:{c['orange']};letter-spacing:0.7px;text-transform:uppercase;border-bottom:1px solid #E8DFD1;">Detalles del lead</td></tr>
+          {rows_html}
+        </table>
+      </td></tr>
+      <tr><td style="background:{c['cream']};padding:16px 36px;text-align:center;border-top:1px solid #E8DFD1;">
+        <p style="margin:0;font-size:11px;color:#B8B0A5;">Alerta interna automática · Homly</p>
+      </td></tr>
+    </table>
+  </td></tr>
+</table>
+</body></html>"""
+
+    ok2 = _send_branded_email(
+        subject=subject_internal,
+        plain=plain_internal,
+        html=html_internal,
+        to_emails=[internal_to],
+        from_email=from_email,
+        cc_emails=[cc_email],
+    )
+
+    return ok1 and ok2

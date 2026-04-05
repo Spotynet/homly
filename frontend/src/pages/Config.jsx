@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { tenantsAPI, extraFieldsAPI, assemblyAPI, usersAPI, unitsAPI, superAdminAPI, authAPI, periodsAPI } from '../api/client';
+import { ROLE_BASE_MODULES } from '../constants/modulePermissions';
 import { CURRENCIES, getStatesForCountry, COUNTRIES } from '../utils/helpers';
 import {
   Settings, Plus, Trash2, Check, X, Upload, Users,
@@ -48,15 +49,7 @@ const MODULE_DEFINITIONS = [
   { key: 'my_unit',         label: 'Mi Unidad',           icon: Home,         desc: 'Vista de la unidad del residente (solo Vecino)' },
 ];
 
-// Módulos disponibles por defecto para cada rol (máximo permitido)
-const ROLE_BASE_MODULES = {
-  admin:     ['dashboard', 'reservas', 'cobranza', 'gastos', 'estado_cuenta', 'cierre_periodo', 'notificaciones', 'config'],
-  tesorero:  ['dashboard', 'reservas', 'cobranza', 'gastos', 'estado_cuenta', 'cierre_periodo', 'notificaciones', 'config'],
-  contador:  ['dashboard', 'cobranza', 'gastos', 'estado_cuenta', 'notificaciones'],
-  auditor:   ['dashboard', 'gastos', 'estado_cuenta', 'notificaciones'],
-  vigilante: ['dashboard', 'reservas', 'notificaciones'],
-  vecino:    ['my_unit', 'reservas', 'estado_cuenta', 'notificaciones'],
-};
+// ROLE_BASE_MODULES is now imported from '../constants/modulePermissions'
 
 // ── Generic read-only field ───────────────────────────────────────────────────
 function FieldView({ label, value, mono = false, children }) {
