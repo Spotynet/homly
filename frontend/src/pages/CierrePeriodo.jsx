@@ -335,6 +335,24 @@ export default function CierrePeriodo() {
     }
   };
 
+  // ── direct reopen (admin only) ────────────────────────────────────────────
+
+  const [reopeningId, setReopeningId] = useState(null);
+
+  const handleDirectReopen = async (closedId, periodStr) => {
+    if (!window.confirm(`¿Confirmas que deseas reabrir el período ${periodLabel(periodStr)}? Los registros de ingresos y gastos podrán modificarse nuevamente.`)) return;
+    setReopeningId(closedId);
+    try {
+      await periodsAPI.directReopen(tenantId, closedId);
+      toast.success(`Período ${periodLabel(periodStr)} reabierto correctamente`);
+      loadData();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || 'Error al reabrir el período');
+    } finally {
+      setReopeningId(null);
+    }
+  };
+
   // ── render ────────────────────────────────────────────────────────────────
 
   if (loading) {
@@ -466,12 +484,14 @@ export default function CierrePeriodo() {
                     <th>Estado</th>
                     <th>Cerrado por</th>
                     <th>Fecha de cierre</th>
+                    {isAdmin && <th style={{ width: 120 }}>Acciones</th>}
                   </tr>
                 </thead>
                 <tbody>
                   {periods.slice(0, 36).map(p => {
                     const closedInfo = closedPeriods.find(cp => cp.period === p);
                     const inProgress = pendingReqs.find(r => r.period === p);
+                    const isReopening = reopeningId === closedInfo?.id;
                     return (
                       <tr key={p}>
                         <td style={{ fontWeight: 600 }}>{periodLabel(p)}</td>
@@ -515,6 +535,30 @@ export default function CierrePeriodo() {
                               })
                             : ''}
                         </td>
+                        {isAdmin && (
+                          <td>
+                            {closedInfo && (
+                              <button
+                                className="btn btn-sm"
+                                disabled={isReopening}
+                                onClick={() => handleDirectReopen(closedInfo.id, p)}
+                                style={{
+                                  display: 'inline-flex', alignItems: 'center', gap: 5,
+                                  fontSize: 11, padding: '4px 10px',
+                                  border: '1px solid var(--teal-200)',
+                                  background: 'var(--teal-50)', color: 'var(--teal-700)',
+                                  borderRadius: 8, cursor: isReopening ? 'not-allowed' : 'pointer',
+                                }}
+                              >
+                                {isReopening
+                                  ? <Loader size={11} style={spinStyle} />
+                                  : <LockOpen size={11} />
+                                }
+                                {' '}Reabrir
+                              </button>
+                            )}
+                          </td>
+                        )}
                       </tr>
                     );
                   })}

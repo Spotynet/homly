@@ -138,6 +138,8 @@ export const periodsAPI = {
   requestReopen: (tenantId, data) => api.post(`/tenants/${tenantId}/reopen-requests/`, data),
   approveReopen: (tenantId, id) => api.post(`/tenants/${tenantId}/reopen-requests/${id}/approve/`),
   rejectReopen: (tenantId, id) => api.post(`/tenants/${tenantId}/reopen-requests/${id}/reject/`),
+  // Direct reopen (admin only) — deletes the ClosedPeriod record
+  directReopen:  (tenantId, id) => api.delete(`/tenants/${tenantId}/closed-periods/${id}/`),
   // Period closure workflow
   closureList:   (tenantId) => api.get(`/tenants/${tenantId}/period-closure-requests/`),
   initiateClosure: (tenantId, data) => api.post(`/tenants/${tenantId}/period-closure-requests/initiate/`, data),

@@ -1,12 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { reportsAPI, tenantsAPI, assemblyAPI, reservationsAPI } from '../api/client';
+import { reportsAPI, tenantsAPI, assemblyAPI, reservationsAPI, periodsAPI } from '../api/client';
 import {
   Globe, Building2, DollarSign, Receipt, ShoppingBag,
   ChevronLeft, ChevronRight, RefreshCw, TrendingDown, TrendingUp,
   Users, UserCheck, Mail, Phone, Wallet, Activity,
-  CheckCircle, AlertCircle, Clock, BarChart2, Calendar, X, Check,
+  CheckCircle, AlertCircle, Clock, BarChart2, Calendar, X, Check, Lock, LockOpen,
 } from 'lucide-react';
 
 // ─── Formatters ────────────────────────────────────────────────────────────
@@ -250,6 +250,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [generalReport, setGeneralReport] = useState(null);
+  const [closedPeriods, setClosedPeriods] = useState([]);
 
   // ── Reservas tab state ──────────────────────────────────
   const today = new Date();
@@ -283,18 +284,21 @@ export default function Dashboard() {
     setLoading(true);
     setError(null);
     try {
-      const [dashRes, tenantRes, cmtRes, genRes] = await Promise.all([
+      const [dashRes, tenantRes, cmtRes, genRes, closedRes] = await Promise.all([
         reportsAPI.dashboard(tenantId, period),
         tenantsAPI.get(tenantId),
         assemblyAPI.committees(tenantId).catch(() => ({ data: [] })),
         // reporteGeneral = fuente de verdad para conciliados (mismos números que EstadoCuenta)
         reportsAPI.reporteGeneral(tenantId, period).catch(() => ({ data: null })),
+        periodsAPI.closedList(tenantId).catch(() => ({ data: [] })),
       ]);
       setStats(dashRes.data);
       setTenant(tenantRes.data);
       const raw = cmtRes.data;
       setCommittees(Array.isArray(raw) ? raw : (raw?.results || []));
       setGeneralReport(genRes.data);
+      const closedRaw = closedRes.data;
+      setClosedPeriods(Array.isArray(closedRaw) ? closedRaw : (closedRaw?.results || []));
     } catch (e) {
       setError(e.response?.data?.detail || 'Error al cargar el dashboard');
     } finally {
@@ -418,6 +422,9 @@ export default function Dashboard() {
   const adeudoRecibido = s.total_adeudo_recibido ?? 0;
   const deudaTotal     = s.deuda_total ?? 0;
   const balanceNeto    = totalIngresos - gastos;
+
+  // Period open/closed status for the selected period
+  const isPeriodClosed     = closedPeriods.some(cp => cp.period === period);
 
   const pctCobVsCargos     = cargosFijos > 0 ? Math.round((cobranza / cargosFijos) * 100) : 0;
   const pctGastosVsIng     = totalIngresos > 0 ? Math.round((gastos / totalIngresos) * 100) : 0;
@@ -909,7 +916,26 @@ export default function Dashboard() {
       {/* ════════════════════════════════════════ ECONÓMICOS ═════════════ */}
       {activeTab === 'economic' && (
         <div>
-          {/* KPI Grid — 6 tarjetas */}
+          {/* Period status indicator */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+            <span style={{ fontSize: 13, color: 'var(--ink-500)', fontWeight: 500 }}>
+              Período: <strong style={{ color: 'var(--ink-800)' }}>{monthLabel(period)}</strong>
+            </span>
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              padding: '5px 14px', borderRadius: 20, fontSize: 12, fontWeight: 700,
+              background: isPeriodClosed ? 'var(--coral-50)' : 'var(--teal-50)',
+              color: isPeriodClosed ? 'var(--coral-700)' : 'var(--teal-700)',
+              border: `1px solid ${isPeriodClosed ? 'var(--coral-200)' : 'var(--teal-200)'}`,
+            }}>
+              {isPeriodClosed
+                ? <><Lock size={11} /> Período Cerrado</>
+                : <><LockOpen size={11} /> Período Abierto</>
+              }
+            </span>
+          </div>
+
+          {/* KPI Grid — 7 tarjetas */}
           <SectionLabel>KPI's Económicos</SectionLabel>
           <div className="kpi-grid" style={{ marginBottom: 20 }}>
             <div className="dash-kpi" style={{ '--accent-color': 'var(--blue-400)' }}>
@@ -988,6 +1014,20 @@ export default function Dashboard() {
                 {ingAdicional > 0 ? `${pctIngAdicional}% del total ingresos` : 'sin conceptos adicionales'}
               </div>
             </div>
+
+            {ingNoId > 0 && (
+              <div className="dash-kpi" style={{ '--accent-color': 'var(--amber-500)' }}>
+                <div className="dash-kpi-icon" style={{ background: 'var(--amber-50)' }}>
+                  <AlertCircle size={18} color="var(--amber-600)" />
+                </div>
+                <div className="dash-kpi-label">No Identificados</div>
+                <div className="dash-kpi-value" style={{ fontSize: 17, color: 'var(--amber-700)' }}>{fmt(ingNoId)}</div>
+                <div className="dash-kpi-sub">ingresos sin asignar a unidad</div>
+                <div className="dash-kpi-badge" style={{ background: 'var(--amber-50)', color: 'var(--amber-700)' }}>
+                  Pendiente
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Gauges: Eficiencia de Cobranza + Ratio de Gastos */}
@@ -1096,34 +1136,54 @@ export default function Dashboard() {
           <div className="card" style={{ marginBottom: 20 }}>
             <div className="card-body">
               {(() => {
-                const maxVal = Math.max(totalIngresos, gastos, 1);
-                const ingPct = Math.round((totalIngresos / maxVal) * 100);
-                const gasPct = Math.round((gastos / maxVal) * 100);
+                const ingConciliados = totalIngresos - ingNoId; // reconciled only
+                const maxVal = Math.max(totalIngresos, gastos, ingNoId, 1);
+                const ingPct    = Math.round((ingConciliados / maxVal) * 100);
+                const noIdPct   = Math.round((ingNoId / maxVal) * 100);
+                const gasPct    = Math.round((gastos / maxVal) * 100);
                 return (
                   <div>
-                    {/* Ingresos */}
-                    <div style={{ marginBottom: 16 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                    {/* Ingresos conciliados */}
+                    <div style={{ marginBottom: 14 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--teal-400)' }} />
-                          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink-700)' }}>Total Ingresos</span>
+                          <div style={{ width: 10, height: 10, borderRadius: 3, background: 'var(--teal-500)' }} />
+                          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink-700)' }}>Ingresos Conciliados</span>
+                          <span style={{ fontSize: 11, color: 'var(--ink-400)', fontWeight: 500 }}>con banco</span>
                         </div>
-                        <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--teal-700)' }}>{fmtDec(totalIngresos)}</span>
+                        <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--teal-700)' }}>{fmtDec(ingConciliados)}</span>
                       </div>
-                      <div style={{ height: 14, background: 'var(--teal-50)', borderRadius: 8, overflow: 'hidden' }}>
-                        <div style={{ height: '100%', width: `${ingPct}%`, background: 'var(--teal-400)', borderRadius: 8, transition: 'width 0.8s ease' }} />
+                      <div style={{ height: 12, background: 'var(--teal-50)', borderRadius: 8, overflow: 'hidden' }}>
+                        <div style={{ height: '100%', width: `${ingPct}%`, background: 'var(--teal-500)', borderRadius: 8, transition: 'width 0.8s ease' }} />
                       </div>
                     </div>
+                    {/* Ingresos no identificados (no conciliados) */}
+                    {ingNoId > 0 && (
+                      <div style={{ marginBottom: 14 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <div style={{ width: 10, height: 10, borderRadius: 3, background: 'var(--amber-400)' }} />
+                            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink-700)' }}>Ingresos No Identificados</span>
+                            <span style={{ fontSize: 11, color: 'var(--ink-400)', fontWeight: 500 }}>sin asignar</span>
+                          </div>
+                          <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--amber-700)' }}>{fmtDec(ingNoId)}</span>
+                        </div>
+                        <div style={{ height: 12, background: 'var(--amber-50)', borderRadius: 8, overflow: 'hidden' }}>
+                          <div style={{ height: '100%', width: `${noIdPct}%`, background: 'var(--amber-400)', borderRadius: 8, transition: 'width 0.8s ease' }} />
+                        </div>
+                      </div>
+                    )}
                     {/* Gastos */}
                     <div style={{ marginBottom: 20 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--coral-400)' }} />
-                          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink-700)' }}>Gastos Conciliados</span>
+                          <div style={{ width: 10, height: 10, borderRadius: 3, background: 'var(--coral-400)' }} />
+                          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink-700)' }}>Egresos Conciliados</span>
+                          <span style={{ fontSize: 11, color: 'var(--ink-400)', fontWeight: 500 }}>con banco</span>
                         </div>
                         <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--coral-600)' }}>{fmtDec(gastos)}</span>
                       </div>
-                      <div style={{ height: 14, background: 'var(--coral-50)', borderRadius: 8, overflow: 'hidden' }}>
+                      <div style={{ height: 12, background: 'var(--coral-50)', borderRadius: 8, overflow: 'hidden' }}>
                         <div style={{ height: '100%', width: `${gasPct}%`, background: 'var(--coral-400)', borderRadius: 8, transition: 'width 0.8s ease' }} />
                       </div>
                     </div>

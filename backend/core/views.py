@@ -1529,6 +1529,29 @@ class ClosedPeriodViewSet(viewsets.ModelViewSet):
             object_repr=obj.period,
         )
 
+    def perform_destroy(self, instance):
+        tenant_id = self.kwargs['tenant_id']
+        period = instance.period
+        instance.delete()
+        # Notify roles with access to cobranza
+        try:
+            _notify_roles(
+                tenant_id,
+                roles=('admin', 'tesorero', 'contador', 'auditor'),
+                notif_type='period_reopened',
+                title=f'Período {period} reabierto',
+                message=f'El período {period} ha sido reabierto por el administrador. Ya se pueden registrar pagos.',
+            )
+        except Exception:
+            pass
+        _audit_log(
+            self.request, 'cobranza', 'reopen_period',
+            f'Período {period} reabierto directamente por administrador',
+            tenant_id=tenant_id,
+            object_type='ClosedPeriod', object_id='deleted',
+            object_repr=period,
+        )
+
 
 class ReopenRequestViewSet(viewsets.ModelViewSet):
     serializer_class = ReopenRequestSerializer
