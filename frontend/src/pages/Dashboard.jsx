@@ -471,7 +471,7 @@ export default function Dashboard() {
     { label: 'Mantenimiento',       value: cobranza,     color: 'var(--teal-500)' },
     ...(ingAdelanto > 0   ? [{ label: 'Adelantos mant.',   value: ingAdelanto,  color: 'var(--teal-200)' }]  : []),
     ...(ingConceptos > 0  ? [{ label: 'Conceptos adicionales', value: ingConceptos, color: 'var(--blue-400)' }] : []),
-    ...(ingNoId > 0       ? [{ label: 'No identificados',  value: ingNoId,      color: 'var(--amber-400)' }] : []),
+    ...(ingNoId > 0       ? [{ label: 'No Identificados',   value: ingNoId,      color: 'var(--amber-400)' }] : []),
   ].filter(seg => seg.value > 0);
 
   // ── Componentes de sección ─────────────────────────────────────────────
@@ -970,7 +970,12 @@ export default function Dashboard() {
               </div>
               <div className="dash-kpi-label">Total Ingresos</div>
               <div className="dash-kpi-value" style={{ fontSize: 17 }}>{fmt(totalIngresos)}</div>
-              <div className="dash-kpi-sub">conciliados con banco</div>
+              <div className="dash-kpi-sub">
+                {ingNoId > 0
+                  ? `conciliados (incl. ${fmt(ingNoId)} no ident.)`
+                  : 'conciliados con banco'
+                }
+              </div>
             </div>
 
             <div className="dash-kpi" style={{ '--accent-color': 'var(--coral-400)' }}>
