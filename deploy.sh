@@ -27,6 +27,7 @@ echo "▶ [1/5] Pushing changes to git..."
 cd "$PROJECT_DIR"
 git add -A
 git diff --cached --quiet && echo "  No changes to commit, skipping." || git commit -m "deploy: $(date '+%Y-%m-%d %H:%M')"
+git pull --rebase origin main
 git push origin main
 echo "  ✓ Git push done."
 echo ""
