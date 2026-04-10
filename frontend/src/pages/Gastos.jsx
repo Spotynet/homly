@@ -624,10 +624,27 @@ export default function Gastos() {
                         <td style={{ fontSize: 11, color: 'var(--ink-500)' }}>{fmtDate(c.date)}</td>
                         {!isReadOnly && (
                           <td style={{ textAlign: 'center' }}>
-                            <button className="btn-icon" onClick={() => { setForm(c); setModal('caja'); }}><Edit size={13} /></button>
-                            <button className="btn-icon" style={{ color: 'var(--coral-500)' }} onClick={async () => {
-                              if (window.confirm('¿Eliminar?')) { await cajaChicaAPI.delete(tenantId, c.id); toast.success('Eliminado'); load(); }
-                            }}><Trash2 size={13} /></button>
+                            {isPeriodClosed ? (
+                              <span title="Período cerrado — solo lectura"
+                                style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--ink-400)', padding: '2px 6px' }}>
+                                <Lock size={12} /> Solo lectura
+                              </span>
+                            ) : (
+                              <>
+                                <button className="btn-icon" onClick={() => { setForm(c); setModal('caja'); }}>
+                                  <Edit size={13} />
+                                </button>
+                                <button className="btn-icon" style={{ color: 'var(--coral-500)' }} onClick={async () => {
+                                  if (window.confirm('¿Eliminar este registro de caja chica?')) {
+                                    await cajaChicaAPI.delete(tenantId, c.id);
+                                    toast.success('Eliminado');
+                                    load();
+                                  }
+                                }}>
+                                  <Trash2 size={13} />
+                                </button>
+                              </>
+                            )}
                           </td>
                         )}
                       </tr>

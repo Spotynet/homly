@@ -7,9 +7,10 @@ import {
   Receipt, ShoppingBag, ChevronLeft, ChevronRight,
   TrendingDown, TrendingUp, Users, UserCheck, Mail, Phone,
   Wallet, Activity, CheckCircle, AlertCircle, Clock, BarChart2, Calendar,
-  Edit2, Save, X,
+  Edit2, Save, X, Sparkles,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import VecinoOnboarding, { onboardingKey } from '../components/onboarding/VecinoOnboarding';
 
 // ─── Formatters ────────────────────────────────────────────────────────────
 function fmt(n) {
@@ -226,6 +227,15 @@ export default function MyUnit() {
   const [myInfoForm, setMyInfoForm] = useState(null); // null = not initialized
   const [myInfoSaving, setMyInfoSaving] = useState(false);
   const [myInfoDirty, setMyInfoDirty] = useState(false);
+
+  // ── Onboarding: mostrar si el usuario nunca lo ha completado ──────────
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  useEffect(() => {
+    if (user?.id) {
+      const done = localStorage.getItem(onboardingKey(user.id));
+      if (!done) setShowOnboarding(true);
+    }
+  }, [user?.id]);
 
   // ── Initial load ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -475,9 +485,39 @@ export default function MyUnit() {
       `}</style>
 
       {/* ── Welcome card ────────────────────────────────────────────────── */}
-      <div className="welcome-card">
+      {/* ── Onboarding interactivo ────────────────────────────────────────── */}
+      {showOnboarding && (
+        <VecinoOnboarding
+          user={user}
+          tenantName={tenantName}
+          onClose={() => setShowOnboarding(false)}
+        />
+      )}
+
+      <div className="welcome-card" style={{ position: 'relative' }}>
         <h2>Hola, {user?.name || unit.owner_first_name} 👋</h2>
         <p>Bienvenido a tu portal de vecino · {tenantName}</p>
+        {/* Botón "Ver tour" siempre disponible */}
+        <button
+          onClick={() => setShowOnboarding(true)}
+          title="Ver tour de bienvenida"
+          style={{
+            position: 'absolute', top: 16, right: 16,
+            background: 'rgba(255,255,255,0.18)',
+            border: '1px solid rgba(255,255,255,0.30)',
+            borderRadius: 'var(--radius-sm)',
+            color: 'white',
+            cursor: 'pointer',
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            fontSize: 12, fontWeight: 600, padding: '6px 12px',
+            backdropFilter: 'blur(4px)',
+            transition: 'background 0.15s',
+          }}
+          onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.28)'}
+          onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.18)'}
+        >
+          <Sparkles size={13} /> Tour
+        </button>
       </div>
 
       {/* ── Tab bar + Period navigator ───────────────────────────────────── */}
