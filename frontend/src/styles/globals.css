@@ -3,6 +3,59 @@
    Extraído de homly_v10_0_3.html
    ═══════════════════════════════════════════════════════ */
 
+/* ─── Quill editor overrides (Word-like document editor) ─── */
+.ql-toolbar.ql-snow {
+  border-left: none !important;
+  border-right: none !important;
+  border-top: none !important;
+  border-bottom: 1px solid var(--sand-200) !important;
+  background: #fafafa;
+  padding: 6px 12px !important;
+  flex-wrap: wrap;
+}
+.ql-container.ql-snow {
+  border: none !important;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 12pt;
+  line-height: 1.75;
+}
+.ql-editor {
+  padding: 48px 64px !important;
+  min-height: 980px !important;
+  color: #1a1a1a;
+  font-size: 12pt;
+  line-height: 1.75;
+}
+.ql-editor p { margin: 0 0 6px; }
+.ql-editor h1 { font-size: 22pt; font-weight: 700; margin: 18px 0 8px; }
+.ql-editor h2 { font-size: 17pt; font-weight: 700; margin: 16px 0 6px; }
+.ql-editor h3 { font-size: 13pt; font-weight: 700; margin: 14px 0 5px; }
+.ql-editor h4 { font-size: 12pt; font-weight: 700; margin: 12px 0 4px; }
+.ql-editor h5 { font-size: 11pt; font-weight: 700; margin: 10px 0 4px; }
+.ql-editor table { border-collapse: collapse; width: 100%; margin: 12px 0; }
+.ql-editor table td, .ql-editor table th { border: 1px solid #d1d5db; padding: 6px 10px; min-width: 60px; }
+.ql-editor blockquote { border-left: 4px solid #d1d5db; padding-left: 16px; color: #6b7280; margin: 10px 0; }
+.ql-editor pre { background: #f5f5f5; padding: 12px 16px; border-radius: 4px; font-family: 'Courier New', monospace; font-size: 11pt; }
+.ql-editor hr { border: none; border-top: 2px solid #e5e7eb; margin: 16px 0; }
+.ql-editor img { max-width: 100%; border-radius: 4px; }
+.ql-editor a { color: var(--teal-600); text-decoration: underline; }
+.ql-snow .ql-picker.ql-size .ql-picker-label::before,
+.ql-snow .ql-picker.ql-size .ql-picker-item::before { content: attr(data-value) !important; }
+.ql-snow .ql-picker.ql-font .ql-picker-label::before,
+.ql-snow .ql-picker.ql-font .ql-picker-item::before { content: attr(data-value) !important; font-family: attr(data-value) !important; }
+.ql-snow .ql-picker.ql-font .ql-picker-item[data-value=""]::before { content: "Predeterminada" !important; }
+.ql-snow .ql-picker.ql-size .ql-picker-item[data-value=""]::before { content: "Normal" !important; }
+.ql-snow .ql-color-picker .ql-picker-label svg,
+.ql-snow .ql-color-picker .ql-picker-item { width: 20px; height: 20px; }
+.doc-editor-canvas { background: #e0e0e0; }
+.doc-editor-page {
+  max-width: 794px;
+  margin: 0 auto;
+  background: white;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.12), 0 4px 16px rgba(0,0,0,0.08);
+  min-height: 1000px;
+}
+
 /* Google Fonts — cargadas también en public/index.html si aplica */
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,500;0,9..144,700;1,9..144,400&display=swap');
 
