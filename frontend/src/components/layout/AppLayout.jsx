@@ -129,8 +129,8 @@ function TenantSwitcher({ tenantId, tenantName, userTenants, onSwitch }) {
     return () => document.removeEventListener('mousedown', handle);
   }, [open]);
 
-  // Dropdown available as long as there's at least one tenant to pick
-  const canSwitch = userTenants.length > 0;
+  // Dropdown only makes sense when there are 2+ tenants to choose from
+  const canSwitch = userTenants.length > 1;
 
   const handleSelect = async (t) => {
     if (t.id === tenantId) { setOpen(false); return; }
@@ -561,8 +561,9 @@ export default function AppLayout() {
 
   // Show tenant switcher:
   //   • superadmin always (they can switch across all tenants)
-  //   • regular users only when assigned to more than one tenant
-  const showTenantSwitcher = isSuperAdmin || userTenants.length > 1;
+  //   • regular users whenever they belong to at least one tenant
+  //     (tenant selection was removed from the login screen; switching happens here)
+  const showTenantSwitcher = isSuperAdmin || userTenants.length >= 1;
 
   return (
     <div className="app">

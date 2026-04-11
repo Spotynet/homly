@@ -60,7 +60,8 @@ function periodsBetween(startPeriod, endPeriod) {
   return out;
 }
 
-// Effective received per field (main + additional_payments)
+// Effective received per field (main + additional_payments).
+// NOTE: does NOT include adelanto_targets — use getUnitRecaudo() for the full collection total.
 function getEffectiveFieldTotals(pay) {
   const tot = {};
   (pay?.field_payments || []).forEach(f => {
@@ -74,6 +75,36 @@ function getEffectiveFieldTotals(pay) {
     });
   });
   return tot;
+}
+
+// Total physically collected for a payment — mirrors backend _payment_total_income:
+//   field_payments.received  +  field_payments.adelanto_targets  +
+//   additional_payments.received  +  adeudo_payments
+function getUnitRecaudo(pay) {
+  if (!pay) return 0;
+  let total = 0;
+  // Main field_payments: received amount + advance amounts for future periods
+  (pay.field_payments || []).forEach(f => {
+    total += parseFloat(f.received || 0);
+    Object.values(f.adelanto_targets || {}).forEach(amt => {
+      total += parseFloat(amt) || 0;
+    });
+  });
+  // Additional payment events
+  (pay.additional_payments || []).forEach(ap => {
+    const fp = ap.field_payments || ap.fieldPayments || {};
+    Object.values(fp).forEach(fd => {
+      const v = typeof fd === 'object' ? (fd.received ?? fd) : fd;
+      total += parseFloat(v || 0);
+    });
+  });
+  // Adeudo (debt) payments captured in this period
+  Object.values(pay.adeudo_payments || {}).forEach(fieldMap => {
+    Object.values(fieldMap || {}).forEach(amt => {
+      total += parseFloat(amt) || 0;
+    });
+  });
+  return total;
 }
 
 export default function Cobranza() {
@@ -191,15 +222,8 @@ export default function Cobranza() {
       if (st === 'pagado' || st === 'exento') paid++;
       else if (st === 'parcial') partial++;
       else pending++;
-      // Suma campo a campo: field_payments + additional_payments
-      const eff = getEffectiveFieldTotals(p);
-      recaudo += Object.values(eff).reduce((s, v) => s + v, 0);
-      // Suma pagos de adeudos recibidos en el período
-      Object.values(p?.adeudo_payments || {}).forEach(fieldMap => {
-        Object.values(fieldMap || {}).forEach(amt => {
-          recaudo += parseFloat(amt) || 0;
-        });
-      });
+      // Total físicamente cobrado (received + adelanto_targets + adeudos + adicionales)
+      recaudo += getUnitRecaudo(p);
     });
     // Suma ingresos no identificados del período
     recaudo += unrecognizedIncome.reduce((s, r) => s + parseFloat(r.amount || 0), 0);
@@ -542,13 +566,8 @@ export default function Cobranza() {
                 // Exentas siempre aparecen como exentas
                 const st = u.admin_exempt ? 'exento' : (pay?.status || 'pendiente');
                 const effTotals = getEffectiveFieldTotals(pay);
-                let totalRec = Object.values(effTotals).reduce((s, v) => s + v, 0);
-                // Sumar también pagos de adeudos registrados en la unidad
-                Object.values(pay?.adeudo_payments || {}).forEach(fieldMap => {
-                  Object.values(fieldMap || {}).forEach(amt => {
-                    totalRec += parseFloat(amt) || 0;
-                  });
-                });
+                // Total físicamente cobrado (received + adelantos + adeudos + adicionales)
+                const totalRec = getUnitRecaudo(pay);
                 return (
                   <tr key={u.id}>
                     <td>
