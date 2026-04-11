@@ -171,8 +171,8 @@ export const reservationsAPI = {
   create:  (tenantId, data)        => api.post(`/tenants/${tenantId}/amenity-reservations/`, data),
   update:  (tenantId, id, data)    => api.patch(`/tenants/${tenantId}/amenity-reservations/${id}/`, data),
   delete:  (tenantId, id)          => api.delete(`/tenants/${tenantId}/amenity-reservations/${id}/`),
-  approve: (tenantId, id)          => api.post(`/tenants/${tenantId}/amenity-reservations/${id}/approve/`),
-  reject:  (tenantId, id, reason)  => api.post(`/tenants/${tenantId}/amenity-reservations/${id}/reject/`, { reason }),
+  approve: (tenantId, id, reviewerNotes) => api.post(`/tenants/${tenantId}/amenity-reservations/${id}/approve/`, { reviewer_notes: reviewerNotes || '' }),
+  reject:  (tenantId, id, reason, reviewerNotes) => api.post(`/tenants/${tenantId}/amenity-reservations/${id}/reject/`, { reason, reviewer_notes: reviewerNotes ?? reason ?? '' }),
   cancel:  (tenantId, id)          => api.post(`/tenants/${tenantId}/amenity-reservations/${id}/cancel/`),
 };
 

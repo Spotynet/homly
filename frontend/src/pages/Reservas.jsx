@@ -89,14 +89,23 @@ function AreaCard({ area, reservations, selected, onSelect }) {
   );
 }
 
+// ─── Default per-role reservation permissions (backward-compatible) ─────────
+const DEFAULT_ROLE_PERMS = {
+  superadmin: { can_request: true,  can_approve: true  },
+  admin:      { can_request: true,  can_approve: true  },
+  tesorero:   { can_request: true,  can_approve: true  },
+  contador:   { can_request: false, can_approve: false },
+  auditor:    { can_request: false, can_approve: false },
+  vigilante:  { can_request: true,  can_approve: false },
+  vecino:     { can_request: true,  can_approve: false },
+};
+
 // ─── Main ──────────────────────────────────────────────────────────────────
 export default function Reservas() {
-  const { tenantId, isAdmin, isVecino, isReadOnly, role, user } = useAuth();
-  const autoApproveRoles = ['admin', 'tesorero', 'superadmin'];
-  const canManage        = isAdmin || role === 'tesorero'; // admin, superadmin, tesorero can approve/reject
-  const canCancelOwn     = !canManage && !isReadOnly;      // vecino, vigilante can cancel their own
-  const showActionsCol   = canManage || canCancelOwn;
-  const needsUnitSelector = !isVecino; // admins / tesoreros / vigilante pick the unit manually
+  const { tenantId, isVecino, role, user } = useAuth();
+
+  // Per-role reservation permissions loaded from tenant settings
+  const [rolePermissions, setRolePermissions] = useState({});
 
   const today = new Date();
   const [calYear,  setCalYear]  = useState(today.getFullYear());
@@ -123,10 +132,24 @@ export default function Reservas() {
   const [policiesAccepted,  setPoliciesAccepted]  = useState(false);
   const [policiesModalOpen, setPoliciesModalOpen] = useState(false);
 
+  // Approve modal (with optional reviewer observations)
+  const [approveOpen,   setApproveOpen]   = useState(false);
+  const [approveId,     setApproveId]     = useState(null);
+  const [approveNotes,  setApproveNotes]  = useState('');
+
   // Reject modal
   const [rejectOpen,    setRejectOpen]    = useState(false);
   const [rejectId,      setRejectId]      = useState(null);
   const [rejectReason,  setRejectReason]  = useState('');
+  const [rejectNotes,   setRejectNotes]   = useState('');
+
+  // ── Derived flags — computed from per-role settings ─────────────────────
+  const _rolePerms = rolePermissions[role] ?? DEFAULT_ROLE_PERMS[role] ?? { can_request: false, can_approve: false };
+  const canRequest        = role === 'superadmin' ? true : _rolePerms.can_request;
+  const canManage         = role === 'superadmin' ? true : _rolePerms.can_approve;
+  const canCancelOwn      = !canManage && canRequest;   // requesters can cancel their own
+  const showActionsCol    = canManage || canCancelOwn;
+  const needsUnitSelector = !isVecino;                  // admins / managers pick unit manually
 
   // ── Load tenant (areas + reservation_settings) ─────────────────────────
   const loadAreas = useCallback(async () => {
@@ -138,9 +161,10 @@ export default function Reservas() {
         ? raw.filter(a => typeof a === 'object' && a !== null)
         : [];
       setAreas(all.filter(a => a.active !== false && a.reservations_enabled));
-      // Load approval mode from tenant settings
-      const mode = res.data?.reservation_settings?.approval_mode || 'require_vecinos';
-      setApprovalMode(mode);
+      // Load reservation settings (approval mode + per-role permissions)
+      const settings = res.data?.reservation_settings || {};
+      setApprovalMode(settings.approval_mode || 'require_vecinos');
+      setRolePermissions(settings.role_permissions || {});
     } catch { setAreas([]); }
   }, [tenantId]);
 
@@ -195,18 +219,20 @@ export default function Reservas() {
   });
 
   // ── Actions ───────────────────────────────────────────────────────────
-  const handleApprove = async (id) => {
+  const openApprove = (id) => { setApproveId(id); setApproveNotes(''); setApproveOpen(true); };
+  const confirmApprove = async () => {
     try {
-      await reservationsAPI.approve(tenantId, id);
+      await reservationsAPI.approve(tenantId, approveId, approveNotes);
       toast.success('Reserva aprobada');
+      setApproveOpen(false);
       loadReservations();
     } catch { toast.error('Error al aprobar'); }
   };
 
-  const openReject = (id) => { setRejectId(id); setRejectReason(''); setRejectOpen(true); };
+  const openReject = (id) => { setRejectId(id); setRejectReason(''); setRejectNotes(''); setRejectOpen(true); };
   const confirmReject = async () => {
     try {
-      await reservationsAPI.reject(tenantId, rejectId, rejectReason);
+      await reservationsAPI.reject(tenantId, rejectId, rejectReason, rejectNotes || rejectReason);
       toast.success('Reserva rechazada');
       setRejectOpen(false);
       loadReservations();
@@ -267,12 +293,12 @@ export default function Reservas() {
   };
 
   // ── Derived flags ────────────────────────────────────────────────────────
-  // Whether THIS user's new reservation will be auto-approved
+  // Whether THIS user's new reservation will be auto-approved (mirrors backend logic)
   const isAutoApprover = (() => {
     if (approvalMode === 'auto_approve_all') return true;
     if (approvalMode === 'require_all') return false;
-    // require_vecinos (default): admins auto-approve, vecinos/vigilantes don't
-    return autoApproveRoles.includes(role);
+    // require_vecinos: roles with can_approve get auto-approved
+    return canManage;
   })();
 
   // ── Selected area object ───────────────────────────────────────────────
@@ -384,7 +410,7 @@ export default function Reservas() {
             <RefreshCw size={14} style={loading ? { animation: 'spin 0.8s linear infinite' } : {}} />
             Actualizar
           </button>
-          {areas.length > 0 && (
+          {areas.length > 0 && canRequest && (
             <button className="btn btn-primary" onClick={openNew}>
               <Plus size={15} /> Nueva Reserva
             </button>
@@ -611,8 +637,9 @@ export default function Reservas() {
                           <td>
                             <div style={{ fontWeight: 600, fontSize: 13 }}>{r.area_name}</div>
                             {r.notes && (
-                              <div style={{ fontSize: 11, color: 'var(--ink-400)', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                {r.notes}
+                              <div style={{ fontSize: 11, color: 'var(--ink-400)', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                                title={r.notes}>
+                                💬 {r.notes}
                               </div>
                             )}
                           </td>
@@ -645,7 +672,7 @@ export default function Reservas() {
                                 {canManage && r.status === 'pending' && (
                                   <>
                                     <button className="btn btn-primary btn-sm" style={{ padding: '3px 10px', fontSize: 11 }}
-                                      onClick={() => handleApprove(r.id)}>
+                                      onClick={() => openApprove(r.id)}>
                                       <Check size={11} /> Aprobar
                                     </button>
                                     <button className="btn btn-secondary btn-sm" style={{ padding: '3px 10px', fontSize: 11, color: 'var(--coral-500)' }}

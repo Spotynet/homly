@@ -39,7 +39,7 @@ from .serializers import (
     DashboardSerializer, AmenityReservationSerializer, CondominioRequestSerializer,
     NotificationSerializer, AuditLogSerializer,
 )
-from .permissions import IsSuperAdmin, IsTenantAdmin, IsTenantMember, IsAdminOrTesorero, IsAdminOrTesOrAuditor
+from .permissions import IsSuperAdmin, IsTenantAdmin, IsTenantMember, IsAdminOrTesorero, IsAdminOrTesOrAuditor, CanApproveReservation
 
 
 # ═══════════════════════════════════════════════════════════
@@ -1950,7 +1950,8 @@ class AmenityReservationViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         if self.action in ['approve', 'reject']:
-            return [IsTenantAdmin()]
+            # Dynamic: checks tenant.reservation_settings.role_permissions[role].can_approve
+            return [CanApproveReservation()]
         if self.action in ['list', 'retrieve']:
             return [IsTenantMember()]
         return [IsTenantMember()]
@@ -2029,23 +2030,31 @@ class AmenityReservationViewSet(viewsets.ModelViewSet):
                     id=unit_id, tenant_id=self.kwargs['tenant_id']
                 ).first()
 
-        admin_roles = ('admin', 'tesorero', 'superadmin')
-
         # Determine approval status based on tenant's reservation_settings
         try:
             tenant_obj = Tenant.objects.get(id=self.kwargs['tenant_id'])
-            approval_mode = (tenant_obj.reservation_settings or {}).get(
-                'approval_mode', 'require_vecinos'
-            )
+            res_settings  = tenant_obj.reservation_settings or {}
+            approval_mode = res_settings.get('approval_mode', 'require_vecinos')
+            role_perms    = res_settings.get('role_permissions', {})
         except Tenant.DoesNotExist:
             approval_mode = 'require_vecinos'
+            role_perms    = {}
+
+        # Whether this role auto-approves in require_vecinos mode:
+        # use per-role config if present, otherwise fall back to admin/tesorero/superadmin
+        if role == 'superadmin':
+            role_can_approve = True
+        elif role_perms and role in role_perms:
+            role_can_approve = bool(role_perms[role].get('can_approve', False))
+        else:
+            role_can_approve = role in ('admin', 'tesorero')
 
         if approval_mode == 'auto_approve_all':
             res_status = 'approved'
         elif approval_mode == 'require_all':
             res_status = 'pending'
-        else:  # 'require_vecinos' (default): admins auto-approve, others pending
-            res_status = 'approved' if role in admin_roles else 'pending'
+        else:  # 'require_vecinos' (default): roles with can_approve auto-approve, others pending
+            res_status = 'approved' if role_can_approve else 'pending'
 
         res = serializer.save(
             tenant_id=self.kwargs['tenant_id'],
@@ -2088,12 +2097,14 @@ class AmenityReservationViewSet(viewsets.ModelViewSet):
         res.status = 'approved'
         res.reviewed_by = request.user
         res.rejection_reason = ''
+        res.reviewer_notes = request.data.get('reviewer_notes', '')
         res.save()
+        notes_txt = f'\nObservaciones: {res.reviewer_notes}' if res.reviewer_notes else ''
         self._notify_unit_vecinos(
             res,
             notif_type='reservation_approved',
             title=f'✅ Tu reserva de {res.area_name} fue aprobada',
-            message=f'Fecha: {res.date}  {str(res.start_time)[:5]}–{str(res.end_time)[:5]}',
+            message=f'Fecha: {res.date}  {str(res.start_time)[:5]}–{str(res.end_time)[:5]}{notes_txt}',
         )
         _audit_log(
             request, 'reservas', 'approve',
@@ -2110,6 +2121,7 @@ class AmenityReservationViewSet(viewsets.ModelViewSet):
         res.status = 'rejected'
         res.reviewed_by = request.user
         res.rejection_reason = request.data.get('reason', '')
+        res.reviewer_notes = request.data.get('reviewer_notes', res.rejection_reason)
         res.save()
         reason_txt = f'\nMotivo: {res.rejection_reason}' if res.rejection_reason else ''
         self._notify_unit_vecinos(

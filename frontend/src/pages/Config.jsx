@@ -36,6 +36,16 @@ const ROLE_META = {
 
 const TENANT_ROLES = ['admin','tesorero','contador','auditor','vigilante','vecino'];
 
+// ── Default per-role reservation permissions ─────────────────────────────────
+const DEFAULT_RESERVATION_ROLE_PERMS = {
+  admin:     { can_request: true,  can_approve: true  },
+  tesorero:  { can_request: true,  can_approve: true  },
+  contador:  { can_request: false, can_approve: false },
+  auditor:   { can_request: false, can_approve: false },
+  vigilante: { can_request: true,  can_approve: false },
+  vecino:    { can_request: true,  can_approve: false },
+};
+
 // ── Módulos del menú principal ───────────────────────────────────────────────
 const MODULE_DEFINITIONS = [
   { key: 'dashboard',       label: 'Dashboard',           icon: Home,         desc: 'Panel principal con métricas del condominio' },
@@ -521,6 +531,18 @@ export default function Config() {
         ? Object.fromEntries(base.map(k => [k, current.includes(k) ? 'write' : 'hidden']))
         : (current || {});
       return { ...prev, [roleKey]: { ...normalized, [moduleKey]: level } };
+    });
+  };
+
+  // ── Update a per-role reservation permission (can_request / can_approve) ─────
+  const updateReservationRolePerm = (roleKey, permKey, value) => {
+    setReservationSettings(s => {
+      const current  = s.role_permissions || {};
+      const existing = current[roleKey] ?? DEFAULT_RESERVATION_ROLE_PERMS[roleKey] ?? { can_request: false, can_approve: false };
+      return {
+        ...s,
+        role_permissions: { ...current, [roleKey]: { ...existing, [permKey]: value } },
+      };
     });
   };
 
@@ -2404,6 +2426,101 @@ export default function Config() {
                 );
               })}
             </div>
+          </div>
+
+          {/* ── Per-role reservation permissions ─────────────────────────── */}
+          <div style={{
+            marginTop: 20, padding: '18px 22px',
+            background: 'var(--white)', border: '1px solid var(--sand-100)',
+            borderRadius: 'var(--radius-lg)',
+          }}>
+            <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:16 }}>
+              <span style={{ display:'inline-flex', alignItems:'center', justifyContent:'center', width:32, height:32, borderRadius:'var(--radius-sm)', background:'var(--teal-50)', flexShrink:0 }}>
+                <Shield size={15} color="var(--teal-600)" />
+              </span>
+              <div>
+                <div style={{ fontSize:14, fontWeight:700, color:'var(--ink-800)' }}>Permisos de Reservas por Rol</div>
+                <div style={{ fontSize:12, color:'var(--ink-400)', marginTop:1 }}>Define qué roles pueden solicitar y aprobar reservas de áreas comunes</div>
+              </div>
+            </div>
+
+            <table style={{ width:'100%', borderCollapse:'collapse' }}>
+              <thead>
+                <tr style={{ borderBottom:'1.5px solid var(--sand-100)' }}>
+                  <th style={{ textAlign:'left', fontSize:11, fontWeight:700, color:'var(--ink-400)', textTransform:'uppercase', letterSpacing:'0.05em', padding:'6px 10px 8px 0' }}>
+                    Rol
+                  </th>
+                  <th style={{ textAlign:'center', fontSize:11, fontWeight:700, color:'var(--ink-400)', textTransform:'uppercase', letterSpacing:'0.05em', padding:'6px 0 8px', width:160 }}>
+                    Puede Solicitar
+                  </th>
+                  <th style={{ textAlign:'center', fontSize:11, fontWeight:700, color:'var(--ink-400)', textTransform:'uppercase', letterSpacing:'0.05em', padding:'6px 0 8px', width:180 }}>
+                    Puede Aprobar / Rechazar
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {TENANT_ROLES.map((roleKey, ri) => {
+                  const meta    = ROLE_META[roleKey];
+                  const perms   = (reservationSettings.role_permissions || {})[roleKey] ?? DEFAULT_RESERVATION_ROLE_PERMS[roleKey] ?? { can_request: false, can_approve: false };
+                  const isLocked = roleKey === 'admin'; // admin always has full access
+                  const Toggle  = ({ checked, onChange, locked }) => (
+                    <button
+                      type="button"
+                      onClick={() => !locked && isAdmin && onChange(!checked)}
+                      disabled={locked || !isAdmin}
+                      style={{
+                        display:'inline-flex', alignItems:'center', gap:6,
+                        padding:'4px 12px', borderRadius:20, border:'none',
+                        background: checked ? 'var(--teal-50)' : 'var(--sand-50)',
+                        color: checked ? 'var(--teal-700)' : 'var(--ink-400)',
+                        fontWeight:700, fontSize:11,
+                        cursor: (locked || !isAdmin) ? 'default' : 'pointer',
+                        opacity: locked ? 0.65 : 1,
+                        transition:'all 0.15s',
+                      }}
+                    >
+                      <span style={{
+                        width:10, height:10, borderRadius:'50%', flexShrink:0,
+                        background: checked ? 'var(--teal-500)' : 'var(--sand-200)',
+                      }} />
+                      {checked ? 'Sí' : 'No'}
+                    </button>
+                  );
+                  return (
+                    <tr key={roleKey} style={{ borderBottom: ri < TENANT_ROLES.length - 1 ? '1px solid var(--sand-50)' : 'none' }}>
+                      <td style={{ padding:'10px 10px 10px 0' }}>
+                        <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                          <span style={{
+                            display:'inline-block', padding:'2px 9px', borderRadius:20, fontSize:11, fontWeight:700,
+                            background: meta?.bg || 'var(--sand-100)',
+                            color: meta?.color || 'var(--ink-600)',
+                          }}>
+                            {meta?.label || roleKey}
+                          </span>
+                          {isLocked && (
+                            <span style={{ fontSize:10, color:'var(--ink-300)', fontStyle:'italic' }}>siempre habilitado</span>
+                          )}
+                        </div>
+                      </td>
+                      <td style={{ textAlign:'center', padding:'10px 0' }}>
+                        <Toggle
+                          checked={perms.can_request}
+                          locked={isLocked}
+                          onChange={v => updateReservationRolePerm(roleKey, 'can_request', v)}
+                        />
+                      </td>
+                      <td style={{ textAlign:'center', padding:'10px 0' }}>
+                        <Toggle
+                          checked={perms.can_approve}
+                          locked={isLocked}
+                          onChange={v => updateReservationRolePerm(roleKey, 'can_approve', v)}
+                        />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
 
         </div>

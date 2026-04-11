@@ -47,22 +47,27 @@ const NAV_ITEMS = {
     { path: '/app/estado-cuenta',    icon: FileText,    label: 'Estado de Cuenta'   },
     { path: '/app/cierre-periodo',   icon: Lock,        label: 'Cierre de Período'  },
     { path: '/app/notificaciones',   icon: Bell,        label: 'Notificaciones'     },
-    { path: '/app/config',           icon: Settings,    label: 'Configuración'      },
   ]}],
 
   contador: [{ section: 'main', items: [
-    { path: '/app/dashboard',       icon: Home,        label: 'Dashboard'        },
-    { path: '/app/cobranza',        icon: Receipt,     label: 'Cobranza Mensual' },
-    { path: '/app/gastos',          icon: ShoppingBag, label: 'Gastos'           },
-    { path: '/app/estado-cuenta',   icon: FileText,    label: 'Estado de Cuenta' },
-    { path: '/app/notificaciones',  icon: Bell,        label: 'Notificaciones'   },
+    { path: '/app/dashboard',       icon: Home,        label: 'Dashboard'         },
+    { path: '/app/reservas',        icon: Calendar,    label: 'Reservas'          },
+    { path: '/app/cobranza',        icon: Receipt,     label: 'Cobranza Mensual'  },
+    { path: '/app/gastos',          icon: ShoppingBag, label: 'Gastos'            },
+    { path: '/app/estado-cuenta',   icon: FileText,    label: 'Estado de Cuenta'  },
+    { path: '/app/cierre-periodo',  icon: Lock,        label: 'Cierre de Período' },
+    { path: '/app/notificaciones',  icon: Bell,        label: 'Notificaciones'    },
   ]}],
 
   auditor: [{ section: 'main', items: [
-    { path: '/app/dashboard',       icon: Home,        label: 'Dashboard'        },
-    { path: '/app/gastos',          icon: ShoppingBag, label: 'Gastos'           },
-    { path: '/app/estado-cuenta',   icon: FileText,    label: 'Estado de Cuenta' },
-    { path: '/app/notificaciones',  icon: Bell,        label: 'Notificaciones'   },
+    { path: '/app/dashboard',       icon: Home,        label: 'Dashboard'         },
+    { path: '/app/cobranza',        icon: Receipt,     label: 'Cobranza Mensual'  },
+    { path: '/app/reservas',        icon: Calendar,    label: 'Reservas'          },
+    { path: '/app/gastos',          icon: ShoppingBag, label: 'Gastos'            },
+    { path: '/app/estado-cuenta',   icon: FileText,    label: 'Estado de Cuenta'  },
+    { path: '/app/cierre-periodo',  icon: Lock,        label: 'Cierre de Período' },
+    { path: '/app/notificaciones',  icon: Bell,        label: 'Notificaciones'    },
+    { path: '/app/config',          icon: Settings,    label: 'Configuración'     },
   ]}],
 
   vigilante: [{ section: 'main', items: [

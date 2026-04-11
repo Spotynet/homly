@@ -12,9 +12,9 @@
  */
 export const ROLE_BASE_MODULES = {
   admin:     ['dashboard', 'reservas', 'cobranza', 'gastos', 'estado_cuenta', 'cierre_periodo', 'notificaciones', 'config'],
-  tesorero:  ['dashboard', 'reservas', 'cobranza', 'gastos', 'estado_cuenta', 'cierre_periodo', 'notificaciones', 'config'],
-  contador:  ['dashboard', 'cobranza', 'gastos', 'estado_cuenta', 'notificaciones'],
-  auditor:   ['dashboard', 'gastos', 'estado_cuenta', 'notificaciones'],
+  tesorero:  ['dashboard', 'reservas', 'cobranza', 'gastos', 'estado_cuenta', 'cierre_periodo', 'notificaciones'],
+  contador:  ['dashboard', 'reservas', 'cobranza', 'gastos', 'estado_cuenta', 'cierre_periodo', 'notificaciones'],
+  auditor:   ['dashboard', 'config', 'cobranza', 'reservas', 'gastos', 'estado_cuenta', 'cierre_periodo', 'notificaciones'],
   vigilante: ['dashboard', 'reservas', 'notificaciones'],
   vecino:    ['my_unit', 'reservas', 'estado_cuenta', 'notificaciones'],
 };

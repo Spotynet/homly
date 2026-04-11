@@ -749,6 +749,7 @@ class AmenityReservation(models.Model):
                                          null=True, blank=True,
                                          related_name='reviewed_reservations')
     rejection_reason = models.TextField(blank=True, default='')
+    reviewer_notes   = models.TextField(blank=True, default='', help_text='Observations written by the reviewer when approving or rejecting')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
