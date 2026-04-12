@@ -487,9 +487,13 @@ export default function Dashboard() {
   // Period open/closed status for the selected period
   const isPeriodClosed     = closedPeriods.some(cp => cp.period === period);
 
-  const pctCobVsCargos     = cargosFijos > 0 ? Math.round((cobranza / cargosFijos) * 100) : 0;
-  const pctGastosVsIng     = totalIngresos > 0 ? Math.round((gastos / totalIngresos) * 100) : 0;
-  const pctIngAdicional    = totalIngresos > 0 ? Math.round((ingAdicional / totalIngresos) * 100) : 0;
+  // Total ingresos incluyendo no conciliados (para gauges y KPIs)
+  const totalIngresosAll   = totalIngresos + ingNoConc;
+  // Fix 3: Eficiencia de Cobranza usa todos los ingresos registrados (conciliados + no conciliados)
+  const pctCobVsCargos     = cargosFijos > 0 ? Math.min(Math.round((totalIngresosAll / cargosFijos) * 100), 150) : 0;
+  // Fix 4: Ratio Egresos usa todos los ingresos (conciliados + no conciliados) como denominador
+  const pctGastosVsIng     = totalIngresosAll > 0 ? Math.round((gastosTotal / totalIngresosAll) * 100) : 0;
+  const pctIngAdicional    = totalIngresosAll > 0 ? Math.round((ingAdicional / totalIngresosAll) * 100) : 0;
   // pct = adeudoRecibido / (adeudoRecibido + deudaTotal): fracción cobrada del total antes de este período
   const pctDeudaRecuperada = (adeudoRecibido + deudaTotal) > 0
     ? Math.round((adeudoRecibido / (adeudoRecibido + deudaTotal)) * 100)
@@ -518,21 +522,35 @@ export default function Dashboard() {
         : []);
   const activeAreas = commonAreas.filter(a => a.active !== false);
 
-  // Barras de estatus
+  // Barras de estatus — Fix 1: exentas se suman al KPI de Pagado
   const totalUnits = registered || 1;
+  const paidAndExemptCnt = paidCnt + exemptCnt;
   const statusBars = [
-    { label: 'Pagado',    count: paidCnt,    color: 'var(--teal-400)',   bg: 'var(--teal-50)',   icon: CheckCircle },
+    { label: 'Pagado', count: paidAndExemptCnt, color: 'var(--teal-400)', bg: 'var(--teal-50)', icon: CheckCircle,
+      note: exemptCnt > 0 ? `${paidCnt} pagadas · ${exemptCnt} exentas` : null },
     { label: 'Parcial',   count: partialCnt, color: 'var(--amber-400)',  bg: 'var(--amber-50)',  icon: Activity },
     { label: 'Pendiente', count: pendingCnt, color: 'var(--coral-400)',  bg: 'var(--coral-50)',  icon: AlertCircle },
-    ...(exemptCnt > 0 ? [{ label: 'Exento', count: exemptCnt, color: 'var(--blue-400)', bg: 'var(--blue-50)', icon: Clock }] : []),
   ];
+
+  // Paleta para conceptos adicionales (colores distintos de teal/amber reservados para mant/no-id)
+  const CONCEPT_PALETTE = ['#6366f1','#8b5cf6','#ec4899','#f97316','#06b6d4','#84cc16','#a855f7','#14b8a6','#f43f5e','#0ea5e9'];
+  // Fix 2: expandir cada concepto adicional en segmento propio con color único
+  const conceptSegments = rd.ingresos_conceptos
+    ? Object.entries(rd.ingresos_conceptos)
+        .map(([, v], idx) => ({
+          label: v.label || 'Concepto adicional',
+          value: parseFloat(v.total) || 0,
+          color: CONCEPT_PALETTE[idx % CONCEPT_PALETTE.length],
+        }))
+        .filter(s => s.value > 0)
+    : (ingConceptos > 0 ? [{ label: 'Conceptos adicionales', value: ingConceptos, color: CONCEPT_PALETTE[0] }] : []);
 
   // Segmentos del donut de ingresos (desglose del Reporte General)
   const incomeSegments = [
-    { label: 'Mantenimiento',       value: cobranza,     color: 'var(--teal-500)' },
-    ...(ingAdelanto > 0   ? [{ label: 'Adelantos mant.',   value: ingAdelanto,  color: 'var(--teal-200)' }]  : []),
-    ...(ingConceptos > 0  ? [{ label: 'Conceptos adicionales', value: ingConceptos, color: 'var(--blue-400)' }] : []),
-    ...(ingNoId > 0       ? [{ label: 'No Identificados',   value: ingNoId,      color: 'var(--amber-400)' }] : []),
+    { label: 'Mantenimiento',   value: cobranza,    color: 'var(--teal-500)' },
+    ...(ingAdelanto > 0 ? [{ label: 'Adelantos mant.', value: ingAdelanto, color: '#2dd4bf' }] : []),
+    ...conceptSegments,
+    ...(ingNoId > 0  ? [{ label: 'No Identificados', value: ingNoId,  color: 'var(--amber-400)' }] : []),
   ].filter(seg => seg.value > 0);
 
   // ── Componentes de sección ─────────────────────────────────────────────
@@ -654,8 +672,8 @@ export default function Dashboard() {
               </div>
               <div className="dash-kpi-label">Cobrado — {monthLabel(s.period || period)}</div>
               <div className="dash-kpi-value">
-                {paidCnt}
-                <span style={{ fontSize: 14, fontWeight: 400, color: 'var(--ink-400)' }}>/{registered - exemptCnt}</span>
+                {paidAndExemptCnt}
+                <span style={{ fontSize: 14, fontWeight: 400, color: 'var(--ink-400)' }}>/{registered}</span>
               </div>
               <div className="dash-kpi-sub">
                 {new Intl.NumberFormat('es-MX').format(totalColl)} recaudado
@@ -758,10 +776,10 @@ export default function Dashboard() {
                   </div>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     {[
-                      { label: 'Pagadas', count: paidCnt, color: 'var(--teal-600)', bg: 'var(--teal-50)', border: 'var(--teal-100)' },
+                      { label: 'Pagadas', count: paidAndExemptCnt, color: 'var(--teal-600)', bg: 'var(--teal-50)', border: 'var(--teal-100)',
+                        sub: exemptCnt > 0 ? `${paidCnt}+${exemptCnt}ex` : null },
                       { label: 'Parcial', count: partialCnt, color: 'var(--amber-700)', bg: 'var(--amber-50)', border: 'var(--amber-100)' },
                       { label: 'Pendiente', count: pendingCnt, color: 'var(--coral-600)', bg: 'var(--coral-50)', border: 'var(--coral-100)' },
-                      ...(exemptCnt > 0 ? [{ label: 'Exenta', count: exemptCnt, color: 'var(--blue-600)', bg: 'var(--blue-50)', border: 'var(--blue-100)' }] : []),
                     ].map(b => (
                       <div key={b.label} style={{
                         padding: '6px 12px', borderRadius: 10, background: b.bg,
@@ -769,6 +787,7 @@ export default function Dashboard() {
                       }}>
                         <div style={{ fontSize: 18, fontWeight: 800, color: b.color, lineHeight: 1 }}>{b.count}</div>
                         <div style={{ fontSize: 10, color: b.color, marginTop: 2, fontWeight: 600 }}>{b.label}</div>
+                        {b.sub && <div style={{ fontSize: 9, color: b.color, opacity: 0.7, marginTop: 1 }}>{b.sub}</div>}
                       </div>
                     ))}
                   </div>
@@ -1106,7 +1125,7 @@ export default function Dashboard() {
               pct={pctCobVsCargos}
               color={effColor}
               icon={Receipt}
-              subLeft={{ label: 'Total cobrado', value: fmtDec(totalIngresos + ingNoConc) }}
+              subLeft={{ label: 'Total cobrado', value: fmtDec(totalIngresosAll) }}
               subRight={{ label: 'Cargos esperados', value: fmtDec(cargosFijos) }}
               breakdown={[
                 {
@@ -1140,7 +1159,7 @@ export default function Dashboard() {
               color={gvColor}
               icon={ShoppingBag}
               subLeft={{ label: 'Total egresos', value: fmtDec(gastosTotal) }}
-              subRight={{ label: 'Total ingresos', value: fmtDec(totalIngresos) }}
+              subRight={{ label: 'Total ingresos', value: fmtDec(totalIngresosAll) }}
               breakdown={[
                 {
                   label: 'Egresos conciliados',
@@ -1165,13 +1184,13 @@ export default function Dashboard() {
           <div className="grid-2" style={{ marginBottom: 20 }}>
             {/* Donut multi: composición de ingresos */}
             {(() => {
-              // Todos los segmentos de ingresos (conciliados + no conciliados)
+              // Fix 2: todos los segmentos con conceptos adicionales expandidos y colores únicos
               const allIncomeSegs = [
-                { label: 'Mantenimiento',          value: cobranza,     color: 'var(--teal-500)' },
-                ...(ingAdelanto  > 0 ? [{ label: 'Adelantos mant.',        value: ingAdelanto,  color: 'var(--teal-300)' }] : []),
-                ...(ingConceptos > 0 ? [{ label: 'Conceptos adicionales',   value: ingConceptos, color: 'var(--blue-400)' }] : []),
-                ...(ingNoId      > 0 ? [{ label: 'No identificados',        value: ingNoId,      color: 'var(--amber-400)' }] : []),
-                ...(ingNoConc    > 0 ? [{ label: 'Sin conciliar',           value: ingNoConc,    color: 'var(--blue-300)' }] : []),
+                { label: 'Mantenimiento',      value: cobranza,    color: 'var(--teal-500)' },
+                ...(ingAdelanto > 0 ? [{ label: 'Adelantos mant.', value: ingAdelanto, color: '#2dd4bf' }] : []),
+                ...conceptSegments,
+                ...(ingNoId   > 0 ? [{ label: 'No identificados', value: ingNoId,   color: 'var(--amber-400)' }] : []),
+                ...(ingNoConc > 0 ? [{ label: 'Sin conciliar',    value: ingNoConc, color: '#94a3b8' }] : []),
               ].filter(s => s.value > 0);
               const grandTotal = allIncomeSegs.reduce((a, b) => a + b.value, 0);
               return (
@@ -1240,7 +1259,7 @@ export default function Dashboard() {
                   const Ico = b.icon;
                   return (
                     <div key={b.label} style={{ marginBottom: 16 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                         <div style={{ width: 24, height: 24, borderRadius: 6, background: b.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                           {Ico && <Ico size={13} color={b.color} />}
                         </div>
@@ -1248,6 +1267,11 @@ export default function Dashboard() {
                         <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--ink-800)' }}>{b.count}</span>
                         <span style={{ fontSize: 11, color: 'var(--ink-400)', width: 38, textAlign: 'right' }}>({bpct}%)</span>
                       </div>
+                      {b.note && (
+                        <div style={{ fontSize: 10, color: 'var(--teal-600)', marginLeft: 32, marginBottom: 4, fontWeight: 600 }}>
+                          {b.note}
+                        </div>
+                      )}
                       <div style={{ height: 10, background: b.bg, borderRadius: 'var(--radius-full)', overflow: 'hidden' }}>
                         <div style={{
                           height: '100%', width: `${bpct}%`, background: b.color,
