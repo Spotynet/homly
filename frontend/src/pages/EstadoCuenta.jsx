@@ -1396,7 +1396,9 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
 
       const gastosPer = gastoByPeriod[period] || { reconciled: 0, noReconciled: 0 };
       const gastoDetailPer = gastoDetailByPeriod[period] || { reconciled: [], noReconciled: [] };
-      const pGastos = gastosPer.reconciled + gastosPer.noReconciled;
+      // Gastos en tránsito (no conciliados) se muestran en el detalle pero NO afectan el balance del período.
+      // Solo los gastos conciliados con banco se usan en el cálculo.
+      const pGastos = gastosPer.reconciled;
       const balance = recaudo - pGastos;
       return {
         period, totalCargo, cargoOblig: totalCargo, recaudo,
