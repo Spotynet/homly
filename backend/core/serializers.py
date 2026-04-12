@@ -363,11 +363,8 @@ class ExtraFieldSerializer(serializers.ModelSerializer):
         model = ExtraField
         fields = ['id', 'tenant', 'label', 'default_amount', 'required',
                   'enabled', 'cross_unit', 'field_type', 'sort_order',
-                  'is_system_default', 'created_at']
-        # NOTE: show_in_normal, show_in_additional, show_in_gastos are intentionally
-        # excluded here until migration 0014 is applied on the server.
-        # After running: python manage.py migrate
-        # Add them back to this fields list to enable the "Mostrar en formularios" feature.
+                  'is_system_default', 'created_at',
+                  'show_in_normal', 'show_in_additional', 'show_in_gastos']
         read_only_fields = ['id', 'created_at']
 
 
