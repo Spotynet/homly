@@ -1956,6 +1956,16 @@ function ReporteGeneralView({ tenantData, generalData, genLoading, cutoff, setCu
                 </div>
               ))}
 
+              {rd.ingreso_adeudo > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--sand-50)' }}>
+                  <span style={{ fontSize: 13, color: 'var(--amber-700)', fontWeight: 600 }}>
+                    Cobranza de Adeudo
+                    <small style={{ fontSize: 11, color: 'var(--amber-500)', fontWeight: 400, marginLeft: 6 }}>(cobros de períodos anteriores)</small>
+                  </span>
+                  <span style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 600, color: 'var(--amber-600)' }}>{fmt2(rd.ingreso_adeudo)}</span>
+                </div>
+              )}
+
               {rd.ingresos_referenciados > 0 && (
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--sand-50)' }}>
                   <span style={{ fontSize: 13, color: 'var(--purple-500)', fontWeight: 600 }}>

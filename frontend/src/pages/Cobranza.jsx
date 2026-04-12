@@ -132,6 +132,7 @@ export default function Cobranza() {
   const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
   const [evidencePopup, setEvidencePopup] = useState(null); // { b64, mime, fileName }
   const [addlExtraFields, setAddlExtraFields] = useState([]); // campos para pagos adicionales (sin adelanto)
+  const [allNormalFields, setAllNormalFields] = useState([]); // todos los campos normales habilitados (para recibo)
   const [captureUnitPeriods, setCaptureUnitPeriods] = useState([]); // períodos con adeudo de la unidad en captura
   const [captureUnitPeriodsLoading, setCaptureUnitPeriodsLoading] = useState(false);
   const [closedPeriods, setClosedPeriods] = useState([]);
@@ -151,6 +152,7 @@ export default function Cobranza() {
       const rawEFs = Array.isArray(efRes.data) ? efRes.data : (efRes.data?.results || []);
       setExtraFields(rawEFs.filter(f => f.enabled && (!f.field_type || f.field_type === 'normal') && f.show_in_normal !== false));
       setAddlExtraFields(rawEFs.filter(f => f.enabled && (!f.field_type || f.field_type === 'normal') && f.show_in_additional !== false));
+      setAllNormalFields(rawEFs.filter(f => f.enabled && (!f.field_type || f.field_type === 'normal')));
       setTenantData(tRes.data);
       setUnrecognizedIncome(Array.isArray(uiRes.data) ? uiRes.data : (uiRes.data?.results || []));
       setClosedPeriods(Array.isArray(cpRes.data) ? cpRes.data : (cpRes.data?.results || []));
@@ -1684,7 +1686,7 @@ export default function Cobranza() {
             pay={pay}
             unit={unit}
             tc={tenantData}
-            extraFields={extraFields}
+            extraFields={allNormalFields}
             reservations={receiptReservations}
             onClose={() => setShowReceipt(null)}
           />

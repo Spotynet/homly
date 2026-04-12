@@ -117,12 +117,20 @@ export default function PaymentReceiptModal({ pay, unit, tc, extraFields = [], r
   const isReceiptExempt = !!unit?.admin_exempt;
   const maintCharge = isReceiptExempt ? 0 : (parseFloat(tc?.maintenance_fee) || 0);
   const reqEFs = extraFields.filter(ef => ef.required);
-  const optEFs = extraFields.filter(ef => !ef.required);
   const effTotals = getEffectiveFieldTotals(pay);
+
+  // fieldById: used for label lookups everywhere (includes all normal fields)
+  const fieldById = Object.fromEntries(extraFields.map(ef => [ef.id, ef]));
+  const getFieldLabel = (fid) => {
+    if (fid === 'maintenance') return 'Mantenimiento';
+    if (fid === 'prevDebt') return 'Recaudo de adeudos';
+    return fieldById[fid]?.label || fid;
+  };
 
   const fp = {};
   (pay?.field_payments || []).forEach(f => { fp[f.field_key] = f; });
 
+  // Required totals
   const maintAbono = Math.min(effTotals.maintenance || 0, maintCharge);
   let totReqCharge = maintCharge, totReqAbono = maintAbono;
   reqEFs.forEach(ef => {
@@ -130,8 +138,25 @@ export default function PaymentReceiptModal({ pay, unit, tc, extraFields = [], r
     const ab = Math.min(effTotals[ef.id] || 0, ch);
     totReqCharge += ch; totReqAbono += ab;
   });
+
+  // Optional totals: sum ALL amounts in effTotals that are not maintenance, not required,
+  // and not an adelanto field (adelanto amounts are counted separately via totalAdelanto).
+  // This correctly captures optional fields regardless of show_in_normal filtering.
+  const reqFieldIdSet = new Set(['maintenance', ...reqEFs.map(ef => ef.id)]);
+  const adelantoFieldIdSet = new Set(
+    (pay?.field_payments || [])
+      .filter(f => f.adelanto_targets && Object.keys(f.adelanto_targets || {}).length > 0)
+      .map(f => f.field_key)
+  );
   let totOptAbono = 0;
-  optEFs.forEach(ef => { totOptAbono += effTotals[ef.id] || 0; });
+  Object.entries(effTotals).forEach(([fk, amt]) => {
+    if (reqFieldIdSet.has(fk)) return;
+    if (adelantoFieldIdSet.has(fk)) return;
+    totOptAbono += parseFloat(amt) || 0;
+  });
+
+  // Derive optEFs for display rows (optional fields that have a balance)
+  const optEFs = extraFields.filter(ef => !ef.required);
   const totSaldo = Math.max(0, totReqCharge - totReqAbono);
 
   let totalAdelanto = 0;
@@ -141,7 +166,7 @@ export default function PaymentReceiptModal({ pay, unit, tc, extraFields = [], r
       Object.entries(fd.adelanto_targets).forEach(([tp, amt]) => {
         const a = parseFloat(amt) || 0;
         if (a > 0) {
-          const fLabel = fieldId === 'maintenance' ? 'Mantenimiento' : (extraFields.find(e => e.id === fieldId) || {}).label || fieldId;
+          const fLabel = getFieldLabel(fieldId);
           adelantoRows.push({ fieldLabel: fLabel, targetPeriod: tp, amount: a });
           totalAdelanto += a;
         }
@@ -155,7 +180,7 @@ export default function PaymentReceiptModal({ pay, unit, tc, extraFields = [], r
     Object.entries(fieldMap || {}).forEach(([fieldId, amt]) => {
       const a = parseFloat(amt) || 0;
       if (a > 0) {
-        const fLabel = fieldId === 'maintenance' ? 'Mantenimiento' : fieldId === 'prevDebt' ? 'Deuda Anterior' : (extraFields.find(e => e.id === fieldId) || {}).label || fieldId;
+        const fLabel = getFieldLabel(fieldId);
         adeudoRows.push({ fieldLabel: fLabel, targetPeriod, amount: a });
         totalAdeudo += a;
       }
@@ -352,7 +377,7 @@ export default function PaymentReceiptModal({ pay, unit, tc, extraFields = [], r
                       Object.entries(fpAP).forEach(([fid, fd2]) => {
                         const aAmt = parseFloat((fd2 && fd2.received) ?? fd2 ?? 0) || 0;
                         if (aAmt <= 0) return;
-                        const fLabel = fid === 'maintenance' ? 'Mantenimiento' : fid === 'prevDebt' ? 'Recaudo de adeudos' : (extraFields.find(e => e.id === fid) || {}).label || fid;
+                        const fLabel = getFieldLabel(fid);
                         const sublabel = ['Pago #' + (apIdx + 2), apPtLabel, apPdLabel].filter(Boolean).join(' · ') + (ap.bank_reconciled ? ' 🏦' : '');
                         rows.push({ fLabel, sublabel, amount: aAmt });
                       });
