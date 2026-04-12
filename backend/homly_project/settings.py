@@ -178,30 +178,38 @@ USE_TZ = True
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # ─── Email ──────────────────────────────────────────────
-# Use console backend in dev; SMTP in production.
-# To send to any provider (Gmail, Hotmail/Outlook, Yahoo, AOL, etc.) configure
-# the variables below in your .env file.  The SMTP server itself can be any
-# provider — common choices:
+# Auto-selects SMTP or console backend based on whether credentials are set:
+#   - If EMAIL_HOST_USER is configured in .env → SMTP (real sending), even in DEBUG mode
+#   - If EMAIL_HOST_USER is empty and DEBUG=True → console (prints to terminal)
+#   - If EMAIL_HOST_USER is empty and DEBUG=False → SMTP (will fail without credentials — set them!)
+# You can always override with EMAIL_BACKEND explicitly in .env.
 #
-#   Gmail:         smtp.gmail.com  port 587  TLS=True  (use an App Password)
-#   Outlook/M365:  smtp.office365.com  port 587  TLS=True
-#   Yahoo:         smtp.mail.yahoo.com  port 587  TLS=True
-#   Brevo/Sendinblue, SendGrid, Mailgun, etc. — set EMAIL_HOST accordingly.
+# Provider quick reference:
+#   Gmail         → smtp.gmail.com          port 587  TLS=True  (use an App Password)
+#   Outlook/M365  → smtp.office365.com      port 587  TLS=True
+#   Yahoo         → smtp.mail.yahoo.com     port 587  TLS=True
+#   AOL           → smtp.aol.com            port 587  TLS=True
+#   Port 465      → EMAIL_USE_SSL=True, EMAIL_USE_TLS=False
+#   Brevo / SendGrid / Mailgun → set EMAIL_HOST accordingly
 #
-# IMPORTANT: DEFAULT_FROM_EMAIL must match the account authenticated via
-# EMAIL_HOST_USER; mismatches cause SPF/DKIM failures and spam rejection.
-EMAIL_BACKEND = config(
-    'EMAIL_BACKEND',
-    default='django.core.mail.backends.console.EmailBackend' if DEBUG else 'django.core.mail.backends.smtp.EmailBackend'
-)
+# IMPORTANT: DEFAULT_FROM_EMAIL must match EMAIL_HOST_USER to pass SPF/DKIM.
+EMAIL_HOST_USER     = config('EMAIL_HOST_USER',     default='')
+EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default='')
 EMAIL_HOST          = config('EMAIL_HOST',          default='smtp.gmail.com')
 EMAIL_PORT          = config('EMAIL_PORT',          default=587, cast=int)
 EMAIL_USE_TLS       = config('EMAIL_USE_TLS',       default=True,  cast=bool)
 # Set EMAIL_USE_SSL=True (and EMAIL_PORT=465) for providers that use implicit SSL
 EMAIL_USE_SSL       = config('EMAIL_USE_SSL',       default=False, cast=bool)
-EMAIL_HOST_USER     = config('EMAIL_HOST_USER',     default='')
-EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default='')
 DEFAULT_FROM_EMAIL  = config('DEFAULT_FROM_EMAIL',  default='noreply@homly.com.mx')
+
+# Auto-detect backend: SMTP when credentials are present, console fallback in dev
+_has_smtp_creds = bool(EMAIL_HOST_USER)
+_default_backend = (
+    'django.core.mail.backends.smtp.EmailBackend'
+    if (_has_smtp_creds or not DEBUG)
+    else 'django.core.mail.backends.console.EmailBackend'
+)
+EMAIL_BACKEND = config('EMAIL_BACKEND', default=_default_backend)
 # Timeout in seconds for the SMTP connection (avoids hanging on slow mail servers)
 EMAIL_TIMEOUT       = config('EMAIL_TIMEOUT',       default=10, cast=int)
 # No-reply address used in the From header of all outgoing Homly emails.
