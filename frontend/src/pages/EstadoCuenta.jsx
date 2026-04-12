@@ -13,6 +13,19 @@ function fmt(n) {
   return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n ?? 0);
 }
 
+/**
+ * Genera el nombre de archivo estándar para exportaciones PDF.
+ * Formato archivo:  {Reporte}_{Periodo}_{Tenant}.pdf
+ * Formato título:   {Reporte} — {Periodo} — {Tenant}   (para document.title / window.print)
+ */
+function pdfFileName(report, period, tenant) {
+  const safe = (s) => (s || '').trim().replace(/[/\\:*?"<>|]/g, '').replace(/\s+/g, '_');
+  return `${safe(report)}_${safe(period)}_${safe(tenant)}.pdf`;
+}
+function pdfTitle(report, period, tenant) {
+  return `${(report || '').trim()} — ${(period || '').trim()} — ${(tenant || '').trim()}`;
+}
+
 export default function EstadoCuenta() {
   const { tenantId, isVecino, user, role } = useAuth();
   const location = useLocation();
@@ -57,7 +70,7 @@ export default function EstadoCuenta() {
       const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
       const a = document.createElement('a');
       a.href = url;
-      a.download = `recibo-${period}.pdf`;
+      a.download = pdfFileName('Recibo', period, tenantData?.name);
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -70,14 +83,14 @@ export default function EstadoCuenta() {
   };
   const handlePrintUnits = useCallback(() => {
     const prev = document.title;
-    document.title = `Estado por Unidad — ${cutoff}`;
+    document.title = pdfTitle('Estado por Unidad', cutoff, tenantData?.name);
     document.body.classList.add('printing-units');
     window.print();
     setTimeout(() => {
       document.title = prev;
       document.body.classList.remove('printing-units');
     }, 1500);
-  }, [cutoff]);
+  }, [cutoff, tenantData]);
 
   // Load approved reservations with charge when receipt modal opens
   useEffect(() => {
@@ -105,7 +118,7 @@ export default function EstadoCuenta() {
       const a = document.createElement('a');
       a.href = url;
       const unitCode = (data?.unit?.unit_id_code || '').replace(/[^a-zA-Z0-9]/g, '_') || 'unidad';
-      a.download = `estado-cuenta-${unitCode}-${detailTo || todayPeriod()}.pdf`;
+      a.download = pdfFileName(`Estado_Cuenta_${unitCode}`, detailTo || todayPeriod(), tenantData?.name);
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -563,7 +576,12 @@ export default function EstadoCuenta() {
                   </button>
                 )}
 
-                <button className="btn-outline-white" onClick={() => window.print()}>
+                <button className="btn-outline-white" onClick={() => {
+                  const prev = document.title;
+                  document.title = pdfTitle('Estado por Unidad', cutoff, tenantData?.name);
+                  window.print();
+                  setTimeout(() => { document.title = prev; }, 1500);
+                }}>
                   <Printer size={14} /> Imprimir / PDF
                 </button>
               </div>
@@ -1302,10 +1320,7 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
         reader.onerror = reject;
         reader.readAsDataURL(file);
       });
-      const existing = bankStmtMap[period];
-      if (existing) {
-        await bankAPI.deleteStatement(tenantId, existing.id);
-      }
+      // El backend hace upsert: crea o reemplaza el estado del período automáticamente
       const res = await bankAPI.upload(tenantId, { period, file_data: base64 });
       setBankStatements(prev => [...prev.filter(s => s.period !== period), res.data]);
       toast.success(`Estado bancario de ${periodLabel(period)} guardado`);
@@ -1663,7 +1678,7 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
             )}
             <button className="btn btn-primary btn-sm" style={{ marginLeft: 'auto' }} onClick={() => {
               const prev = document.title;
-              document.title = `Estado General — ${tenantData?.name || ''} — Corte ${periodLabel(cutoff)}`;
+              document.title = pdfTitle('Estado General', cutoff, tenantData?.name);
               document.body.classList.add('printing-general');
               window.print();
               setTimeout(() => {
@@ -1926,7 +1941,12 @@ function ReporteGeneralView({ tenantData, generalData, genLoading, cutoff, setCu
                 Período: {periodLabel(cutoff)}
               </span>
             )}
-            <button className="btn btn-primary btn-sm" style={{ marginLeft: 'auto' }} onClick={() => window.print()}>
+            <button className="btn btn-primary btn-sm" style={{ marginLeft: 'auto' }} onClick={() => {
+              const prev = document.title;
+              document.title = pdfTitle('Reporte General', cutoff, tenantData?.name);
+              window.print();
+              setTimeout(() => { document.title = prev; }, 1500);
+            }}>
               <Printer size={14} /> Exportar PDF
             </button>
           </div>
@@ -2323,7 +2343,7 @@ function ReporteAdeudosView({ tenantData, adeudosData, adeudosLoading, cutoff, s
 
   const handlePrint = () => {
     const prev = document.title;
-    document.title = `Reporte de Adeudos — Corte ${periodLabel(cutoff)} — ${tenantData?.name || ''}`;
+    document.title = pdfTitle('Reporte de Adeudos', cutoff, tenantData?.name);
     document.body.classList.add('printing-adeudos');
     window.print();
     setTimeout(() => {

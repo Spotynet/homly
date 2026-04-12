@@ -479,7 +479,7 @@ class BankStatementSerializer(serializers.ModelSerializer):
     class Meta:
         model = BankStatement
         fields = ['id', 'tenant', 'period', 'file_data', 'uploaded_at']
-        read_only_fields = ['id', 'uploaded_at']
+        read_only_fields = ['id', 'tenant', 'uploaded_at']
 
 
 class ClosedPeriodSerializer(serializers.ModelSerializer):
@@ -576,6 +576,7 @@ class DashboardSerializer(serializers.Serializer):
     paid_count = serializers.IntegerField()
     partial_count = serializers.IntegerField()
     pending_count = serializers.IntegerField()
+    exempt_count = serializers.IntegerField()
     total_gastos = serializers.FloatField()
     total_gastos_conciliados = serializers.FloatField()
     total_caja_chica = serializers.FloatField()
@@ -584,6 +585,7 @@ class DashboardSerializer(serializers.Serializer):
     ingreso_adicional = serializers.FloatField()
     total_adeudo_recibido = serializers.FloatField()
     deuda_total = serializers.FloatField()
+    total_ingresos = serializers.FloatField()
 
 
 class EstadoCuentaSerializer(serializers.Serializer):

@@ -1509,13 +1509,27 @@ class CajaChicaViewSet(viewsets.ModelViewSet):
 class BankStatementViewSet(viewsets.ModelViewSet):
     """CRUD /api/tenants/{tenant_id}/bank-statements/"""
     serializer_class = BankStatementSerializer
-    permission_classes = [IsTenantAdmin]
+    permission_classes = [IsAdminOrTesorero]
 
     def get_queryset(self):
         return BankStatement.objects.filter(tenant_id=self.kwargs['tenant_id'])
 
     def perform_create(self, serializer):
         serializer.save(tenant_id=self.kwargs['tenant_id'])
+
+    def create(self, request, *args, **kwargs):
+        """Upsert: if a statement already exists for this period, replace it."""
+        period = request.data.get('period')
+        file_data = request.data.get('file_data')
+        tenant_id = self.kwargs['tenant_id']
+        obj, created = BankStatement.objects.update_or_create(
+            tenant_id=tenant_id,
+            period=period,
+            defaults={'file_data': file_data},
+        )
+        serializer = self.get_serializer(obj)
+        st = status.HTTP_201_CREATED if created else status.HTTP_200_OK
+        return Response(serializer.data, status=st)
 
 
 # ═══════════════════════════════════════════════════════════
@@ -2378,11 +2392,23 @@ class DashboardView(APIView):
         exempt_count = units.filter(admin_exempt=True).count()
 
         payments = Payment.objects.filter(tenant_id=tenant_id, period=period)
-        paid_count = payments.filter(status='pagado').count()
-        partial_count = payments.filter(status='parcial').count()
-        # pending = non-exempt units without a paid/partial payment
-        non_exempt_units = total_units - exempt_count
-        pending_count = max(0, non_exempt_units - paid_count - partial_count)
+
+        # Count by unique unit IDs to avoid double-counting and to exclude exempt units
+        exempt_unit_ids = set(units.filter(admin_exempt=True).values_list('id', flat=True))
+        non_exempt_unit_ids = set(units.filter(admin_exempt=False).values_list('id', flat=True))
+
+        paid_unit_ids = (
+            set(payments.filter(status='pagado').values_list('unit_id', flat=True))
+            - exempt_unit_ids
+        )
+        partial_unit_ids = (
+            set(payments.filter(status='parcial').values_list('unit_id', flat=True))
+            - exempt_unit_ids
+            - paid_unit_ids  # unit paid in full takes precedence over partial
+        )
+        paid_count = len(paid_unit_ids)
+        partial_count = len(partial_unit_ids)
+        pending_count = max(0, len(non_exempt_unit_ids) - paid_count - partial_count)
 
         # Total collected — solo mantenimiento fijo
         total_collected = FieldPayment.objects.filter(
@@ -2912,6 +2938,10 @@ def _compute_statement(tenant, unit_id, start_period, cutoff_period):
             'charge': float(cargo_total),
             'paid': float(abono_display),   # Muestra todos los pagos recibidos en la columna Abonos
             'paid_balance': float(abono_balance),  # Solo para cálculo de balance (no expuesto al frontend)
+            # Abono de adeudo DIRIGIDO a este período (pagado en otro período via adeudo_payments)
+            # No está incluido en paid_balance (que se acredita en el período receptor),
+            # pero SÍ reduce el déficit real de este período en el reporte de adeudos.
+            'adeudo_received_for_period': float(adeudo_credits_received.get(period, Decimal('0'))),
             'maintenance': float(maint_charge),
             'status': eff_status,
             'payment_type': (pay or eff_pay).payment_type if (pay or eff_pay) else None,
@@ -3340,17 +3370,23 @@ class ReporteAdeudosView(APIView):
                 previous_debt - prev_debt_adeudo_dec - credit_balance
             )
 
-            # Períodos con déficit — usamos paid_balance (no el display) para el cálculo correcto
+            # Períodos con déficit real — combinamos paid_balance con adeudo_received_for_period.
+            # paid_balance acredita el adeudo en el período receptor (no en el período destino),
+            # por lo que un período con adeudo pagado en otro período no aparece cubierto aquí.
+            # adeudo_received_for_period corrige esto: es el monto de adeudo que en OTRO período
+            # fue marcado como destino a ESTE período.
             period_debts = []
             for row in rows:
                 paid_bal = Decimal(str(row.get('paid_balance', row['paid'])))
-                deficit = Decimal(str(row['charge'])) - paid_bal
+                adeudo_for_period = Decimal(str(row.get('adeudo_received_for_period', 0)))
+                effective_paid = paid_bal + adeudo_for_period
+                deficit = Decimal(str(row['charge'])) - effective_paid
                 if deficit > Decimal('0'):
                     period_debts.append({
                         'period': row['period'],
                         'charge': float(row['charge']),
-                        'paid': float(row['paid']),           # display (incluye neutros)
-                        'paid_balance': float(paid_bal),     # para cálculo de saldo
+                        'paid': float(row['paid']),               # display (incluye neutros)
+                        'paid_balance': float(effective_paid),    # para cálculo: paid + adeudo dirigido
                         'deficit': float(deficit),
                         'status': row['status'],
                         'maintenance': float(row['maintenance']),

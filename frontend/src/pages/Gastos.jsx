@@ -21,6 +21,10 @@ function fmt(n) {
   return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n ?? 0);
 }
 
+function pdfTitle(report, period, tenant) {
+  return `${(report || '').trim()} — ${(period || '').trim()} — ${(tenant || '').trim()}`;
+}
+
 function fmtShort(n) {
   return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n ?? 0);
 }
@@ -393,7 +397,7 @@ export default function Gastos() {
 
   const handlePrint = () => {
     const prev = document.title;
-    document.title = `Reporte de Egresos ${periodLabel(period)} - ${tenant?.name || ''}`;
+    document.title = pdfTitle('Reporte de Egresos', period, tenant?.name);
     document.body.classList.add('printing-gastos');
     window.print();
     setTimeout(() => {
