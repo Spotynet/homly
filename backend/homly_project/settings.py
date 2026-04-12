@@ -177,18 +177,37 @@ USE_TZ = True
 # ─── Defaults ──────────────────────────────────────────
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# ─── Email (verification codes) ─────────────────────────
-# Use console backend in dev to avoid configuring SMTP
+# ─── Email ──────────────────────────────────────────────
+# Use console backend in dev; SMTP in production.
+# To send to any provider (Gmail, Hotmail/Outlook, Yahoo, AOL, etc.) configure
+# the variables below in your .env file.  The SMTP server itself can be any
+# provider — common choices:
+#
+#   Gmail:         smtp.gmail.com  port 587  TLS=True  (use an App Password)
+#   Outlook/M365:  smtp.office365.com  port 587  TLS=True
+#   Yahoo:         smtp.mail.yahoo.com  port 587  TLS=True
+#   Brevo/Sendinblue, SendGrid, Mailgun, etc. — set EMAIL_HOST accordingly.
+#
+# IMPORTANT: DEFAULT_FROM_EMAIL must match the account authenticated via
+# EMAIL_HOST_USER; mismatches cause SPF/DKIM failures and spam rejection.
 EMAIL_BACKEND = config(
     'EMAIL_BACKEND',
     default='django.core.mail.backends.console.EmailBackend' if DEBUG else 'django.core.mail.backends.smtp.EmailBackend'
 )
-EMAIL_HOST = config('EMAIL_HOST', default='smtp.gmail.com')
-EMAIL_PORT = config('EMAIL_PORT', default=587, cast=int)
-EMAIL_USE_TLS = config('EMAIL_USE_TLS', default=True, cast=bool)
-EMAIL_HOST_USER = config('EMAIL_HOST_USER', default='')
+EMAIL_HOST          = config('EMAIL_HOST',          default='smtp.gmail.com')
+EMAIL_PORT          = config('EMAIL_PORT',          default=587, cast=int)
+EMAIL_USE_TLS       = config('EMAIL_USE_TLS',       default=True,  cast=bool)
+# Set EMAIL_USE_SSL=True (and EMAIL_PORT=465) for providers that use implicit SSL
+EMAIL_USE_SSL       = config('EMAIL_USE_SSL',       default=False, cast=bool)
+EMAIL_HOST_USER     = config('EMAIL_HOST_USER',     default='')
 EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default='')
-DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default='noreply@homly.com.mx')
+DEFAULT_FROM_EMAIL  = config('DEFAULT_FROM_EMAIL',  default='noreply@homly.com.mx')
+# Timeout in seconds for the SMTP connection (avoids hanging on slow mail servers)
+EMAIL_TIMEOUT       = config('EMAIL_TIMEOUT',       default=10, cast=int)
+# No-reply address used in the From header of all outgoing Homly emails.
+# Must match DEFAULT_FROM_EMAIL (and thus EMAIL_HOST_USER) or set an explicit alias.
+HOMLY_NOREPLY_EMAIL = config('HOMLY_NOREPLY_EMAIL', default=DEFAULT_FROM_EMAIL)
+HOMLY_APP_URL       = config('HOMLY_APP_URL',       default='https://homly.com.mx/login')
 
 # ─── Logging ───────────────────────────────────────────
 LOGGING = {

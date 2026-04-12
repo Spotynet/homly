@@ -2,15 +2,21 @@
 Email sending for Homly: verification codes and welcome invitations.
 Uses Django's email backend (configure EMAIL_* in .env and settings).
 Styled HTML email with Homly logo (Homly_Full.png) and brand colors (naranja, crema).
-Logo is attached as inline MIME (cid:) so it displays in Gmail, Outlook, etc.
+Logo is attached as inline MIME (cid:) inside a multipart/related container so it
+displays correctly in ALL major clients: Gmail, Outlook, Hotmail, Yahoo, AOL, etc.
 """
 import logging
 import os
 
+# Standard-library MIME builders — needed for correct multipart/related structure
+from email.mime.application import MIMEApplication
 from email.mime.image import MIMEImage
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.utils import formatdate, make_msgid
 
 from django.conf import settings
-from django.core.mail import EmailMultiAlternatives
+from django.core.mail import EmailMessage, get_connection
 
 logger = logging.getLogger(__name__)
 
@@ -372,29 +378,23 @@ def send_welcome_invitation(
     """
     Send a welcome / invitation email to a user added to a condominio.
     Includes tenant name, role description, access URL and login instructions.
+    Uses multipart/related MIME structure for cross-provider logo rendering.
     """
     app_url = getattr(settings, 'HOMLY_APP_URL', 'https://homly.com.mx/login')
-    from_email = getattr(settings, 'HOMLY_NOREPLY_EMAIL', 'no-reply@homly.com.mx')
+    from_email = _get_noreply()
     subject = f'Bienvenido a Homly — {tenant_name}'
     plain = _build_invitation_plain(user_name, tenant_name, role, unit_name, app_url, email)
     html = _build_invitation_html(user_name, tenant_name, role, unit_name, app_url, email)
     try:
-        msg = EmailMultiAlternatives(
+        mime = _make_mime_message(
             subject=subject,
-            body=plain,
+            plain=plain,
+            html=html,
             from_email=from_email,
-            to=[email],
+            to_emails=[email],
+            logo_data=_read_logo_bytes('homly-full.png'),
         )
-        msg.attach_alternative(html, 'text/html')
-
-        logo_data = _read_logo_bytes('homly-full.png')
-        if logo_data:
-            logo_part = MIMEImage(logo_data, 'png')
-            logo_part.add_header('Content-Disposition', 'inline', filename='homly-full.png')
-            logo_part.add_header('Content-ID', f'<{LOGO_CID}>')
-            msg.attach(logo_part)
-
-        msg.send(fail_silently=False)
+        _dispatch_mime(mime, from_email, [email])
         return True
     except Exception as e:
         logger.exception('Error sending invitation email to %s: %s', email, e)
@@ -406,29 +406,23 @@ def send_verification_email(email: str, code: str) -> bool:
     """
     Send the verification code to the user's email.
     Sends both HTML (styled) and plain text fallback.
-    Logo is attached as inline image (cid:) so it displays in major email clients.
+    Logo is embedded inline using multipart/related so it renders in
+    Gmail, Outlook, Hotmail, Yahoo, AOL and all other major clients.
     """
+    from_email = _get_noreply()
     subject = 'Tu código de acceso Homly'
     plain = _build_plain_message(code)
     html = _build_html_email(code)
     try:
-        msg = EmailMultiAlternatives(
+        mime = _make_mime_message(
             subject=subject,
-            body=plain,
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            to=[email],
+            plain=plain,
+            html=html,
+            from_email=from_email,
+            to_emails=[email],
+            logo_data=_read_logo_bytes('homly-full.png'),
         )
-        msg.attach_alternative(html, 'text/html')
-
-        # Attach logo as inline image so it shows in Gmail, Outlook, etc. (base64 is often blocked)
-        logo_data = _read_logo_bytes('homly-full.png')
-        if logo_data:
-            logo_part = MIMEImage(logo_data, 'png')
-            logo_part.add_header('Content-Disposition', 'inline', filename='homly-full.png')
-            logo_part.add_header('Content-ID', f'<{LOGO_CID}>')
-            msg.attach(logo_part)
-
-        msg.send(fail_silently=False)
+        _dispatch_mime(mime, from_email, [email])
         return True
     except Exception as e:
         logger.exception('Error sending verification email to %s: %s', email, e)
@@ -446,6 +440,112 @@ def _fmt_amount(amount, symbol='$') -> str:
     return f'{symbol}{n:,.0f}'
 
 
+def _make_mime_message(
+    subject: str,
+    plain: str,
+    html: str,
+    from_email: str,
+    to_emails: list[str],
+    cc_emails: list[str] | None = None,
+    logo_data: bytes | None = None,
+    pdf_attachment: tuple | None = None,  # (filename, bytes, mimetype)
+):
+    """
+    Build an RFC-compliant MIME message with correct multipart structure.
+
+    Final tree when logo + PDF are present:
+        multipart/mixed
+          multipart/related        ← groups HTML with its inline image
+            multipart/alternative  ← text/plain fallback + text/html
+              text/plain
+              text/html
+            image/png  (Content-ID: <homlylogo>)
+          application/pdf          ← regular attachment
+
+    Without PDF:
+        multipart/related
+          multipart/alternative
+            text/plain
+            text/html
+          image/png
+
+    Without logo (plain + html only):
+        multipart/alternative
+          text/plain
+          text/html
+
+    This structure is required for inline CID images to render in
+    Outlook, Hotmail, Yahoo, AOL, and other strict RFC-conformant clients.
+    Gmail is more lenient and accepts the old flat structure, but all
+    clients accept this correct structure.
+    """
+    # ── Innermost: text alternatives ────────────────────────────────────────
+    alt = MIMEMultipart('alternative')
+    alt.attach(MIMEText(plain, 'plain', 'utf-8'))
+    alt.attach(MIMEText(html, 'html', 'utf-8'))
+
+    # ── Middle: wrap with related if there is an inline logo ────────────────
+    if logo_data:
+        related = MIMEMultipart('related')
+        related.attach(alt)
+        logo_part = MIMEImage(logo_data, 'png')
+        logo_part.add_header('Content-Disposition', 'inline', filename='homly-full.png')
+        logo_part.add_header('Content-ID', f'<{LOGO_CID}>')
+        related.attach(logo_part)
+        inner = related
+    else:
+        inner = alt
+
+    # ── Outer: wrap with mixed only when there is a file attachment ──────────
+    if pdf_attachment:
+        fname, fbytes, _ = pdf_attachment
+        outer = MIMEMultipart('mixed')
+        outer.attach(inner)
+        pdf_part = MIMEApplication(fbytes, Name=fname)
+        pdf_part.add_header('Content-Disposition', 'attachment', filename=fname)
+        outer.attach(pdf_part)
+        payload = outer
+    else:
+        payload = inner
+
+    # ── Headers ──────────────────────────────────────────────────────────────
+    payload['Subject'] = subject
+    payload['From'] = from_email
+    payload['To'] = ', '.join(to_emails)
+    if cc_emails:
+        payload['Cc'] = ', '.join(cc_emails)
+    payload['Date'] = formatdate(localtime=True)
+    payload['Message-ID'] = make_msgid(domain=from_email.split('@')[-1] if '@' in from_email else 'homly.com.mx')
+    payload['MIME-Version'] = '1.0'
+
+    return payload
+
+
+def _dispatch_mime(mime_msg, from_email: str, all_recipients: list[str]) -> bool:
+    """Send a pre-built MIME message through Django's configured email backend.
+    Works with any backend: SMTP, console, locmem, etc."""
+
+    class _RawMIMEWrapper(EmailMessage):
+        """Thin EmailMessage subclass that returns a pre-built MIME object."""
+        def __init__(self, raw_mime, from_addr, recipients):
+            super().__init__(from_email=from_addr, to=recipients)
+            self._raw_mime = raw_mime
+
+        def message(self):
+            return self._raw_mime
+
+    wrapper = _RawMIMEWrapper(mime_msg, from_email, all_recipients)
+    return bool(wrapper.send(fail_silently=False))
+
+
+def _get_noreply() -> str:
+    """Return the configured no-reply address, falling back to DEFAULT_FROM_EMAIL."""
+    return (
+        getattr(settings, 'HOMLY_NOREPLY_EMAIL', None)
+        or getattr(settings, 'DEFAULT_FROM_EMAIL', 'no-reply@homly.com.mx')
+    )
+
+
 def _send_branded_email(
     subject: str,
     plain: str,
@@ -455,26 +555,33 @@ def _send_branded_email(
     pdf_attachment: tuple | None = None,   # (filename, bytes, 'application/pdf')
     cc_emails: list[str] | None = None,    # CC recipients
 ) -> bool:
-    """Helper to build and send a branded email with inline logo.
-    Optional pdf_attachment: tuple of (filename, content_bytes, mimetype).
+    """Send a branded Homly email with correct multipart/related MIME structure.
+
+    Uses a proper multipart/related > multipart/alternative + inline-image tree
+    so the logo renders in Gmail, Outlook/Hotmail, Yahoo, AOL, and all other
+    RFC-conformant clients.
+
+    Optional pdf_attachment: (filename, content_bytes, mimetype).
     Optional cc_emails: list of CC addresses.
     """
     if not from_email:
-        from django.conf import settings as _s
-        from_email = getattr(_s, 'HOMLY_NOREPLY_EMAIL', 'no-reply@homly.com.mx')
+        from_email = _get_noreply()
+
+    logo_data = _read_logo_bytes('homly-full.png')
+    all_recipients = list(to_emails) + list(cc_emails or [])
+
     try:
-        msg = EmailMultiAlternatives(subject=subject, body=plain, from_email=from_email, to=to_emails, cc=cc_emails or [])
-        msg.attach_alternative(html, 'text/html')
-        logo_data = _read_logo_bytes('homly-full.png')
-        if logo_data:
-            logo_part = MIMEImage(logo_data, 'png')
-            logo_part.add_header('Content-Disposition', 'inline', filename='homly-full.png')
-            logo_part.add_header('Content-ID', f'<{LOGO_CID}>')
-            msg.attach(logo_part)
-        if pdf_attachment:
-            fname, fbytes, fmime = pdf_attachment
-            msg.attach(fname, fbytes, fmime)
-        msg.send(fail_silently=False)
+        mime = _make_mime_message(
+            subject=subject,
+            plain=plain,
+            html=html,
+            from_email=from_email,
+            to_emails=to_emails,
+            cc_emails=cc_emails,
+            logo_data=logo_data,
+            pdf_attachment=pdf_attachment,
+        )
+        _dispatch_mime(mime, from_email, all_recipients)
         return True
     except Exception as e:
         logger.exception('Error sending email to %s: %s', to_emails, e)

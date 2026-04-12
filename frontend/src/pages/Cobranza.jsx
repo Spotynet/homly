@@ -1068,16 +1068,17 @@ export default function Cobranza() {
                             </div>
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, cursor: 'pointer' }}
-                            onClick={() => setEditingAdditional(prev => ({ ...prev, bank_reconciled: !prev.bank_reconciled }))}>
+                            onClick={e => { e.stopPropagation(); setEditingAdditional(prev => ({ ...prev, bank_reconciled: !prev.bank_reconciled })); }}>
                             <div style={{ width: 20, height: 20, borderRadius: 5, border: `2px solid ${editingAdditional?.bank_reconciled ? 'var(--teal-500)' : 'var(--sand-300)'}`, background: editingAdditional?.bank_reconciled ? 'var(--teal-500)' : 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                               {editingAdditional?.bank_reconciled && <Check size={12} style={{ color: 'white' }} />}
                             </div>
                             <span style={{ fontSize: 12, fontWeight: 600, color: editingAdditional?.bank_reconciled ? 'var(--teal-700)' : 'var(--ink-500)' }}>🏦 Conciliado en Banco</span>
                           </div>
-                          <button className="btn btn-primary" style={{ width: '100%' }} onClick={async () => {
+                          <button className="btn btn-primary" style={{ width: '100%' }} disabled={saving} onClick={async () => {
                             const fpx = editingAdditional?.extraFieldPayments || {};
                             const newFP = {};
                             Object.entries(fpx).forEach(([k, v]) => { const amt = parseFloat(v) || 0; if (amt > 0) newFP[k] = { received: amt }; });
+                            setSaving(true);
                             try {
                               const res = await paymentsAPI.updateAdditional(tenantId, pay.id, editingAdditional.id, {
                                 field_payments: newFP,
@@ -1091,7 +1092,8 @@ export default function Cobranza() {
                               toast.success('Pago adicional actualizado');
                               load();
                             } catch (e) { toast.error(e.response?.data?.detail || 'Error al actualizar'); }
-                          }}><Check size={14} /> Guardar cambios</button>
+                            finally { setSaving(false); }
+                          }}><Check size={14} /> {saving ? 'Guardando…' : 'Guardar cambios'}</button>
                         </div>
                       )}
                     </div>
@@ -1553,17 +1555,17 @@ export default function Cobranza() {
                   <div className="field">
                     <label className="field-label">Folio (opcional)</label>
                     <input className="field-input" placeholder="Ej. REC-0001" value={captureForm.folio || ''}
-                      onChange={e => setCaptureForm({ ...captureForm, folio: e.target.value })} />
+                      onChange={e => setCaptureForm(p => ({ ...p, folio: e.target.value }))} />
                   </div>
                   <div className="field" style={{ gridColumn: '1 / -1' }}>
                     <label className="field-label">Notas (opcional)</label>
                     <input className="field-input" placeholder="Referencia, observaciones..." value={captureForm.notes || ''}
-                      onChange={e => setCaptureForm({ ...captureForm, notes: e.target.value })} />
+                      onChange={e => setCaptureForm(p => ({ ...p, notes: e.target.value }))} />
                   </div>
                 </div>
 
                 {/* SECCIÓN: Conciliación Bancaria */}
-                <div style={{ marginTop: 14, padding: 14, border: `1.5px solid ${captureForm.bank_reconciled ? 'var(--teal-200)' : 'var(--sand-200)'}`, background: captureForm.bank_reconciled ? 'var(--teal-50)' : 'var(--sand-50)', borderRadius: 'var(--radius-md)', cursor: 'pointer' }} onClick={() => setCaptureForm(p => ({ ...p, bank_reconciled: !p.bank_reconciled }))}>
+                <div style={{ marginTop: 14, padding: 14, border: `1.5px solid ${captureForm.bank_reconciled ? 'var(--teal-200)' : 'var(--sand-200)'}`, background: captureForm.bank_reconciled ? 'var(--teal-50)' : 'var(--sand-50)', borderRadius: 'var(--radius-md)', cursor: 'pointer' }} onClick={e => { e.stopPropagation(); setCaptureForm(p => ({ ...p, bank_reconciled: !p.bank_reconciled })); }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                     <div style={{ width: 22, height: 22, borderRadius: 6, border: `2px solid ${captureForm.bank_reconciled ? 'var(--teal-500)' : 'var(--sand-300)'}`, background: captureForm.bank_reconciled ? 'var(--teal-500)' : 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       {captureForm.bank_reconciled && <Check size={14} style={{ color: 'white' }} />}

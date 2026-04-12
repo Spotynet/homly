@@ -664,6 +664,12 @@ export default function Reservas() {
                                 {r.rejection_reason.slice(0, 40)}{r.rejection_reason.length > 40 ? '…' : ''}
                               </div>
                             )}
+                            {r.reviewer_notes && (
+                              <div style={{ fontSize: 10, color: 'var(--teal-600)', marginTop: 2, maxWidth: 120 }}
+                                title={r.reviewer_notes}>
+                                📋 {r.reviewer_notes.slice(0, 40)}{r.reviewer_notes.length > 40 ? '…' : ''}
+                              </div>
+                            )}
                           </td>
                           {showActionsCol && (
                             <td style={{ textAlign: 'center' }}>
@@ -973,6 +979,32 @@ export default function Reservas() {
         </div>
       )}
 
+      {/* ══ Modal: Aprobar ══════════════════════════════════════════════════ */}
+      {approveOpen && (
+        <div className="modal-bg open" onClick={() => setApproveOpen(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-head">
+              <h3>Aprobar Reserva</h3>
+              <button className="modal-close" onClick={() => setApproveOpen(false)}><X size={16} /></button>
+            </div>
+            <div className="modal-body">
+              <label className="field-label">Observaciones del revisor (opcional)</label>
+              <textarea className="field-input" rows={3}
+                style={{ resize: 'vertical', fontFamily: 'var(--font-body)', fontSize: 13, marginTop: 6 }}
+                placeholder="Indicaciones adicionales, condiciones especiales..."
+                value={approveNotes}
+                onChange={e => setApproveNotes(e.target.value)} />
+            </div>
+            <div className="modal-foot">
+              <button className="btn btn-secondary" onClick={() => setApproveOpen(false)}>Cancelar</button>
+              <button className="btn btn-primary" onClick={confirmApprove} disabled={saving}>
+                <Check size={14} /> Confirmar aprobación
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ══ Modal: Rechazar ═════════════════════════════════════════════════ */}
       {rejectOpen && (
         <div className="modal-bg open" onClick={() => setRejectOpen(false)}>
@@ -988,10 +1020,16 @@ export default function Reservas() {
                 placeholder="Área no disponible, mantenimiento programado..."
                 value={rejectReason}
                 onChange={e => setRejectReason(e.target.value)} />
+              <label className="field-label" style={{ marginTop: 12, display: 'block' }}>Observaciones del revisor (opcional)</label>
+              <textarea className="field-input" rows={2}
+                style={{ resize: 'vertical', fontFamily: 'var(--font-body)', fontSize: 13, marginTop: 6 }}
+                placeholder="Notas internas del aprobador..."
+                value={rejectNotes}
+                onChange={e => setRejectNotes(e.target.value)} />
             </div>
             <div className="modal-foot">
               <button className="btn btn-secondary" onClick={() => setRejectOpen(false)}>Cancelar</button>
-              <button className="btn btn-danger" onClick={confirmReject}>Confirmar rechazo</button>
+              <button className="btn btn-danger" onClick={confirmReject} disabled={saving}>Confirmar rechazo</button>
             </div>
           </div>
         </div>
