@@ -1135,6 +1135,16 @@ class PaymentViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
+        # Validate applied_to_unit_id if provided
+        applied_to_unit_id = data.get('applied_to_unit_id')
+        if applied_to_unit_id:
+            from .models import Unit as UnitModel
+            if not UnitModel.objects.filter(id=applied_to_unit_id, tenant_id=tenant_id).exists():
+                return Response({'detail': 'La unidad destino no pertenece a este tenant.'},
+                                status=status.HTTP_400_BAD_REQUEST)
+            if str(applied_to_unit_id) == str(payment.unit_id):
+                applied_to_unit_id = None
+
         total = sum(
             float((v or {}).get('received', 0) or 0)
             for v in (data.get('field_payments') or {}).values()
@@ -1159,6 +1169,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
             'notes': data.get('notes', ''),
             'bank_reconciled': data.get('bank_reconciled', False),
             'created_at': timezone.now().isoformat(),
+            **({'applied_to_unit_id': str(applied_to_unit_id)} if applied_to_unit_id else {}),
         }
         payment.additional_payments = (payment.additional_payments or []) + [entry]
         tenant = Tenant.objects.get(id=tenant_id)
@@ -2697,7 +2708,8 @@ def _compute_statement(tenant, unit_id, start_period, cutoff_period):
     payments_by_period = {p.period: p for p in payments_qs}
 
     # Pagos de OTRAS unidades que aplican a esta unidad (cross-unit)
-    # → sumas adicionales de field_payments por período
+    # Caso A: el Payment principal tiene applied_to_unit_id = unit_id
+    # → sumas de field_payments del FieldPayment model
     cross_fp_by_period = {}   # period → {field_key: Decimal total}
     cross_meta_by_period = {} # period → first cross Payment (para metadata display)
     cross_qs = Payment.objects.filter(
@@ -2712,6 +2724,24 @@ def _compute_statement(tenant, unit_id, start_period, cutoff_period):
             if amt > 0:
                 cross_fp_by_period.setdefault(cp.period, {})[cfp.field_key] = \
                     cross_fp_by_period.get(cp.period, {}).get(cfp.field_key, Decimal('0')) + amt
+
+    # Caso B: una additional_payment entry de OTRO pago tiene applied_to_unit_id = unit_id
+    # → sumas de los field_payments JSON de esa entrada adicional
+    addl_cross_qs = Payment.objects.filter(
+        tenant_id=tenant.id,
+    ).exclude(unit_id=unit_id).only('id', 'unit_id', 'period', 'additional_payments').select_related('unit')
+    for ap_pay in addl_cross_qs:
+        for ap_entry in (ap_pay.additional_payments or []):
+            if str(ap_entry.get('applied_to_unit_id', '')) != str(unit_id):
+                continue
+            fp_data = ap_entry.get('field_payments') or {}
+            for f_id, fd in fp_data.items():
+                amt = Decimal(str(fd.get('received', 0) if isinstance(fd, dict) else fd or 0))
+                if amt > 0:
+                    cross_fp_by_period.setdefault(ap_pay.period, {})[f_id] = \
+                        cross_fp_by_period.get(ap_pay.period, {}).get(f_id, Decimal('0')) + amt
+                    if ap_pay.period not in cross_meta_by_period:
+                        cross_meta_by_period[ap_pay.period] = ap_pay
 
     adelanto_credits = {}
     adeudo_credits_received = {}

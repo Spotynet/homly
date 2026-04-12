@@ -443,6 +443,7 @@ class AddAdditionalPaymentSerializer(serializers.Serializer):
     payment_date = serializers.DateField(required=False, allow_null=True)
     notes = serializers.CharField(required=False, allow_blank=True, default='')
     bank_reconciled = serializers.BooleanField(required=False, default=False)
+    applied_to_unit_id = serializers.UUIDField(required=False, allow_null=True, default=None)
 
 
 # ═══════════════════════════════════════════════════════════

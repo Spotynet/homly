@@ -125,7 +125,7 @@ export default function Cobranza() {
   const [showUnidentModal, setShowUnidentModal] = useState(null); // { editId } or true for new
   const [unidentForm, setUnidentForm] = useState({ concept: '', amount: '', payment_type: '', payment_date: '', notes: '', bank_reconciled: false });
   const [showAddPaymentModal, setShowAddPaymentModal] = useState(null); // { unit, pay }
-  const [addPaymentForm, setAddPaymentForm] = useState({ extraFieldPayments: {}, payment_type: '', payment_date: '', notes: '', bank_reconciled: false });
+  const [addPaymentForm, setAddPaymentForm] = useState({ extraFieldPayments: {}, payment_type: '', payment_date: '', notes: '', bank_reconciled: false, applied_to_unit_id: null });
   const [showAdditionalPaymentsModal, setShowAdditionalPaymentsModal] = useState(null); // { unit, pay }
   const [editingAdditional, setEditingAdditional] = useState(null); // additional payment being edited
   const [perPage, setPerPage] = useState(25);
@@ -290,7 +290,6 @@ export default function Cobranza() {
       folio: existing?.folio || '',
       evidences: Array.isArray(existing?.evidence) ? existing.evidence : [],
       bank_reconciled: !!existing?.bank_reconciled,
-      applied_to_unit_id: existing?.applied_to_unit_id || null,
       field_payments: fieldPayments,
       adeudo_payments: existingAp,
       adeudoSelections: restoredSelections,
@@ -412,7 +411,6 @@ export default function Cobranza() {
       bank_reconciled: !!captureForm.bank_reconciled,
       field_payments: fp,
       adeudo_payments: captureForm.adeudo_payments || {},
-      applied_to_unit_id: captureForm.applied_to_unit_id || null,
     };
   };
 
@@ -622,6 +620,7 @@ export default function Cobranza() {
                               payment_date: new Date().toISOString().slice(0, 10),
                               notes: '',
                               bank_reconciled: false,
+                              applied_to_unit_id: null,
                             });
                             setShowAddPaymentModal({ unit: u, pay });
                           }}>
@@ -922,6 +921,54 @@ export default function Cobranza() {
                         </div>
                       </div>
                     </div>
+
+                    {/* ── Pago de otra unidad ── */}
+                    <div style={{ marginTop: 12 }}>
+                      <div
+                        style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 14,
+                          border: `1.5px solid ${addPaymentForm.applied_to_unit_id ? 'var(--amber-200)' : 'var(--sand-200)'}`,
+                          background: addPaymentForm.applied_to_unit_id ? 'var(--amber-50)' : 'var(--sand-50)',
+                          borderRadius: 'var(--radius-md)', cursor: 'pointer' }}
+                        onClick={e => { e.stopPropagation(); setAddPaymentForm(f => ({ ...f, applied_to_unit_id: f.applied_to_unit_id ? null : '' })); }}
+                      >
+                        <div style={{ width: 22, height: 22, borderRadius: 6, flexShrink: 0,
+                          border: `2px solid ${addPaymentForm.applied_to_unit_id ? 'var(--amber-500)' : 'var(--sand-300)'}`,
+                          background: addPaymentForm.applied_to_unit_id ? 'var(--amber-500)' : 'white',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          {addPaymentForm.applied_to_unit_id && <Check size={14} style={{ color: 'white' }} />}
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: addPaymentForm.applied_to_unit_id ? 'var(--amber-700)' : 'var(--ink-600)' }}>
+                            🔀 Este pago corresponde a otra unidad
+                          </div>
+                          <div style={{ fontSize: 11, color: addPaymentForm.applied_to_unit_id ? 'var(--amber-600)' : 'var(--ink-400)', marginTop: 2 }}>
+                            Activa si este cobro aplica al estado de cuenta de una unidad diferente
+                          </div>
+                        </div>
+                      </div>
+                      {addPaymentForm.applied_to_unit_id !== null && addPaymentForm.applied_to_unit_id !== undefined && (
+                        <div className="field" style={{ marginTop: 10 }}>
+                          <label className="field-label">Unidad que debe recibir el crédito <span style={{ color: 'var(--coral-500)' }}>*</span></label>
+                          <select
+                            className="field-select"
+                            value={addPaymentForm.applied_to_unit_id || ''}
+                            onClick={e => e.stopPropagation()}
+                            onChange={e => setAddPaymentForm(f => ({ ...f, applied_to_unit_id: e.target.value || null }))}
+                            style={!addPaymentForm.applied_to_unit_id ? { borderColor: 'var(--coral-400)' } : {}}
+                          >
+                            <option value="">— Seleccionar unidad destino —</option>
+                            {units
+                              .filter(u => u.id !== showAddPaymentModal?.unit?.id)
+                              .map(u => (
+                                <option key={u.id} value={u.id}>
+                                  {u.unit_id_code}{u.unit_name ? ` — ${u.unit_name}` : ''}{u.responsible_name ? ` (${u.responsible_name})` : ''}
+                                </option>
+                              ))
+                            }
+                          </select>
+                        </div>
+                      )}
+                    </div>
                   </>
                 );
               })()}
@@ -931,6 +978,7 @@ export default function Cobranza() {
               {!isPeriodClosed && (
                 <button className="btn btn-primary" onClick={async () => {
                   if (!addPaymentForm.payment_type) { toast.error('La Forma de Pago es obligatoria.'); return; }
+                  if (addPaymentForm.applied_to_unit_id === '') { toast.error('Selecciona la unidad destino para este pago.'); return; }
                   const fpx = addPaymentForm.extraFieldPayments || {};
                   const totalAmount = Object.values(fpx).reduce((a, v) => a + (parseFloat(v) || 0), 0);
                   if (totalAmount <= 0) { toast.error('Ingresa al menos un monto mayor a cero.'); return; }
@@ -947,6 +995,7 @@ export default function Cobranza() {
                       payment_date: addPaymentForm.payment_date || null,
                       notes: addPaymentForm.notes || '',
                       bank_reconciled: !!addPaymentForm.bank_reconciled,
+                      applied_to_unit_id: addPaymentForm.applied_to_unit_id || null,
                     });
                     toast.success('Pago adicional registrado');
                     setShowAddPaymentModal(null);
@@ -1586,54 +1635,6 @@ export default function Cobranza() {
                       </div>
                     </div>
                   </div>
-                </div>
-
-                {/* SECCIÓN: Pago de otra unidad */}
-                <div style={{ marginTop: 14 }}>
-                  <div
-                    style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 14,
-                      border: `1.5px solid ${captureForm.applied_to_unit_id ? 'var(--amber-200)' : 'var(--sand-200)'}`,
-                      background: captureForm.applied_to_unit_id ? 'var(--amber-50)' : 'var(--sand-50)',
-                      borderRadius: 'var(--radius-md)', cursor: 'pointer' }}
-                    onClick={e => { e.stopPropagation(); setCaptureForm(p => ({ ...p, applied_to_unit_id: p.applied_to_unit_id ? null : '' })); }}
-                  >
-                    <div style={{ width: 22, height: 22, borderRadius: 6, flexShrink: 0,
-                      border: `2px solid ${captureForm.applied_to_unit_id !== null && captureForm.applied_to_unit_id !== undefined && captureForm.applied_to_unit_id !== '' ? 'var(--amber-500)' : 'var(--sand-300)'}`,
-                      background: captureForm.applied_to_unit_id !== null && captureForm.applied_to_unit_id !== undefined && captureForm.applied_to_unit_id !== '' ? 'var(--amber-500)' : 'white',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      {captureForm.applied_to_unit_id !== null && captureForm.applied_to_unit_id !== undefined && captureForm.applied_to_unit_id !== '' && <Check size={14} style={{ color: 'white' }} />}
-                    </div>
-                    <div>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: captureForm.applied_to_unit_id ? 'var(--amber-700)' : 'var(--ink-600)' }}>
-                        🔀 Este pago corresponde a otra unidad
-                      </div>
-                      <div style={{ fontSize: 11, color: captureForm.applied_to_unit_id ? 'var(--amber-600)' : 'var(--ink-400)', marginTop: 2 }}>
-                        Activa si el pago fue registrado en esta unidad pero aplica al estado de cuenta de otra
-                      </div>
-                    </div>
-                  </div>
-                  {captureForm.applied_to_unit_id !== null && captureForm.applied_to_unit_id !== undefined && (
-                    <div className="field" style={{ marginTop: 10 }}>
-                      <label className="field-label">Unidad que debe recibir el crédito <span style={{ color: 'var(--coral-500)' }}>*</span></label>
-                      <select
-                        className="field-select"
-                        value={captureForm.applied_to_unit_id || ''}
-                        onClick={e => e.stopPropagation()}
-                        onChange={e => setCaptureForm(p => ({ ...p, applied_to_unit_id: e.target.value || null }))}
-                        style={!captureForm.applied_to_unit_id ? { borderColor: 'var(--coral-400)' } : {}}
-                      >
-                        <option value="">— Seleccionar unidad destino —</option>
-                        {units
-                          .filter(u => u.id !== captureForm.unit_id)
-                          .map(u => (
-                            <option key={u.id} value={u.id}>
-                              {u.unit_id_code}{u.unit_name ? ` — ${u.unit_name}` : ''}{u.responsible_name ? ` (${u.responsible_name})` : ''}
-                            </option>
-                          ))
-                        }
-                      </select>
-                    </div>
-                  )}
                 </div>
 
                 {/* SECCIÓN 6: Evidencia */}
