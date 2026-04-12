@@ -2453,28 +2453,37 @@ function ReporteAdeudosView({ tenantData, adeudosData, adeudosLoading, cutoff, s
                                   </thead>
                                   <tbody>
                                     {/* Deuda anterior (saldo previo acumulado) */}
-                                    {prevDebt > 0 && (
+                                    {prevDebt > 0 && (() => {
+                                      const origDebt   = parseFloat(item.previous_debt  || 0);
+                                      const abonadoPrev = parseFloat(item.prev_debt_adeudo || 0)
+                                                        + parseFloat(item.credit_balance   || 0);
+                                      return (
                                       <tr style={{ background: 'var(--coral-50)', borderLeft: '3px solid var(--coral-400)' }}>
                                         <td style={{ padding: '6px 8px', color: 'var(--coral-700)', fontWeight: 700 }}>
                                           <AlertCircle size={12} style={{ display: 'inline', verticalAlign: -1, marginRight: 4 }} />
                                           ⚠ Deuda Anterior
                                           <div style={{ fontSize: 10, color: 'var(--coral-400)', fontWeight: 400, fontStyle: 'italic', marginTop: 1 }}>Saldo acumulado previo al sistema</div>
-                                          {parseFloat(item.prev_debt_adeudo || 0) > 0 && (
-                                            <div style={{ fontSize: 11, color: 'var(--teal-600)', fontStyle: 'normal', fontWeight: 600, marginTop: 2 }}>
-                                              Abonado: {fmt(item.prev_debt_adeudo)}
-                                            </div>
-                                          )}
                                         </td>
-                                        <td style={{ textAlign: 'right', padding: '6px 8px', color: 'var(--coral-500)' }}>—</td>
-                                        <td style={{ textAlign: 'right', padding: '6px 8px', color: 'var(--coral-500)' }}>—</td>
+                                        <td style={{ textAlign: 'right', padding: '6px 8px', color: 'var(--coral-600)', fontWeight: 600 }}>
+                                          {origDebt > 0 ? fmt(origDebt) : '—'}
+                                        </td>
+                                        <td style={{ textAlign: 'right', padding: '6px 8px', color: 'var(--teal-600)', fontWeight: 600 }}>
+                                          {abonadoPrev > 0 ? fmt(abonadoPrev) : '—'}
+                                        </td>
                                         <td style={{ textAlign: 'right', padding: '6px 8px', fontWeight: 700, color: 'var(--coral-500)' }}>{fmt(prevDebt)}</td>
                                         <td style={{ textAlign: 'center', padding: '6px 8px' }}>
                                           <span className="badge badge-coral" style={{ fontSize: 10 }}>Pendiente</span>
                                         </td>
                                       </tr>
-                                    )}
+                                      );
+                                    })()}
                                     {/* Períodos anteriores no pagados */}
-                                    {periodDebts.map((pd, idx) => (
+                                    {/* paid_balance = abono efectivo que reduce el balance de este período  */}
+                                    {/* (puede incluir abonos de adeudo provenientes de otros períodos)    */}
+                                    {/* Invariante: charge − paid_balance = deficit  ✓                    */}
+                                    {periodDebts.map((pd, idx) => {
+                                      const paidEfectivo = parseFloat(pd.paid_balance ?? pd.paid ?? 0);
+                                      return (
                                       <tr key={idx} style={{ borderBottom: '1px solid var(--sand-100)', borderLeft: '3px solid var(--amber-300)' }}>
                                         <td style={{ padding: '6px 8px', fontWeight: 600 }}>
                                           📅 {periodLabel(pd.period)}
@@ -2482,7 +2491,7 @@ function ReporteAdeudosView({ tenantData, adeudosData, adeudosLoading, cutoff, s
                                         </td>
                                         <td style={{ textAlign: 'right', padding: '6px 8px' }}>{fmt(pd.charge)}</td>
                                         <td style={{ textAlign: 'right', padding: '6px 8px', color: 'var(--teal-600)' }}>
-                                          {pd.paid > 0 ? fmt(pd.paid) : '—'}
+                                          {paidEfectivo > 0 ? fmt(paidEfectivo) : '—'}
                                         </td>
                                         <td style={{ textAlign: 'right', padding: '6px 8px', fontWeight: 700, color: 'var(--coral-500)' }}>
                                           {fmt(pd.deficit)}
@@ -2491,7 +2500,8 @@ function ReporteAdeudosView({ tenantData, adeudosData, adeudosLoading, cutoff, s
                                           <span className={`badge ${statusClass(pd.status)}`}>{statusLabel(pd.status)}</span>
                                         </td>
                                       </tr>
-                                    ))}
+                                      );
+                                    })}
                                     {/* Total row */}
                                     <tr style={{ borderTop: '2px solid var(--coral-200)', background: 'var(--coral-50)' }}>
                                       <td colSpan={3} style={{ padding: '8px 8px', fontWeight: 700, color: 'var(--coral-700)', fontSize: 12 }}>
