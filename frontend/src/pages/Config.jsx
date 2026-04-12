@@ -1115,7 +1115,7 @@ export default function Config() {
                         <td>
                           {u.has_evidence
                             ? <button
-                                title="Ver evidencia de recaudo de adeudos"
+                                title="Ver evidencia de adeudo previo"
                                 style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:11, fontWeight:600,
                                   color:'var(--blue-600)', background:'var(--blue-50)', border:'1px solid var(--blue-200)',
                                   borderRadius:6, padding:'3px 9px', cursor:'pointer' }}
@@ -2727,7 +2727,7 @@ export default function Config() {
               <label className="field-label">Tipo de Operación</label>
               <select className="field-select" value={editGenForm.operation_type||'fiscal'} onChange={e=>setEditGenForm(f=>({...f,operation_type:e.target.value}))}>
                 <option value="fiscal">Operación Fiscal</option>
-                <option value="libre">Operación Libre</option>
+                <option value="custom">Operación Libre</option>
               </select>
               <div style={{ fontSize:11, color:'var(--ink-400)', marginTop:4 }}>
                 {editGenForm.operation_type==='fiscal'?'Requiere datos fiscales (RFC, Razón Social, etc.)':'Solo datos básicos de dirección'}
@@ -2787,7 +2787,7 @@ export default function Config() {
               </select>
             </div>
             <div className="field">
-              <label className="field-label">Recaudo de adeudos</label>
+              <label className="field-label">Adeudo previo</label>
               <input className="field-input" type="number" step="0.01" min="0" placeholder="0.00"
                 value={unitForm.previous_debt || 0}
                 onChange={e=>setUnitForm(f=>({...f,previous_debt:parseFloat(e.target.value)||0}))} />

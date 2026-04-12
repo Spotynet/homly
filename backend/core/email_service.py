@@ -394,8 +394,7 @@ def send_welcome_invitation(
             to_emails=[email],
             logo_data=_read_logo_bytes('homly-full.png'),
         )
-        _dispatch_mime(mime, from_email, [email])
-        return True
+        return _dispatch_mime(mime, from_email, [email])
     except Exception as e:
         logger.exception('Error sending invitation email to %s: %s', email, e)
         print(f'[EMAIL ERROR] {type(e).__name__}: {e}', flush=True)
@@ -408,6 +407,7 @@ def send_verification_email(email: str, code: str) -> bool:
     Sends both HTML (styled) and plain text fallback.
     Logo is embedded inline using multipart/related so it renders in
     Gmail, Outlook, Hotmail, Yahoo, AOL and all other major clients.
+    Returns True when the backend confirms dispatch, False on any failure.
     """
     from_email = _get_noreply()
     subject = 'Tu código de acceso Homly'
@@ -422,8 +422,7 @@ def send_verification_email(email: str, code: str) -> bool:
             to_emails=[email],
             logo_data=_read_logo_bytes('homly-full.png'),
         )
-        _dispatch_mime(mime, from_email, [email])
-        return True
+        return _dispatch_mime(mime, from_email, [email])
     except Exception as e:
         logger.exception('Error sending verification email to %s: %s', email, e)
         print(f'[EMAIL ERROR] {type(e).__name__}: {e}', flush=True)
@@ -509,14 +508,18 @@ def _make_mime_message(
         payload = inner
 
     # ── Headers ──────────────────────────────────────────────────────────────
+    # NOTE: MIMEBase.__init__ already sets MIME-Version: 1.0 on every part.
+    # Do NOT set it again here — duplicate MIME-Version headers are malformed
+    # and are rejected or spam-scored by Yahoo, AOL and some Outlook configs.
     payload['Subject'] = subject
     payload['From'] = from_email
     payload['To'] = ', '.join(to_emails)
     if cc_emails:
         payload['Cc'] = ', '.join(cc_emails)
     payload['Date'] = formatdate(localtime=True)
-    payload['Message-ID'] = make_msgid(domain=from_email.split('@')[-1] if '@' in from_email else 'homly.com.mx')
-    payload['MIME-Version'] = '1.0'
+    payload['Message-ID'] = make_msgid(
+        domain=from_email.split('@')[-1] if '@' in from_email else 'homly.com.mx'
+    )
 
     return payload
 
@@ -581,8 +584,7 @@ def _send_branded_email(
             logo_data=logo_data,
             pdf_attachment=pdf_attachment,
         )
-        _dispatch_mime(mime, from_email, all_recipients)
-        return True
+        return _dispatch_mime(mime, from_email, all_recipients)
     except Exception as e:
         logger.exception('Error sending email to %s: %s', to_emails, e)
         print(f'[EMAIL ERROR] {type(e).__name__}: {e}', flush=True)

@@ -12,6 +12,7 @@ export default function Tenants() {
 
   const [tenants,     setTenants]     = useState([]);
   const [loading,     setLoading]     = useState(true);
+  const [saving,      setSaving]      = useState(false);
   const [showModal,   setShowModal]   = useState(false);
   const [form,        setForm]        = useState({});
   const [entering,    setEntering]    = useState(null); // id of tenant being entered
@@ -40,18 +41,30 @@ export default function Tenants() {
   };
 
   const handleSave = async () => {
+    setSaving(true);
     try {
+      // Send only the editable fields (not computed read-only fields from the list serializer)
+      const payload = {
+        name: form.name,
+        units_count: form.units_count,
+        maintenance_fee: form.maintenance_fee,
+        currency: form.currency,
+        country: form.country,
+        state: form.state,
+      };
       if (form.id) {
-        await tenantsAPI.update(form.id, form);
+        await tenantsAPI.update(form.id, payload);
         toast.success('Condominio actualizado');
       } else {
-        await tenantsAPI.create(form);
+        await tenantsAPI.create(payload);
         toast.success('Condominio creado');
       }
       setShowModal(false);
       load();
-    } catch {
-      toast.error('Error al guardar');
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Error al guardar');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -274,15 +287,11 @@ export default function Tenants() {
                   <label className="field-label">Estado / Región</label>
                   <input className="field-input" value={form.state || ''} onChange={e => setForm({...form, state: e.target.value})} />
                 </div>
-                <div className="field field-full">
-                  <label className="field-label">Áreas Comunes</label>
-                  <input className="field-input" value={form.common_areas || ''} onChange={e => setForm({...form, common_areas: e.target.value})} />
-                </div>
               </div>
             </div>
             <div className="modal-foot">
-              <button className="btn btn-outline" onClick={() => setShowModal(false)}>Cancelar</button>
-              <button className="btn btn-primary" onClick={handleSave}>Guardar</button>
+              <button className="btn btn-outline" onClick={() => setShowModal(false)} disabled={saving}>Cancelar</button>
+              <button className="btn btn-primary" onClick={handleSave} disabled={saving}>{saving ? 'Guardando…' : 'Guardar'}</button>
             </div>
           </div>
         </div>
