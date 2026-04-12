@@ -354,6 +354,7 @@ export default function Gastos() {
   const [tenant, setTenant] = useState(null);
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState({});
+  const [saving, setSaving] = useState(false);
   const [gastosCollapsed, setGastosCollapsed] = useState(false);
   const [cajaCollapsed, setCajaCollapsed] = useState(false);
   const [closedPeriods, setClosedPeriods] = useState([]);
@@ -424,13 +425,20 @@ export default function Gastos() {
       bank_reconciled: !!form.bank_reconciled,
       notes: form.notes || '',
     };
+    setSaving(true);
     try {
       if (form.id) await gastosAPI.update(tenantId, form.id, payload);
       else await gastosAPI.create(tenantId, payload);
       toast.success('Gasto guardado');
       setModal(null); load();
     } catch (e) {
-      toast.error(e.response?.data?.amount?.[0] || e.response?.data?.field?.[0] || 'Error al guardar');
+      const err = e.response?.data;
+      toast.error(
+        err?.detail || err?.amount?.[0] || err?.field?.[0] ||
+        err?.non_field_errors?.[0] || 'Error al guardar el gasto'
+      );
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -444,10 +452,13 @@ export default function Gastos() {
   };
 
   const handleDeleteGasto = async (g) => {
-    if (window.confirm('¿Eliminar este gasto?')) {
+    if (!window.confirm('¿Eliminar este gasto?')) return;
+    try {
       await gastosAPI.delete(tenantId, g.id);
-      toast.success('Eliminado');
+      toast.success('Gasto eliminado');
       load();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'No se pudo eliminar el gasto');
     }
   };
 
@@ -711,33 +722,35 @@ export default function Gastos() {
               <div className="form-grid">
                 <div className="field">
                   <label className="field-label">Concepto <span style={{ color: 'var(--coral-500)' }}>*</span></label>
-                  <select className="field-select" value={form.field || ''} onChange={e => setForm({ ...form, field: e.target.value })}>
+                  <select className="field-select" value={form.field || ''} onChange={e => setForm(f => ({ ...f, field: e.target.value }))}>
                     <option value="">Seleccionar...</option>
                     {fields.map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
                   </select>
                 </div>
                 <div className="field">
                   <label className="field-label">Monto <span style={{ color: 'var(--coral-500)' }}>*</span></label>
-                  <input type="number" className="field-input" step="0.01" min="0.01" placeholder="0.00" value={form.amount ?? ''} onChange={e => setForm({ ...form, amount: e.target.value })} />
+                  <input type="number" className="field-input" step="0.01" min="0.01" placeholder="0.00" value={form.amount ?? ''} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} />
                 </div>
                 <div className="field">
                   <label className="field-label">Tipo de Gasto</label>
-                  <select className="field-select" value={form.payment_type || 'transferencia'} onChange={e => setForm({ ...form, payment_type: e.target.value })}>
+                  <select className="field-select" value={form.payment_type || 'transferencia'} onChange={e => setForm(f => ({ ...f, payment_type: e.target.value }))}>
                     {GASTO_PAYMENT_TYPES.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
                   </select>
                 </div>
                 <div className="field">
                   <label className="field-label">No. Documento</label>
-                  <input className="field-input" placeholder="No. cheque, referencia..." value={form.doc_number || form.invoice_folio || ''} onChange={e => setForm({ ...form, doc_number: e.target.value })} />
+                  <input className="field-input" placeholder="No. cheque, referencia..." value={form.doc_number || form.invoice_folio || ''} onChange={e => setForm(f => ({ ...f, doc_number: e.target.value }))} />
                 </div>
                 <div className="field">
                   <label className="field-label">Fecha de Gasto</label>
-                  <input type="date" className="field-input" value={form.gasto_date || ''} onChange={e => setForm({ ...form, gasto_date: e.target.value })} />
+                  <input type="date" className="field-input" value={form.gasto_date || ''} onChange={e => setForm(f => ({ ...f, gasto_date: e.target.value }))} />
                 </div>
                 <div className="field">
                   <label className="field-label">Conciliado Banco</label>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, cursor: 'pointer' }}>
-                    <input type="checkbox" checked={!!form.bank_reconciled} onChange={e => setForm({ ...form, bank_reconciled: e.target.checked })} />
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, cursor: 'pointer' }}
+                    onClick={e => e.stopPropagation()}>
+                    <input type="checkbox" checked={!!form.bank_reconciled}
+                      onChange={e => { e.stopPropagation(); setForm(f => ({ ...f, bank_reconciled: e.target.checked })); }} />
                     <span style={{ fontSize: 12, color: 'var(--ink-500)' }}>{form.bank_reconciled ? '🏦 Conciliado' : 'Sin conciliar'}</span>
                   </label>
                 </div>
@@ -751,7 +764,7 @@ export default function Gastos() {
                   rows={2}
                   placeholder="Observaciones, descripción adicional del gasto..."
                   value={form.notes || ''}
-                  onChange={e => setForm({ ...form, notes: e.target.value })}
+                  onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
                   style={{ resize: 'vertical', minHeight: 56 }}
                 />
               </div>
@@ -760,21 +773,23 @@ export default function Gastos() {
               <div className="form-grid" style={{ marginTop: 8 }}>
                 <div className="field">
                   <label className="field-label">Nombre</label>
-                  <input className="field-input" value={form.provider_name || ''} onChange={e => setForm({ ...form, provider_name: e.target.value })} placeholder="Nombre del proveedor" />
+                  <input className="field-input" value={form.provider_name || ''} onChange={e => setForm(f => ({ ...f, provider_name: e.target.value }))} placeholder="Nombre del proveedor" />
                 </div>
                 <div className="field">
                   <label className="field-label">RFC</label>
-                  <input className="field-input" style={{ fontFamily: 'monospace' }} value={form.provider_rfc || ''} onChange={e => setForm({ ...form, provider_rfc: e.target.value })} placeholder="RFC del proveedor" />
+                  <input className="field-input" style={{ fontFamily: 'monospace' }} value={form.provider_rfc || ''} onChange={e => setForm(f => ({ ...f, provider_rfc: e.target.value }))} placeholder="RFC del proveedor" />
                 </div>
                 <div className="field">
                   <label className="field-label">No. Factura</label>
-                  <input className="field-input" value={form.provider_invoice || ''} onChange={e => setForm({ ...form, provider_invoice: e.target.value })} placeholder="Número de factura" />
+                  <input className="field-input" value={form.provider_invoice || ''} onChange={e => setForm(f => ({ ...f, provider_invoice: e.target.value }))} placeholder="Número de factura" />
                 </div>
               </div>
             </div>
             <div className="modal-foot">
-              <button className="btn btn-secondary" onClick={() => setModal(null)}>Cancelar</button>
-              <button className="btn btn-primary" onClick={saveGasto}><Check size={14} /> {form.id ? 'Guardar' : 'Registrar'}</button>
+              <button className="btn btn-secondary" onClick={() => setModal(null)} disabled={saving}>Cancelar</button>
+              <button className="btn btn-primary" onClick={saveGasto} disabled={saving}>
+                <Check size={14} /> {saving ? 'Guardando…' : form.id ? 'Guardar' : 'Registrar'}
+              </button>
             </div>
           </div>
         </div>
