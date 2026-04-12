@@ -1,12 +1,12 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { unitsAPI, reportsAPI, tenantsAPI, paymentsAPI, gastosAPI, unrecognizedIncomeAPI, extraFieldsAPI, reservationsAPI } from '../api/client';
+import { unitsAPI, reportsAPI, tenantsAPI, paymentsAPI, gastosAPI, unrecognizedIncomeAPI, extraFieldsAPI, reservationsAPI, bankAPI } from '../api/client';
 import PaginationBar from '../components/PaginationBar';
 import PaymentReceiptModal from '../components/PaymentReceiptModal';
 import SendEmailModal from '../components/SendEmailModal';
 import { statusClass, statusLabel, fmtDate, periodLabel, todayPeriod, prevPeriod, nextPeriod, ROLES } from '../utils/helpers';
-import { Search, ChevronLeft, ChevronRight, Building, Globe, DollarSign, ArrowDown, TrendingDown, AlertCircle, Calendar, Printer, ShoppingBag, FileText, Mail, X, Send, Download } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight, Building, Globe, DollarSign, ArrowDown, TrendingDown, AlertCircle, Calendar, Printer, ShoppingBag, FileText, Mail, X, Send, Download, Paperclip, Eye, Upload } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 function fmt(n) {
@@ -1274,6 +1274,50 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
   const [ecLoading, setEcLoading] = useState(false);
   const [expandedPeriods, setExpandedPeriods] = useState({});
   const togglePeriod = (period) => setExpandedPeriods(prev => ({ ...prev, [period]: !prev[period] }));
+
+  // ── Estados bancarios ──
+  const [bankStatements, setBankStatements] = useState([]);
+  const [bankStmtViewer, setBankStmtViewer] = useState(null); // { period, dataUrl, uploadedAt }
+  const [bankUploading, setBankUploading] = useState(null);   // period en proceso de subida
+  const uploadInputRef = useRef(null);
+  const uploadingPeriodRef = useRef(null);
+
+  const bankStmtMap = useMemo(() => {
+    const m = {};
+    bankStatements.forEach(s => { m[s.period] = s; });
+    return m;
+  }, [bankStatements]);
+
+  const handleBankFileSelect = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const period = uploadingPeriodRef.current;
+    e.target.value = '';
+    if (!file.name.toLowerCase().endsWith('.pdf')) {
+      toast.error('Solo se permiten archivos PDF');
+      return;
+    }
+    setBankUploading(period);
+    try {
+      const base64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = ev => resolve(ev.target.result.split(',')[1]);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      const existing = bankStmtMap[period];
+      if (existing) {
+        await bankAPI.deleteStatement(tenantId, existing.id);
+      }
+      const res = await bankAPI.upload(tenantId, { period, file_data: base64 });
+      setBankStatements(prev => [...prev.filter(s => s.period !== period), res.data]);
+      toast.success(`Estado bancario de ${periodLabel(period)} guardado`);
+    } catch {
+      toast.error('Error al subir el estado bancario');
+    } finally {
+      setBankUploading(null);
+    }
+  };
   // unitsCount viene del padre (units.length real); fallback a generalData.units si existiera
   const numUnits = unitsCount || generalData?.units?.length || 0;
 
@@ -1286,10 +1330,12 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
       paymentsAPI.list(tenantId, { page_size: 9999 }).catch(() => ({ data: [] })),
       gastosAPI.list(tenantId, { page_size: 9999 }).catch(() => ({ data: [] })),
       unrecognizedIncomeAPI.list(tenantId, { page_size: 9999 }).catch(() => ({ data: [] })),
-    ]).then(([pRes, gRes, uiRes]) => {
+      bankAPI.list(tenantId).catch(() => ({ data: [] })),
+    ]).then(([pRes, gRes, uiRes, bsRes]) => {
       setPayments(pRes.data?.results || pRes.data || []);
       setGastos(gRes.data?.results || gRes.data || []);
       setUnrecognizedIncome(Array.isArray(uiRes.data) ? uiRes.data : (uiRes.data?.results || []));
+      setBankStatements(Array.isArray(bsRes.data) ? bsRes.data : (bsRes.data?.results || []));
     }).finally(() => setEcLoading(false));
   }, [tenantId]);
 
@@ -1427,6 +1473,62 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
   return (
     <div className="content-fade">
 
+      {/* ── Input oculto para subir PDF bancario ── */}
+      <input
+        ref={uploadInputRef}
+        type="file"
+        accept=".pdf,application/pdf"
+        style={{ display: 'none' }}
+        onChange={handleBankFileSelect}
+      />
+
+      {/* ── Modal visor de estado bancario ── */}
+      {bankStmtViewer && (
+        <div
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          onClick={() => setBankStmtViewer(null)}
+        >
+          <div
+            style={{ background: 'white', borderRadius: 14, width: '88vw', height: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.35)' }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 18px', borderBottom: '1px solid var(--sand-100)', flexShrink: 0 }}>
+              <FileText size={16} style={{ color: 'var(--teal-500)' }} />
+              <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--ink-700)' }}>
+                Estado Bancario — {periodLabel(bankStmtViewer.period)}
+              </span>
+              {bankStmtViewer.uploadedAt && (
+                <span style={{ fontSize: 11, color: 'var(--ink-400)', marginLeft: 4 }}>
+                  · Subido {new Date(bankStmtViewer.uploadedAt).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' })}
+                </span>
+              )}
+              <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+                <a
+                  href={bankStmtViewer.dataUrl}
+                  download={`estado-bancario-${bankStmtViewer.period}.pdf`}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--teal-600)', padding: '4px 10px', borderRadius: 6, border: '1px solid var(--teal-200)', textDecoration: 'none' }}
+                >
+                  <Download size={13} /> Descargar
+                </a>
+                <button
+                  onClick={() => setBankStmtViewer(null)}
+                  style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30, border: 'none', borderRadius: 8, background: 'var(--sand-100)', cursor: 'pointer', color: 'var(--ink-500)' }}
+                >
+                  <X size={15} />
+                </button>
+              </div>
+            </div>
+            {/* PDF viewer */}
+            <iframe
+              src={bankStmtViewer.dataUrl}
+              title={`Estado Bancario ${bankStmtViewer.period}`}
+              style={{ flex: 1, border: 'none', borderRadius: '0 0 14px 14px' }}
+            />
+          </div>
+        </div>
+      )}
+
       {/* ── PRINT LAYOUT (oculto en pantalla, visible con body.printing-general) ── */}
       <div className="general-print-layout">
 
@@ -1515,7 +1617,10 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
               const rowBg = idx % 2 === 0 ? '#f8f6f1' : 'white';
               return (
                 <tr key={row.period} style={{ background: rowBg }}>
-                  <td style={{ padding: '5px 7px', fontWeight: 600, color: '#1a1a2e', borderBottom: '1px solid #e5e0d5' }}>{periodLabel(row.period)}</td>
+                  <td style={{ padding: '5px 7px', fontWeight: 600, color: '#1a1a2e', borderBottom: '1px solid #e5e0d5' }}>
+                    {periodLabel(row.period)}
+                    {bankStmtMap[row.period] && <span style={{ marginLeft: 4, fontSize: 8, color: '#0d7c6e' }}>📎</span>}
+                  </td>
                   <td style={{ padding: '5px 7px', textAlign: 'right', borderBottom: '1px solid #e5e0d5' }}>{fmt(row.cargoOblig)}</td>
                   <td style={{ padding: '5px 7px', textAlign: 'right', color: '#0d7c6e', fontWeight: 700, borderBottom: '1px solid #e5e0d5' }}>
                     {row.recaudoConciliado > 0 ? fmt(row.recaudoConciliado) : '—'}
@@ -1644,6 +1749,7 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
                   <th style={{ textAlign: 'right' }}>Gastos 🏦</th>
                   <th style={{ textAlign: 'right' }}>Gastos ⏳</th>
                   <th style={{ textAlign: 'right' }}>Balance</th>
+                  <th style={{ textAlign: 'center', width: 76 }}>Edo. Banco</th>
                 </tr>
                 <tr style={{ background: 'var(--sand-50)', fontSize: 10, color: 'var(--ink-400)' }}>
                   <td colSpan={1}></td>
@@ -1653,6 +1759,7 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
                   <td colSpan={3}></td>
                   <td style={{ textAlign: 'right', paddingBottom: 4, color: 'var(--amber-700)' }}>Conciliados</td>
                   <td style={{ textAlign: 'right', paddingBottom: 4, color: 'var(--ink-400)' }}>En tránsito</td>
+                  <td></td>
                   <td></td>
                 </tr>
               </thead>
@@ -1696,6 +1803,51 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
                         <td style={{ textAlign: 'right' }}>
                           <span style={{ fontWeight: 700, color: row.balance >= 0 ? 'var(--teal-600)' : 'var(--coral-500)' }}>{fmt(row.balance)}</span>
                         </td>
+                        {/* Acciones: Estado Bancario */}
+                        <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }} onClick={e => e.stopPropagation()}>
+                          <div style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
+                            {bankStmtMap[row.period] && (
+                              <button
+                                title="Ver estado bancario"
+                                onClick={() => setBankStmtViewer({
+                                  period: row.period,
+                                  dataUrl: `data:application/pdf;base64,${bankStmtMap[row.period].file_data}`,
+                                  uploadedAt: bankStmtMap[row.period].uploaded_at,
+                                })}
+                                style={{
+                                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                  width: 28, height: 28, border: 'none', borderRadius: 6,
+                                  background: 'var(--teal-50)', color: 'var(--teal-600)',
+                                  cursor: 'pointer', flexShrink: 0,
+                                }}
+                              >
+                                <Eye size={13} />
+                              </button>
+                            )}
+                            <button
+                              title={bankStmtMap[row.period] ? 'Reemplazar estado bancario' : 'Adjuntar estado bancario PDF'}
+                              disabled={bankUploading === row.period}
+                              onClick={() => {
+                                uploadingPeriodRef.current = row.period;
+                                uploadInputRef.current?.click();
+                              }}
+                              style={{
+                                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                width: 28, height: 28, border: 'none', borderRadius: 6,
+                                background: bankStmtMap[row.period] ? 'var(--sand-100)' : 'var(--blue-50)',
+                                color: bankStmtMap[row.period] ? 'var(--ink-400)' : 'var(--blue-500)',
+                                cursor: bankUploading === row.period ? 'wait' : 'pointer', flexShrink: 0,
+                              }}
+                            >
+                              {bankUploading === row.period
+                                ? <span style={{ fontSize: 11 }}>…</span>
+                                : bankStmtMap[row.period]
+                                  ? <Upload size={12} />
+                                  : <Paperclip size={13} />
+                              }
+                            </button>
+                          </div>
+                        </td>
                       </tr>
                       {/* Detalle colapsable */}
                       {isExpanded && hasRecaudoDetail && row.recaudoDetails.conciliado.map((d, i) => (
@@ -1703,7 +1855,7 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
                           <td style={{ paddingLeft: 32, color: 'var(--teal-600)', fontStyle: 'italic' }}>↳ 🏦 {d.unit}{d.responsible ? ` — ${d.responsible}` : ''}</td>
                           <td></td>
                           <td style={{ textAlign: 'right', color: 'var(--teal-600)' }}>{fmt(d.amount)}</td>
-                          <td colSpan={7}><span style={{ fontSize: 10, color: 'var(--ink-400)' }}>{d.payment_type || ''}</span></td>
+                          <td colSpan={8}><span style={{ fontSize: 10, color: 'var(--ink-400)' }}>{d.payment_type || ''}</span></td>
                         </tr>
                       ))}
                       {isExpanded && hasRecaudoDetail && row.recaudoDetails.noConciliado.map((d, i) => (
@@ -1712,7 +1864,7 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
                           <td></td>
                           <td></td>
                           <td style={{ textAlign: 'right', color: 'var(--amber-500)' }}>{fmt(d.amount)}</td>
-                          <td colSpan={6}><span style={{ fontSize: 10, color: 'var(--ink-400)' }}>{d.payment_type || ''}</span></td>
+                          <td colSpan={7}><span style={{ fontSize: 10, color: 'var(--ink-400)' }}>{d.payment_type || ''}</span></td>
                         </tr>
                       ))}
                       {isExpanded && hasGastoDetail && row.gastoDetail.reconciled.map((g, i) => (
@@ -1720,7 +1872,7 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
                           <td style={{ paddingLeft: 32, color: 'var(--amber-700)', fontStyle: 'italic' }}>↳ 🏦 {g.label}{g.provider ? ` — ${g.provider}` : ''}</td>
                           <td colSpan={6}></td>
                           <td style={{ textAlign: 'right', color: 'var(--amber-700)' }}>{fmt(g.amount)}</td>
-                          <td colSpan={2}></td>
+                          <td colSpan={3}></td>
                         </tr>
                       ))}
                       {isExpanded && hasGastoDetail && row.gastoDetail.noReconciled.map((g, i) => (
@@ -1728,14 +1880,14 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
                           <td style={{ paddingLeft: 32, color: 'var(--ink-500)', fontStyle: 'italic' }}>↳ ⏳ {g.label}{g.provider ? ` — ${g.provider}` : ''}</td>
                           <td colSpan={7}></td>
                           <td style={{ textAlign: 'right', color: 'var(--ink-400)' }}>{fmt(g.amount)}</td>
-                          <td></td>
+                          <td colSpan={2}></td>
                         </tr>
                       ))}
                     </React.Fragment>
                   );
                 })}
                 {allPeriods.length === 0 && (
-                  <tr><td colSpan={10} style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--ink-300)' }}>Sin datos</td></tr>
+                  <tr><td colSpan={11} style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--ink-300)' }}>Sin datos</td></tr>
                 )}
                 {/* TOTALES row */}
                 {periodRows.length > 0 && (
@@ -1750,6 +1902,7 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
                     <td style={{ textAlign: 'right' }}>
                       <span style={{ color: totals.balance >= 0 ? 'var(--teal-600)' : 'var(--coral-500)' }}>{fmt(totals.balance)}</span>
                     </td>
+                    <td></td>
                   </tr>
                 )}
               </tbody>
@@ -2039,12 +2192,19 @@ function ReporteGeneralView({ tenantData, generalData, genLoading, cutoff, setCu
                 <div style={{ padding: '12px 0', color: 'var(--ink-300)', fontSize: 13, textAlign: 'center' }}>Sin egresos conciliados en este período</div>
               ) : (
                 (rd.egresos_reconciled || []).map((eg, i) => (
-                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--sand-50)' }}>
-                    <div>
-                      <span style={{ fontSize: 13, color: 'var(--ink-600)' }}>{eg.label}</span>
-                      {eg.provider && <span style={{ fontSize: 11, color: 'var(--ink-400)', marginLeft: 8 }}>· {eg.provider}</span>}
+                  <div key={i} style={{ padding: '8px 0', borderBottom: '1px solid var(--sand-50)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <div>
+                        <span style={{ fontSize: 13, color: 'var(--ink-600)' }}>{eg.label}</span>
+                        {eg.provider && <span style={{ fontSize: 11, color: 'var(--ink-400)', marginLeft: 8 }}>· {eg.provider}</span>}
+                      </div>
+                      <span style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 600, color: 'var(--coral-500)', flexShrink: 0, marginLeft: 12 }}>-{fmt2(eg.amount)}</span>
                     </div>
-                    <span style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 600, color: 'var(--coral-500)' }}>-{fmt2(eg.amount)}</span>
+                    {eg.notes && (
+                      <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 3, fontStyle: 'italic', paddingLeft: 2 }}>
+                        📝 {eg.notes}
+                      </div>
+                    )}
                   </div>
                 ))
               )}
@@ -2066,12 +2226,19 @@ function ReporteGeneralView({ tenantData, generalData, genLoading, cutoff, setCu
                   <span style={{ fontSize: 11, color: 'var(--amber-600)', marginLeft: 'auto' }}>Gastos no conciliados en banco</span>
                 </div>
                 {(rd.cheques_transito || []).map((ch, i) => (
-                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--amber-100)' }}>
-                    <div>
-                      <span style={{ fontSize: 13, color: 'var(--amber-800)' }}>{ch.label}</span>
-                      {ch.provider && <span style={{ fontSize: 11, color: 'var(--amber-600)', marginLeft: 8 }}>· {ch.provider}</span>}
+                  <div key={i} style={{ padding: '8px 0', borderBottom: '1px solid var(--amber-100)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <div>
+                        <span style={{ fontSize: 13, color: 'var(--amber-800)' }}>{ch.label}</span>
+                        {ch.provider && <span style={{ fontSize: 11, color: 'var(--amber-600)', marginLeft: 8 }}>· {ch.provider}</span>}
+                      </div>
+                      <span style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 600, color: 'var(--amber-700)', flexShrink: 0, marginLeft: 12 }}>{fmt2(ch.amount)}</span>
                     </div>
-                    <span style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 600, color: 'var(--amber-700)' }}>{fmt2(ch.amount)}</span>
+                    {ch.notes && (
+                      <div style={{ fontSize: 11, color: 'var(--amber-700)', marginTop: 3, fontStyle: 'italic', paddingLeft: 2 }}>
+                        📝 {ch.notes}
+                      </div>
+                    )}
                   </div>
                 ))}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', marginTop: 4 }}>

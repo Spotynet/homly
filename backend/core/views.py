@@ -3245,7 +3245,7 @@ def _compute_report_data(tenant, period):
         if amt <= 0:
             continue
         label = g.field.label if g.field else str(g.field_id_legacy or 'Gasto')
-        entry = {'label': label, 'amount': float(amt), 'provider': g.provider_name or ''}
+        entry = {'label': label, 'amount': float(amt), 'provider': g.provider_name or '', 'notes': g.notes or ''}
         if g.bank_reconciled:
             egresos_reconciled.append(entry)
             total_egresos += amt

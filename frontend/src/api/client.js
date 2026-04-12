@@ -149,8 +149,9 @@ export const periodsAPI = {
 
 // ─── Bank Statements ────────────────────────────
 export const bankAPI = {
-  list: (tenantId) => api.get(`/tenants/${tenantId}/bank-statements/`),
-  upload: (tenantId, data) => api.post(`/tenants/${tenantId}/bank-statements/`, data),
+  list:            (tenantId)     => api.get(`/tenants/${tenantId}/bank-statements/`),
+  upload:          (tenantId, data) => api.post(`/tenants/${tenantId}/bank-statements/`, data),
+  deleteStatement: (tenantId, id) => api.delete(`/tenants/${tenantId}/bank-statements/${id}/`),
 };
 
 // ─── Assembly ───────────────────────────────────
