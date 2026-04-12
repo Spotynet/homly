@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { unitsAPI, reportsAPI, tenantsAPI, paymentsAPI, gastosAPI, unrecognizedIncomeAPI, extraFieldsAPI, reservationsAPI, bankAPI } from '../api/client';
@@ -1279,8 +1279,6 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
   const [bankStatements, setBankStatements] = useState([]);
   const [bankStmtViewer, setBankStmtViewer] = useState(null); // { period, dataUrl, uploadedAt }
   const [bankUploading, setBankUploading] = useState(null);   // period en proceso de subida
-  const uploadInputRef = useRef(null);
-  const uploadingPeriodRef = useRef(null);
 
   const bankStmtMap = useMemo(() => {
     const m = {};
@@ -1288,12 +1286,11 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
     return m;
   }, [bankStatements]);
 
-  const handleBankFileSelect = async (e) => {
+  const handleBankFileSelect = async (e, period) => {
     const file = e.target.files?.[0];
-    if (!file) return;
-    const period = uploadingPeriodRef.current;
     e.target.value = '';
-    if (!file.name.toLowerCase().endsWith('.pdf')) {
+    if (!file) return;
+    if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
       toast.error('Solo se permiten archivos PDF');
       return;
     }
@@ -1472,15 +1469,6 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
 
   return (
     <div className="content-fade">
-
-      {/* ── Input oculto para subir PDF bancario ── */}
-      <input
-        ref={uploadInputRef}
-        type="file"
-        accept=".pdf,application/pdf"
-        style={{ display: 'none' }}
-        onChange={handleBankFileSelect}
-      />
 
       {/* ── Modal visor de estado bancario ── */}
       {bankStmtViewer && (
@@ -1824,19 +1812,15 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
                                 <Eye size={13} />
                               </button>
                             )}
-                            <button
+                            <label
                               title={bankStmtMap[row.period] ? 'Reemplazar estado bancario' : 'Adjuntar estado bancario PDF'}
-                              disabled={bankUploading === row.period}
-                              onClick={() => {
-                                uploadingPeriodRef.current = row.period;
-                                uploadInputRef.current?.click();
-                              }}
                               style={{
                                 display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                                width: 28, height: 28, border: 'none', borderRadius: 6,
+                                width: 28, height: 28, borderRadius: 6,
                                 background: bankStmtMap[row.period] ? 'var(--sand-100)' : 'var(--blue-50)',
                                 color: bankStmtMap[row.period] ? 'var(--ink-400)' : 'var(--blue-500)',
                                 cursor: bankUploading === row.period ? 'wait' : 'pointer', flexShrink: 0,
+                                pointerEvents: bankUploading === row.period ? 'none' : 'auto',
                               }}
                             >
                               {bankUploading === row.period
@@ -1845,7 +1829,13 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
                                   ? <Upload size={12} />
                                   : <Paperclip size={13} />
                               }
-                            </button>
+                              <input
+                                type="file"
+                                accept=".pdf,application/pdf"
+                                style={{ display: 'none' }}
+                                onChange={e => handleBankFileSelect(e, row.period)}
+                              />
+                            </label>
                           </div>
                         </td>
                       </tr>
