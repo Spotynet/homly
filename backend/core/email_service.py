@@ -11,12 +11,12 @@ import os
 # Standard-library MIME builders — needed for correct multipart/related structure
 from email.mime.application import MIMEApplication
 from email.mime.image import MIMEImage
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 from email.utils import formatdate, make_msgid
 
 from django.conf import settings
 from django.core.mail import EmailMessage, get_connection
+# Django's safe MIME classes support as_bytes(linesep=...) required by Django's SMTP backend
+from django.core.mail.message import SafeMIMEMultipart, SafeMIMEText
 
 logger = logging.getLogger(__name__)
 
@@ -479,13 +479,13 @@ def _make_mime_message(
     clients accept this correct structure.
     """
     # ── Innermost: text alternatives ────────────────────────────────────────
-    alt = MIMEMultipart('alternative')
-    alt.attach(MIMEText(plain, 'plain', 'utf-8'))
-    alt.attach(MIMEText(html, 'html', 'utf-8'))
+    alt = SafeMIMEMultipart('alternative')
+    alt.attach(SafeMIMEText(plain, 'plain', 'utf-8'))
+    alt.attach(SafeMIMEText(html, 'html', 'utf-8'))
 
     # ── Middle: wrap with related if there is an inline logo ────────────────
     if logo_data:
-        related = MIMEMultipart('related')
+        related = SafeMIMEMultipart('related')
         related.attach(alt)
         logo_part = MIMEImage(logo_data, 'png')
         logo_part.add_header('Content-Disposition', 'inline', filename='homly-full.png')
@@ -498,7 +498,7 @@ def _make_mime_message(
     # ── Outer: wrap with mixed only when there is a file attachment ──────────
     if pdf_attachment:
         fname, fbytes, _ = pdf_attachment
-        outer = MIMEMultipart('mixed')
+        outer = SafeMIMEMultipart('mixed')
         outer.attach(inner)
         pdf_part = MIMEApplication(fbytes, Name=fname)
         pdf_part.add_header('Content-Disposition', 'attachment', filename=fname)
