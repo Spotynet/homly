@@ -366,6 +366,13 @@ class Payment(models.Model):
     folio = models.CharField(max_length=50, blank=True, default='',
                              help_text='Folio / número de recibo asignado al pago')
 
+    # Pago que físicamente se registró en esta unidad pero corresponde a otra unidad
+    applied_to_unit = models.ForeignKey(
+        'Unit', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='applied_payments',
+        help_text='Unidad a la que aplica este pago cuando difiere de la unidad de registro'
+    )
+
     # JSONB for flexible adeudo payments across periods
     adeudo_payments = models.JSONField(default=dict, blank=True,
                                        help_text='Debt payments: {period: {fieldId: amount}}')

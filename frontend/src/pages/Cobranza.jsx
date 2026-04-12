@@ -290,6 +290,7 @@ export default function Cobranza() {
       folio: existing?.folio || '',
       evidences: Array.isArray(existing?.evidence) ? existing.evidence : [],
       bank_reconciled: !!existing?.bank_reconciled,
+      applied_to_unit_id: existing?.applied_to_unit_id || null,
       field_payments: fieldPayments,
       adeudo_payments: existingAp,
       adeudoSelections: restoredSelections,
@@ -411,6 +412,7 @@ export default function Cobranza() {
       bank_reconciled: !!captureForm.bank_reconciled,
       field_payments: fp,
       adeudo_payments: captureForm.adeudo_payments || {},
+      applied_to_unit_id: captureForm.applied_to_unit_id || null,
     };
   };
 
@@ -597,6 +599,13 @@ export default function Cobranza() {
                     <td style={{ fontSize: 12 }}>{fmtDate(pay?.payment_date)}</td>
                     <td style={{ fontSize: 12, color: 'var(--ink-400)', maxWidth: 160 }}>
                       {pay?.notes && <span title={pay.notes}>{pay.notes.length > 30 ? pay.notes.slice(0, 30) + '…' : pay.notes}</span>}
+                      {pay?.applied_to_unit_id && (
+                        <div style={{ marginTop: pay?.notes ? 4 : 0, display: 'inline-flex', alignItems: 'center', gap: 4,
+                          background: 'var(--amber-50)', color: 'var(--amber-700)', border: '1px solid var(--amber-200)',
+                          borderRadius: 6, padding: '2px 7px', fontSize: 11, fontWeight: 700 }}>
+                          🔀 → {pay.applied_to_unit_code || pay.applied_to_unit_id}
+                        </div>
+                      )}
                     </td>
                     <td>
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -1577,6 +1586,54 @@ export default function Cobranza() {
                       </div>
                     </div>
                   </div>
+                </div>
+
+                {/* SECCIÓN: Pago de otra unidad */}
+                <div style={{ marginTop: 14 }}>
+                  <div
+                    style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 14,
+                      border: `1.5px solid ${captureForm.applied_to_unit_id ? 'var(--amber-200)' : 'var(--sand-200)'}`,
+                      background: captureForm.applied_to_unit_id ? 'var(--amber-50)' : 'var(--sand-50)',
+                      borderRadius: 'var(--radius-md)', cursor: 'pointer' }}
+                    onClick={e => { e.stopPropagation(); setCaptureForm(p => ({ ...p, applied_to_unit_id: p.applied_to_unit_id ? null : '' })); }}
+                  >
+                    <div style={{ width: 22, height: 22, borderRadius: 6, flexShrink: 0,
+                      border: `2px solid ${captureForm.applied_to_unit_id !== null && captureForm.applied_to_unit_id !== undefined && captureForm.applied_to_unit_id !== '' ? 'var(--amber-500)' : 'var(--sand-300)'}`,
+                      background: captureForm.applied_to_unit_id !== null && captureForm.applied_to_unit_id !== undefined && captureForm.applied_to_unit_id !== '' ? 'var(--amber-500)' : 'white',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      {captureForm.applied_to_unit_id !== null && captureForm.applied_to_unit_id !== undefined && captureForm.applied_to_unit_id !== '' && <Check size={14} style={{ color: 'white' }} />}
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: captureForm.applied_to_unit_id ? 'var(--amber-700)' : 'var(--ink-600)' }}>
+                        🔀 Este pago corresponde a otra unidad
+                      </div>
+                      <div style={{ fontSize: 11, color: captureForm.applied_to_unit_id ? 'var(--amber-600)' : 'var(--ink-400)', marginTop: 2 }}>
+                        Activa si el pago fue registrado en esta unidad pero aplica al estado de cuenta de otra
+                      </div>
+                    </div>
+                  </div>
+                  {captureForm.applied_to_unit_id !== null && captureForm.applied_to_unit_id !== undefined && (
+                    <div className="field" style={{ marginTop: 10 }}>
+                      <label className="field-label">Unidad que debe recibir el crédito <span style={{ color: 'var(--coral-500)' }}>*</span></label>
+                      <select
+                        className="field-select"
+                        value={captureForm.applied_to_unit_id || ''}
+                        onClick={e => e.stopPropagation()}
+                        onChange={e => setCaptureForm(p => ({ ...p, applied_to_unit_id: e.target.value || null }))}
+                        style={!captureForm.applied_to_unit_id ? { borderColor: 'var(--coral-400)' } : {}}
+                      >
+                        <option value="">— Seleccionar unidad destino —</option>
+                        {units
+                          .filter(u => u.id !== captureForm.unit_id)
+                          .map(u => (
+                            <option key={u.id} value={u.id}>
+                              {u.unit_id_code}{u.unit_name ? ` — ${u.unit_name}` : ''}{u.responsible_name ? ` (${u.responsible_name})` : ''}
+                            </option>
+                          ))
+                        }
+                      </select>
+                    </div>
+                  )}
                 </div>
 
                 {/* SECCIÓN 6: Evidencia */}

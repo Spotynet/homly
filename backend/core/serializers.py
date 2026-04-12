@@ -404,6 +404,9 @@ class PaymentSerializer(serializers.ModelSerializer):
     unit_name = serializers.CharField(source='unit.unit_name', read_only=True)
     responsible = serializers.CharField(source='unit.responsible_name', read_only=True)
     evidence = serializers.SerializerMethodField()
+    applied_to_unit_id   = serializers.UUIDField(source='applied_to_unit.id',          read_only=True, allow_null=True, default=None)
+    applied_to_unit_code = serializers.CharField(source='applied_to_unit.unit_id_code', read_only=True, allow_null=True, default=None)
+    applied_to_unit_name = serializers.CharField(source='applied_to_unit.unit_name',    read_only=True, allow_null=True, default=None)
 
     def get_evidence(self, obj):
         return _parse_evidence(obj.evidence)
@@ -413,6 +416,7 @@ class PaymentSerializer(serializers.ModelSerializer):
         fields = ['id', 'tenant', 'unit', 'unit_code', 'unit_name', 'responsible',
                   'period', 'status', 'payment_type', 'payment_date', 'notes', 'folio',
                   'evidence', 'bank_reconciled', 'adeudo_payments', 'field_payments', 'additional_payments',
+                  'applied_to_unit_id', 'applied_to_unit_code', 'applied_to_unit_name',
                   'created_at', 'updated_at']
         read_only_fields = ['id', 'created_at', 'updated_at']
 
@@ -429,6 +433,7 @@ class PaymentCaptureSerializer(serializers.Serializer):
     bank_reconciled = serializers.BooleanField(required=False, default=False)
     field_payments = serializers.DictField(child=serializers.DictField(), required=False)
     adeudo_payments = serializers.DictField(required=False, default=dict)
+    applied_to_unit_id = serializers.UUIDField(required=False, allow_null=True, default=None)
 
 
 class AddAdditionalPaymentSerializer(serializers.Serializer):

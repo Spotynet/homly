@@ -1042,6 +1042,16 @@ class PaymentViewSet(viewsets.ModelViewSet):
 
         tenant = Tenant.objects.get(id=tenant_id)
 
+        # Validate applied_to_unit_id belongs to the same tenant
+        applied_to_unit_id = data.get('applied_to_unit_id')
+        if applied_to_unit_id:
+            from .models import Unit as UnitModel
+            if not UnitModel.objects.filter(id=applied_to_unit_id, tenant_id=tenant_id).exists():
+                return Response({'detail': 'La unidad destino no pertenece a este tenant.'},
+                                status=status.HTTP_400_BAD_REQUEST)
+            if str(applied_to_unit_id) == str(data['unit_id']):
+                applied_to_unit_id = None  # misma unidad = sin redirección
+
         # Create or update payment
         payment, created = Payment.objects.update_or_create(
             tenant_id=tenant_id,
@@ -1055,6 +1065,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
                 'evidence': json.dumps(data.get('evidence', [])),
                 'bank_reconciled': data.get('bank_reconciled', False),
                 'adeudo_payments': data.get('adeudo_payments', {}),
+                'applied_to_unit_id': applied_to_unit_id,
             }
         )
 
@@ -2676,11 +2687,31 @@ def _compute_statement(tenant, unit_id, start_period, cutoff_period):
     previous_debt = float(unit.previous_debt or 0) if unit else 0
     credit_balance = float(unit.credit_balance or 0) if unit else 0
 
+    # Solo pagos propios que NO fueron redirigidos a otra unidad
     payments_qs = Payment.objects.filter(
         tenant_id=tenant.id, unit_id=unit_id
+    ).filter(
+        Q(applied_to_unit__isnull=True) | Q(applied_to_unit_id=unit_id)
     ).prefetch_related('field_payments')
 
     payments_by_period = {p.period: p for p in payments_qs}
+
+    # Pagos de OTRAS unidades que aplican a esta unidad (cross-unit)
+    # → sumas adicionales de field_payments por período
+    cross_fp_by_period = {}   # period → {field_key: Decimal total}
+    cross_meta_by_period = {} # period → first cross Payment (para metadata display)
+    cross_qs = Payment.objects.filter(
+        tenant_id=tenant.id,
+        applied_to_unit_id=unit_id,
+    ).exclude(unit_id=unit_id).prefetch_related('field_payments', 'unit')
+    for cp in cross_qs:
+        if cp.period not in cross_meta_by_period:
+            cross_meta_by_period[cp.period] = cp
+        for cfp in cp.field_payments.all():
+            amt = Decimal(str(cfp.received or 0))
+            if amt > 0:
+                cross_fp_by_period.setdefault(cp.period, {})[cfp.field_key] = \
+                    cross_fp_by_period.get(cp.period, {}).get(cfp.field_key, Decimal('0')) + amt
 
     adelanto_credits = {}
     adeudo_credits_received = {}
@@ -2723,6 +2754,11 @@ def _compute_statement(tenant, unit_id, start_period, cutoff_period):
             for fp in pay.field_payments.all():
                 fp_map[fp.field_key] = fp
 
+        # Montos adicionales de pagos cross-unit (de otra unidad aplicados aquí)
+        cross_extra = cross_fp_by_period.get(period, {})
+        # Si no hay pago directo pero sí cross, usar el cross payment como metadato display
+        cross_pay = cross_meta_by_period.get(period)
+
         ac = adelanto_credits.get(period, {})
 
         is_exempt = _has_admin_exempt(tenant, unit_id, period)
@@ -2735,6 +2771,8 @@ def _compute_statement(tenant, unit_id, start_period, cutoff_period):
             maint_adelanto = Decimal('0')
         else:
             maint_received = Decimal(str(maint_fp.received or 0)) if maint_fp else Decimal('0')
+            # Incluir montos de pago cross-unit para mantenimiento
+            maint_received += cross_extra.get('maintenance', Decimal('0'))
             maint_adelanto = Decimal(str(ac.get('maintenance', 0))) if isinstance(ac.get('maintenance'), (int, float, str)) else Decimal(str(ac.get('maintenance', 0) or 0))
         maint_abono = maint_received + maint_adelanto
 
@@ -2750,6 +2788,7 @@ def _compute_statement(tenant, unit_id, start_period, cutoff_period):
             charge = Decimal(str(ef.default_amount or 0))
             field_fp = fp_map.get(str(ef.id))
             received = Decimal(str(field_fp.received or 0)) if field_fp else Decimal('0')
+            received += cross_extra.get(str(ef.id), Decimal('0'))  # cross-unit supplement
             adelanto = Decimal(str(ac.get(str(ef.id), 0))) if str(ef.id) in ac else Decimal('0')
             abono = received + adelanto
             total_cargo_req += charge
@@ -2760,6 +2799,7 @@ def _compute_statement(tenant, unit_id, start_period, cutoff_period):
             field_fp = fp_map.get(str(ef.id))
             charge = Decimal('0')  # Optional fields: no fixed charge
             received = Decimal(str(field_fp.received or 0)) if field_fp else Decimal('0')
+            received += cross_extra.get(str(ef.id), Decimal('0'))  # cross-unit supplement
             ef_adelanto = Decimal(str(ac.get(str(ef.id), 0))) if str(ef.id) in ac else Decimal('0')
             abono = received + ef_adelanto
             total_cargo_opt += charge
@@ -2801,8 +2841,10 @@ def _compute_statement(tenant, unit_id, start_period, cutoff_period):
         )
 
         is_past = period <= today
-        if pay:
-            eff_status = pay.status
+        # Si no hay pago directo pero hay un cross-unit, usarlo como base de metadatos
+        eff_pay = pay or (cross_pay if cross_extra.get(period) or cross_pay else None)
+        if eff_pay:
+            eff_status = eff_pay.status
         else:
             eff_status = 'pendiente' if is_past else 'futuro'
 
@@ -2824,6 +2866,17 @@ def _compute_statement(tenant, unit_id, start_period, cutoff_period):
         saldo_periodo = cargo_total - abono_balance   # El saldo solo usa pagos que afectan el balance
         saldo_acum += saldo_periodo
 
+        # Info de pago cross-unit para mostrar nota en el estado de cuenta
+        cross_unit_info = None
+        if cross_pay and cross_extra:
+            cross_unit_info = {
+                'unit_code': cross_pay.unit.unit_id_code,
+                'unit_name': cross_pay.unit.unit_name,
+                'payment_date': str(cross_pay.payment_date) if cross_pay.payment_date else None,
+                'payment_type': cross_pay.payment_type,
+                'total': float(sum(cross_extra.values())),
+            }
+
         rows.append({
             'period': period,
             'charge': float(cargo_total),
@@ -2831,11 +2884,12 @@ def _compute_statement(tenant, unit_id, start_period, cutoff_period):
             'paid_balance': float(abono_balance),  # Solo para cálculo de balance (no expuesto al frontend)
             'maintenance': float(maint_charge),
             'status': eff_status,
-            'payment_type': pay.payment_type if pay else None,
-            'payment_date': str(pay.payment_date) if pay and pay.payment_date else None,
+            'payment_type': (pay or eff_pay).payment_type if (pay or eff_pay) else None,
+            'payment_date': str((pay or eff_pay).payment_date) if (pay or eff_pay) and (pay or eff_pay).payment_date else None,
             'field_detail': field_detail,
             'maint_detail': {'charge': float(maint_charge), 'received': float(maint_received), 'adelanto': float(maint_adelanto), 'abono': float(maint_abono)},
             'pay': PaymentSerializer(pay).data if pay else None,
+            'cross_unit_payment': cross_unit_info,
             'saldo_accum': float(saldo_acum),
         })
 
@@ -3027,8 +3081,9 @@ def _compute_report_data(tenant, period):
         Payment.objects.filter(tenant_id=tenant.id, period=period).prefetch_related('field_payments')
     }
 
-    ingreso_mantenimiento = Decimal('0')       # Mantenimiento del período
+    ingreso_mantenimiento = Decimal('0')       # Mantenimiento del período (solo período actual)
     ingreso_maint_adelanto = Decimal('0')      # Mantenimiento adelantado (otros períodos)
+    ingreso_adeudo = Decimal('0')              # Cobros de adeudos de períodos anteriores
     ingresos_referenciados = Decimal('0')
     ingresos_conceptos = {}
     ingreso_units_count = 0
@@ -3110,27 +3165,13 @@ def _compute_report_data(tenant, period):
                             ingresos_conceptos[fk] = {'total': Decimal('0'), 'label': getattr(cf2, 'label', fk) if cf2 else fk}
                         ingresos_conceptos[fk]['total'] += a2
 
-        # Adeudo payments
+        # Adeudo payments — todos los cobros de adeudos previos van a ingreso_adeudo (NO a mantenimiento)
         ap = pay.adeudo_payments or {}
         for _tp, field_map in ap.items():
             for f_id, amt in (field_map or {}).items():
                 a3 = Decimal(str(amt or 0))
                 if a3 > 0:
-                    if f_id == 'maintenance':
-                        from decimal import ROUND_FLOOR
-                        int_a3 = a3.quantize(Decimal('1'), rounding=ROUND_FLOOR)
-                        cm = a3 - int_a3
-                        if cm > Decimal('0.001'):
-                            ingreso_mantenimiento += int_a3
-                            ingresos_referenciados += cm
-                        else:
-                            ingreso_mantenimiento += a3
-                    else:
-                        if f_id not in ingresos_conceptos:
-                            cf3 = cf_map.get(f_id)
-                            default_label = 'Recaudo de adeudos' if f_id == '__prevDebt' else f_id
-                            ingresos_conceptos[f_id] = {'total': Decimal('0'), 'label': getattr(cf3, 'label', default_label) if cf3 else default_label}
-                        ingresos_conceptos[f_id]['total'] += a3
+                    ingreso_adeudo += a3
 
         # Additional payments (igual que HTML: cuando main está conciliado, incluir adicionales)
         for ap_entry in (pay.additional_payments or []):
@@ -3197,13 +3238,14 @@ def _compute_report_data(tenant, period):
                 'bank_reconciled': ui.bank_reconciled,
             })
 
-    total_ingresos = ingreso_mantenimiento + ingreso_maint_adelanto + ingresos_referenciados + sum(
+    total_ingresos = ingreso_mantenimiento + ingreso_maint_adelanto + ingreso_adeudo + ingresos_referenciados + sum(
         x['total'] for x in ingresos_conceptos.values()
     ) + ingresos_no_identificados
 
     return {
         'ingreso_mantenimiento': float(ingreso_mantenimiento),
         'ingreso_maint_adelanto': float(ingreso_maint_adelanto),
+        'ingreso_adeudo': float(ingreso_adeudo),
         'ingresos_referenciados': float(ingresos_referenciados),
         'ingresos_conceptos': {k: {'total': float(v['total']), 'label': v['label']} for k, v in ingresos_conceptos.items()},
         'ingresos_no_identificados': float(ingresos_no_identificados),

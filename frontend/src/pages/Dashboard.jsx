@@ -64,6 +64,7 @@ function SvgDonut({ pct = 0, color = 'var(--teal-400)', size = 110 }) {
 // ─── SVG: Gauge semicircular ───────────────────────────────────────────────
 // Muestra de izquierda (0%) a derecha (100%) pasando por arriba.
 function SvgGauge({ pct = 0, color = 'var(--teal-400)', size = 200, showLabel = true }) {
+  // safe: visual arc/needle capped at 0-100. pct: valor real para la etiqueta (puede ser >100)
   const safe = Math.min(Math.max(pct, 0), 100);
   const sw = 16;
   const r = (size - sw - 4) / 2;
@@ -133,7 +134,7 @@ function SvgGauge({ pct = 0, color = 'var(--teal-400)', size = 200, showLabel = 
       {/* Hub de la aguja */}
       <circle cx={cx} cy={cy} r={sw / 2 - 1} fill="var(--ink-700)" />
       <circle cx={cx} cy={cy} r={sw / 4} fill="var(--white)" />
-      {/* Porcentaje centrado en el interior del arco */}
+      {/* Porcentaje centrado en el interior del arco — muestra valor real aunque sea >100% */}
       {showLabel && (
         <text
           x={cx} y={cy - r * 0.44}
@@ -141,13 +142,13 @@ function SvgGauge({ pct = 0, color = 'var(--teal-400)', size = 200, showLabel = 
           dominantBaseline="middle"
           style={{
             fontFamily: 'var(--font-display)',
-            fontSize: 26,
+            fontSize: pct > 99 ? 22 : 26,
             fontWeight: 800,
             fill: color,
             userSelect: 'none',
           }}
         >
-          {safe}%
+          {pct}%
         </text>
       )}
     </svg>
@@ -463,8 +464,10 @@ export default function Dashboard() {
 
   const cargosFijos    = s.total_expected ?? 0;
 
-  // Cobranza de mantenimiento = lo que el reporte general muestra como ingreso_mantenimiento
+  // Cobranza de mantenimiento = solo mantenimiento del período actual (sin adeudos de períodos previos)
   const cobranza       = parseFloat(rd.ingreso_mantenimiento ?? s.total_collected ?? 0);
+  // Cobros de adeudos de períodos anteriores (separados del mantenimiento normal)
+  const ingAdeudo      = parseFloat(rd.ingreso_adeudo ?? 0);
   // Adelantos de mantenimiento (meses futuros pagados)
   const ingAdelanto    = parseFloat(rd.ingreso_maint_adelanto ?? 0);
   // Conceptos adicionales conciliados (campos extra: agua, gas, etc.)
@@ -499,11 +502,11 @@ export default function Dashboard() {
   // Total ingresos incluyendo no conciliados (para gauges y KPIs)
   const totalIngresosAll   = totalIngresos + ingNoConc;
   // % cobranza de mantenimiento del período vs cargos fijos
-  const pctCobranzaMensual = cargosFijos > 0 ? Math.min(Math.round((cobranza / cargosFijos) * 100), 150) : 0;
+  const pctCobranzaMensual = cargosFijos > 0 ? Math.round((cobranza / cargosFijos) * 100) : 0;
   // % total ingresos conciliados vs cargos fijos del período
   const pctTotalIngrVsCargos = cargosFijos > 0 ? Math.round((totalIngresos / cargosFijos) * 100) : 0;
   // Fix 3: Eficiencia de Cobranza usa todos los ingresos registrados (conciliados + no conciliados)
-  const pctCobVsCargos     = cargosFijos > 0 ? Math.min(Math.round((totalIngresosAll / cargosFijos) * 100), 150) : 0;
+  const pctCobVsCargos     = cargosFijos > 0 ? Math.round((totalIngresosAll / cargosFijos) * 100) : 0;
   // Fix 4: Ratio Egresos usa todos los ingresos (conciliados + no conciliados) como denominador
   const pctGastosVsIng     = totalIngresosAll > 0 ? Math.round((gastosTotal / totalIngresosAll) * 100) : 0;
   const pctIngAdicional    = totalIngresosAll > 0 ? Math.round((ingAdicional / totalIngresosAll) * 100) : 0;
@@ -563,10 +566,11 @@ export default function Dashboard() {
 
   // Segmentos del donut de ingresos (desglose del Reporte General)
   const incomeSegments = [
-    { label: 'Mantenimiento',   value: cobranza,    color: 'var(--teal-500)' },
-    ...(ingAdelanto > 0 ? [{ label: 'Adelantos mant.', value: ingAdelanto, color: '#2dd4bf' }] : []),
+    { label: 'Mantenimiento',       value: cobranza,    color: 'var(--teal-500)' },
+    ...(ingAdelanto > 0 ? [{ label: 'Adelantos mant.',   value: ingAdelanto, color: '#2dd4bf' }] : []),
+    ...(ingAdeudo   > 0 ? [{ label: 'Cobranza de Adeudo', value: ingAdeudo,  color: '#f59e0b' }] : []),
     ...conceptSegments,
-    ...(ingNoId > 0  ? [{ label: 'No Identificados', value: ingNoId,  color: 'var(--amber-400)' }] : []),
+    ...(ingNoId > 0  ? [{ label: 'No Identificados',     value: ingNoId,    color: 'var(--amber-400)' }] : []),
   ].filter(seg => seg.value > 0);
 
   // ── Componentes de sección ─────────────────────────────────────────────
@@ -1210,11 +1214,12 @@ export default function Dashboard() {
             {(() => {
               // Fix 2: todos los segmentos con conceptos adicionales expandidos y colores únicos
               const allIncomeSegs = [
-                { label: 'Mantenimiento',      value: cobranza,    color: 'var(--teal-500)' },
-                ...(ingAdelanto > 0 ? [{ label: 'Adelantos mant.', value: ingAdelanto, color: '#2dd4bf' }] : []),
+                { label: 'Mantenimiento',        value: cobranza,    color: 'var(--teal-500)' },
+                ...(ingAdelanto > 0 ? [{ label: 'Adelantos mant.',    value: ingAdelanto, color: '#2dd4bf' }] : []),
+                ...(ingAdeudo   > 0 ? [{ label: 'Cobranza de Adeudo', value: ingAdeudo,  color: '#f59e0b' }] : []),
                 ...conceptSegments,
-                ...(ingNoId   > 0 ? [{ label: 'No identificados', value: ingNoId,   color: 'var(--amber-400)' }] : []),
-                ...(ingNoConc > 0 ? [{ label: 'Sin conciliar',    value: ingNoConc, color: '#94a3b8' }] : []),
+                ...(ingNoId   > 0 ? [{ label: 'No identificados',    value: ingNoId,    color: 'var(--amber-400)' }] : []),
+                ...(ingNoConc > 0 ? [{ label: 'Sin conciliar',       value: ingNoConc,  color: '#94a3b8' }] : []),
               ].filter(s => s.value > 0);
               const grandTotal = allIncomeSegs.reduce((a, b) => a + b.value, 0);
               return (
