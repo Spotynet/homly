@@ -63,7 +63,7 @@ function SvgDonut({ pct = 0, color = 'var(--teal-400)', size = 110 }) {
 
 // ─── SVG: Gauge semicircular ───────────────────────────────────────────────
 // Muestra de izquierda (0%) a derecha (100%) pasando por arriba.
-function SvgGauge({ pct = 0, color = 'var(--teal-400)', size = 200 }) {
+function SvgGauge({ pct = 0, color = 'var(--teal-400)', size = 200, showLabel = true }) {
   const safe = Math.min(Math.max(pct, 0), 100);
   const sw = 16;
   const r = (size - sw - 4) / 2;
@@ -133,6 +133,23 @@ function SvgGauge({ pct = 0, color = 'var(--teal-400)', size = 200 }) {
       {/* Hub de la aguja */}
       <circle cx={cx} cy={cy} r={sw / 2 - 1} fill="var(--ink-700)" />
       <circle cx={cx} cy={cy} r={sw / 4} fill="var(--white)" />
+      {/* Porcentaje centrado en el interior del arco */}
+      {showLabel && (
+        <text
+          x={cx} y={cy - r * 0.44}
+          textAnchor="middle"
+          dominantBaseline="middle"
+          style={{
+            fontFamily: 'var(--font-display)',
+            fontSize: 26,
+            fontWeight: 800,
+            fill: color,
+            userSelect: 'none',
+          }}
+        >
+          {safe}%
+        </text>
+      )}
     </svg>
   );
 }
@@ -233,16 +250,8 @@ function GaugeCard({ title, pct, color, subLeft, subRight, icon: Icon, breakdown
       <div className="card-body" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0 }}>
 
         {/* ── Gauge semicircular ── */}
-        <div style={{ position: 'relative', width: '100%', display: 'flex', justifyContent: 'center' }}>
-          <SvgGauge pct={pct} color={color} size={200} />
-          <div style={{
-            position: 'absolute', bottom: -4, left: '50%', transform: 'translateX(-50%)',
-            textAlign: 'center',
-          }}>
-            <div style={{ fontFamily: 'var(--font-display)', fontSize: 30, fontWeight: 800, color, lineHeight: 1 }}>
-              {pct}%
-            </div>
-          </div>
+        <div style={{ width: '100%', display: 'flex', justifyContent: 'center' }}>
+          <SvgGauge pct={pct} color={color} size={200} showLabel />
         </div>
 
         {/* ── Totales izq / der ── */}
@@ -489,6 +498,10 @@ export default function Dashboard() {
 
   // Total ingresos incluyendo no conciliados (para gauges y KPIs)
   const totalIngresosAll   = totalIngresos + ingNoConc;
+  // % cobranza de mantenimiento del período vs cargos fijos
+  const pctCobranzaMensual = cargosFijos > 0 ? Math.min(Math.round((cobranza / cargosFijos) * 100), 150) : 0;
+  // % total ingresos conciliados vs cargos fijos del período
+  const pctTotalIngrVsCargos = cargosFijos > 0 ? Math.round((totalIngresos / cargosFijos) * 100) : 0;
   // Fix 3: Eficiencia de Cobranza usa todos los ingresos registrados (conciliados + no conciliados)
   const pctCobVsCargos     = cargosFijos > 0 ? Math.min(Math.round((totalIngresosAll / cargosFijos) * 100), 150) : 0;
   // Fix 4: Ratio Egresos usa todos los ingresos (conciliados + no conciliados) como denominador
@@ -532,13 +545,16 @@ export default function Dashboard() {
     { label: 'Pendiente', count: pendingCnt, color: 'var(--coral-400)',  bg: 'var(--coral-50)',  icon: AlertCircle },
   ];
 
-  // Paleta para conceptos adicionales (colores distintos de teal/amber reservados para mant/no-id)
-  const CONCEPT_PALETTE = ['#6366f1','#8b5cf6','#ec4899','#f97316','#06b6d4','#84cc16','#a855f7','#14b8a6','#f43f5e','#0ea5e9'];
+  // Paleta para conceptos adicionales — colores bien diferenciados entre sí y distintos de teal/amber
+  const CONCEPT_PALETTE = ['#f97316','#a855f7','#ec4899','#3b82f6','#84cc16','#ef4444','#f59e0b','#06b6d4','#6366f1','#d946ef'];
+  // Mapa de labels internos → etiquetas legibles en español
+  const CONCEPT_LABEL_MAP = { prevDebt: 'Cobranza de Adeudo', prev_debt: 'Cobranza de Adeudo' };
+  const normConceptLabel = (raw) => CONCEPT_LABEL_MAP[raw] || raw || 'Concepto adicional';
   // Fix 2: expandir cada concepto adicional en segmento propio con color único
   const conceptSegments = rd.ingresos_conceptos
     ? Object.entries(rd.ingresos_conceptos)
-        .map(([, v], idx) => ({
-          label: v.label || 'Concepto adicional',
+        .map(([key, v], idx) => ({
+          label: normConceptLabel(v.label) || normConceptLabel(key),
           value: parseFloat(v.total) || 0,
           color: CONCEPT_PALETTE[idx % CONCEPT_PALETTE.length],
         }))
@@ -1033,13 +1049,13 @@ export default function Dashboard() {
               </div>
               <div className="dash-kpi-label">Cobranza Mensual</div>
               <div className="dash-kpi-value" style={{ fontSize: 17 }}>{fmt(cobranza)}</div>
-              <div className="dash-kpi-sub">mantenimiento fijo recibido</div>
+              <div className="dash-kpi-sub">mantenimiento fijo · período consultado</div>
               {cargosFijos > 0 && (
                 <div className="dash-kpi-badge" style={{
-                  background: effColor === 'var(--teal-400)' ? 'var(--teal-50)' : effColor === 'var(--amber-400)' ? 'var(--amber-50)' : 'var(--coral-50)',
-                  color: effColor === 'var(--teal-400)' ? 'var(--teal-700)' : effColor === 'var(--amber-400)' ? 'var(--amber-700)' : 'var(--coral-700)',
+                  background: pctCobranzaMensual >= 90 ? 'var(--teal-50)' : pctCobranzaMensual >= 70 ? 'var(--amber-50)' : 'var(--coral-50)',
+                  color: pctCobranzaMensual >= 90 ? 'var(--teal-700)' : pctCobranzaMensual >= 70 ? 'var(--amber-700)' : 'var(--coral-700)',
                 }}>
-                  {pctCobVsCargos}%
+                  {pctCobranzaMensual}%
                 </div>
               )}
             </div>
@@ -1052,10 +1068,18 @@ export default function Dashboard() {
               <div className="dash-kpi-value" style={{ fontSize: 17 }}>{fmt(totalIngresos)}</div>
               <div className="dash-kpi-sub">
                 {ingNoId > 0
-                  ? `conciliados (incl. ${fmt(ingNoId)} no ident.)`
-                  : 'conciliados con banco'
+                  ? `fijos + adicionales conciliados (incl. ${fmt(ingNoId)} no ident.)`
+                  : 'ingresos fijos + adicionales conciliados con banco'
                 }
               </div>
+              {cargosFijos > 0 && (
+                <div className="dash-kpi-badge" style={{
+                  background: pctTotalIngrVsCargos >= 90 ? 'var(--teal-50)' : pctTotalIngrVsCargos >= 70 ? 'var(--amber-50)' : 'var(--coral-50)',
+                  color: pctTotalIngrVsCargos >= 90 ? 'var(--teal-700)' : pctTotalIngrVsCargos >= 70 ? 'var(--amber-700)' : 'var(--coral-700)',
+                }}>
+                  {pctTotalIngrVsCargos}% vs cargos
+                </div>
+              )}
             </div>
 
             <div className="dash-kpi" style={{ '--accent-color': 'var(--coral-400)' }}>
