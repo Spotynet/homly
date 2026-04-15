@@ -1169,17 +1169,7 @@ export default function EstadoCuenta() {
                 </div>
               </div>
 
-              {/* ── Plan de Pago Modal — Estado por Unidad ── */}
-              {planUnitDebt && (
-                <DebtPaymentPlanModal
-                  unit={planUnitDebt.unit}
-                  totalAdeudo={planUnitDebt.totalAdeudo}
-                  maintenanceFee={parseFloat(tenantData?.maintenance_fee || 0)}
-                  onClose={() => setPlanUnitDebt(null)}
-                  tenantId={tenantId}
-                  role={role}
-                />
-              )}
+              {/* Plan modal moved to top-level renders below */}
             </>
           )}
 
@@ -1250,6 +1240,18 @@ export default function EstadoCuenta() {
             </div>
           )}
         </>
+      )}
+
+      {/* ── Plan de Pago Modal — Estado por Unidad ── */}
+      {planUnitDebt && (
+        <DebtPaymentPlanModal
+          unit={planUnitDebt.unit}
+          totalAdeudo={planUnitDebt.totalAdeudo}
+          maintenanceFee={parseFloat(tenantData?.maintenance_fee || 0)}
+          onClose={() => setPlanUnitDebt(null)}
+          tenantId={tenantId}
+          role={role}
+        />
       )}
 
       {/* ── Receipt modal ── */}
