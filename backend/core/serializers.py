@@ -11,7 +11,7 @@ from .models import (
     PeriodClosureRequest, PeriodClosureStep,
     AssemblyPosition, Committee, UnrecognizedIncome,
     AmenityReservation, CondominioRequest, Notification,
-    AuditLog,
+    AuditLog, PaymentPlan,
 )
 
 
@@ -480,6 +480,43 @@ class BankStatementSerializer(serializers.ModelSerializer):
         model = BankStatement
         fields = ['id', 'tenant', 'period', 'file_data', 'uploaded_at']
         read_only_fields = ['id', 'tenant', 'uploaded_at']
+
+
+class PaymentPlanSerializer(serializers.ModelSerializer):
+    unit_code = serializers.CharField(source='unit.unit_id_code', read_only=True)
+    unit_name = serializers.CharField(source='unit.unit_name',    read_only=True)
+    responsible_name = serializers.SerializerMethodField()
+    owner_email  = serializers.CharField(source='unit.owner_email',  read_only=True)
+    tenant_email = serializers.CharField(source='unit.tenant_email', read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    installments_paid = serializers.IntegerField(read_only=True)
+    total_paid_toward_debt = serializers.FloatField(read_only=True)
+
+    def get_responsible_name(self, obj):
+        u = obj.unit
+        if u.occupancy == 'rentado' and (u.tenant_first_name or u.tenant_last_name):
+            return f'{u.tenant_first_name} {u.tenant_last_name}'.strip()
+        return f'{u.owner_first_name} {u.owner_last_name}'.strip() or ''
+
+    class Meta:
+        model  = PaymentPlan
+        fields = [
+            'id', 'tenant', 'unit', 'unit_code', 'unit_name', 'responsible_name',
+            'owner_email', 'tenant_email',
+            'total_adeudo', 'maintenance_fee',
+            'frequency', 'num_payments', 'apply_interest', 'interest_rate',
+            'total_with_interest', 'status', 'status_display', 'notes',
+            'created_by_name', 'created_by_email', 'created_at',
+            'sent_by_name', 'sent_at',
+            'accepted_by_name', 'accepted_at',
+            'installments', 'installments_paid', 'total_paid_toward_debt',
+        ]
+        read_only_fields = [
+            'id', 'tenant', 'status', 'created_at',
+            'created_by_name', 'created_by_email',
+            'sent_by_name', 'sent_at',
+            'accepted_by_name', 'accepted_at',
+        ]
 
 
 class ClosedPeriodSerializer(serializers.ModelSerializer):

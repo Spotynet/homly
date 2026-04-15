@@ -23,9 +23,9 @@ from .models import (
     PeriodClosureRequest, PeriodClosureStep,
     AssemblyPosition, Committee, UnrecognizedIncome,
     AmenityReservation, CondominioRequest, EmailVerificationCode,
-    Notification, AuditLog,
+    Notification, AuditLog, PaymentPlan,
 )
-from .email_service import send_verification_email, send_notification_email, CODE_EXPIRY_MINUTES
+from .email_service import send_verification_email, send_notification_email, CODE_EXPIRY_MINUTES, send_payment_plan_email
 from .serializers import (
     LoginSerializer, RequestCodeSerializer, LoginWithCodeSerializer,
     UserSerializer, UserCreateSerializer,
@@ -37,7 +37,7 @@ from .serializers import (
     PeriodClosureRequestSerializer,
     AssemblyPositionSerializer, CommitteeSerializer, UnrecognizedIncomeSerializer,
     DashboardSerializer, AmenityReservationSerializer, CondominioRequestSerializer,
-    NotificationSerializer, AuditLogSerializer,
+    NotificationSerializer, AuditLogSerializer, PaymentPlanSerializer,
 )
 from .permissions import IsSuperAdmin, IsTenantAdmin, IsTenantMember, IsAdminOrTesorero, IsAdminOrTesOrAuditor, CanApproveReservation
 
@@ -962,11 +962,15 @@ class ExtraFieldViewSet(viewsets.ModelViewSet):
 #  PAYMENTS (Cobranza)
 # ═══════════════════════════════════════════════════════════
 
-def _compute_payment_status(payment, tenant, extra_fields):
+def _compute_payment_status(payment, tenant, extra_fields, plan_charge=Decimal('0'), plan_key=''):
     """Compute status from main field_payments + additional_payments.
     'parcial' = mantenimiento fijo sin captura + al menos un campo adicional activo con pago,
                O mantenimiento fijo capturado de forma incompleta (abono < cargo).
-    Unidades exentas (admin_exempt): cargo de mantenimiento = 0; tipo 'excento' → pagado."""
+    Unidades exentas (admin_exempt): cargo de mantenimiento = 0; tipo 'excento' → pagado.
+
+    plan_charge: the installment amount due this period from an active PaymentPlan.
+    plan_key: field_key used in FieldPayment to track the plan installment (e.g. 'plan_<uuid>').
+    """
     is_exempt = getattr(payment.unit, 'admin_exempt', False)
 
     all_fp = {}
@@ -991,6 +995,13 @@ def _compute_payment_status(payment, tenant, extra_fields):
         rc = min(all_fp.get(str(ef.id), 0), ch)
         total_req_charge += ch
         total_req_received += rc
+
+    # Plan installment charge contribution
+    if plan_charge and plan_key:
+        plan_ch = float(plan_charge)
+        plan_rec = min(all_fp.get(plan_key, 0), plan_ch)
+        total_req_charge += plan_ch
+        total_req_received += plan_rec
 
     # Exenta sin pagos en campos adicionales: tipo 'excento' → exento directamente
     if is_exempt and payment.payment_type == 'excento' and not has_non_maintenance_payment:
@@ -1082,13 +1093,44 @@ class PaymentViewSet(viewsets.ModelViewSet):
                 }
             )
 
-        # Auto-compute status (main + additional_payments)
+        # Auto-compute status (main + additional_payments + active plan installment)
         extra_fields = ExtraField.objects.filter(
             tenant_id=tenant_id, enabled=True, required=True
         )
         payment.refresh_from_db()
-        payment.status = _compute_payment_status(payment, tenant, list(extra_fields))
+
+        # Check if this unit has an active payment plan with an installment due this period
+        plan_charge = Decimal('0')
+        plan_key = ''
+        active_plan = None
+        try:
+            active_plan = PaymentPlan.objects.filter(
+                tenant_id=tenant_id,
+                unit_id=data['unit_id'],
+                status='accepted',
+            ).first()
+            if active_plan:
+                period_str = data['period']
+                for inst in (active_plan.installments or []):
+                    if inst.get('period_key') == period_str:
+                        plan_charge = Decimal(str(inst.get('total', 0)))
+                        plan_key = active_plan.field_key
+                        break
+        except Exception:
+            pass
+
+        payment.status = _compute_payment_status(
+            payment, tenant, list(extra_fields),
+            plan_charge=plan_charge, plan_key=plan_key,
+        )
         payment.save()
+
+        # Update plan installment statuses after payment capture
+        if active_plan:
+            try:
+                _update_plan_installments(active_plan)
+            except Exception:
+                pass
 
         # ── Notify vecinos of the unit ──────────────────────────
         try:
@@ -1530,6 +1572,571 @@ class BankStatementViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(obj)
         st = status.HTTP_201_CREATED if created else status.HTTP_200_OK
         return Response(serializer.data, status=st)
+
+
+# ═══════════════════════════════════════════════════════════
+#  PAYMENT PLANS
+# ═══════════════════════════════════════════════════════════
+
+def _update_plan_installments(plan):
+    """
+    Re-check FieldPayment records for each installment of a PaymentPlan
+    and update the JSON installment statuses. Marks the plan as 'completed'
+    when all installments are paid.
+    """
+    from .models import FieldPayment as FP
+    plan_key = plan.field_key
+    installments = list(plan.installments or [])
+    changed = False
+
+    for inst in installments:
+        period_key = inst.get('period_key', '')
+        total_paid = FP.objects.filter(
+            payment__tenant_id=plan.tenant_id,
+            payment__unit_id=plan.unit_id,
+            payment__period=period_key,
+            field_key=plan_key,
+        ).aggregate(s=Sum('received'))['s'] or Decimal('0')
+
+        inst_total = Decimal(str(inst.get('total', 0)))
+        new_paid_amount = float(total_paid)
+
+        if total_paid >= inst_total and inst_total > 0:
+            new_status = 'paid'
+        elif total_paid > 0:
+            new_status = 'partial'
+        else:
+            new_status = 'pending'
+
+        if new_status != inst.get('status') or new_paid_amount != inst.get('paid_amount', 0):
+            inst['status'] = new_status
+            inst['paid_amount'] = new_paid_amount
+            changed = True
+
+    if changed:
+        plan.installments = installments
+        all_paid = all(i.get('status') == 'paid' for i in installments)
+        if all_paid and plan.status == 'accepted':
+            plan.status = 'completed'
+        plan.save()
+
+
+def _generate_payment_plan_pdf(plan, tenant):
+    """
+    Generate a PDF document for a PaymentPlan.
+    Returns bytes or None if reportlab is not installed.
+    """
+    import io as _io
+    from datetime import datetime as _dt
+    try:
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib import colors
+        from reportlab.lib.units import cm
+        from reportlab.platypus import (
+            SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, HRFlowable,
+        )
+        from reportlab.lib.styles import ParagraphStyle
+        from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
+    except ImportError:
+        return None
+
+    COL_TEAL    = colors.HexColor('#0d7c6e')
+    COL_TEAL_LT = colors.HexColor('#e6f4f2')
+    COL_INK     = colors.HexColor('#1a1a2e')
+    COL_INK_LT  = colors.HexColor('#64748b')
+    COL_HDR     = colors.HexColor('#1a1a2e')
+    COL_WHITE   = colors.white
+    COL_AMBER   = colors.HexColor('#d97706')
+    COL_GREEN   = colors.HexColor('#1E594F')
+    COL_CORAL   = colors.HexColor('#e84040')
+    COL_SAND    = colors.HexColor('#f8f6f1')
+
+    STATUS_COLORS = {
+        'draft': COL_AMBER, 'sent': COL_AMBER, 'accepted': COL_TEAL,
+        'rejected': COL_CORAL, 'completed': COL_GREEN, 'cancelled': COL_INK_LT,
+    }
+
+    buf = _io.BytesIO()
+    margin = 1.8 * cm
+    doc = SimpleDocTemplate(
+        buf, pagesize=A4,
+        leftMargin=margin, rightMargin=margin,
+        topMargin=1.4 * cm, bottomMargin=1.6 * cm,
+    )
+    W = A4[0] - 2 * margin
+
+    st_hdr_title = ParagraphStyle('HT', fontSize=13, fontName='Helvetica-Bold', textColor=COL_WHITE)
+    st_hdr_sub   = ParagraphStyle('HS', fontSize=10, fontName='Helvetica', textColor=colors.HexColor('#b2dcd8'))
+    st_hdr_right = ParagraphStyle('HR', fontSize=11, fontName='Helvetica-Bold', textColor=COL_WHITE, alignment=TA_RIGHT)
+    st_lbl       = ParagraphStyle('LB', fontSize=8, fontName='Helvetica', textColor=COL_INK_LT)
+    st_val       = ParagraphStyle('VL', fontSize=9.5, fontName='Helvetica-Bold', textColor=COL_INK, leading=12)
+    st_col_hdr   = ParagraphStyle('CH', fontSize=8.5, fontName='Helvetica-Bold', textColor=COL_WHITE, alignment=TA_CENTER)
+    st_cell      = ParagraphStyle('CE', fontSize=8.5, fontName='Helvetica', textColor=COL_INK)
+    st_cell_r    = ParagraphStyle('CR', fontSize=8.5, fontName='Helvetica', textColor=COL_INK, alignment=TA_RIGHT)
+    st_note      = ParagraphStyle('NT', fontSize=8, fontName='Helvetica-Oblique', textColor=COL_INK_LT)
+
+    story = []
+
+    # ── Header ─────────────────────────────────────────────────────────────
+    tenant_display = (getattr(tenant, 'razon_social', '') or tenant.name or '').strip()
+    freq_map = {1: 'Mensual', 2: 'Bimestral', 3: 'Trimestral', 6: 'Semestral'}
+    freq_label = freq_map.get(plan.frequency, str(plan.frequency))
+
+    header_data = [[
+        [Paragraph(tenant_display, st_hdr_title),
+         Paragraph('Plan de Pago de Adeudo', st_hdr_sub)],
+        Paragraph(f'Folio: {str(plan.id)[:8].upper()}', st_hdr_right),
+    ]]
+    header_tbl = Table(header_data, colWidths=[W * 0.65, W * 0.35])
+    header_tbl.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), COL_HDR),
+        ('ROWPADDING', (0, 0), (-1, -1), 14),
+        ('LEFTPADDING', (0, 0), (0, -1), 16),
+        ('RIGHTPADDING', (-1, 0), (-1, -1), 16),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+    ]))
+    story.append(header_tbl)
+
+    # ── Status badge ───────────────────────────────────────────────────────
+    status_color = STATUS_COLORS.get(plan.status, COL_INK_LT)
+    status_label_map = {
+        'draft': 'Borrador', 'sent': 'Enviado al vecino', 'accepted': 'Aceptado / Activo',
+        'rejected': 'Rechazado', 'completed': 'Completado', 'cancelled': 'Cancelado',
+    }
+    status_label = status_label_map.get(plan.status, plan.status)
+    badge_data = [[Paragraph(f'Estado: {status_label}',
+                             ParagraphStyle('BD', fontSize=9, fontName='Helvetica-Bold',
+                                            textColor=COL_WHITE, alignment=TA_CENTER))]]
+    badge_tbl = Table(badge_data, colWidths=[W])
+    badge_tbl.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), status_color),
+        ('ROWPADDING', (0, 0), (-1, -1), 5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+    ]))
+    story.append(badge_tbl)
+    story.append(Spacer(1, 0.3 * cm))
+
+    # ── Unit / Responsible info ─────────────────────────────────────────────
+    unit = plan.unit
+    unit_label = unit.unit_id_code or ''
+    if unit.unit_name:
+        unit_label += f' — {unit.unit_name}'
+    responsible = (unit.tenant_name or unit.owner_name or '—').strip()
+
+    def _fmt_date(dt):
+        if not dt:
+            return '—'
+        if hasattr(dt, 'strftime'):
+            return dt.strftime('%d/%m/%Y %H:%M')
+        return str(dt)
+
+    info_rows = [
+        [
+            [Paragraph('UNIDAD', st_lbl), Paragraph(unit_label or '—', st_val)],
+            [Paragraph('RESPONSABLE', st_lbl), Paragraph(responsible, st_val)],
+            [Paragraph('FRECUENCIA', st_lbl), Paragraph(freq_label, st_val)],
+        ],
+        [
+            [Paragraph('CREADO POR', st_lbl), Paragraph(plan.created_by_name or '—', st_val)],
+            [Paragraph('FECHA CREACIÓN', st_lbl), Paragraph(_fmt_date(plan.created_at), st_val)],
+            [Paragraph('ENVIADO POR', st_lbl), Paragraph(plan.sent_by_name or '—', st_val)],
+        ],
+    ]
+    if plan.accepted_at or plan.accepted_by_name:
+        info_rows.append([
+            [Paragraph('ACEPTADO POR', st_lbl), Paragraph(plan.accepted_by_name or '—', st_val)],
+            [Paragraph('FECHA ACEPTACIÓN', st_lbl), Paragraph(_fmt_date(plan.accepted_at), st_val)],
+            [Paragraph('', st_lbl), Paragraph('', st_val)],
+        ])
+
+    info_tbl = Table(info_rows, colWidths=[W / 3, W / 3, W / 3])
+    info_tbl.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), COL_SAND),
+        ('LEFTPADDING', (0, 0), (-1, -1), 10),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 10),
+        ('TOPPADDING', (0, 0), (-1, -1), 8),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+        ('LINEBELOW', (0, 0), (-1, -2), 0.5, colors.HexColor('#e5e0d5')),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+    ]))
+    story.append(info_tbl)
+    story.append(Spacer(1, 0.3 * cm))
+
+    # ── Totals summary ─────────────────────────────────────────────────────
+    interest_str = f'{float(plan.interest_rate):.1f}%' if plan.apply_interest else 'Sin interés'
+    totals_data = [
+        [Paragraph('Total Adeudo', st_lbl),
+         Paragraph('Cuota Regular / Período', st_lbl),
+         Paragraph('Interés', st_lbl),
+         Paragraph('TOTAL CON PLAN', st_lbl)],
+        [Paragraph(f'${float(plan.total_adeudo):,.2f}', st_val),
+         Paragraph(f'${float(plan.maintenance_fee):,.2f}', st_val),
+         Paragraph(interest_str, st_val),
+         Paragraph(f'${float(plan.total_with_interest):,.2f}',
+                   ParagraphStyle('TV2', fontSize=10, fontName='Helvetica-Bold', textColor=COL_TEAL))],
+    ]
+    totals_tbl = Table(totals_data, colWidths=[W / 4, W / 4, W / 4, W / 4])
+    totals_tbl.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), COL_TEAL_LT),
+        ('LEFTPADDING', (0, 0), (-1, -1), 10),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 10),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ('BOX', (0, 0), (-1, -1), 0.5, COL_TEAL),
+    ]))
+    story.append(totals_tbl)
+    story.append(Spacer(1, 0.4 * cm))
+
+    # ── Installments table ─────────────────────────────────────────────────
+    inst_header = [
+        Paragraph('#', st_col_hdr),
+        Paragraph('Período', st_col_hdr),
+        Paragraph('Abono Deuda', st_col_hdr),
+        Paragraph('Cuota Regular', st_col_hdr),
+        Paragraph('Total a Pagar', st_col_hdr),
+        Paragraph('Pagado', st_col_hdr),
+        Paragraph('Estado', st_col_hdr),
+    ]
+    inst_rows = [inst_header]
+    inst_status_colors_map = {'paid': COL_GREEN, 'partial': COL_AMBER, 'pending': COL_CORAL}
+
+    for inst in (plan.installments or []):
+        s = inst.get('status', 'pending')
+        s_color = inst_status_colors_map.get(s, COL_CORAL)
+        s_labels = {'paid': 'Pagado', 'partial': 'Parcial', 'pending': 'Pendiente'}
+        inst_rows.append([
+            Paragraph(str(inst.get('num', '')), st_cell),
+            Paragraph(inst.get('period_label', inst.get('period_key', '')), st_cell),
+            Paragraph(f"${float(inst.get('debt_part', 0)):,.2f}", st_cell_r),
+            Paragraph(f"${float(inst.get('regular_part', 0)):,.2f}", st_cell_r),
+            Paragraph(f"${float(inst.get('total', 0)):,.2f}", st_cell_r),
+            Paragraph(f"${float(inst.get('paid_amount', 0)):,.2f}", st_cell_r),
+            Paragraph(s_labels.get(s, s),
+                      ParagraphStyle('IS', fontSize=8, fontName='Helvetica-Bold', textColor=s_color)),
+        ])
+
+    # Footer row — totals
+    total_debt_parts = sum(float(i.get('debt_part', 0)) for i in (plan.installments or []))
+    total_regular_parts = sum(float(i.get('regular_part', 0)) for i in (plan.installments or []))
+    total_all = sum(float(i.get('total', 0)) for i in (plan.installments or []))
+    total_paid_all = sum(float(i.get('paid_amount', 0)) for i in (plan.installments or []))
+    inst_rows.append([
+        Paragraph('', st_col_hdr),
+        Paragraph('TOTALES', st_col_hdr),
+        Paragraph(f'${total_debt_parts:,.2f}', ParagraphStyle('TotR', fontSize=8.5, fontName='Helvetica-Bold', textColor=COL_WHITE, alignment=TA_RIGHT)),
+        Paragraph(f'${total_regular_parts:,.2f}', ParagraphStyle('TotR2', fontSize=8.5, fontName='Helvetica-Bold', textColor=COL_WHITE, alignment=TA_RIGHT)),
+        Paragraph(f'${total_all:,.2f}', ParagraphStyle('TotR3', fontSize=8.5, fontName='Helvetica-Bold', textColor=COL_WHITE, alignment=TA_RIGHT)),
+        Paragraph(f'${total_paid_all:,.2f}', ParagraphStyle('TotR4', fontSize=8.5, fontName='Helvetica-Bold', textColor=COL_WHITE, alignment=TA_RIGHT)),
+        Paragraph('', st_col_hdr),
+    ])
+
+    col_w = [W * 0.06, W * 0.17, W * 0.14, W * 0.14, W * 0.14, W * 0.14, W * 0.21]
+    inst_tbl = Table(inst_rows, colWidths=col_w)
+    n_data = len(inst_rows)
+    inst_tbl.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), COL_TEAL),
+        ('BACKGROUND', (0, n_data - 1), (-1, n_data - 1), COL_HDR),
+        ('ROWBACKGROUNDS', (0, 1), (-1, n_data - 2), [COL_WHITE, COL_TEAL_LT]),
+        ('LEFTPADDING', (0, 0), (-1, -1), 6),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+        ('TOPPADDING', (0, 0), (-1, -1), 5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        ('GRID', (0, 0), (-1, -2), 0.3, colors.HexColor('#ddd')),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+    ]))
+    story.append(inst_tbl)
+
+    # ── Notes ──────────────────────────────────────────────────────────────
+    if plan.notes:
+        story.append(Spacer(1, 0.3 * cm))
+        story.append(HRFlowable(width=W, thickness=0.5, color=colors.HexColor('#ddd')))
+        story.append(Spacer(1, 0.2 * cm))
+        story.append(Paragraph(f'Notas: {plan.notes}', st_note))
+
+    doc.build(story)
+    buf.seek(0)
+    return buf.read()
+
+
+class PaymentPlanViewSet(viewsets.ModelViewSet):
+    """
+    CRUD + workflow actions for payment plans.
+    GET/POST  /api/tenants/{tenant_id}/payment-plans/
+    GET/PATCH /api/tenants/{tenant_id}/payment-plans/{id}/
+    POST      /api/tenants/{tenant_id}/payment-plans/{id}/send/
+    POST      /api/tenants/{tenant_id}/payment-plans/{id}/accept/
+    POST      /api/tenants/{tenant_id}/payment-plans/{id}/reject/
+    POST      /api/tenants/{tenant_id}/payment-plans/{id}/cancel/
+    GET       /api/tenants/{tenant_id}/payment-plans/{id}/pdf/
+    """
+    serializer_class = PaymentPlanSerializer
+
+    def get_permissions(self):
+        # Vecino can list/retrieve/accept/reject; management roles can do everything
+        if self.action in ['accept', 'reject']:
+            return [IsTenantMember()]
+        if self.action in ['list', 'retrieve']:
+            return [IsTenantMember()]
+        return [IsAdminOrTesOrAuditor()]
+
+    def get_queryset(self):
+        tenant_id = self.kwargs['tenant_id']
+        qs = PaymentPlan.objects.filter(tenant_id=tenant_id).select_related('unit', 'tenant')
+
+        # Vecinos only see plans that have been sent/accepted/rejected/completed
+        user = self.request.user
+        if not user.is_super_admin:
+            try:
+                tu = TenantUser.objects.get(user=user, tenant_id=tenant_id)
+                if tu.role == 'vecino':
+                    qs = qs.filter(
+                        unit_id=tu.unit_id,
+                        status__in=['sent', 'accepted', 'rejected', 'completed', 'cancelled'],
+                    )
+            except TenantUser.DoesNotExist:
+                pass
+
+        # Optional filters
+        unit_id = self.request.query_params.get('unit_id')
+        if unit_id:
+            qs = qs.filter(unit_id=unit_id)
+
+        plan_status = self.request.query_params.get('status')
+        if plan_status:
+            qs = qs.filter(status=plan_status)
+
+        return qs
+
+    def _get_user_info(self, tenant_id):
+        """Return (display_name, email) for the current request user."""
+        user = self.request.user
+        name = (getattr(user, 'full_name', '') or '').strip()
+        if not name:
+            name = (getattr(user, 'name', '') or '').strip()
+        if not name:
+            name = user.email or ''
+        return name, (user.email or '')
+
+    def perform_create(self, serializer):
+        tenant_id = self.kwargs['tenant_id']
+        name, email = self._get_user_info(tenant_id)
+        serializer.save(
+            tenant_id=tenant_id,
+            status='draft',
+            created_by_name=name,
+            created_by_email=email,
+        )
+        _audit_log(
+            self.request, 'cobranza', 'create',
+            f'Plan de pago creado: unidad {serializer.instance.unit.unit_id_code}',
+            tenant_id=tenant_id,
+            object_type='PaymentPlan', object_id=str(serializer.instance.id),
+        )
+
+    @action(detail=True, methods=['post'])
+    def send(self, request, tenant_id=None, pk=None):
+        """Enviar plan al vecino (cambia estado a 'sent', manda email)."""
+        plan = self.get_object()
+        if plan.status not in ('draft',):
+            return Response(
+                {'detail': 'Solo se puede enviar un plan en estado Borrador.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        name, _email = self._get_user_info(tenant_id)
+        plan.status = 'sent'
+        plan.sent_by_name = name
+        plan.sent_at = timezone.now()
+        plan.save()
+
+        # Gather recipient emails
+        unit = plan.unit
+        emails = [e for e in [unit.owner_email, unit.tenant_email] if e]
+        if emails:
+            try:
+                tenant = Tenant.objects.get(id=tenant_id)
+                freq_map = {1: 'Mensual', 2: 'Bimestral', 3: 'Trimestral', 6: 'Semestral'}
+                freq_label = freq_map.get(plan.frequency, str(plan.frequency))
+                responsible = (unit.tenant_name or unit.owner_name or '').strip()
+
+                threading.Thread(
+                    target=send_payment_plan_email,
+                    kwargs=dict(
+                        emails=emails,
+                        tenant_name=tenant.name,
+                        unit_code=unit.unit_id_code or '',
+                        unit_name=unit.unit_name or '',
+                        responsible=responsible,
+                        total_adeudo=float(plan.total_adeudo),
+                        total_with_interest=float(plan.total_with_interest),
+                        apply_interest=plan.apply_interest,
+                        interest_rate=float(plan.interest_rate),
+                        frequency_label=freq_label,
+                        num_payments=plan.num_payments,
+                        installments=plan.installments or [],
+                        created_by_name=plan.created_by_name,
+                        notes=plan.notes,
+                    ),
+                    daemon=True,
+                ).start()
+            except Exception:
+                pass  # email must never break main flow
+
+        _audit_log(
+            request, 'cobranza', 'update',
+            f'Plan de pago enviado al vecino: {unit.unit_id_code}',
+            tenant_id=tenant_id, object_type='PaymentPlan', object_id=str(plan.id),
+        )
+        return Response(PaymentPlanSerializer(plan).data)
+
+    @action(detail=True, methods=['post'])
+    def accept(self, request, tenant_id=None, pk=None):
+        """Vecino acepta el plan (cambia estado a 'accepted')."""
+        plan = self.get_object()
+        if plan.status != 'sent':
+            return Response(
+                {'detail': 'Solo se puede aceptar un plan enviado.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        # Ensure only vecino of the unit (or admin) can accept
+        user = request.user
+        if not user.is_super_admin:
+            try:
+                tu = TenantUser.objects.get(user=user, tenant_id=tenant_id)
+                if tu.role == 'vecino' and str(tu.unit_id) != str(plan.unit_id):
+                    return Response({'detail': 'No autorizado.'}, status=status.HTTP_403_FORBIDDEN)
+            except TenantUser.DoesNotExist:
+                return Response({'detail': 'No autorizado.'}, status=status.HTTP_403_FORBIDDEN)
+
+        name, _email = self._get_user_info(tenant_id)
+        plan.status = 'accepted'
+        plan.accepted_by_name = name
+        plan.accepted_at = timezone.now()
+        plan.save()
+
+        _audit_log(
+            request, 'cobranza', 'update',
+            f'Plan de pago aceptado por vecino: {plan.unit.unit_id_code}',
+            tenant_id=tenant_id, object_type='PaymentPlan', object_id=str(plan.id),
+        )
+        return Response(PaymentPlanSerializer(plan).data)
+
+    @action(detail=True, methods=['post'])
+    def reject(self, request, tenant_id=None, pk=None):
+        """Vecino rechaza el plan (cambia estado a 'rejected')."""
+        plan = self.get_object()
+        if plan.status != 'sent':
+            return Response(
+                {'detail': 'Solo se puede rechazar un plan enviado.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        user = request.user
+        if not user.is_super_admin:
+            try:
+                tu = TenantUser.objects.get(user=user, tenant_id=tenant_id)
+                if tu.role == 'vecino' and str(tu.unit_id) != str(plan.unit_id):
+                    return Response({'detail': 'No autorizado.'}, status=status.HTTP_403_FORBIDDEN)
+            except TenantUser.DoesNotExist:
+                return Response({'detail': 'No autorizado.'}, status=status.HTTP_403_FORBIDDEN)
+
+        plan.status = 'rejected'
+        plan.save()
+
+        _audit_log(
+            request, 'cobranza', 'update',
+            f'Plan de pago rechazado por vecino: {plan.unit.unit_id_code}',
+            tenant_id=tenant_id, object_type='PaymentPlan', object_id=str(plan.id),
+        )
+        return Response(PaymentPlanSerializer(plan).data)
+
+    @action(detail=True, methods=['post'])
+    def cancel(self, request, tenant_id=None, pk=None):
+        """Admin cancela el plan."""
+        plan = self.get_object()
+        if plan.status in ('completed', 'cancelled'):
+            return Response(
+                {'detail': 'El plan ya está completado o cancelado.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        plan.status = 'cancelled'
+        plan.save()
+
+        _audit_log(
+            request, 'cobranza', 'update',
+            f'Plan de pago cancelado: {plan.unit.unit_id_code}',
+            tenant_id=tenant_id, object_type='PaymentPlan', object_id=str(plan.id),
+        )
+        return Response(PaymentPlanSerializer(plan).data)
+
+    @action(detail=True, methods=['get'])
+    def pdf(self, request, tenant_id=None, pk=None):
+        """Descargar el plan de pagos en PDF."""
+        plan = self.get_object()
+        try:
+            tenant = Tenant.objects.get(id=tenant_id)
+        except Tenant.DoesNotExist:
+            return Response({'detail': 'Tenant no encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+
+        pdf_bytes = _generate_payment_plan_pdf(plan, tenant)
+        if pdf_bytes is None:
+            return Response(
+                {'detail': 'No se pudo generar el PDF (reportlab no instalado).'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        safe_code = ''.join(
+            c if c.isalnum() or c in '-_' else '_'
+            for c in (plan.unit.unit_id_code or 'unidad')
+        )
+        filename = f'plan_pago_{safe_code}_{str(plan.id)[:8]}.pdf'
+        response = HttpResponse(pdf_bytes, content_type='application/pdf')
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        return response
+
+    def _update_plan_installment_from_payments(self, plan):
+        """
+        After a payment is captured, re-check FieldPayment records for plan installments
+        and update the JSON installment statuses accordingly.
+        """
+        from .models import FieldPayment as FP
+        plan_key = plan.field_key  # e.g. 'plan_<uuid>'
+        installments = plan.installments or []
+        updated = False
+
+        for inst in installments:
+            period_key = inst.get('period_key', '')
+            # Find FieldPayment records for this plan key in payments matching the installment's period
+            total_paid = FP.objects.filter(
+                payment__tenant_id=plan.tenant_id,
+                payment__unit_id=plan.unit_id,
+                payment__period=period_key,
+                field_key=plan_key,
+            ).aggregate(s=Sum('received'))['s'] or Decimal('0')
+
+            inst_total = Decimal(str(inst.get('total', 0)))
+            paid_amount = float(total_paid)
+            inst['paid_amount'] = paid_amount
+
+            if total_paid >= inst_total and inst_total > 0:
+                new_status = 'paid'
+            elif total_paid > 0:
+                new_status = 'partial'
+            else:
+                new_status = 'pending'
+
+            if new_status != inst.get('status'):
+                inst['status'] = new_status
+                updated = True
+            if float(total_paid) != inst.get('paid_amount', 0):
+                updated = True
+
+        if updated:
+            plan.installments = installments
+            # Check if all installments are paid → complete the plan
+            all_paid = all(i.get('status') == 'paid' for i in installments)
+            if all_paid and plan.status == 'accepted':
+                plan.status = 'completed'
+            plan.save()
 
 
 # ═══════════════════════════════════════════════════════════
@@ -2350,6 +2957,11 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
         since = timezone.now() - timedelta(days=30)
         qs = AuditLog.objects.filter(created_at__gte=since)
 
+        # Filter by tenant if provided (super-admin viewing a specific tenant)
+        tenant_id = request.query_params.get('tenant_id')
+        if tenant_id:
+            qs = qs.filter(tenant_id=tenant_id)
+
         by_module = (
             qs.values('module')
               .annotate(count=DjCount('id'))
@@ -2360,9 +2972,10 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
               .annotate(count=DjCount('id'))
               .order_by('-count')
         )
-        total_today = AuditLog.objects.filter(
-            created_at__date=date.today()
-        ).count()
+        total_today_qs = AuditLog.objects.filter(created_at__date=date.today())
+        if tenant_id:
+            total_today_qs = total_today_qs.filter(tenant_id=tenant_id)
+        total_today = total_today_qs.count()
 
         return Response({
             'total_today':  total_today,

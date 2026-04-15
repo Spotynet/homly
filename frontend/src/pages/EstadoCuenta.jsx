@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { unitsAPI, reportsAPI, tenantsAPI, paymentsAPI, gastosAPI, unrecognizedIncomeAPI, extraFieldsAPI, reservationsAPI, bankAPI } from '../api/client';
+import { unitsAPI, reportsAPI, tenantsAPI, paymentsAPI, gastosAPI, unrecognizedIncomeAPI, extraFieldsAPI, reservationsAPI, bankAPI, paymentPlansAPI } from '../api/client';
 import PaginationBar from '../components/PaginationBar';
 import PaymentReceiptModal from '../components/PaymentReceiptModal';
 import SendEmailModal from '../components/SendEmailModal';
@@ -62,6 +62,8 @@ export default function EstadoCuenta() {
   const [extraFields, setExtraFields] = useState([]);
   // full unit statement PDF download
   const [downloadingStatement, setDownloadingStatement] = useState(false);
+  // plan de pago — Estado por Unidad
+  const [planUnitDebt, setPlanUnitDebt] = useState(null); // { unit, totalAdeudo }
 
   const handleDownloadReceipt = async (payId, period) => {
     setDownloadingReceipt(payId);
@@ -1003,7 +1005,21 @@ export default function EstadoCuenta() {
                                   {hasDebt ? 'Con adeudo' : hasFavor ? 'Saldo a favor' : 'Al corriente'}
                                 </span>
                               </td>
-                              <td style={{ color: 'var(--ink-400)' }}><ChevronRight size={16} /></td>
+                              <td style={{ color: 'var(--ink-400)' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'flex-end' }}>
+                                  {hasDebt && (
+                                    <button
+                                      className="btn btn-outline btn-sm"
+                                      title="Ver plan de pago sugerido"
+                                      style={{ padding: '3px 9px', fontSize: 11, display: 'flex', alignItems: 'center', gap: 4, color: 'var(--coral-600)', borderColor: 'var(--coral-200)' }}
+                                      onClick={e => { e.stopPropagation(); setPlanUnitDebt({ unit: u, totalAdeudo: u.balance }); }}
+                                    >
+                                      <DollarSign size={12} /> Plan
+                                    </button>
+                                  )}
+                                  <ChevronRight size={16} />
+                                </div>
+                              </td>
                             </tr>
                           );
                         })
@@ -1152,6 +1168,18 @@ export default function EstadoCuenta() {
                   {tenantData?.name} · Estado por Unidad · Corte: {periodLabel(cutoff)} · Generado el {new Date().toLocaleDateString('es-MX')}
                 </div>
               </div>
+
+              {/* ── Plan de Pago Modal — Estado por Unidad ── */}
+              {planUnitDebt && (
+                <DebtPaymentPlanModal
+                  unit={planUnitDebt.unit}
+                  totalAdeudo={planUnitDebt.totalAdeudo}
+                  maintenanceFee={parseFloat(tenantData?.maintenance_fee || 0)}
+                  onClose={() => setPlanUnitDebt(null)}
+                  tenantId={tenantId}
+                  role={role}
+                />
+              )}
             </>
           )}
 
@@ -1195,6 +1223,7 @@ export default function EstadoCuenta() {
               search={adeudosSearch}
               setSearch={setAdeudosSearch}
               tenantId={tenantId}
+              role={role}
             />
           )}
 
@@ -2317,8 +2346,625 @@ function ReporteGeneralView({ tenantData, generalData, genLoading, cutoff, setCu
 /* ═══════════════════════════════════════════════════════════
    REPORTE DE ADEUDOS — deuda por unidad con corte de período
    ═══════════════════════════════════════════════════════════ */
-function ReporteAdeudosView({ tenantData, adeudosData, adeudosLoading, cutoff, setCutoff, startPeriod, search = '', setSearch, tenantId }) {
+// ──────────────────────────────────────────────────────────────────────────────
+//  PaymentPlanModal — Full workflow: create, send, accept/reject, track payments
+// ──────────────────────────────────────────────────────────────────────────────
+const PLAN_FREQUENCIES = [
+  { value: 1, label: 'Mensual',    sublabel: 'Cada mes',     max: 12 },
+  { value: 2, label: 'Bimestral',  sublabel: 'Cada 2 meses', max: 6  },
+  { value: 3, label: 'Trimestral', sublabel: 'Cada 3 meses', max: 4  },
+  { value: 6, label: 'Semestral',  sublabel: 'Cada 6 meses', max: 2  },
+];
+
+const PLAN_STATUS_LABELS = {
+  draft: 'Borrador', sent: 'Enviado', accepted: 'Activo',
+  rejected: 'Rechazado', completed: 'Completado', cancelled: 'Cancelado',
+};
+const PLAN_STATUS_COLORS = {
+  draft: '#d97706', sent: '#2563eb', accepted: '#0d7c6e',
+  rejected: '#e84040', completed: '#1E594F', cancelled: '#64748b',
+};
+
+function DebtPaymentPlanModal({ unit, totalAdeudo, maintenanceFee = 0, onClose, tenantId, role }) {
+  const isManager = ['admin', 'tesorero', 'contador', 'superadmin'].includes(role);
+  const isVecinoRole = role === 'vecino';
+
+  // ─── Tabs: 'list' | 'new' | 'detail' ────────────────────────────────────
+  const [tab, setTab] = useState('list');
+  const [plans, setPlans] = useState([]);
+  const [plansLoading, setPlansLoading] = useState(false);
+  const [selectedPlan, setSelectedPlan] = useState(null);
+  const [actionLoading, setActionLoading] = useState(false);
+
+  // ─── New plan form state ──────────────────────────────────────────────────
+  const [freq,          setFreq]          = useState(1);
+  const [numPagos,      setNumPagos]      = useState(6);
+  const [applyInterest, setApplyInterest] = useState(false);
+  const [interestRate,  setInterestRate]  = useState(5);
+  const [notes,         setNotes]         = useState('');
+  const [saving,        setSaving]        = useState(false);
+
+  const currentFreq = PLAN_FREQUENCIES.find(f => f.value === freq);
+  const maxPagos    = currentFreq?.max ?? 12;
+  const durMonths   = freq * numPagos;
+
+  useEffect(() => {
+    if (numPagos > maxPagos) setNumPagos(maxPagos);
+  }, [freq, maxPagos]); // eslint-disable-line
+
+  const totalConInteres = useMemo(() => {
+    if (!applyInterest || interestRate <= 0) return totalAdeudo;
+    const monthlyRate = (interestRate / 100) / 12;
+    return totalAdeudo * (1 + monthlyRate * durMonths);
+  }, [totalAdeudo, applyInterest, interestRate, durMonths]);
+
+  const debtPorPago    = numPagos > 0 ? totalConInteres / numPagos : 0;
+  const regularPorPago = maintenanceFee * freq;
+  const interesTotal   = totalConInteres - totalAdeudo;
+
+  const rows = useMemo(() => {
+    const now = new Date();
+    return Array.from({ length: numPagos }, (_, i) => {
+      const d = new Date(now.getFullYear(), now.getMonth() + (i + 1) * freq, 1);
+      const periodKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      const lbl = d.toLocaleString('es-MX', { month: 'long', year: 'numeric' });
+      return {
+        num: i + 1,
+        period_key: periodKey,
+        period_label: lbl.charAt(0).toUpperCase() + lbl.slice(1),
+        debt_part:    debtPorPago,
+        regular_part: regularPorPago,
+        total:        debtPorPago + regularPorPago,
+        paid_amount:  0,
+        status:       'pending',
+      };
+    });
+  }, [numPagos, freq, debtPorPago, regularPorPago]);
+
+  const grandDebt  = totalConInteres;
+  const grandReg   = regularPorPago * numPagos;
+  const grandTotal = grandDebt + grandReg;
+
+  // ─── Load existing plans for this unit ───────────────────────────────────
+  const loadPlans = useCallback(async () => {
+    if (!tenantId || !unit?.id) return;
+    setPlansLoading(true);
+    try {
+      const res = await paymentPlansAPI.list(tenantId, { unit_id: unit.id });
+      setPlans(res.data || []);
+    } catch {
+      toast.error('No se pudieron cargar los planes de pago.');
+    } finally {
+      setPlansLoading(false);
+    }
+  }, [tenantId, unit?.id]);
+
+  useEffect(() => { loadPlans(); }, [loadPlans]);
+
+  // ─── Save new draft plan ──────────────────────────────────────────────────
+  const handleSaveDraft = async () => {
+    setSaving(true);
+    try {
+      const payload = {
+        unit: unit.id,
+        total_adeudo: totalAdeudo,
+        maintenance_fee: maintenanceFee,
+        frequency: freq,
+        num_payments: numPagos,
+        apply_interest: applyInterest,
+        interest_rate: applyInterest ? interestRate : 0,
+        total_with_interest: totalConInteres,
+        notes,
+        installments: rows,
+      };
+      await paymentPlansAPI.create(tenantId, payload);
+      toast.success('Plan de pago guardado como borrador.');
+      await loadPlans();
+      setTab('list');
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || 'Error al guardar el plan.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // ─── Actions on existing plans ───────────────────────────────────────────
+  const handleSend = async (plan) => {
+    setActionLoading(true);
+    try {
+      await paymentPlansAPI.send(tenantId, plan.id);
+      toast.success('Plan enviado al vecino por correo.');
+      await loadPlans();
+      setSelectedPlan(null);
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || 'Error al enviar el plan.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleAccept = async (plan) => {
+    setActionLoading(true);
+    try {
+      await paymentPlansAPI.accept(tenantId, plan.id);
+      toast.success('Plan aceptado. Se incluirá en la cobranza mensual.');
+      await loadPlans();
+      setSelectedPlan(null);
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || 'Error al aceptar el plan.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleReject = async (plan) => {
+    setActionLoading(true);
+    try {
+      await paymentPlansAPI.reject(tenantId, plan.id);
+      toast.success('Plan rechazado.');
+      await loadPlans();
+      setSelectedPlan(null);
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || 'Error al rechazar el plan.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleCancel = async (plan) => {
+    if (!window.confirm('¿Cancelar este plan de pago?')) return;
+    setActionLoading(true);
+    try {
+      await paymentPlansAPI.cancel(tenantId, plan.id);
+      toast.success('Plan cancelado.');
+      await loadPlans();
+      setSelectedPlan(null);
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || 'Error al cancelar el plan.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleDownloadPDF = async (plan) => {
+    try {
+      const res = await paymentPlansAPI.pdf(tenantId, plan.id);
+      const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `plan_pago_${unit.unit_id_code}_${plan.id.slice(0, 8)}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error('No se pudo descargar el PDF.');
+    }
+  };
+
+  const freqBtnStyle = (isActive) => ({
+    padding: '8px 16px', borderRadius: 8,
+    border: `2px solid ${isActive ? 'var(--teal-500)' : 'var(--sand-200)'}`,
+    background: isActive ? 'var(--teal-50)' : '#fff',
+    color: isActive ? 'var(--teal-700)' : 'var(--ink-600)',
+    fontWeight: isActive ? 700 : 400, cursor: 'pointer', fontSize: 13, lineHeight: 1.4,
+    transition: 'all 0.15s', textAlign: 'center',
+  });
+
+  const installStatusColor = { paid: '#1E594F', partial: '#d97706', pending: '#e84040' };
+  const installStatusLabel = { paid: 'Pagado', partial: 'Parcial', pending: 'Pendiente' };
+
+  // ─── Plan detail view ─────────────────────────────────────────────────────
+  const renderPlanDetail = (plan) => {
+    const installments = plan.installments || [];
+    const totalPaid = installments.reduce((s, i) => s + (i.paid_amount || 0), 0);
+    const paidCount = installments.filter(i => i.status === 'paid').length;
+    const statusColor = PLAN_STATUS_COLORS[plan.status] || '#64748b';
+    const statusLabel = PLAN_STATUS_LABELS[plan.status] || plan.status;
+    const freq_lbl = PLAN_FREQUENCIES.find(f => f.value === plan.frequency)?.label || plan.frequency;
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        {/* Plan header info */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+          {[
+            { label: 'Estado', value: statusLabel, color: statusColor },
+            { label: 'Creado por', value: plan.created_by_name || '—' },
+            { label: 'Fecha creación', value: plan.created_at ? new Date(plan.created_at).toLocaleDateString('es-MX') : '—' },
+            { label: 'Enviado por', value: plan.sent_by_name || '—' },
+            { label: 'Fecha envío', value: plan.sent_at ? new Date(plan.sent_at).toLocaleDateString('es-MX') : '—' },
+            { label: 'Aceptado por', value: plan.accepted_by_name || '—' },
+            { label: 'Fecha aceptación', value: plan.accepted_at ? new Date(plan.accepted_at).toLocaleDateString('es-MX') : '—' },
+            { label: 'Frecuencia', value: freq_lbl },
+            { label: 'No. de pagos', value: `${plan.num_payments}` },
+          ].map(c => (
+            <div key={c.label} style={{ background: 'var(--sand-50)', border: '1px solid var(--sand-200)', borderRadius: 7, padding: '8px 12px' }}>
+              <div style={{ fontSize: 10, color: 'var(--ink-400)', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.04em', marginBottom: 3 }}>{c.label}</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: c.color || 'var(--ink-700)' }}>{c.value}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Progress bar */}
+        {plan.status === 'accepted' && installments.length > 0 && (
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--ink-500)', marginBottom: 4 }}>
+              <span>Progreso del plan: {paidCount} / {installments.length} pagos</span>
+              <span>{fmt(totalPaid)} pagado de {fmt(parseFloat(plan.total_with_interest))}</span>
+            </div>
+            <div style={{ height: 8, background: 'var(--sand-200)', borderRadius: 4, overflow: 'hidden' }}>
+              <div style={{
+                height: '100%', borderRadius: 4, background: 'var(--teal-500)',
+                width: `${installments.length > 0 ? (paidCount / installments.length) * 100 : 0}%`,
+                transition: 'width 0.4s',
+              }} />
+            </div>
+          </div>
+        )}
+
+        {/* Installments table */}
+        {installments.length > 0 && (
+          <div style={{ border: '1px solid var(--sand-200)', borderRadius: 8, overflow: 'hidden' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+              <thead>
+                <tr style={{ background: '#1e3a5f', color: 'white' }}>
+                  {['#', 'Período', 'Abono Deuda', 'Cuota Regular', 'Total', 'Pagado', 'Estado'].map(h => (
+                    <th key={h} style={{ padding: '8px 10px', fontWeight: 600, fontSize: 11, textAlign: h === '#' ? 'center' : 'right', whiteSpace: 'nowrap' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {installments.map((inst, i) => (
+                  <tr key={inst.num} style={{ background: i % 2 === 0 ? '#fff' : 'var(--sand-50)', borderBottom: '1px solid var(--sand-100)' }}>
+                    <td style={{ padding: '7px 10px', textAlign: 'center', color: 'var(--ink-400)', fontWeight: 600 }}>{inst.num}</td>
+                    <td style={{ padding: '7px 10px', textAlign: 'right', color: 'var(--ink-700)' }}>{inst.period_label || inst.period_key}</td>
+                    <td style={{ padding: '7px 10px', textAlign: 'right', color: 'var(--coral-600)', fontWeight: 600 }}>{fmt(inst.debt_part)}</td>
+                    <td style={{ padding: '7px 10px', textAlign: 'right', color: 'var(--ink-600)' }}>{fmt(inst.regular_part)}</td>
+                    <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#1e3a5f' }}>{fmt(inst.total)}</td>
+                    <td style={{ padding: '7px 10px', textAlign: 'right', color: 'var(--teal-700)', fontWeight: 600 }}>{fmt(inst.paid_amount || 0)}</td>
+                    <td style={{ padding: '7px 10px', textAlign: 'right' }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: installStatusColor[inst.status] || '#64748b' }}>
+                        {installStatusLabel[inst.status] || inst.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr style={{ background: '#1e3a5f', color: 'white', fontWeight: 700 }}>
+                  <td colSpan={2} style={{ padding: '8px 10px', fontSize: 11 }}>TOTAL</td>
+                  <td style={{ padding: '8px 10px', textAlign: 'right' }}>{fmt(installments.reduce((s, i) => s + (i.debt_part || 0), 0))}</td>
+                  <td style={{ padding: '8px 10px', textAlign: 'right' }}>{fmt(installments.reduce((s, i) => s + (i.regular_part || 0), 0))}</td>
+                  <td style={{ padding: '8px 10px', textAlign: 'right' }}>{fmt(installments.reduce((s, i) => s + (i.total || 0), 0))}</td>
+                  <td style={{ padding: '8px 10px', textAlign: 'right' }}>{fmt(totalPaid)}</td>
+                  <td />
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
+
+        {/* Notes */}
+        {plan.notes && (
+          <div style={{ background: 'var(--sand-50)', border: '1px solid var(--sand-200)', borderRadius: 7, padding: '10px 14px', fontSize: 12, color: 'var(--ink-600)', fontStyle: 'italic' }}>
+            <strong>Notas:</strong> {plan.notes}
+          </div>
+        )}
+
+        {/* Action buttons for this plan */}
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end', borderTop: '1px solid var(--sand-200)', paddingTop: 12 }}>
+          <button className="btn btn-outline btn-sm" onClick={() => handleDownloadPDF(plan)}>
+            <Download size={13} /> Descargar PDF
+          </button>
+          {isManager && plan.status === 'draft' && (
+            <button className="btn btn-primary btn-sm" disabled={actionLoading} onClick={() => handleSend(plan)}>
+              <Send size={13} /> Enviar al vecino
+            </button>
+          )}
+          {isVecinoRole && plan.status === 'sent' && (
+            <>
+              <button className="btn btn-primary btn-sm" disabled={actionLoading} onClick={() => handleAccept(plan)}
+                style={{ background: 'var(--teal-500)', borderColor: 'var(--teal-500)' }}>
+                ✓ Aceptar plan
+              </button>
+              <button className="btn btn-outline btn-sm" disabled={actionLoading} onClick={() => handleReject(plan)}
+                style={{ color: 'var(--coral-500)', borderColor: 'var(--coral-300)' }}>
+                ✕ Rechazar
+              </button>
+            </>
+          )}
+          {isManager && ['draft', 'sent', 'accepted'].includes(plan.status) && (
+            <button className="btn btn-outline btn-sm" disabled={actionLoading} onClick={() => handleCancel(plan)}
+              style={{ color: 'var(--ink-400)', borderColor: 'var(--sand-200)' }}>
+              Cancelar plan
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="modal-bg open" onClick={onClose}>
+      <div
+        className="modal"
+        onClick={e => e.stopPropagation()}
+        style={{ maxWidth: 750, width: '97vw', maxHeight: '94vh', display: 'flex', flexDirection: 'column' }}
+      >
+        {/* Header */}
+        <div className="modal-head">
+          <h3 style={{ display: 'flex', alignItems: 'center', gap: 8, margin: 0, fontSize: 15, flexWrap: 'wrap' }}>
+            <TrendingDown size={18} color="var(--coral-500)" />
+            Planes de Pago —&nbsp;
+            <span style={{ fontFamily: 'monospace', background: 'var(--teal-50)', color: 'var(--teal-700)', padding: '2px 8px', borderRadius: 5 }}>
+              {unit?.unit_id_code}
+            </span>
+            &nbsp;{unit?.unit_name}
+          </h3>
+          <button className="modal-close" onClick={onClose}><X size={16} /></button>
+        </div>
+
+        {/* Tabs — only managers get "Nuevo Plan" tab */}
+        {isManager && (
+          <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid var(--sand-200)', padding: '0 20px', background: 'var(--sand-50)' }}>
+            {[
+              { key: 'list', label: 'Planes existentes' },
+              { key: 'new',  label: '+ Nuevo plan' },
+            ].map(t => (
+              <button
+                key={t.key}
+                onClick={() => { setTab(t.key); setSelectedPlan(null); }}
+                style={{
+                  padding: '10px 18px', border: 'none', background: 'none', cursor: 'pointer',
+                  fontSize: 13, fontWeight: tab === t.key ? 700 : 400,
+                  color: tab === t.key ? 'var(--teal-700)' : 'var(--ink-500)',
+                  borderBottom: tab === t.key ? '2px solid var(--teal-500)' : '2px solid transparent',
+                  marginBottom: -1,
+                }}
+              >{t.label}</button>
+            ))}
+          </div>
+        )}
+
+        {/* Body */}
+        <div className="modal-body" style={{ overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+          {/* ══ LIST TAB ══ */}
+          {(tab === 'list' || isVecinoRole) && !selectedPlan && (
+            <div>
+              {plansLoading ? (
+                <div style={{ textAlign: 'center', padding: 32, color: 'var(--ink-400)' }}>Cargando planes…</div>
+              ) : plans.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: 32, color: 'var(--ink-400)' }}>
+                  <TrendingDown size={32} style={{ opacity: 0.3, marginBottom: 8 }} />
+                  <div style={{ fontSize: 14 }}>
+                    {isVecinoRole ? 'No hay planes de pago disponibles para tu unidad.' : 'No hay planes de pago para esta unidad.'}
+                  </div>
+                  {isManager && (
+                    <button className="btn btn-primary btn-sm" style={{ marginTop: 14 }} onClick={() => setTab('new')}>
+                      + Crear primer plan
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {plans.map(plan => {
+                    const sc = PLAN_STATUS_COLORS[plan.status] || '#64748b';
+                    const sl = PLAN_STATUS_LABELS[plan.status] || plan.status;
+                    const freq_lbl = PLAN_FREQUENCIES.find(f => f.value === plan.frequency)?.label || plan.frequency;
+                    const installments = plan.installments || [];
+                    const paidCount = installments.filter(i => i.status === 'paid').length;
+                    return (
+                      <div
+                        key={plan.id}
+                        style={{
+                          border: '1px solid var(--sand-200)', borderRadius: 10, padding: '12px 16px',
+                          background: '#fff', cursor: 'pointer', transition: 'box-shadow 0.15s',
+                        }}
+                        onClick={() => setSelectedPlan(plan)}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+                          <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                              <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink-700)' }}>
+                                {freq_lbl} · {plan.num_payments} pagos
+                              </span>
+                              <span style={{ fontSize: 11, fontWeight: 700, color: sc, background: sc + '18', padding: '2px 8px', borderRadius: 12 }}>
+                                {sl}
+                              </span>
+                            </div>
+                            <div style={{ fontSize: 12, color: 'var(--ink-500)' }}>
+                              Total: <strong>{fmt(parseFloat(plan.total_with_interest))}</strong>
+                              &nbsp;·&nbsp; Adeudo base: {fmt(parseFloat(plan.total_adeudo))}
+                              {plan.apply_interest && <span style={{ color: 'var(--coral-500)' }}> · Interés: {plan.interest_rate}%</span>}
+                            </div>
+                            {plan.status === 'accepted' && installments.length > 0 && (
+                              <div style={{ fontSize: 11, color: 'var(--teal-700)', marginTop: 4 }}>
+                                Progreso: {paidCount}/{installments.length} pagos realizados
+                              </div>
+                            )}
+                          </div>
+                          <div style={{ fontSize: 11, color: 'var(--ink-400)', whiteSpace: 'nowrap', textAlign: 'right' }}>
+                            <div>Creado: {plan.created_by_name}</div>
+                            <div>{plan.created_at ? new Date(plan.created_at).toLocaleDateString('es-MX') : ''}</div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ══ PLAN DETAIL VIEW ══ */}
+          {(tab === 'list' || isVecinoRole) && selectedPlan && (
+            <div>
+              <button
+                onClick={() => setSelectedPlan(null)}
+                style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--teal-600)', background: 'none', border: 'none', cursor: 'pointer', marginBottom: 12 }}
+              >
+                ← Volver a la lista
+              </button>
+              {renderPlanDetail(selectedPlan)}
+            </div>
+          )}
+
+          {/* ══ NEW PLAN TAB ══ */}
+          {tab === 'new' && isManager && (
+            <>
+              {/* Debt summary */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+                {[
+                  { label: 'Adeudo Total',          value: fmt(totalAdeudo),              color: 'var(--coral-500)', big: true  },
+                  { label: 'Cuota Mensual Regular',  value: fmt(maintenanceFee),           color: 'var(--ink-600)',   big: true  },
+                  { label: 'Responsable',            value: unit?.responsible_name || '—', color: 'var(--ink-700)',  big: false },
+                ].map(c => (
+                  <div key={c.label} style={{ background: 'var(--sand-50)', border: '1px solid var(--sand-200)', borderRadius: 8, padding: '10px 14px' }}>
+                    <div style={{ fontSize: 11, color: 'var(--ink-400)', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.04em', marginBottom: 4 }}>{c.label}</div>
+                    <div style={{ fontSize: c.big ? 18 : 14, fontWeight: 700, color: c.color }}>{c.value}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Config */}
+              <div style={{ background: 'var(--sand-50)', border: '1px solid var(--sand-200)', borderRadius: 10, padding: '14px 16px' }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-600)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 14 }}>
+                  ⚙️ Configuración del Plan
+                </div>
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-600)', marginBottom: 8 }}>Frecuencia de pago</div>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    {PLAN_FREQUENCIES.map(f => (
+                      <button key={f.value} style={freqBtnStyle(freq === f.value)} onClick={() => setFreq(f.value)}>
+                        <div>{f.label}</div><div style={{ fontSize: 10, opacity: 0.7 }}>{f.sublabel}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-600)', marginBottom: 8 }}>
+                    Número de pagos
+                    <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--ink-400)', fontWeight: 400 }}>
+                      (máx. {maxPagos} pagos → {maxPagos * freq} meses)
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                    <input type="range" min={1} max={maxPagos} value={numPagos}
+                      onChange={e => setNumPagos(Number(e.target.value))}
+                      style={{ flex: 1, accentColor: 'var(--teal-500)' }} />
+                    <div style={{ textAlign: 'center', minWidth: 42 }}>
+                      <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--teal-700)', lineHeight: 1 }}>{numPagos}</div>
+                      <div style={{ fontSize: 10, color: 'var(--ink-400)' }}>pagos</div>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--ink-500)', marginTop: 4 }}>
+                    ⏱ Duración: <strong>{durMonths} {durMonths === 1 ? 'mes' : 'meses'}</strong>
+                    {durMonths <= 3 && <span style={{ color: 'var(--coral-500)', marginLeft: 8 }}>· Plan corto</span>}
+                    {durMonths >= 9 && <span style={{ color: 'var(--amber-600)', marginLeft: 8 }}>· Plan largo</span>}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', paddingTop: 10, borderTop: '1px solid var(--sand-200)' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                    <input type="checkbox" checked={applyInterest} onChange={e => setApplyInterest(e.target.checked)}
+                      style={{ width: 16, height: 16, accentColor: 'var(--coral-500)' }} />
+                    <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-700)' }}>Aplicar intereses moratorios</span>
+                  </label>
+                  {applyInterest && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 12, color: 'var(--ink-600)' }}>Tasa anual:</span>
+                      <input type="number" min={0} max={100} step={0.5} value={interestRate}
+                        onChange={e => setInterestRate(parseFloat(e.target.value) || 0)}
+                        style={{ width: 70, padding: '4px 8px', border: '1px solid var(--sand-200)', borderRadius: 6, fontSize: 13, textAlign: 'right' }} />
+                      <span style={{ fontSize: 12, color: 'var(--ink-600)' }}>%</span>
+                      {interesTotal > 0.01 && <span style={{ fontSize: 12, color: 'var(--coral-500)', fontWeight: 700 }}>→ +{fmt(interesTotal)} de interés</span>}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Plan table preview */}
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-600)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
+                  📋 Tabla de Pagos
+                </div>
+                <div style={{ border: '1px solid var(--sand-200)', borderRadius: 8, overflow: 'hidden' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                    <thead>
+                      <tr style={{ background: '#1e3a5f', color: 'white' }}>
+                        {['#', 'Período', 'Abono Deuda', `Cuota Regular${freq > 1 ? ` (×${freq})` : ''}`, 'Total a Pagar'].map(h => (
+                          <th key={h} style={{ padding: '9px 12px', fontWeight: 600, fontSize: 11, textAlign: h === '#' ? 'left' : 'right', whiteSpace: 'nowrap' }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((r, i) => (
+                        <tr key={r.num} style={{ background: i % 2 === 0 ? '#fff' : 'var(--sand-50)', borderBottom: '1px solid var(--sand-100)' }}>
+                          <td style={{ padding: '8px 12px', color: 'var(--ink-400)', fontWeight: 600 }}>{r.num}</td>
+                          <td style={{ padding: '8px 12px', textAlign: 'right', color: 'var(--ink-700)', fontWeight: 500 }}>{r.period_label}</td>
+                          <td style={{ padding: '8px 12px', textAlign: 'right', color: 'var(--coral-600)', fontWeight: 600 }}>{fmt(r.debt_part)}</td>
+                          <td style={{ padding: '8px 12px', textAlign: 'right', color: 'var(--ink-600)' }}>{fmt(r.regular_part)}</td>
+                          <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700, color: '#1e3a5f' }}>{fmt(r.total)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr style={{ background: '#1e3a5f', color: 'white', fontWeight: 700 }}>
+                        <td colSpan={2} style={{ padding: '10px 12px', fontSize: 12 }}>
+                          TOTAL · {numPagos} pago{numPagos !== 1 ? 's' : ''} en {durMonths} mes{durMonths !== 1 ? 'es' : ''}
+                        </td>
+                        <td style={{ padding: '10px 12px', textAlign: 'right' }}>{fmt(grandDebt)}</td>
+                        <td style={{ padding: '10px 12px', textAlign: 'right' }}>{fmt(grandReg)}</td>
+                        <td style={{ padding: '10px 12px', textAlign: 'right', fontSize: 15 }}>{fmt(grandTotal)}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+
+              {/* Notes */}
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-600)', display: 'block', marginBottom: 6 }}>Notas (opcional)</label>
+                <textarea
+                  value={notes} onChange={e => setNotes(e.target.value)}
+                  placeholder="Condiciones especiales, acuerdos, observaciones…"
+                  rows={3}
+                  style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--sand-200)', borderRadius: 8, fontSize: 13, resize: 'vertical', boxSizing: 'border-box' }}
+                />
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="modal-foot">
+          {tab === 'new' && isManager ? (
+            <>
+              <span style={{ fontSize: 11, color: 'var(--ink-400)', flex: 1 }}>
+                El plan se guardará como borrador. Podrás enviarlo al vecino cuando esté listo.
+              </span>
+              <button className="btn btn-secondary" onClick={onClose}>Cancelar</button>
+              <button className="btn btn-primary" disabled={saving} onClick={handleSaveDraft}>
+                {saving ? 'Guardando…' : 'Guardar borrador'}
+              </button>
+            </>
+          ) : (
+            <>
+              <span style={{ fontSize: 11, color: 'var(--ink-400)', flex: 1 }} />
+              <button className="btn btn-secondary" onClick={onClose}>Cerrar</button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+
+function ReporteAdeudosView({ tenantData, adeudosData, adeudosLoading, cutoff, setCutoff, startPeriod, search = '', setSearch, tenantId, role }) {
   const [expanded, setExpanded] = useState({});
+  const [planUnit, setPlanUnit] = useState(null);  // { unit, totalAdeudo }
   const [showGeneralEmailModal, setShowGeneralEmailModal] = useState(false);
   const [generalEmailRecipientMode, setGeneralEmailRecipientMode] = useState('owners');
   const [generalEmailCustom, setGeneralEmailCustom] = useState('');
@@ -2609,7 +3255,17 @@ function ReporteAdeudosView({ tenantData, adeudosData, adeudosLoading, cutoff, s
                             </span>
                           </td>
                           <td style={{ color: 'var(--ink-400)' }}>
-                            {isOpen ? <ChevronLeft size={16} style={{ transform: 'rotate(-90deg)' }} /> : <ChevronRight size={16} />}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'flex-end' }}>
+                              <button
+                                className="btn btn-outline btn-sm"
+                                title="Ver plan de pago sugerido"
+                                style={{ padding: '3px 9px', fontSize: 11, display: 'flex', alignItems: 'center', gap: 4, color: 'var(--coral-600)', borderColor: 'var(--coral-200)' }}
+                                onClick={e => { e.stopPropagation(); setPlanUnit({ unit: u, totalAdeudo }); }}
+                              >
+                                <DollarSign size={12} /> Plan
+                              </button>
+                              {isOpen ? <ChevronLeft size={16} style={{ transform: 'rotate(-90deg)' }} /> : <ChevronRight size={16} />}
+                            </div>
                           </td>
                         </tr>
 
@@ -2715,6 +3371,18 @@ function ReporteAdeudosView({ tenantData, adeudosData, adeudosLoading, cutoff, s
             </div>
           )}
         </div>
+      )}
+
+      {/* ── Plan de Pago Modal ── */}
+      {planUnit && (
+        <DebtPaymentPlanModal
+          unit={planUnit.unit}
+          totalAdeudo={planUnit.totalAdeudo}
+          maintenanceFee={parseFloat(tenantData?.maintenance_fee || 0)}
+          onClose={() => setPlanUnit(null)}
+          tenantId={tenantId}
+          role={role}
+        />
       )}
 
       {/* ── General Statement Email Modal ── */}

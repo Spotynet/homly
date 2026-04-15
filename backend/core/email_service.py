@@ -1446,3 +1446,168 @@ def send_registration_notification(request_data: dict) -> bool:
     )
 
     return ok1 and ok2
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  PAYMENT PLAN EMAIL
+# ─────────────────────────────────────────────────────────────────────────────
+
+def send_payment_plan_email(
+    emails: list,
+    tenant_name: str,
+    unit_code: str,
+    unit_name: str,
+    responsible: str,
+    total_adeudo: float,
+    total_with_interest: float,
+    apply_interest: bool,
+    interest_rate: float,
+    frequency_label: str,
+    num_payments: int,
+    installments: list,   # [{num, period_label, debt_part, regular_part, total}]
+    created_by_name: str,
+    notes: str = '',
+) -> bool:
+    """Send a payment plan proposal email to the vecino."""
+    c = COLORS
+
+    def fmt(n):
+        return _fmt_amount(float(n or 0), '$')
+
+    # Installments table rows
+    rows_html = ''
+    for inst in installments:
+        rows_html += (
+            f'<tr style="border-bottom:1px solid {c["cream_outer"]};">'
+            f'<td style="padding:8px 12px;font-size:13px;color:{c["ink_600"]};text-align:center;">{inst.get("num","")}</td>'
+            f'<td style="padding:8px 12px;font-size:13px;color:{c["ink_800"]};">{inst.get("period_label","")}</td>'
+            f'<td style="padding:8px 12px;font-size:13px;text-align:right;color:{c["orange"]};font-weight:600;">{fmt(inst.get("debt_part",0))}</td>'
+            f'<td style="padding:8px 12px;font-size:13px;text-align:right;color:{c["ink_600"]};">{fmt(inst.get("regular_part",0))}</td>'
+            f'<td style="padding:8px 12px;font-size:13px;text-align:right;font-weight:700;color:{c["green"]};">{fmt(inst.get("total",0))}</td>'
+            f'</tr>'
+        )
+
+    interest_note = ''
+    if apply_interest and interest_rate > 0:
+        interest_note = (
+            f'<p style="margin:8px 0 0;font-size:12px;color:{c["ink_600"]};font-style:italic;">'
+            f'* El total incluye interés moratorio del {interest_rate}% anual sobre el adeudo.'
+            f'</p>'
+        )
+    notes_block = ''
+    if notes:
+        notes_block = (
+            f'<div style="margin-top:12px;padding:10px 14px;background:{c["cream_outer"]};border-radius:6px;'
+            f'border-left:3px solid {c["orange"]};">'
+            f'<span style="font-size:12px;font-weight:700;color:{c["ink_600"]};">Notas del administrador:</span>'
+            f'<p style="margin:4px 0 0;font-size:13px;color:{c["ink_800"]};">{notes}</p>'
+            f'</div>'
+        )
+
+    logo_img = f'<img src="cid:{LOGO_CID}" alt="Homly" width="150" style="display:block;height:auto;max-width:150px;" />'
+
+    html = f"""<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Plan de Pago — {unit_code}</title></head>
+<body style="margin:0;padding:0;font-family:'Segoe UI',system-ui,sans-serif;background:{c['cream_outer']};">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:{c['cream_outer']};padding:32px 0;">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;background:{c['cream']};border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.08);">
+
+        <!-- Logo / Header -->
+        <tr><td style="background:{c['green']};padding:24px 32px;text-align:left;">
+          {logo_img}
+          <p style="margin:10px 0 0;font-size:13px;color:rgba(255,255,255,.75);">{tenant_name}</p>
+        </td></tr>
+
+        <!-- Title -->
+        <tr><td style="padding:28px 32px 16px;">
+          <h1 style="margin:0;font-size:22px;font-weight:800;color:{c['ink_800']};">Propuesta de Plan de Pago</h1>
+          <p style="margin:6px 0 0;font-size:14px;color:{c['ink_600']};">
+            Unidad <strong>{unit_code}</strong> — {unit_name} &nbsp;·&nbsp; Responsable: <strong>{responsible}</strong>
+          </p>
+        </td></tr>
+
+        <!-- Debt summary -->
+        <tr><td style="padding:0 32px 16px;">
+          <table width="100%" cellpadding="0" cellspacing="0" style="background:{c['cream_outer']};border-radius:8px;border:1px solid #E8E0D5;">
+            <tr>
+              <td style="padding:14px 16px;">
+                <div style="font-size:11px;font-weight:700;color:{c['ink_600']};text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Adeudo Total</div>
+                <div style="font-size:24px;font-weight:800;color:{c['orange']};">{fmt(total_adeudo)}</div>
+              </td>
+              <td style="padding:14px 16px;">
+                <div style="font-size:11px;font-weight:700;color:{c['ink_600']};text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Monto a Liquidar</div>
+                <div style="font-size:24px;font-weight:800;color:{c['green']};">{fmt(total_with_interest)}</div>
+              </td>
+              <td style="padding:14px 16px;">
+                <div style="font-size:11px;font-weight:700;color:{c['ink_600']};text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Plan</div>
+                <div style="font-size:14px;font-weight:700;color:{c['ink_800']};">{num_payments} pagos {frequency_label}</div>
+              </td>
+            </tr>
+          </table>
+          {interest_note}
+        </td></tr>
+
+        <!-- Installments table -->
+        <tr><td style="padding:0 32px 16px;">
+          <p style="margin:0 0 10px;font-size:13px;font-weight:700;color:{c['ink_600']};text-transform:uppercase;letter-spacing:.04em;">Tabla de Pagos Sugerida</p>
+          <table width="100%" cellpadding="0" cellspacing="0" style="border-radius:8px;overflow:hidden;border:1px solid #E8E0D5;">
+            <thead>
+              <tr style="background:{c['green']};color:#fff;">
+                <th style="padding:9px 12px;font-size:11px;font-weight:700;text-align:center;">#</th>
+                <th style="padding:9px 12px;font-size:11px;font-weight:700;text-align:left;">Período</th>
+                <th style="padding:9px 12px;font-size:11px;font-weight:700;text-align:right;">Abono Adeudo</th>
+                <th style="padding:9px 12px;font-size:11px;font-weight:700;text-align:right;">Cuota Regular</th>
+                <th style="padding:9px 12px;font-size:11px;font-weight:700;text-align:right;">Total</th>
+              </tr>
+            </thead>
+            <tbody style="background:{c['cream']};">
+              {rows_html}
+            </tbody>
+          </table>
+          {notes_block}
+        </td></tr>
+
+        <!-- CTA -->
+        <tr><td style="padding:8px 32px 28px;">
+          <div style="background:{c['orange_light']};border-radius:8px;padding:16px;border-left:4px solid {c['orange']};">
+            <p style="margin:0;font-size:14px;font-weight:700;color:{c['ink_800']};">¿Qué debo hacer?</p>
+            <p style="margin:6px 0 0;font-size:13px;color:{c['ink_600']};">
+              Ingresa a la plataforma Homly, ve a tu <strong>Estado de Cuenta</strong> y
+              revisa tu plan de pago. Puedes <strong>aceptarlo o rechazarlo</strong> desde ahí.
+              Si tienes dudas, contacta a la administración de <strong>{tenant_name}</strong>.
+            </p>
+          </div>
+        </td></tr>
+
+        <!-- Footer -->
+        <tr><td style="background:{c['green']};padding:18px 32px;text-align:center;">
+          <p style="margin:0;font-size:12px;color:rgba(255,255,255,.65);">
+            Enviado por {created_by_name} · {tenant_name} · Plataforma Homly
+          </p>
+        </td></tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body></html>"""
+
+    plain = (
+        f"Plan de Pago — {unit_code} {unit_name}\n"
+        f"Adeudo: {fmt(total_adeudo)}  |  Monto a liquidar: {fmt(total_with_interest)}\n"
+        f"Plan: {num_payments} pagos {frequency_label}\n\n"
+        + "\n".join(
+            f"  {i['num']}. {i['period_label']} — Abono: {fmt(i['debt_part'])} + Cuota: {fmt(i['regular_part'])} = Total: {fmt(i['total'])}"
+            for i in installments
+        )
+        + f"\n\nPor favor ingresa a la plataforma Homly para aceptar o rechazar este plan."
+    )
+
+    return _send_branded_email(
+        subject=f"Plan de Pago — {unit_code} · {tenant_name}",
+        plain=plain,
+        html=html,
+        to_emails=emails,
+    )

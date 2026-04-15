@@ -499,6 +499,98 @@ class CajaChicaEntry(models.Model):
 
 
 # ═══════════════════════════════════════════════════════════
+#  PAYMENT PLAN (Plan de Pago de Adeudos)
+# ═══════════════════════════════════════════════════════════
+
+class PaymentPlan(models.Model):
+    """
+    Debt payment plan agreed between the administration and a unit resident.
+
+    Workflow:
+        draft → sent → accepted (active) → completed
+                     → rejected
+        (admin can cancel from any non-terminal state)
+
+    installments JSON schema (list of dicts):
+        {
+          "num":          int,          # 1-based
+          "period_key":   "YYYY-MM",    # billing period when this payment is due
+          "period_label": str,          # human-readable month/year (es-MX)
+          "debt_part":    float,        # debt installment amount
+          "regular_part": float,        # maintenance × freq (reference, not enforced here)
+          "total":        float,        # debt_part + regular_part (reference)
+          "paid_amount":  float,        # amount actually paid toward this installment
+          "status":       "pending"|"partial"|"paid",
+          "paid_at":      null|str      # ISO date when marked paid
+        }
+    """
+    STATUS_CHOICES = [
+        ('draft',     'Borrador'),
+        ('sent',      'Enviado al vecino'),
+        ('accepted',  'Aceptado / Activo'),
+        ('rejected',  'Rechazado'),
+        ('completed', 'Completado'),
+        ('cancelled', 'Cancelado'),
+    ]
+    FREQ_CHOICES = [
+        (1, 'Mensual'),
+        (2, 'Bimestral'),
+        (3, 'Trimestral'),
+        (6, 'Semestral'),
+    ]
+
+    id             = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant         = models.ForeignKey('Tenant', on_delete=models.CASCADE, related_name='payment_plans')
+    unit           = models.ForeignKey('Unit',   on_delete=models.CASCADE, related_name='payment_plans')
+
+    # Debt snapshot at creation time
+    total_adeudo        = models.DecimalField(max_digits=14, decimal_places=2)
+    maintenance_fee     = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    frequency           = models.PositiveSmallIntegerField(choices=FREQ_CHOICES, default=1)
+    num_payments        = models.PositiveSmallIntegerField(default=1)
+    apply_interest      = models.BooleanField(default=False)
+    interest_rate       = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    total_with_interest = models.DecimalField(max_digits=14, decimal_places=2)
+
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft', db_index=True)
+    notes  = models.TextField(blank=True, default='')
+
+    # Workflow audit (denormalized for display without joins)
+    created_by_name  = models.CharField(max_length=200, blank=True)
+    created_by_email = models.CharField(max_length=200, blank=True)
+    created_at       = models.DateTimeField(auto_now_add=True)
+
+    sent_by_name = models.CharField(max_length=200, blank=True)
+    sent_at      = models.DateTimeField(null=True, blank=True)
+
+    accepted_by_name = models.CharField(max_length=200, blank=True)
+    accepted_at      = models.DateTimeField(null=True, blank=True)
+
+    # Installment schedule (see schema above)
+    installments = models.JSONField(default=list)
+
+    class Meta:
+        db_table = 'payment_plans'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'Plan {self.unit} — {self.get_status_display()} — {self.total_with_interest}'
+
+    @property
+    def field_key(self):
+        """FieldPayment key used to track installment payments for this plan."""
+        return f'plan_{self.id}'
+
+    @property
+    def installments_paid(self):
+        return sum(1 for i in self.installments if i.get('status') == 'paid')
+
+    @property
+    def total_paid_toward_debt(self):
+        return sum(float(i.get('paid_amount', 0)) for i in self.installments)
+
+
+# ═══════════════════════════════════════════════════════════
 #  BANK STATEMENT (Uploaded PDFs per period)
 # ═══════════════════════════════════════════════════════════
 

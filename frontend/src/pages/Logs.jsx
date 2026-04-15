@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { auditLogsAPI } from '../api/client';
+import { useAuth } from '../context/AuthContext';
 import {
   Shield, RefreshCw, Search, ChevronLeft, ChevronRight,
   Activity, User, Building2, AlertCircle, Calendar,
@@ -116,6 +117,8 @@ function ModuleBadge({ module, label }) {
 //  Main Component
 // ──────────────────────────────────────────────────────────────
 export default function Logs() {
+  const { tenantId } = useAuth();
+
   // Filters
   const [search,   setSearch]   = useState('');
   const [module,   setModule]   = useState('');
@@ -136,12 +139,13 @@ export default function Logs() {
 
   const PER_PAGE = 50;
 
-  // ── Fetch summary once ─────────────────────────────────────
+  // ── Fetch summary ──────────────────────────────────────────
   useEffect(() => {
-    auditLogsAPI.summary()
+    const params = tenantId ? { tenant_id: tenantId } : {};
+    auditLogsAPI.summary(params)
       .then(r => setSummary(r.data))
       .catch(() => {});
-  }, []);
+  }, [tenantId]);
 
   // ── Fetch logs ─────────────────────────────────────────────
   const fetchLogs = useCallback(async (pg = 1) => {
@@ -151,6 +155,7 @@ export default function Logs() {
       const params = {
         page: pg,
         per_page: PER_PAGE,
+        ...(tenantId && { tenant_id: tenantId }),
         ...(module   && { module }),
         ...(action   && { action }),
         ...(dateFrom && { date_from: dateFrom }),
@@ -167,7 +172,7 @@ export default function Logs() {
     } finally {
       setLoading(false);
     }
-  }, [module, action, dateFrom, dateTo, userQ, search]);
+  }, [tenantId, module, action, dateFrom, dateTo, userQ, search]);
 
   useEffect(() => { fetchLogs(1); }, [fetchLogs]);
 
@@ -335,7 +340,11 @@ export default function Logs() {
         <Shield size={26} color="#6366f1" />
         <div>
           <h1 style={S.title}>Registros del Sistema</h1>
-          <p style={S.subtitle}>Auditoría de todas las acciones realizadas en la plataforma</p>
+          <p style={S.subtitle}>
+            {tenantId
+              ? 'Registros del tenant activo'
+              : 'Auditoría de todas las acciones realizadas en la plataforma'}
+          </p>
         </div>
       </div>
 
@@ -444,7 +453,7 @@ export default function Logs() {
           <thead>
             <tr>
               <th style={S.th}><Calendar size={11} style={{ marginRight: 4, verticalAlign: 'middle' }} />Fecha / Hora</th>
-              <th style={S.th}><Building2 size={11} style={{ marginRight: 4, verticalAlign: 'middle' }} />Tenant</th>
+              {!tenantId && <th style={S.th}><Building2 size={11} style={{ marginRight: 4, verticalAlign: 'middle' }} />Tenant</th>}
               <th style={S.th}><User size={11} style={{ marginRight: 4, verticalAlign: 'middle' }} />Usuario</th>
               <th style={S.th}>Rol</th>
               <th style={S.th}><Activity size={11} style={{ marginRight: 4, verticalAlign: 'middle' }} />Módulo</th>
@@ -457,14 +466,14 @@ export default function Logs() {
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={9} style={S.emptyRow}>
+                <td colSpan={tenantId ? 8 : 9} style={S.emptyRow}>
                   <RefreshCw size={20} color="#cbd5e1" style={{ animation: 'spin 1s linear infinite' }} />
                   <div style={{ marginTop: 8 }}>Cargando registros…</div>
                 </td>
               </tr>
             ) : logs.length === 0 ? (
               <tr>
-                <td colSpan={9} style={S.emptyRow}>
+                <td colSpan={tenantId ? 8 : 9} style={S.emptyRow}>
                   <Shield size={32} color="#e2e8f0" />
                   <div style={{ marginTop: 8 }}>No hay registros para los filtros seleccionados</div>
                 </td>
@@ -477,11 +486,13 @@ export default function Logs() {
                 <td style={{ ...S.td, whiteSpace: 'nowrap', fontSize: 12, color: '#475569' }}>
                   {fmtDate(log.created_at)}
                 </td>
-                <td style={{ ...S.td, maxWidth: 140 }}>
-                  <span style={{ fontSize: 12, color: '#1e293b', fontWeight: 500 }}>
-                    {log.tenant_name || <span style={{ color: '#94a3b8' }}>—</span>}
-                  </span>
-                </td>
+                {!tenantId && (
+                  <td style={{ ...S.td, maxWidth: 140 }}>
+                    <span style={{ fontSize: 12, color: '#1e293b', fontWeight: 500 }}>
+                      {log.tenant_name || <span style={{ color: '#94a3b8' }}>—</span>}
+                    </span>
+                  </td>
+                )}
                 <td style={{ ...S.td, maxWidth: 160 }}>
                   <div style={{ fontSize: 12, fontWeight: 600, color: '#1e293b' }}>{log.user_name || '—'}</div>
                   <div style={{ fontSize: 11, color: '#94a3b8' }}>{log.user_email}</div>
