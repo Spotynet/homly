@@ -98,6 +98,7 @@ const IconArrow = () => (
 export default function Landing() {
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [openFaq, setOpenFaq] = useState(null);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20);
@@ -126,6 +127,7 @@ export default function Landing() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 36 }} className="hidden-mobile">
             <a href="#beneficios" style={navLinkStyle}>Beneficios</a>
             <a href="#como-funciona" style={navLinkStyle}>Cómo funciona</a>
+            <a href="#preguntas" style={navLinkStyle}>Preguntas</a>
             <a href="#contacto" style={navLinkStyle}>Contacto</a>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }} className="hidden-mobile">
@@ -155,6 +157,7 @@ export default function Landing() {
           <div style={{ background: '#FDFBF7', borderTop: '1px solid #E8DFD1', padding: '20px 20px 28px', display: 'flex', flexDirection: 'column', gap: 20 }}>
             <a href="#beneficios" onClick={() => setMobileOpen(false)} style={{ ...navLinkStyle, fontSize: 16 }}>Beneficios</a>
             <a href="#como-funciona" onClick={() => setMobileOpen(false)} style={{ ...navLinkStyle, fontSize: 16 }}>Cómo funciona</a>
+            <a href="#preguntas" onClick={() => setMobileOpen(false)} style={{ ...navLinkStyle, fontSize: 16 }}>Preguntas</a>
             <a href="#contacto" onClick={() => setMobileOpen(false)} style={{ ...navLinkStyle, fontSize: 16 }}>Contacto</a>
             <Link to="/login" style={{ ...btnOutlineStyle, justifyContent: 'center' }} onClick={() => setMobileOpen(false)}>
               Iniciar sesión
@@ -561,6 +564,163 @@ export default function Landing() {
         <style>{`.landing-testimonials-scroll::-webkit-scrollbar { display: none; }`}</style>
       </section>
 
+      {/* ── FAQ ── */}
+      <section id="preguntas" className="landing-section" style={{ background: '#F3EDE4' }}>
+        <div className="landing-section-inner">
+
+          <div style={{ textAlign: 'center', marginBottom: 52 }}>
+            <div style={tagStyle}>Preguntas frecuentes</div>
+            <h2 style={{ fontSize: 'clamp(28px, 4vw, 44px)', fontWeight: 800, color: '#124A36', marginTop: 16, letterSpacing: '-1px' }}>
+              Todo lo que quieres saber
+            </h2>
+            <p style={{ color: '#7A7166', fontSize: 16, marginTop: 14, maxWidth: 480, margin: '14px auto 0' }}>
+              Resolvemos las dudas más comunes antes de que empieces.
+            </p>
+          </div>
+
+          {/* Two-column layout on desktop */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(440px, 1fr))',
+            gap: '0 40px',
+            alignItems: 'start',
+          }}>
+            {[
+              {
+                q: '¿Qué es Homly y para qué tipo de condominio sirve?',
+                a: 'Homly es una plataforma de gestión administrativa para condominios residenciales: conjuntos habitacionales, fraccionamientos, edificios de departamentos o privadas. Funciona para condominios de cualquier tamaño, desde 8 unidades hasta los que tienen cientos.',
+              },
+              {
+                q: '¿Cuánto cuesta usar la plataforma?',
+                a: 'Puedes crear tu condominio y explorar todas las funciones de forma gratuita. Para condominios activos con más unidades o funciones avanzadas existen planes accesibles. El precio nunca es por usuario: pagas por condominio, no por cuántas personas lo usan.',
+              },
+              {
+                q: '¿Necesito conocimientos técnicos o contables para usarlo?',
+                a: 'No. Homly está diseñado para administradores, tesoreros y vecinos sin formación técnica. La interfaz es visual e intuitiva — si sabes usar WhatsApp o Excel, sabrás usar Homly sin necesidad de capacitación.',
+              },
+              {
+                q: '¿Los vecinos también tienen acceso?',
+                a: 'Sí. Cada residente puede tener su propia cuenta con acceso a su estado de cuenta, historial de pagos, reservas de áreas comunes y notificaciones del condominio. Todo sin necesidad de contactar al administrador para cada consulta.',
+              },
+              {
+                q: '¿Cómo se registran los pagos de mantenimiento?',
+                a: 'El administrador o tesorero captura los pagos cuando los recibe. Puedes registrarlos uno a uno o de manera masiva. Al guardar un pago se genera automáticamente un recibo PDF con folio para entregarlo al residente.',
+              },
+              {
+                q: '¿Puedo administrar más de un condominio?',
+                a: 'Sí. Desde una sola cuenta puedes gestionar múltiples condominios de forma independiente, cada uno con sus propias unidades, cuotas, usuarios y reportes. Ideal para administradoras profesionales con portafolio de inmuebles.',
+              },
+              {
+                q: '¿Qué pasa si un residente tiene adeudos acumulados?',
+                a: 'Puedes crear un Plan de Pagos para ese residente: defines cuotas, frecuencia y si aplica intereses. El vecino recibe el plan por correo, lo acepta desde su cuenta y los pagos del plan se integran automáticamente a la cobranza mensual.',
+              },
+              {
+                q: '¿La plataforma funciona en celular?',
+                a: 'Sí. Homly está adaptada para funcionar correctamente en smartphones y tabletas desde el navegador. Administradores pueden registrar pagos y vecinos pueden consultar su cuenta desde cualquier dispositivo, sin instalar nada.',
+              },
+              {
+                q: '¿Mis datos y los del condominio están seguros?',
+                a: 'Los datos se almacenan en servidores seguros con acceso controlado por rol. Ningún usuario puede ver información que no le corresponde. Los períodos cerrados son inmutables: nadie puede modificar registros históricos una vez aprobados.',
+              },
+              {
+                q: '¿Puedo exportar o descargar la información del condominio?',
+                a: 'Sí. Los estados de cuenta, recibos de pago, reportes de gastos y resúmenes financieros se pueden exportar a PDF en cualquier momento. Siempre tendrás acceso a tu información sin depender de la plataforma para presentarla.',
+              },
+            ].map((item, i) => {
+              const isOpen = openFaq === i;
+              return (
+                <div
+                  key={i}
+                  style={{
+                    borderBottom: '1px solid #DDD4C7',
+                    overflow: 'hidden',
+                  }}
+                >
+                  <button
+                    onClick={() => setOpenFaq(isOpen ? null : i)}
+                    style={{
+                      width: '100%', background: 'none', border: 'none', cursor: 'pointer',
+                      display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
+                      gap: 16, padding: '20px 4px', textAlign: 'left',
+                    }}
+                  >
+                    <span style={{
+                      fontSize: 15, fontWeight: 700,
+                      color: isOpen ? '#E85D43' : '#1A1612',
+                      lineHeight: 1.45, flex: 1,
+                      transition: 'color 0.2s',
+                    }}>
+                      {item.q}
+                    </span>
+                    {/* +/- icon */}
+                    <span style={{
+                      flexShrink: 0, width: 26, height: 26,
+                      borderRadius: '50%',
+                      background: isOpen ? '#E85D43' : '#fff',
+                      border: `1.5px solid ${isOpen ? '#E85D43' : '#D4C8B5'}`,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      transition: 'all 0.2s',
+                      marginTop: 2,
+                    }}>
+                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                        {isOpen
+                          ? <line x1="2" y1="6" x2="10" y2="6" stroke="#fff" strokeWidth="2" strokeLinecap="round"/>
+                          : <>
+                              <line x1="6" y1="2" x2="6" y2="10" stroke="#7A7166" strokeWidth="2" strokeLinecap="round"/>
+                              <line x1="2" y1="6" x2="10" y2="6" stroke="#7A7166" strokeWidth="2" strokeLinecap="round"/>
+                            </>
+                        }
+                      </svg>
+                    </span>
+                  </button>
+
+                  {/* Answer */}
+                  <div style={{
+                    maxHeight: isOpen ? 300 : 0,
+                    overflow: 'hidden',
+                    transition: 'max-height 0.3s ease',
+                  }}>
+                    <p style={{
+                      margin: 0, padding: '0 32px 20px 4px',
+                      fontSize: 14, color: '#5C5347', lineHeight: 1.75,
+                    }}>
+                      {item.a}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Bottom nudge */}
+          <div style={{ textAlign: 'center', marginTop: 52 }}>
+            <p style={{ color: '#7A7166', fontSize: 15, marginBottom: 20 }}>
+              ¿Tienes una pregunta que no aparece aquí?
+            </p>
+            <a
+              href="mailto:hola@homly.app"
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 8,
+                padding: '11px 26px', borderRadius: 999,
+                border: '1.5px solid #C5BAB0',
+                background: 'transparent', color: '#443D33',
+                fontWeight: 700, fontSize: 14, textDecoration: 'none',
+                transition: 'border-color 0.2s, color 0.2s',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = '#E85D43'; e.currentTarget.style.color = '#E85D43'; }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = '#C5BAB0'; e.currentTarget.style.color = '#443D33'; }}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+                <polyline points="22,6 12,13 2,6"/>
+              </svg>
+              Escríbenos
+            </a>
+          </div>
+
+        </div>
+      </section>
+
       {/* ── CTA FINAL ── */}
       <section id="contacto" className="landing-section" style={{ background: '#124A36' }}>
         <div style={{ maxWidth: 700, margin: '0 auto', textAlign: 'center', paddingTop: 24 }}>
@@ -606,8 +766,8 @@ export default function Landing() {
       <footer style={{ background: '#0E3829', padding: '32px 20px' }}>
         <div className="landing-footer-inner">
           <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap', justifyContent: 'center' }}>
-            {['Beneficios', 'Cómo funciona', 'Iniciar sesión'].map((l, i) => (
-              <a key={i} href={i === 2 ? '/login' : `#${['beneficios', 'como-funciona'][i]}`}
+            {['Beneficios', 'Cómo funciona', 'Preguntas', 'Iniciar sesión'].map((l, i) => (
+              <a key={i} href={i === 3 ? '/login' : `#${['beneficios', 'como-funciona', 'preguntas'][i]}`}
                 style={{ fontSize: 13, color: 'rgba(253,251,247,0.5)', textDecoration: 'none', fontWeight: 500, transition: 'color 0.2s' }}
                 onMouseEnter={e => e.currentTarget.style.color = 'rgba(253,251,247,0.9)'}
                 onMouseLeave={e => e.currentTarget.style.color = 'rgba(253,251,247,0.5)'}
