@@ -102,7 +102,7 @@ export default function PlanPagos() {
     if (!tenantId || isVecino) return;
     setAdeudosLoading(true);
     reportsAPI.reporteAdeudos(tenantId, {})
-      .then(r => setAdeudosItems(r.data || []))
+      .then(r => setAdeudosItems(r.data?.units || []))
       .catch(() => toast.error('No se pudieron cargar las unidades.'))
       .finally(() => setAdeudosLoading(false));
   }, [tenantId, isVecino]);
