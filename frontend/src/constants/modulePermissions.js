@@ -11,10 +11,10 @@
  * array format (which acted as an explicit allowlist).
  */
 export const ROLE_BASE_MODULES = {
-  admin:     ['dashboard', 'reservas', 'cobranza', 'gastos', 'estado_cuenta', 'cierre_periodo', 'notificaciones', 'config'],
-  tesorero:  ['dashboard', 'reservas', 'cobranza', 'gastos', 'estado_cuenta', 'cierre_periodo', 'notificaciones'],
-  contador:  ['dashboard', 'reservas', 'cobranza', 'gastos', 'estado_cuenta', 'cierre_periodo', 'notificaciones'],
-  auditor:   ['dashboard', 'config', 'cobranza', 'reservas', 'gastos', 'estado_cuenta', 'cierre_periodo', 'notificaciones'],
+  admin:     ['dashboard', 'reservas', 'cobranza', 'gastos', 'estado_cuenta', 'plan_pagos', 'cierre_periodo', 'notificaciones', 'config'],
+  tesorero:  ['dashboard', 'reservas', 'cobranza', 'gastos', 'estado_cuenta', 'plan_pagos', 'cierre_periodo', 'notificaciones'],
+  contador:  ['dashboard', 'reservas', 'cobranza', 'gastos', 'estado_cuenta', 'plan_pagos', 'cierre_periodo', 'notificaciones'],
+  auditor:   ['dashboard', 'config', 'cobranza', 'reservas', 'gastos', 'estado_cuenta', 'plan_pagos', 'cierre_periodo', 'notificaciones'],
   vigilante: ['dashboard', 'reservas', 'notificaciones'],
-  vecino:    ['my_unit', 'reservas', 'estado_cuenta', 'notificaciones'],
+  vecino:    ['my_unit', 'reservas', 'estado_cuenta', 'plan_pagos', 'notificaciones'],
 };

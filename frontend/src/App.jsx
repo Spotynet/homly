@@ -21,6 +21,7 @@ import Notificaciones from './pages/Notificaciones';
 import CierrePeriodo from './pages/CierrePeriodo';
 import Logs from './pages/Logs';
 import Registro from './pages/Registro';
+import PlanPagos from './pages/PlanPagos';
 
 const LOADER = (
   <div className="flex items-center justify-center h-screen bg-white">
@@ -89,6 +90,7 @@ function AppRoutes() {
         <Route path="reservas" element={<Reservas />} />
         <Route path="notificaciones" element={<Notificaciones />} />
         <Route path="cierre-periodo" element={<CierrePeriodo />} />
+        <Route path="plan-pagos" element={<PlanPagos />} />
       </Route>
 
       {/* Fallback */}

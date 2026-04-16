@@ -53,6 +53,7 @@ const MODULE_DEFINITIONS = [
   { key: 'cobranza',        label: 'Cobranza Mensual',    icon: Receipt,      desc: 'Registro y cobro de mantenimiento' },
   { key: 'gastos',          label: 'Gastos',              icon: ShoppingBag,  desc: 'Gestión de gastos y caja chica' },
   { key: 'estado_cuenta',   label: 'Estado de Cuenta',    icon: FileText,     desc: 'Reportes y movimientos financieros' },
+  { key: 'plan_pagos',      label: 'Plan de Pagos',       icon: TrendingUp,   desc: 'Gestión de planes de pago para adeudos de unidades' },
   { key: 'cierre_periodo',  label: 'Cierre de Período',   icon: Lock,         desc: 'Cierre y flujo de aprobación de períodos contables' },
   { key: 'notificaciones',  label: 'Notificaciones',      icon: Bell,         desc: 'Centro de avisos y notificaciones' },
   { key: 'config',          label: 'Configuración',       icon: Settings,     desc: 'Configuración del condominio' },

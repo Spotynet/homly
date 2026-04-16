@@ -65,6 +65,17 @@ const IconShoppingBag = () => (
     <path d="M16 10a4 4 0 0 1-8 0"/>
   </svg>
 );
+const IconTrendingDown = () => (
+  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#E85D43" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/>
+    <polyline points="17 18 23 18 23 12"/>
+  </svg>
+);
+const IconBuilding = () => (
+  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#E85D43" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/>
+  </svg>
+);
 const IconStar = ({ color = '#E85D43', size = 14 }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill={color} stroke={color} strokeWidth="1" strokeLinecap="round" strokeLinejoin="round">
     <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
@@ -296,60 +307,90 @@ export default function Landing() {
       </section>
 
       {/* ── FEATURES ── */}
-      <section id="beneficios" className="landing-section">
+      <section id="beneficios" className="landing-section" style={{ paddingBottom: 80 }}>
         <div className="landing-section-inner">
-        <div style={{ textAlign: 'center', marginBottom: 48 }}>
-          <div style={tagStyle}>Funcionalidades</div>
-          <h2 style={{ fontSize: 'clamp(28px, 4vw, 44px)', fontWeight: 800, color: '#124A36', marginTop: 16, letterSpacing: '-1px' }}>
-            Todo lo que necesitas,<br />nada que no necesitas
-          </h2>
-          <p style={{ color: '#7A7166', fontSize: 17, marginTop: 16, maxWidth: 500, margin: '16px auto 0' }}>
-            Diseñado para simplificar la vida de administradores, tesoreros y vecinos.
-          </p>
+          <div style={{ textAlign: 'center', marginBottom: 48 }}>
+            <div style={tagStyle}>Funcionalidades</div>
+            <h2 style={{ fontSize: 'clamp(28px, 4vw, 44px)', fontWeight: 800, color: '#124A36', marginTop: 16, letterSpacing: '-1px' }}>
+              Todo lo que necesitas,<br />nada que no necesitas
+            </h2>
+            <p style={{ color: '#7A7166', fontSize: 17, marginTop: 16, maxWidth: 520, margin: '16px auto 0' }}>
+              Diseñado para simplificar la vida de administradores, tesoreros y vecinos.
+              Cada módulo está pensado para el día a día de un condominio real.
+            </p>
+          </div>
         </div>
 
-        <div className="landing-features-grid">
+        {/* ─ Horizontal scroll row ─ */}
+        <div style={{
+          display: 'flex',
+          overflowX: 'auto',
+          gap: 18,
+          padding: '8px 48px 28px',
+          scrollSnapType: 'x mandatory',
+          WebkitOverflowScrolling: 'touch',
+          scrollbarWidth: 'thin',
+          scrollbarColor: '#E8DFD1 transparent',
+          cursor: 'default',
+        }}>
           {[
             {
               icon: <IconChart />,
               title: 'Dashboard Financiero',
-              desc: 'Panel en tiempo real con ingresos, egresos, saldo disponible, tasa de cobranza y evolución mensual del condominio.',
+              desc: 'Panel en tiempo real con KPIs de cobranza, ingresos del período, egresos, saldo disponible y evolución mensual.',
               highlight: true,
+              badge: 'Principal',
             },
             {
               icon: <IconReceipt />,
-              title: 'Cobranza de Mantenimiento',
-              desc: 'Registra pagos manualmente o por lotes, genera recibos PDF con folio y mantén el historial completo de cada unidad.',
+              title: 'Cobranza Mensual',
+              desc: 'Registra pagos de mantenimiento, genera recibos PDF con folio, aplica cargos extra y mantén el historial de cada unidad.',
             },
             {
               icon: <IconShoppingBag />,
               title: 'Gastos y Caja Chica',
-              desc: 'Controla gastos ordinarios y caja chica por categorías, adjunta comprobantes y lleva el libro contable al día.',
+              desc: 'Controla gastos ordinarios y caja chica por categorías. Adjunta comprobantes y lleva el libro contable al día.',
             },
             {
               icon: <IconCalendar />,
               title: 'Reservas de Áreas Comunes',
-              desc: 'Sistema de reservas para salón de eventos, alberca, gimnasio y más. Calendario interactivo con control de disponibilidad.',
+              desc: 'Calendario interactivo para salón de eventos, alberca, gimnasio y más. Con control de disponibilidad y reglas por área.',
             },
             {
               icon: <IconFileText />,
-              title: 'Estado de Cuenta y Reportes',
-              desc: 'Estado de cuenta detallado por unidad con exportación a PDF. Saldo acumulado, movimientos y comprobantes descargables.',
+              title: 'Estado de Cuenta',
+              desc: 'Estado de cuenta detallado por unidad con exportación a PDF. Movimientos, saldo acumulado, adeudos y comprobantes descargables.',
+            },
+            {
+              icon: <IconTrendingDown />,
+              title: 'Plan de Pagos',
+              desc: 'Gestiona adeudos en cuotas personalizadas. Define frecuencia, plazos e intereses. El vecino acepta el plan y los pagos se sincronizan automáticamente.',
+              badge: 'Nuevo',
             },
             {
               icon: <IconLock />,
               title: 'Cierre de Período',
-              desc: 'Cierra períodos contables con un flujo de aprobación multiusuario. Una vez cerrado, no se permiten más registros para ese mes.',
-            },
-            {
-              icon: <IconUsers />,
-              title: 'Roles y Perfiles Personalizados',
-              desc: 'Crea perfiles de acceso a la medida. Admin, tesorero, contador, auditor, vigilante y vecino, cada uno con permisos exactos.',
+              desc: 'Cierra períodos contables con flujo de aprobación multiusuario. Una vez cerrado, no se permiten más registros para ese mes.',
             },
             {
               icon: <IconBell />,
               title: 'Notificaciones y Avisos',
-              desc: 'Centraliza la comunicación: avisos generales, alertas de cobranza y notificaciones de sistema directamente en la plataforma.',
+              desc: 'Centraliza la comunicación: avisos generales, recordatorios de cobranza y alertas del sistema directamente en la plataforma.',
+            },
+            {
+              icon: <IconUsers />,
+              title: 'Roles y Permisos',
+              desc: 'Admin, tesorero, contador, auditor, vigilante y vecino — cada perfil con acceso exacto a los módulos que necesita.',
+            },
+            {
+              icon: <IconShield />,
+              title: 'Control de Acceso',
+              desc: 'Permisos configurables por módulo y por rol. Define qué puede ver y qué puede editar cada persona de tu equipo.',
+            },
+            {
+              icon: <IconBuilding />,
+              title: 'Gestión de Unidades',
+              desc: 'Administra propietarios, inquilinos, cuotas individuales y exenciones. Historial completo por departamento o casa.',
             },
             {
               icon: <HomlyIsotipo size={28} />,
@@ -357,23 +398,49 @@ export default function Landing() {
               desc: 'Administra múltiples condominios desde una sola cuenta. Ideal para administradoras profesionales con portafolio de inmuebles.',
             },
           ].map((f, i) => (
-            <div key={i} style={{
-              ...cardStyle,
-              border: f.highlight ? '1.5px solid #E85D43' : '1px solid #E8DFD1',
-              background: f.highlight ? '#FFF5F2' : '#fff',
-              transition: 'transform 0.2s ease, box-shadow 0.2s ease',
-            }}
+            <div
+              key={i}
+              style={{
+                ...cardStyle,
+                minWidth: 260,
+                maxWidth: 260,
+                flexShrink: 0,
+                scrollSnapAlign: 'start',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 0,
+                border: f.highlight ? '1.5px solid #E85D43' : '1px solid #E8DFD1',
+                background: f.highlight ? '#FFF5F2' : '#fff',
+                transition: 'transform 0.2s ease, box-shadow 0.2s ease',
+                position: 'relative',
+              }}
               onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-4px)'; e.currentTarget.style.boxShadow = '0 12px 40px rgba(26,22,18,0.12)'; }}
               onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(26,22,18,0.06)'; }}
             >
-              <div style={{ width: 52, height: 52, borderRadius: 14, background: f.highlight ? '#FFE4DC' : '#FFF5F2', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 20 }}>
+              {f.badge && (
+                <div style={{
+                  position: 'absolute', top: 14, right: 14,
+                  fontSize: 10, fontWeight: 800, letterSpacing: '0.5px',
+                  background: f.highlight ? '#E85D43' : '#EFFAF6',
+                  color: f.highlight ? '#fff' : '#175F45',
+                  padding: '3px 8px', borderRadius: 999, textTransform: 'uppercase',
+                }}>{f.badge}</div>
+              )}
+              <div style={{ width: 48, height: 48, borderRadius: 13, background: f.highlight ? '#FFE4DC' : '#FFF5F2', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 18 }}>
                 {f.icon}
               </div>
-              <h3 style={{ fontSize: 17, fontWeight: 700, color: '#1A1612', marginBottom: 10 }}>{f.title}</h3>
-              <p style={{ fontSize: 14, color: '#7A7166', lineHeight: 1.65 }}>{f.desc}</p>
+              <h3 style={{ fontSize: 15, fontWeight: 700, color: '#1A1612', marginBottom: 10, marginTop: 0 }}>{f.title}</h3>
+              <p style={{ fontSize: 13, color: '#7A7166', lineHeight: 1.65, margin: 0 }}>{f.desc}</p>
             </div>
           ))}
         </div>
+
+        {/* Scroll hint */}
+        <div style={{ textAlign: 'center', marginTop: 8 }}>
+          <span style={{ fontSize: 12, color: '#C5BAB0', fontWeight: 500, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            Desliza para ver todas las funciones
+          </span>
         </div>
       </section>
 

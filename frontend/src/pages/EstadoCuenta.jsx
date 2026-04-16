@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { unitsAPI, reportsAPI, tenantsAPI, paymentsAPI, gastosAPI, unrecognizedIncomeAPI, extraFieldsAPI, reservationsAPI, bankAPI, paymentPlansAPI } from '../api/client';
 import PaginationBar from '../components/PaginationBar';
@@ -29,6 +29,7 @@ function pdfTitle(report, period, tenant) {
 export default function EstadoCuenta() {
   const { tenantId, isVecino, user, role } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   const [units, setUnits] = useState([]);
   const [unitSummaries, setUnitSummaries] = useState([]);
   const [selectedUnit, setSelectedUnit] = useState(null);
@@ -1012,7 +1013,7 @@ export default function EstadoCuenta() {
                                       className="btn btn-outline btn-sm"
                                       title="Ver plan de pago sugerido"
                                       style={{ padding: '3px 9px', fontSize: 11, display: 'flex', alignItems: 'center', gap: 4, color: 'var(--coral-600)', borderColor: 'var(--coral-200)' }}
-                                      onClick={e => { e.stopPropagation(); setPlanUnitDebt({ unit: u, totalAdeudo: u.balance }); }}
+                                      onClick={e => { e.stopPropagation(); navigate(`/app/plan-pagos?unit_id=${u.id}`); }}
                                     >
                                       <DollarSign size={12} /> Plan
                                     </button>
@@ -2965,8 +2966,9 @@ function DebtPaymentPlanModal({ unit, totalAdeudo, maintenanceFee = 0, onClose, 
 // ──────────────────────────────────────────────────────────────────────────────
 
 function ReporteAdeudosView({ tenantData, adeudosData, adeudosLoading, cutoff, setCutoff, startPeriod, search = '', setSearch, tenantId, role }) {
+  const navigate = useNavigate();
   const [expanded, setExpanded] = useState({});
-  const [planUnit, setPlanUnit] = useState(null);  // { unit, totalAdeudo }
+  const [planUnit, setPlanUnit] = useState(null);  // { unit, totalAdeudo } — kept for any legacy use
   const [showGeneralEmailModal, setShowGeneralEmailModal] = useState(false);
   const [generalEmailRecipientMode, setGeneralEmailRecipientMode] = useState('owners');
   const [generalEmailCustom, setGeneralEmailCustom] = useState('');
@@ -3262,7 +3264,7 @@ function ReporteAdeudosView({ tenantData, adeudosData, adeudosLoading, cutoff, s
                                 className="btn btn-outline btn-sm"
                                 title="Ver plan de pago sugerido"
                                 style={{ padding: '3px 9px', fontSize: 11, display: 'flex', alignItems: 'center', gap: 4, color: 'var(--coral-600)', borderColor: 'var(--coral-200)' }}
-                                onClick={e => { e.stopPropagation(); setPlanUnit({ unit: u, totalAdeudo }); }}
+                                onClick={e => { e.stopPropagation(); navigate(`/app/plan-pagos?unit_id=${u.id}`); }}
                               >
                                 <DollarSign size={12} /> Plan
                               </button>
