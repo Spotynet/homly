@@ -65,6 +65,8 @@ export default function EstadoCuenta() {
   const [downloadingStatement, setDownloadingStatement] = useState(false);
   // plan de pago — Estado por Unidad
   const [planUnitDebt, setPlanUnitDebt] = useState(null); // { unit, totalAdeudo }
+  // active plans lookup: Set of unit IDs that have an accepted payment plan
+  const [activePlanUnitIds, setActivePlanUnitIds] = useState(new Set());
 
   const handleDownloadReceipt = async (payId, period) => {
     setDownloadingReceipt(payId);
@@ -185,6 +187,17 @@ export default function EstadoCuenta() {
       })
       .catch(() => { setUnitSummaries([]); setListMeta(null); });
   }, [tenantId, cutoff, selectedUnit]);
+
+  // Load accepted payment plans to mark units with active plans
+  useEffect(() => {
+    if (!tenantId || selectedUnit || isVecino) return;
+    paymentPlansAPI.list(tenantId, { status: 'accepted', page_size: 1000 })
+      .then(r => {
+        const plans = Array.isArray(r.data) ? r.data : (r.data?.results || []);
+        setActivePlanUnitIds(new Set(plans.map(p => String(p.unit))));
+      })
+      .catch(() => {});
+  }, [tenantId, selectedUnit, isVecino]);
 
   // Load unit detail with from/to params
   useEffect(() => {
@@ -1002,9 +1015,16 @@ export default function EstadoCuenta() {
                                 </span>
                               </td>
                               <td>
-                                <span className={`badge ${hasDebt ? 'badge-coral' : hasFavor ? 'badge-teal' : 'badge-teal'}`}>
-                                  {hasDebt ? 'Con adeudo' : hasFavor ? 'Saldo a favor' : 'Al corriente'}
-                                </span>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'flex-start' }}>
+                                  <span className={`badge ${hasDebt ? 'badge-coral' : hasFavor ? 'badge-teal' : 'badge-teal'}`}>
+                                    {hasDebt ? 'Con adeudo' : hasFavor ? 'Saldo a favor' : 'Al corriente'}
+                                  </span>
+                                  {activePlanUnitIds.has(String(u.id)) && (
+                                    <span style={{ fontSize: 10, fontWeight: 700, color: '#0d7c6e', background: '#e6f4f2', padding: '2px 7px', borderRadius: 10, whiteSpace: 'nowrap' }}>
+                                      📋 Plan de pagos activo
+                                    </span>
+                                  )}
+                                </div>
                               </td>
                               <td style={{ color: 'var(--ink-400)' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'flex-end' }}>

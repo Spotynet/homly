@@ -58,6 +58,11 @@ _NOTIF_MODULE_MAP = {
     'payment_deleted':       'estado_cuenta',
     'period_closed':         'cobranza',
     'period_reopened':       'cobranza',
+    # Plan de pagos
+    'plan_proposal_sent':    'plan_pagos',
+    'plan_accepted':         'plan_pagos',
+    'plan_rejected':         'plan_pagos',
+    'plan_cancelled':        'plan_pagos',
 }
 
 
@@ -2032,6 +2037,16 @@ class PaymentPlanViewSet(viewsets.ModelViewSet):
         if len(options_raw) > 3:
             return Response({'detail': 'Máximo 3 opciones por propuesta.'}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Block if there is already an active (accepted) plan for this unit
+        active_exists = PaymentPlan.objects.filter(
+            tenant_id=tenant_id, unit_id=unit_id, status='accepted',
+        ).exists()
+        if active_exists:
+            return Response(
+                {'detail': 'Ya existe un plan de pagos activo para esta unidad. Cancélalo o espera a que se complete antes de crear uno nuevo.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         try:
             unit = Unit.objects.get(id=unit_id, tenant_id=tenant_id)
         except Unit.DoesNotExist:
@@ -2172,6 +2187,26 @@ class PaymentPlanViewSet(viewsets.ModelViewSet):
             tenant_id=tenant_id, object_type='PaymentPlan',
             object_id=str(group_id),
         )
+
+        # Notify vecinos of the unit
+        num_opts = len(created_plans)
+        opts_label = f'{num_opts} opción' if num_opts == 1 else f'{num_opts} opciones'
+        _notify_unit_residents(
+            tenant_id=tenant_id,
+            unit_id=str(unit.id),
+            notif_type='plan_proposal_sent',
+            title=f'📋 Propuesta de plan de pagos — {unit.unit_id_code}',
+            message=f'Se te ha enviado una propuesta de plan de pagos con {opts_label}. Ingresa al módulo de Plan de Pagos para revisarla y elegir la que mejor te convenga.',
+        )
+        # Notify admins/tesorer
+        _notify_roles(
+            tenant_id=tenant_id,
+            roles=['admin', 'tesorero'],
+            notif_type='plan_proposal_sent',
+            title=f'Propuesta enviada — Unidad {unit.unit_id_code}',
+            message=f'Se envió una propuesta de plan de pagos con {opts_label} a la unidad {unit.unit_name or unit.unit_id_code}.',
+        )
+
         return Response(
             PaymentPlanSerializer(created_plans, many=True).data,
             status=status.HTTP_201_CREATED,
@@ -2272,6 +2307,16 @@ class PaymentPlanViewSet(viewsets.ModelViewSet):
             f'Plan de pago aceptado por vecino: {plan.unit.unit_id_code}',
             tenant_id=tenant_id, object_type='PaymentPlan', object_id=str(plan.id),
         )
+
+        # Notify admins/tesorero
+        _notify_roles(
+            tenant_id=tenant_id,
+            roles=['admin', 'tesorero'],
+            notif_type='plan_accepted',
+            title=f'✅ Plan de pagos aceptado — Unidad {plan.unit.unit_id_code}',
+            message=f'El vecino de la unidad {plan.unit.unit_name or plan.unit.unit_id_code} aceptó el plan de pagos (Opción {plan.option_number}). El plan está ahora activo.',
+        )
+
         return Response(PaymentPlanSerializer(plan).data)
 
     @action(detail=True, methods=['post'])
@@ -2300,6 +2345,16 @@ class PaymentPlanViewSet(viewsets.ModelViewSet):
             f'Plan de pago rechazado por vecino: {plan.unit.unit_id_code}',
             tenant_id=tenant_id, object_type='PaymentPlan', object_id=str(plan.id),
         )
+
+        # Notify admins/tesorero
+        _notify_roles(
+            tenant_id=tenant_id,
+            roles=['admin', 'tesorero'],
+            notif_type='plan_rejected',
+            title=f'❌ Plan de pagos rechazado — Unidad {plan.unit.unit_id_code}',
+            message=f'El vecino de la unidad {plan.unit.unit_name or plan.unit.unit_id_code} rechazó el plan de pagos (Opción {plan.option_number}).',
+        )
+
         return Response(PaymentPlanSerializer(plan).data)
 
     @action(detail=True, methods=['post'])
@@ -2311,7 +2366,14 @@ class PaymentPlanViewSet(viewsets.ModelViewSet):
                 {'detail': 'El plan ya está completado o cancelado.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+        name, _email = self._get_user_info(tenant_id)
+        reason = (request.data.get('reason') or '').strip()
+
         plan.status = 'cancelled'
+        plan.cancel_reason = reason
+        plan.cancelled_by_name = name
+        plan.cancelled_at = timezone.now()
         plan.save()
 
         _audit_log(
@@ -2319,6 +2381,17 @@ class PaymentPlanViewSet(viewsets.ModelViewSet):
             f'Plan de pago cancelado: {plan.unit.unit_id_code}',
             tenant_id=tenant_id, object_type='PaymentPlan', object_id=str(plan.id),
         )
+
+        # Notify vecinos of the unit
+        reason_text = f' Motivo: {reason}' if reason else ''
+        _notify_unit_residents(
+            tenant_id=tenant_id,
+            unit_id=str(plan.unit_id),
+            notif_type='plan_cancelled',
+            title=f'🚫 Plan de pagos cancelado — {plan.unit.unit_id_code}',
+            message=f'Tu plan de pagos ha sido cancelado por la administración.{reason_text}',
+        )
+
         return Response(PaymentPlanSerializer(plan).data)
 
     @action(detail=True, methods=['get'])

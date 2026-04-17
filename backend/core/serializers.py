@@ -511,6 +511,7 @@ class PaymentPlanSerializer(serializers.ModelSerializer):
             'accepted_by_name', 'accepted_at',
             'installments', 'installments_paid', 'total_paid_toward_debt',
             'start_period', 'proposal_group', 'option_number',
+            'cancel_reason', 'cancelled_by_name', 'cancelled_at',
         ]
         read_only_fields = [
             'id', 'tenant', 'status', 'created_at',
@@ -518,6 +519,7 @@ class PaymentPlanSerializer(serializers.ModelSerializer):
             'sent_by_name', 'sent_at',
             'accepted_by_name', 'accepted_at',
             'proposal_group',
+            'cancelled_by_name', 'cancelled_at',
         ]
 
 

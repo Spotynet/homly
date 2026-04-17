@@ -583,6 +583,11 @@ class PaymentPlan(models.Model):
         help_text='Option number within a proposal (1, 2, or 3)',
     )
 
+    # Cancellation
+    cancel_reason    = models.TextField(blank=True, default='', help_text='Reason provided when cancelling the plan')
+    cancelled_by_name = models.CharField(max_length=200, blank=True)
+    cancelled_at      = models.DateTimeField(null=True, blank=True)
+
     class Meta:
         db_table = 'payment_plans'
         ordering = ['-created_at']
@@ -896,6 +901,11 @@ class Notification(models.Model):
         # Períodos
         ('period_closed',         'Período Cerrado'),
         ('period_reopened',       'Período Reabierto'),
+        # Plan de Pagos
+        ('plan_proposal_sent',    'Propuesta de Plan de Pagos Enviada'),
+        ('plan_accepted',         'Plan de Pagos Aceptado'),
+        ('plan_rejected',         'Plan de Pagos Rechazado'),
+        ('plan_cancelled',        'Plan de Pagos Cancelado'),
         # General
         ('general',               'Información General'),
     ]

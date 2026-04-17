@@ -121,6 +121,10 @@ export default function PlanPagos() {
   const [actionLoading, setActionLoading] = useState(false);
   const [tab,          setTab]          = useState('list');   // 'list' | 'new'
 
+  // Cancel dialog
+  const [cancelDialog, setCancelDialog] = useState(null); // null | { plan }
+  const [cancelReason, setCancelReason] = useState('');
+
   // ─── Multi-option proposal form ────────────────────────────────────────────
   const [options,  setOptions]  = useState([defaultOption()]);  // up to 3
   const [sharedNotes, setSharedNotes] = useState('');
@@ -268,12 +272,19 @@ export default function PlanPagos() {
     } finally { setActionLoading(false); }
   };
 
-  const handleCancel = async (plan) => {
-    if (!window.confirm('¿Cancelar este plan de pago? Esta acción no se puede deshacer.')) return;
+  const handleCancel = (plan) => {
+    setCancelReason('');
+    setCancelDialog({ plan });
+  };
+
+  const handleCancelConfirm = async () => {
+    if (!cancelDialog) return;
     setActionLoading(true);
     try {
-      await paymentPlansAPI.cancel(tenantId, plan.id);
+      await paymentPlansAPI.cancel(tenantId, cancelDialog.plan.id, { reason: cancelReason });
       toast.success('Plan cancelado.');
+      setCancelDialog(null);
+      setCancelReason('');
       await loadPlans();
       setSelectedPlan(null);
     } catch (err) {
@@ -284,7 +295,11 @@ export default function PlanPagos() {
   const handleDownloadPDF = async (plan) => {
     try {
       const res = await paymentPlansAPI.pdf(tenantId, plan.id);
-      const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+      // res.data is already a Blob when responseType:'blob' is set
+      const blob = res.data instanceof Blob
+        ? res.data
+        : new Blob([res.data], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
       const unitCode = (plan.unit_code || selectedUnit?.unit_id_code || 'unidad').replace(/\s/g, '_');
@@ -292,8 +307,18 @@ export default function PlanPagos() {
       a.download = `plan_pago_${unitCode}_${planShortId}.pdf`;
       document.body.appendChild(a); a.click();
       document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    } catch {
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (err) {
+      // If server returned a JSON error in a blob, try to parse it
+      const errBlob = err?.response?.data;
+      if (errBlob instanceof Blob) {
+        try {
+          const txt = await errBlob.text();
+          const parsed = JSON.parse(txt);
+          toast.error(parsed?.detail || 'No se pudo descargar el PDF.');
+          return;
+        } catch { /* ignore */ }
+      }
       toast.error('No se pudo descargar el PDF.');
     }
   };
@@ -482,6 +507,12 @@ export default function PlanPagos() {
             <strong>Notas:</strong> {plan.notes}
           </div>
         )}
+        {plan.status === 'cancelled' && plan.cancel_reason && (
+          <div style={{ background: '#f3f4f6', border: '1px solid #d1d5db', borderLeft: '4px solid #64748b', borderRadius: 7, padding: '10px 14px', fontSize: 12, color: '#64748b', fontStyle: 'italic' }}>
+            <strong>Motivo de cancelación:</strong> {plan.cancel_reason}
+            {plan.cancelled_by_name && <span style={{ marginLeft: 8, color: '#9ca3af' }}>— {plan.cancelled_by_name}</span>}
+          </div>
+        )}
 
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end', borderTop: '1px solid var(--sand-200)', paddingTop: 12 }}>
           <button className="btn btn-outline btn-sm" onClick={() => handleDownloadPDF(plan)}>
@@ -630,6 +661,11 @@ export default function PlanPagos() {
             <div style={{ height: 5, background: 'var(--sand-200)', borderRadius: 3, overflow: 'hidden' }}>
               <div style={{ height: '100%', borderRadius: 3, background: 'var(--teal-500)', width: `${progressPct}%`, transition: 'width 0.4s' }} />
             </div>
+          </div>
+        )}
+        {plan.status === 'cancelled' && plan.cancel_reason && (
+          <div style={{ marginTop: 8, padding: '6px 10px', background: '#f3f4f6', borderRadius: 7, borderLeft: '3px solid #64748b', fontSize: 12, color: '#64748b', fontStyle: 'italic' }}>
+            <strong>Motivo cancelación:</strong> {plan.cancel_reason}
           </div>
         )}
       </div>
@@ -1141,6 +1177,24 @@ export default function PlanPagos() {
   };
 
   // ─── Render ───────────────────────────────────────────────────────────────
+
+  // Vecino: hide entire module if no proposals exist
+  if (isVecino && !plansLoading && plans.length === 0) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', padding: 40 }}>
+        <div style={{ textAlign: 'center', color: 'var(--ink-400)' }}>
+          <TrendingDown size={48} style={{ opacity: 0.15, marginBottom: 14 }} />
+          <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--ink-500)', marginBottom: 4 }}>
+            Sin propuestas de plan de pagos
+          </div>
+          <div style={{ fontSize: 13 }}>
+            La administración no ha enviado ninguna propuesta de plan de pagos para tu unidad.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 0, height: '100%' }}>
 
@@ -1281,15 +1335,22 @@ export default function PlanPagos() {
                   )}
                 </div>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  {!selectedPlan && tab === 'list' && canWrite && selectedUnit && (
-                    <button
-                      className="btn btn-primary btn-sm"
-                      onClick={() => { setTab('new'); setActiveOptIdx(0); setOptions([defaultOption()]); }}
-                      style={{ display: 'flex', alignItems: 'center', gap: 5 }}
-                    >
-                      <Plus size={13} /> Nueva propuesta
-                    </button>
-                  )}
+                  {!selectedPlan && tab === 'list' && canWrite && selectedUnit && (() => {
+                    const hasActivePlan = plans.some(p => p.status === 'accepted');
+                    return hasActivePlan ? (
+                      <span style={{ fontSize: 12, color: 'var(--ink-400)', fontStyle: 'italic', padding: '4px 8px', background: '#f3f4f6', borderRadius: 7 }}>
+                        Plan activo en curso — cancélalo para crear uno nuevo
+                      </span>
+                    ) : (
+                      <button
+                        className="btn btn-primary btn-sm"
+                        onClick={() => { setTab('new'); setActiveOptIdx(0); setOptions([defaultOption()]); }}
+                        style={{ display: 'flex', alignItems: 'center', gap: 5 }}
+                      >
+                        <Plus size={13} /> Nueva propuesta
+                      </button>
+                    );
+                  })()}
                   {tab === 'new' && (
                     <button className="btn btn-secondary btn-sm" onClick={() => setTab('list')}>
                       Cancelar
@@ -1312,6 +1373,60 @@ export default function PlanPagos() {
         </div>
 
       </div>
+
+      {/* ── Cancel Dialog Modal ── */}
+      {cancelDialog && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          zIndex: 1000,
+        }}
+          onClick={e => { if (e.target === e.currentTarget) setCancelDialog(null); }}
+        >
+          <div style={{
+            background: '#fff', borderRadius: 14, padding: 28, maxWidth: 440, width: '90%',
+            boxShadow: '0 8px 40px rgba(0,0,0,0.2)',
+          }}>
+            <h3 style={{ margin: '0 0 10px', fontSize: 16, fontWeight: 800, color: 'var(--ink-800)' }}>
+              Cancelar plan de pagos
+            </h3>
+            <p style={{ margin: '0 0 16px', fontSize: 13, color: 'var(--ink-500)' }}>
+              ¿Estás seguro de que deseas cancelar este plan? Esta acción no se puede deshacer.
+            </p>
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-600)', display: 'block', marginBottom: 6 }}>
+                Motivo de cancelación (opcional)
+              </label>
+              <textarea
+                value={cancelReason}
+                onChange={e => setCancelReason(e.target.value)}
+                placeholder="Ingresa el motivo de la cancelación…"
+                rows={3}
+                style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--sand-200)', borderRadius: 8, fontSize: 13, resize: 'vertical', boxSizing: 'border-box', outline: 'none' }}
+                autoFocus
+              />
+            </div>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={() => setCancelDialog(null)}
+                disabled={actionLoading}
+              >
+                No cancelar
+              </button>
+              <button
+                className="btn btn-outline btn-sm"
+                onClick={handleCancelConfirm}
+                disabled={actionLoading}
+                style={{ color: '#e84040', borderColor: '#e84040' }}
+              >
+                {actionLoading ? 'Cancelando…' : 'Confirmar cancelación'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
