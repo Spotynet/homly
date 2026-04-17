@@ -3406,9 +3406,15 @@ class DashboardView(APIView):
         # (misma lógica que ReporteAdeudosView para que coincida con el reporte)
         start_period = tenant.operation_start_date or '2024-01'
         deuda_total = Decimal('0')
+        # Pre-fetch planes activos una sola vez para evitar N+1 queries en _compute_statement
+        _unit_active_plans = {
+            str(_p.unit_id): _p
+            for _p in PaymentPlan.objects.filter(tenant_id=tenant_id, status='accepted')
+        }
         for unit in units:
             _, _, _, bal, prev_debt_adeudo, _u_active_plan = _compute_statement(
-                tenant, str(unit.id), start_period, period
+                tenant, str(unit.id), start_period, period,
+                _prefetched_plan=_unit_active_plans.get(str(unit.id)),
             )
             previous_debt_u = Decimal(str(unit.previous_debt or 0))
             credit_balance_u = Decimal(str(unit.credit_balance or 0))
@@ -3644,10 +3650,19 @@ def _has_admin_exempt(tenant, unit_id, period):
     return False
 
 
-def _compute_statement(tenant, unit_id, start_period, cutoff_period):
+# Sentinel: distinguishes "caller did not pass a plan" (do the DB lookup)
+# from "caller explicitly passed None" (no active plan, skip lookup).
+_NO_PREFETCH = object()
+
+
+def _compute_statement(tenant, unit_id, start_period, cutoff_period, _prefetched_plan=_NO_PREFETCH):
     """
     Replicate HTML computeStatement logic.
     Returns list of period rows: charge, paid, status, maintenance, saldo_accum.
+
+    _prefetched_plan: pass a PaymentPlan instance (or None) to skip the DB lookup.
+    When omitted the function queries the DB itself (fine for single-unit calls).
+    Always pass this in loops to avoid N+1 queries.
     """
     from datetime import date
     today = _today_period()
@@ -3742,9 +3757,15 @@ def _compute_statement(tenant, unit_id, start_period, cutoff_period):
     # Cuando la unidad tiene un plan de pagos aceptado, la deuda anterior
     # queda absorbida en las cuotas del plan (debt_part por periodo).
     # El saldo inicial no incluye previous_debt; arranca limpio menos credit_balance.
-    active_plan = PaymentPlan.objects.filter(
-        tenant_id=tenant.id, unit_id=unit_id, status='accepted',
-    ).first()
+    #
+    # Use _prefetched_plan when the caller is looping over units (avoids N+1).
+    # When not provided, query the DB here (single-unit calls, e.g. unit detail).
+    if _prefetched_plan is _NO_PREFETCH:
+        active_plan = PaymentPlan.objects.filter(
+            tenant_id=tenant.id, unit_id=unit_id, status='accepted',
+        ).first()
+    else:
+        active_plan = _prefetched_plan  # may be None (no plan for this unit)
     plan_installments_by_period = {}
     plan_field_payments_by_period = {}
     if active_plan:
@@ -3753,8 +3774,7 @@ def _compute_statement(tenant, unit_id, start_period, cutoff_period):
             _pk = _inst.get('period_key')
             if _pk:
                 plan_installments_by_period[_pk] = _inst
-        from .models import FieldPayment as _FP
-        _plan_fps = _FP.objects.filter(
+        _plan_fps = FieldPayment.objects.filter(
             payment__tenant_id=tenant.id,
             payment__unit_id=unit_id,
             field_key=_plan_key,
@@ -4013,8 +4033,16 @@ class EstadoCuentaView(APIView):
                                      'pagados': 0, 'parciales': 0, 'pendientes': 0, 'futuros': 0}
                 period_agg[p]['total_paid'] += amt
 
+            # Pre-fetch planes activos una sola vez para evitar N+1 queries en _compute_statement
+            _ec_unit_plans = {
+                str(_p.unit_id): _p
+                for _p in PaymentPlan.objects.filter(tenant_id=tenant_id, status='accepted')
+            }
             for unit in units:
-                rows, tc, tp, bal, pda, _unit_active_plan = _compute_statement(tenant, str(unit.id), start_period, cutoff)
+                rows, tc, tp, bal, pda, _unit_active_plan = _compute_statement(
+                    tenant, str(unit.id), start_period, cutoff,
+                    _prefetched_plan=_ec_unit_plans.get(str(unit.id)),
+                )
                 # Apply same adjustment as unit detail: include previous_debt and credit_balance
                 # When unit has active payment plan, previous_debt is absorbed into plan installments
                 prev_debt = float(unit.previous_debt or 0)
@@ -4371,9 +4399,16 @@ class ReporteAdeudosView(APIView):
         grand_total = Decimal('0')
         units_with_debt = 0
 
+        # Pre-fetch planes activos una sola vez para evitar N+1 queries en _compute_statement
+        _ra_unit_plans = {
+            str(_p.unit_id): _p
+            for _p in PaymentPlan.objects.filter(tenant_id=tenant_id, status='accepted')
+        }
+
         for unit in units:
             rows, tc, tp, bal, prev_debt_adeudo, _u_active_plan = _compute_statement(
-                tenant, str(unit.id), start_period, cutoff
+                tenant, str(unit.id), start_period, cutoff,
+                _prefetched_plan=_ra_unit_plans.get(str(unit.id)),
             )
             previous_debt = Decimal(str(unit.previous_debt or 0))
             credit_balance = Decimal(str(unit.credit_balance or 0))
@@ -5139,8 +5174,17 @@ class SendGeneralStatementEmailView(APIView):
         total_abono = 0.0
         total_deuda = 0.0
 
+        # Pre-fetch planes activos una sola vez para evitar N+1 queries en _compute_statement
+        _sge_unit_plans = {
+            str(_p.unit_id): _p
+            for _p in PaymentPlan.objects.filter(tenant_id=tenant_id, status='accepted')
+        }
+
         for unit in units:
-            rows, tc, tp, bal, pda, _u_ap = _compute_statement(tenant, str(unit.id), start_period, cutoff)
+            rows, tc, tp, bal, pda, _u_ap = _compute_statement(
+                tenant, str(unit.id), start_period, cutoff,
+                _prefetched_plan=_sge_unit_plans.get(str(unit.id)),
+            )
             prev_debt = float(unit.previous_debt or 0)
             credit_bal = float(unit.credit_balance or 0)
             if _u_ap:
@@ -5229,8 +5273,17 @@ class EstadoPorUnidadPDFView(APIView):
         total_deuda_all = Decimal('0')
         con_adeudo = 0
 
+        # Pre-fetch planes activos una sola vez para evitar N+1 queries en _compute_statement
+        _gsp_unit_plans = {
+            str(_p.unit_id): _p
+            for _p in PaymentPlan.objects.filter(tenant_id=tenant_id, status='accepted')
+        }
+
         for unit in units:
-            rows, tc, tp, bal, pda, _u_ap2 = _compute_statement(tenant, str(unit.id), start_period, cutoff)
+            rows, tc, tp, bal, pda, _u_ap2 = _compute_statement(
+                tenant, str(unit.id), start_period, cutoff,
+                _prefetched_plan=_gsp_unit_plans.get(str(unit.id)),
+            )
             prev_debt = float(unit.previous_debt or 0)
             credit_bal = float(unit.credit_balance or 0)
             if _u_ap2:
