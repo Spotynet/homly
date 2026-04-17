@@ -110,6 +110,9 @@ export default function PlanPagos() {
   const [adeudosItems,  setAdeudosItems]  = useState([]);
   const [adeudosLoading, setAdeudosLoading] = useState(false);
   const [unitSearch,    setUnitSearch]    = useState('');
+  // ─── Paginación vista de unidades con adeudos ──────────────────────
+  const [pageSize,      setPageSize]      = useState(10);   // 10 | 25 | 50
+  const [currentPage,   setCurrentPage]   = useState(1);
   const [selectedUnit,       setSelectedUnit]       = useState(null);
   const [selectedDebt,       setSelectedDebt]       = useState(0);
   const [selectedAdeudoItem, setSelectedAdeudoItem] = useState(null);
@@ -124,6 +127,12 @@ export default function PlanPagos() {
   // Cancel dialog
   const [cancelDialog, setCancelDialog] = useState(null); // null | { plan }
   const [cancelReason, setCancelReason] = useState('');
+
+  // ─── Diálogo de selección de destinatarios ────────────────────────
+  // Abre cuando el usuario pulsa "Enviar propuesta"; permite marcar/desmarcar
+  // propietario y copropietario antes de realmente enviar.
+  const [recipientDialog, setRecipientDialog] = useState(null);
+  // null | { sendOwner: bool, sendCoowner: bool, ownerEmail: str, coownerEmail: str }
 
   // ─── Multi-option proposal form ────────────────────────────────────────────
   const [options,  setOptions]  = useState([defaultOption()]);  // up to 3
@@ -247,6 +256,21 @@ export default function PlanPagos() {
     });
   }, [adeudosItems, unitSearch]);
 
+  // ─── Paginación derivada ───────────────────────────────────────────
+  const totalItems = filteredItems.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+  // Clamp de página cuando cambian los filtros o el tamaño
+  const safePage = Math.min(currentPage, totalPages);
+  useEffect(() => {
+    if (currentPage !== safePage) setCurrentPage(safePage);
+  }, [safePage, currentPage]);
+  // Reset a la página 1 al cambiar búsqueda o tamaño de página
+  useEffect(() => { setCurrentPage(1); }, [unitSearch, pageSize]);
+  const pagedItems = useMemo(() => {
+    const start = (safePage - 1) * pageSize;
+    return filteredItems.slice(start, start + pageSize);
+  }, [filteredItems, safePage, pageSize]);
+
   // ─── Actions ───────────────────────────────────────────────────────────────
   const handleAccept = async (plan) => {
     setActionLoading(true);
@@ -326,9 +350,29 @@ export default function PlanPagos() {
     }
   };
 
-  // Send proposal: creates all options and sends them at once
-  const handleSendProposal = async () => {
+  // Paso 1 — abre el diálogo de destinatarios con los emails de la unidad.
+  // NO envía todavía: sólo muestra el selector.
+  const handleSendProposal = () => {
     if (!selectedUnit) return;
+    const ownerEmail   = (selectedUnit.owner_email   || '').trim();
+    const coownerEmail = (selectedUnit.coowner_email || '').trim();
+    // Pre-seleccionamos los que existan
+    setRecipientDialog({
+      sendOwner:   !!ownerEmail,
+      sendCoowner: !!coownerEmail,
+      ownerEmail,
+      coownerEmail,
+    });
+  };
+
+  // Paso 2 — confirmado el diálogo, recolecta los emails elegidos y envía.
+  const submitProposal = async () => {
+    if (!selectedUnit || !recipientDialog) return;
+    const { sendOwner, sendCoowner, ownerEmail, coownerEmail } = recipientDialog;
+    const emails = [];
+    if (sendOwner   && ownerEmail)   emails.push(ownerEmail);
+    if (sendCoowner && coownerEmail) emails.push(coownerEmail);
+
     setSaving(true);
     try {
       const payload = {
@@ -336,6 +380,7 @@ export default function PlanPagos() {
         total_adeudo:    selectedDebt,
         maintenance_fee: maintenanceFee,
         notes:           sharedNotes,
+        emails,  // lista final de destinatarios (vacía = no mandar email)
         options: options.map(opt => ({
           frequency:      opt.freq,
           num_payments:   opt.numPagos,
@@ -345,13 +390,28 @@ export default function PlanPagos() {
           notes:          opt.notes || sharedNotes,
         })),
       };
-      await paymentPlansAPI.createProposal(tenantId, payload);
-      toast.success(`Propuesta enviada con ${options.length} opción${options.length > 1 ? 'es' : ''} al propietario.`);
+      const res = await paymentPlansAPI.createProposal(tenantId, payload);
+      // El backend devuelve { plans, emails_sent_to } ahora; fallback para compat
+      const sentTo = Array.isArray(res?.data?.emails_sent_to) ? res.data.emails_sent_to : emails;
+
+      if (sentTo.length > 0) {
+        toast.success(
+          `Propuesta enviada con ${options.length} opción${options.length > 1 ? 'es' : ''}. ` +
+          `Correo enviado a: ${sentTo.join(', ')}`
+        );
+      } else {
+        toast.success(
+          `Propuesta guardada con ${options.length} opción${options.length > 1 ? 'es' : ''}. ` +
+          `No se envió correo (no se seleccionó ningún destinatario).`
+        );
+      }
+
       await loadPlans();
       setTab('list');
       setOptions([defaultOption()]);
       setSharedNotes('');
       setActiveOptIdx(0);
+      setRecipientDialog(null);
     } catch (err) {
       toast.error(err?.response?.data?.detail || 'Error al enviar la propuesta.');
     } finally {
@@ -1270,7 +1330,7 @@ export default function PlanPagos() {
                   {unitSearch ? 'Sin resultados' : 'Sin unidades con adeudos'}
                 </div>
               ) : (
-                filteredItems.map(item => {
+                pagedItems.map(item => {
                   const u        = item.unit || {};
                   const isActive = selectedUnit?.id === u.id;
                   return (
@@ -1311,6 +1371,63 @@ export default function PlanPagos() {
                 })
               )}
             </div>
+
+            {/* ── Paginación (solo cuando hay al menos 1 unidad y no está cargando) ── */}
+            {!adeudosLoading && filteredItems.length > 0 && (
+              <div style={{
+                padding: '8px 12px',
+                borderTop: '1px solid var(--sand-100)',
+                background: 'var(--sand-50)',
+                display: 'flex', flexDirection: 'column', gap: 6,
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                  <span style={{ fontSize: 11, color: 'var(--ink-500)' }}>
+                    {`${Math.min((safePage - 1) * pageSize + 1, totalItems)}–${Math.min(safePage * pageSize, totalItems)} de ${totalItems}`}
+                  </span>
+                  <select
+                    value={pageSize}
+                    onChange={e => setPageSize(Number(e.target.value))}
+                    style={{ fontSize: 11, padding: '3px 6px', border: '1px solid var(--sand-200)', borderRadius: 6, background: '#fff', color: 'var(--ink-700)', cursor: 'pointer' }}
+                    aria-label="Unidades por página"
+                  >
+                    <option value={10}>10 / pág.</option>
+                    <option value={25}>25 / pág.</option>
+                    <option value={50}>50 / pág.</option>
+                  </select>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                    disabled={safePage <= 1}
+                    style={{
+                      padding: '3px 8px', fontSize: 11, border: '1px solid var(--sand-200)',
+                      borderRadius: 6, background: safePage <= 1 ? 'var(--sand-100)' : '#fff',
+                      color: safePage <= 1 ? 'var(--ink-400)' : 'var(--ink-700)',
+                      cursor: safePage <= 1 ? 'not-allowed' : 'pointer',
+                    }}
+                  >
+                    ‹ Ant.
+                  </button>
+                  <span style={{ fontSize: 11, color: 'var(--ink-600)', fontWeight: 600 }}>
+                    {safePage} / {totalPages}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                    disabled={safePage >= totalPages}
+                    style={{
+                      padding: '3px 8px', fontSize: 11, border: '1px solid var(--sand-200)',
+                      borderRadius: 6, background: safePage >= totalPages ? 'var(--sand-100)' : '#fff',
+                      color: safePage >= totalPages ? 'var(--ink-400)' : 'var(--ink-700)',
+                      cursor: safePage >= totalPages ? 'not-allowed' : 'pointer',
+                    }}
+                  >
+                    Sig. ›
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -1376,6 +1493,123 @@ export default function PlanPagos() {
         </div>
 
       </div>
+
+      {/* ── Recipient Selection Modal (envío de propuesta) ── */}
+      {recipientDialog && (() => {
+        const { sendOwner, sendCoowner, ownerEmail, coownerEmail } = recipientDialog;
+        const selectedCount = (sendOwner && ownerEmail ? 1 : 0) + (sendCoowner && coownerEmail ? 1 : 0);
+        return (
+          <div style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            zIndex: 1000,
+          }}
+            onClick={e => { if (e.target === e.currentTarget && !saving) setRecipientDialog(null); }}
+          >
+            <div style={{
+              background: '#fff', borderRadius: 14, padding: 28, maxWidth: 480, width: '90%',
+              boxShadow: '0 8px 40px rgba(0,0,0,0.2)',
+            }}>
+              <h3 style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 800, color: 'var(--ink-800)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Send size={16} color="var(--teal-500)" />
+                Enviar propuesta por correo
+              </h3>
+              <p style={{ margin: '0 0 18px', fontSize: 13, color: 'var(--ink-500)' }}>
+                Selecciona a quiénes deseas enviar la propuesta de plan de pagos.
+              </p>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 18 }}>
+                {/* Propietario */}
+                <label style={{
+                  display: 'flex', alignItems: 'center', gap: 12,
+                  padding: '12px 14px',
+                  border: `1.5px solid ${sendOwner && ownerEmail ? 'var(--teal-500)' : 'var(--sand-200)'}`,
+                  borderRadius: 10,
+                  background: sendOwner && ownerEmail ? 'var(--teal-50)' : '#fff',
+                  cursor: ownerEmail ? 'pointer' : 'not-allowed',
+                  opacity: ownerEmail ? 1 : 0.5,
+                }}>
+                  <input
+                    type="checkbox"
+                    checked={sendOwner && !!ownerEmail}
+                    disabled={!ownerEmail}
+                    onChange={e => setRecipientDialog(d => ({ ...d, sendOwner: e.target.checked }))}
+                    style={{ width: 16, height: 16, cursor: 'pointer' }}
+                  />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-700)' }}>
+                      Propietario
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--ink-500)', wordBreak: 'break-all' }}>
+                      {ownerEmail || 'Sin correo registrado'}
+                    </div>
+                  </div>
+                </label>
+
+                {/* Copropietario */}
+                <label style={{
+                  display: 'flex', alignItems: 'center', gap: 12,
+                  padding: '12px 14px',
+                  border: `1.5px solid ${sendCoowner && coownerEmail ? 'var(--teal-500)' : 'var(--sand-200)'}`,
+                  borderRadius: 10,
+                  background: sendCoowner && coownerEmail ? 'var(--teal-50)' : '#fff',
+                  cursor: coownerEmail ? 'pointer' : 'not-allowed',
+                  opacity: coownerEmail ? 1 : 0.5,
+                }}>
+                  <input
+                    type="checkbox"
+                    checked={sendCoowner && !!coownerEmail}
+                    disabled={!coownerEmail}
+                    onChange={e => setRecipientDialog(d => ({ ...d, sendCoowner: e.target.checked }))}
+                    style={{ width: 16, height: 16, cursor: 'pointer' }}
+                  />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-700)' }}>
+                      Copropietario
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--ink-500)', wordBreak: 'break-all' }}>
+                      {coownerEmail || 'Sin correo registrado'}
+                    </div>
+                  </div>
+                </label>
+
+                {!ownerEmail && !coownerEmail && (
+                  <div style={{ fontSize: 11, color: 'var(--coral-500)', padding: '6px 4px' }}>
+                    Esta unidad no tiene correos registrados. La propuesta se guardará sin envío.
+                  </div>
+                )}
+              </div>
+
+              <div style={{ fontSize: 11, color: 'var(--ink-400)', marginBottom: 14 }}>
+                {selectedCount > 0
+                  ? `Se enviará a ${selectedCount} destinatario${selectedCount > 1 ? 's' : ''}.`
+                  : 'No hay destinatarios seleccionados — la propuesta se guardará sin enviar correo.'}
+              </div>
+
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => setRecipientDialog(null)}
+                  disabled={saving}
+                >
+                  Cancelar
+                </button>
+                <button
+                  className="btn btn-primary btn-sm"
+                  onClick={submitProposal}
+                  disabled={saving}
+                  style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+                >
+                  <Send size={13} />
+                  {saving
+                    ? 'Enviando…'
+                    : (selectedCount > 0 ? 'Confirmar y enviar' : 'Guardar sin enviar')}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── Cancel Dialog Modal ── */}
       {cancelDialog && (

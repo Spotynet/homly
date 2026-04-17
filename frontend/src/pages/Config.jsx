@@ -3,13 +3,15 @@ import { useAuth } from '../context/AuthContext';
 import { tenantsAPI, extraFieldsAPI, assemblyAPI, usersAPI, unitsAPI, superAdminAPI, authAPI, periodsAPI } from '../api/client';
 import { ROLE_BASE_MODULES } from '../constants/modulePermissions';
 import { CURRENCIES, getStatesForCountry, COUNTRIES } from '../utils/helpers';
+import AdminConfigTour from '../components/onboarding/AdminConfigTour';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Settings, Plus, Trash2, Check, X, Upload, Users,
   Building2, RefreshCw, Edit2, Search, Home, Lock, Pencil, UserCheck, Loader,
   Calendar, DollarSign, ShieldCheck, Receipt, ShoppingBag,
   AlertCircle, Shield, FileText, Globe, ChevronRight, TrendingUp,
   ShieldAlert, Mail, UserPlus, Bell, Layers, Eye, EyeOff,
-  ListOrdered, ArrowUp, ArrowDown, CheckCircle2,
+  ListOrdered, ArrowUp, ArrowDown, CheckCircle2, Compass,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -56,6 +58,7 @@ const MODULE_DEFINITIONS = [
   { key: 'plan_pagos',      label: 'Plan de Pagos',       icon: TrendingUp,   desc: 'Gestión de planes de pago para adeudos de unidades' },
   { key: 'cierre_periodo',  label: 'Cierre de Período',   icon: Lock,         desc: 'Cierre y flujo de aprobación de períodos contables' },
   { key: 'notificaciones',  label: 'Notificaciones',      icon: Bell,         desc: 'Centro de avisos y notificaciones' },
+  { key: 'onboarding',      label: 'Guía de Inicio',      icon: Compass,      desc: 'Tour interactivo para configurar el tenant paso a paso' },
   { key: 'config',          label: 'Configuración',       icon: Settings,     desc: 'Configuración del condominio' },
   { key: 'my_unit',         label: 'Mi Unidad',           icon: Home,         desc: 'Vista de la unidad del residente (solo Vecino)' },
 ];
@@ -105,10 +108,15 @@ function Modal({ title, large, onClose, onSave, saveLabel = 'Guardar', saving, c
 
 export default function Config() {
   const { tenantId, isAdmin, isSuperAdmin, user } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
 
   // ── Core state ────────────────────────────────────────────────────────────
   const [tab, setTab] = useState('general');
   const [tenant, setTenant] = useState(null);
+
+  // ── Onboarding tour state ─────────────────────────────────────────────────
+  const [tourOpen, setTourOpen] = useState(false);
   const [loadError, setLoadError] = useState(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -262,6 +270,26 @@ export default function Config() {
       setClosureFlow({ enabled: cf.enabled || false, steps: Array.isArray(cf.steps) ? cf.steps : [] });
     }
   }, [tenant]);
+
+  // ── Auto-launch onboarding tour for admin if never completed ──────────────
+  useEffect(() => {
+    if (!tenant || !isAdmin) return;
+    // Query param forces tour: /app/config?tour=1
+    const params = new URLSearchParams(location.search);
+    const forced = params.get('tour') === '1';
+    if (forced) {
+      setTourOpen(true);
+      // Clean query param from URL
+      navigate('/app/config', { replace: true });
+      return;
+    }
+    // Auto-launch once: not completed AND never dismissed before
+    if (!tenant.onboarding_completed && !tenant.onboarding_dismissed_at) {
+      // Small delay so the page renders first
+      const t = setTimeout(() => setTourOpen(true), 400);
+      return () => clearTimeout(t);
+    }
+  }, [tenant, isAdmin, location.search, navigate]);
 
   // ── Save helpers ──────────────────────────────────────────────────────────
   const savePatch = async (data, onDone) => {
@@ -693,9 +721,14 @@ export default function Config() {
   // ────────────────────────────────────────────────────────────────────────────
   return (
     <div className="content-fade">
-      <div className="tabs" style={{ flexWrap: 'wrap', marginBottom: 20 }}>
+      <div className="tabs" style={{ flexWrap: 'wrap', marginBottom: 20 }} data-tour="config-tabs">
         {tabs.map(tb => (
-          <button key={tb.key} className={`tab ${tab === tb.key ? 'active' : ''}`} onClick={() => setTab(tb.key)}>
+          <button
+            key={tb.key}
+            className={`tab ${tab === tb.key ? 'active' : ''}`}
+            onClick={() => setTab(tb.key)}
+            data-tour={`config-tab-${tb.key}`}
+          >
             {tb.label}
           </button>
         ))}
@@ -3617,6 +3650,34 @@ export default function Config() {
             <div><strong>Cambio obligatorio:</strong> Deberá cambiar su contraseña al primer ingreso.</div>
           </div>
         </Modal>
+      )}
+
+      {/* ══════════ Onboarding Tour (Guía interactiva) ══════════ */}
+      {isAdmin && (
+        <AdminConfigTour
+          open={tourOpen}
+          activeTab={tab}
+          tenantName={tenant?.name || 'tu condominio'}
+          onNavigateTab={(k) => setTab(k)}
+          onClose={async () => {
+            setTourOpen(false);
+            if (tenantId && !tenant?.onboarding_completed) {
+              try { await tenantsAPI.onboardingDismiss(tenantId); } catch {}
+            }
+          }}
+          onFinish={async () => {
+            setTourOpen(false);
+            if (tenantId) {
+              try {
+                await tenantsAPI.onboardingComplete(tenantId);
+                setTenant(prev => prev ? { ...prev, onboarding_completed: true } : prev);
+                toast.success('¡Onboarding completado!');
+              } catch {
+                toast.error('No se pudo marcar como completado');
+              }
+            }
+          }}
+        />
       )}
     </div>
   );

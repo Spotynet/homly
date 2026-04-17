@@ -61,6 +61,10 @@ export const tenantsAPI = {
   create: (data) => api.post('/tenants/', data),
   update: (id, data) => api.patch(`/tenants/${id}/`, data),
   delete: (id) => api.delete(`/tenants/${id}/`),
+  // Onboarding tour state
+  onboardingComplete: (id) => api.post(`/tenants/${id}/onboarding/complete/`),
+  onboardingDismiss: (id) => api.post(`/tenants/${id}/onboarding/dismiss/`),
+  onboardingReset: (id) => api.post(`/tenants/${id}/onboarding/reset/`),
 };
 
 // ─── Units ──────────────────────────────────────

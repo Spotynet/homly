@@ -22,6 +22,7 @@ import CierrePeriodo from './pages/CierrePeriodo';
 import Logs from './pages/Logs';
 import Registro from './pages/Registro';
 import PlanPagos from './pages/PlanPagos';
+import Onboarding from './pages/Onboarding';
 
 const LOADER = (
   <div className="flex items-center justify-center h-screen bg-white">
@@ -91,6 +92,7 @@ function AppRoutes() {
         <Route path="notificaciones" element={<Notificaciones />} />
         <Route path="cierre-periodo" element={<CierrePeriodo />} />
         <Route path="plan-pagos" element={<PlanPagos />} />
+        <Route path="onboarding" element={<Onboarding />} />
       </Route>
 
       {/* Fallback */}

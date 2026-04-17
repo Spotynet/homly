@@ -7,6 +7,7 @@ import {
   ChevronLeft, ChevronRight, RefreshCw, TrendingDown, TrendingUp,
   Users, UserCheck, Mail, Phone, Wallet, Activity,
   CheckCircle, AlertCircle, Clock, BarChart2, Calendar, X, Check, Lock, LockOpen,
+  Compass, Sparkles,
 } from 'lucide-react';
 
 // ─── Formatters ────────────────────────────────────────────────────────────
@@ -350,22 +351,51 @@ export default function Dashboard() {
     setLoading(true);
     setError(null);
     try {
-      const [dashRes, tenantRes, cmtRes, genRes, closedRes] = await Promise.all([
+      // Usamos allSettled para que UN solo endpoint lento o roto (p.ej. reporteGeneral
+      // en tenants con mucho historial) no tumbe toda la página.
+      const [dashRes, tenantRes, cmtRes, genRes, closedRes] = await Promise.allSettled([
         reportsAPI.dashboard(tenantId, period),
         tenantsAPI.get(tenantId),
-        assemblyAPI.committees(tenantId).catch(() => ({ data: [] })),
-        // reporteGeneral = fuente de verdad para conciliados (mismos números que EstadoCuenta)
-        reportsAPI.reporteGeneral(tenantId, period).catch(() => ({ data: null })),
-        periodsAPI.closedList(tenantId).catch(() => ({ data: [] })),
+        assemblyAPI.committees(tenantId),
+        reportsAPI.reporteGeneral(tenantId, period),
+        periodsAPI.closedList(tenantId),
       ]);
-      setStats(dashRes.data);
-      setTenant(tenantRes.data);
-      const raw = cmtRes.data;
-      setCommittees(Array.isArray(raw) ? raw : (raw?.results || []));
-      setGeneralReport(genRes.data);
-      const closedRaw = closedRes.data;
-      setClosedPeriods(Array.isArray(closedRaw) ? closedRaw : (closedRaw?.results || []));
+
+      // Dashboard principal: único crítico. Si falla, mostramos error pero no lanzamos.
+      if (dashRes.status === 'fulfilled') {
+        setStats(dashRes.value.data);
+      } else {
+        setStats(null);
+        setError(dashRes.reason?.response?.data?.detail || 'Error al cargar el dashboard');
+      }
+
+      // Tenant metadata
+      if (tenantRes.status === 'fulfilled') {
+        setTenant(tenantRes.value.data);
+      } else {
+        setTenant(null);
+      }
+
+      // Comités (opcional)
+      if (cmtRes.status === 'fulfilled') {
+        const raw = cmtRes.value.data;
+        setCommittees(Array.isArray(raw) ? raw : (raw?.results || []));
+      } else {
+        setCommittees([]);
+      }
+
+      // Reporte general (pesado para tenants con mucho historial — no bloquea el dashboard)
+      setGeneralReport(genRes.status === 'fulfilled' ? genRes.value.data : null);
+
+      // Periodos cerrados (opcional)
+      if (closedRes.status === 'fulfilled') {
+        const closedRaw = closedRes.value.data;
+        setClosedPeriods(Array.isArray(closedRaw) ? closedRaw : (closedRaw?.results || []));
+      } else {
+        setClosedPeriods([]);
+      }
     } catch (e) {
+      // Fallback — no debería dispararse con allSettled, pero por si acaso
       setError(e.response?.data?.detail || 'Error al cargar el dashboard');
     } finally {
       setLoading(false);
@@ -583,8 +613,47 @@ export default function Dashboard() {
     </div>
   );
 
+  // Mostrar banner de onboarding si el admin no ha completado el tour
+  const showOnboardingBanner = isAdmin && tenant && !tenant.onboarding_completed;
+
   return (
     <div className="content-fade">
+      {showOnboardingBanner && (
+        <div
+          style={{
+            marginBottom: 18,
+            padding: '14px 18px',
+            borderRadius: 12,
+            background: 'linear-gradient(135deg, var(--teal-50) 0%, #ccfbf1 100%)',
+            border: '1px solid var(--teal-200)',
+            display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap',
+          }}
+        >
+          <div style={{
+            width: 40, height: 40, borderRadius: 10, background: 'white',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            boxShadow: '0 2px 6px rgba(20,184,166,0.15)', flexShrink: 0,
+          }}>
+            <Compass size={20} color="var(--teal-500)" />
+          </div>
+          <div style={{ flex: 1, minWidth: 200 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--ink-800)', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Sparkles size={13} color="var(--teal-500)" /> Termina de configurar {tenant?.name || 'tu condominio'}
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--ink-600)', marginTop: 2 }}>
+              Te guiamos paso a paso por cada sección. Toma unos minutos.
+            </div>
+          </div>
+          <button
+            className="btn btn-primary btn-sm"
+            onClick={() => navigate('/app/onboarding')}
+            style={{ flexShrink: 0 }}
+          >
+            Iniciar guía <ChevronRight size={14} />
+          </button>
+        </div>
+      )}
+
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
         .dash-kpi { background: var(--white); border: 1px solid var(--sand-100); border-radius: var(--radius-lg); padding: 20px; display: flex; flex-direction: column; gap: 4; position: relative; overflow: hidden; }

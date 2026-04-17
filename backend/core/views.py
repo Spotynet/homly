@@ -537,6 +537,40 @@ class TenantViewSet(viewsets.ModelViewSet):
                    object_type='Tenant', object_id=str(instance.id), object_repr=instance.name)
         instance.delete()
 
+    # ─── Onboarding tour state ─────────────────────────────────
+    @action(detail=True, methods=['post'], url_path='onboarding/complete')
+    def mark_onboarding_complete(self, request, pk=None):
+        """Marca el tour de onboarding como completado para este tenant."""
+        tenant = self.get_object()
+        tenant.onboarding_completed = True
+        tenant.save(update_fields=['onboarding_completed', 'updated_at'])
+        _audit_log(request, 'onboarding', 'complete',
+                   f'Onboarding completado: {tenant.name}',
+                   tenant_id=str(tenant.id),
+                   object_type='Tenant', object_id=str(tenant.id),
+                   object_repr=tenant.name)
+        return Response({'onboarding_completed': True})
+
+    @action(detail=True, methods=['post'], url_path='onboarding/dismiss')
+    def mark_onboarding_dismissed(self, request, pk=None):
+        """Marca el banner/auto-launch como descartado ('más tarde')."""
+        tenant = self.get_object()
+        tenant.onboarding_dismissed_at = timezone.now()
+        tenant.save(update_fields=['onboarding_dismissed_at', 'updated_at'])
+        return Response({'onboarding_dismissed_at': tenant.onboarding_dismissed_at})
+
+    @action(detail=True, methods=['post'], url_path='onboarding/reset')
+    def reset_onboarding(self, request, pk=None):
+        """Permite re-ejecutar el tour (desde el menú lateral)."""
+        tenant = self.get_object()
+        tenant.onboarding_completed = False
+        tenant.onboarding_dismissed_at = None
+        tenant.save(update_fields=['onboarding_completed',
+                                   'onboarding_dismissed_at',
+                                   'updated_at'])
+        return Response({'onboarding_completed': False,
+                         'onboarding_dismissed_at': None})
+
 
 # ═══════════════════════════════════════════════════════════
 #  UNITS
@@ -2029,6 +2063,9 @@ class PaymentPlanViewSet(viewsets.ModelViewSet):
         total_adeudo  = request.data.get('total_adeudo', 0)
         maintenance   = request.data.get('maintenance_fee', 0)
         shared_notes  = request.data.get('notes', '')
+        # Lista explícita de emails seleccionados por el usuario (propietario / copropietario).
+        # Si viene vacía o no se manda, se usan los de la unidad por defecto.
+        emails_param  = request.data.get('emails', None)
 
         if not unit_id:
             return Response({'detail': 'unit_id es requerido.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -2140,12 +2177,25 @@ class PaymentPlanViewSet(viewsets.ModelViewSet):
             )
             created_plans.append(plan)
 
+        # Resolver destinatarios: si el cliente manda lista explícita se usa esa
+        # (ya filtrada del UI: propietario/copropietario seleccionados).
+        # Fallback: propietario + copropietario de la unidad.
+        if isinstance(emails_param, list):
+            emails = [e.strip() for e in emails_param if isinstance(e, str) and e.strip()]
+        else:
+            emails = [e for e in [unit.owner_email, unit.coowner_email] if e]
+        # Deduplicar preservando orden
+        seen_em = set()
+        emails = [e for e in emails if not (e.lower() in seen_em or seen_em.add(e.lower()))]
+
         # Send email with all options
-        emails = [e for e in [unit.owner_email, unit.tenant_email] if e]
         if emails:
             try:
                 freq_map = {1: 'Mensual', 2: 'Bimestral', 3: 'Trimestral', 6: 'Semestral'}
-                responsible = (unit.tenant_name or unit.owner_name or '').strip()
+                _owner_name_parts = [unit.owner_first_name or '', unit.owner_last_name or '']
+                _tenant_name_parts = [unit.tenant_first_name or '', unit.tenant_last_name or '']
+                responsible = (' '.join(p for p in _tenant_name_parts if p).strip()
+                               or ' '.join(p for p in _owner_name_parts if p).strip())
                 options_for_email = []
                 for p in created_plans:
                     options_for_email.append({
@@ -2208,7 +2258,10 @@ class PaymentPlanViewSet(viewsets.ModelViewSet):
         )
 
         return Response(
-            PaymentPlanSerializer(created_plans, many=True).data,
+            {
+                'plans': PaymentPlanSerializer(created_plans, many=True).data,
+                'emails_sent_to': emails,
+            },
             status=status.HTTP_201_CREATED,
         )
 
@@ -3412,18 +3465,28 @@ class DashboardView(APIView):
             for _p in PaymentPlan.objects.filter(tenant_id=tenant_id, status='accepted')
         }
         for unit in units:
-            _, _, _, bal, prev_debt_adeudo, _u_active_plan = _compute_statement(
-                tenant, str(unit.id), start_period, period,
-                _prefetched_plan=_unit_active_plans.get(str(unit.id)),
-            )
-            previous_debt_u = Decimal(str(unit.previous_debt or 0))
-            credit_balance_u = Decimal(str(unit.credit_balance or 0))
-            prev_debt_adeudo_dec = Decimal(str(prev_debt_adeudo))
-            if _u_active_plan:
-                adj_bal = Decimal(str(bal)) - credit_balance_u
-            else:
-                adj_bal = Decimal(str(bal)) + previous_debt_u - prev_debt_adeudo_dec - credit_balance_u
-            deuda_total += max(Decimal('0'), adj_bal)
+            # Si una unidad falla en el cálculo, no debe tumbar todo el dashboard
+            try:
+                _, _, _, bal, prev_debt_adeudo, _u_active_plan = _compute_statement(
+                    tenant, str(unit.id), start_period, period,
+                    _prefetched_plan=_unit_active_plans.get(str(unit.id)),
+                )
+                previous_debt_u = Decimal(str(unit.previous_debt or 0))
+                credit_balance_u = Decimal(str(unit.credit_balance or 0))
+                prev_debt_adeudo_dec = Decimal(str(prev_debt_adeudo))
+                if _u_active_plan:
+                    adj_bal = Decimal(str(bal)) - credit_balance_u
+                else:
+                    adj_bal = Decimal(str(bal)) + previous_debt_u - prev_debt_adeudo_dec - credit_balance_u
+                deuda_total += max(Decimal('0'), adj_bal)
+            except Exception:
+                # Omitir unidades con datos inconsistentes; la deuda total queda subestimada
+                # para esa unidad pero el dashboard continúa cargando.
+                import logging
+                logging.getLogger(__name__).exception(
+                    'Error computing statement for unit %s in tenant %s', unit.id, tenant_id
+                )
+                continue
 
         # Total ingresos = mantenimiento + campos adicionales (SIN adeudos)
         # total_collected = solo FieldPayments de mantenimiento fijo

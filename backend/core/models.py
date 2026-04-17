@@ -171,6 +171,13 @@ class Tenant(models.Model):
         help_text='Period closure approval flow: enabled flag and ordered list of approver steps.',
     )
 
+    # Onboarding tour state
+    # onboarding_completed: el admin terminó el tour y confirmó que el tenant está listo
+    # onboarding_dismissed_at: fecha cuando un admin descartó el banner/auto-launch
+    #                         (se muestra de nuevo si vuelve a entrar al tour manualmente)
+    onboarding_completed = models.BooleanField(default=False)
+    onboarding_dismissed_at = models.DateTimeField(null=True, blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

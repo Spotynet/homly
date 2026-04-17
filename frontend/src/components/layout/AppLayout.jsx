@@ -8,6 +8,7 @@ import {
   Home, Globe, FileText, ShoppingBag, Receipt, Settings,
   Users, Building, Shield, LogOut, Menu, X, Calendar,
   ChevronDown, Check, Building2, Bell, CheckCheck, Activity, Lock, TrendingDown,
+  Compass,
 } from 'lucide-react';
 
 const NAV_ITEMS = {
@@ -18,13 +19,15 @@ const NAV_ITEMS = {
       { path: '/app/sistema/logs',    icon: Activity, label: 'Logs del Sistema' },
     ]},
     { section: 'tenant', label: 'Tenant Actual', items: [
-      { path: '/app/reservas',         icon: Calendar,    label: 'Reservas'          },
-      { path: '/app/cobranza',         icon: Receipt,     label: 'Cobranza Mensual'  },
-      { path: '/app/gastos',           icon: ShoppingBag, label: 'Gastos'            },
-      { path: '/app/estado-cuenta',    icon: FileText,    label: 'Estado de Cuenta'  },
-      { path: '/app/cierre-periodo',   icon: Lock,        label: 'Cierre de Período' },
-      { path: '/app/notificaciones',   icon: Bell,        label: 'Notificaciones'    },
-      { path: '/app/config',           icon: Settings,    label: 'Configuración'     },
+      { path: '/app/reservas',         icon: Calendar,     label: 'Reservas'          },
+      { path: '/app/cobranza',         icon: Receipt,      label: 'Cobranza Mensual'  },
+      { path: '/app/gastos',           icon: ShoppingBag,  label: 'Gastos'            },
+      { path: '/app/estado-cuenta',    icon: FileText,     label: 'Estado de Cuenta'  },
+      { path: '/app/plan-pagos',       icon: TrendingDown, label: 'Plan de Pagos'     },
+      { path: '/app/cierre-periodo',   icon: Lock,         label: 'Cierre de Período' },
+      { path: '/app/notificaciones',   icon: Bell,         label: 'Notificaciones'    },
+      { path: '/app/onboarding',       icon: Compass,      label: 'Guía de Inicio'    },
+      { path: '/app/config',           icon: Settings,     label: 'Configuración'     },
     ]},
   ],
 
@@ -37,6 +40,7 @@ const NAV_ITEMS = {
     { path: '/app/plan-pagos',       icon: TrendingDown,  label: 'Plan de Pagos'      },
     { path: '/app/cierre-periodo',   icon: Lock,          label: 'Cierre de Período'  },
     { path: '/app/notificaciones',   icon: Bell,          label: 'Notificaciones'     },
+    { path: '/app/onboarding',       icon: Compass,       label: 'Guía de Inicio'     },
     { path: '/app/config',           icon: Settings,      label: 'Configuración'      },
   ]}],
 
@@ -101,6 +105,7 @@ const PATH_TO_MODULE = {
   '/app/notificaciones':  'notificaciones',
   '/app/config':          'config',
   '/app/my-unit':         'my_unit',
+  '/app/onboarding':      'onboarding',
 };
 
 const PAGE_TITLES = {
@@ -118,6 +123,7 @@ const PAGE_TITLES = {
   'my-unit': 'Mi Unidad',
   'reservas': 'Reservas de Áreas Comunes',
   'notificaciones': 'Notificaciones',
+  'onboarding': 'Guía de Inicio',
 };
 
 function getPageTitle(pathname) {
