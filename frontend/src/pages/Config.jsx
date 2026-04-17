@@ -745,10 +745,10 @@ export default function Config() {
               style={{ cursor: 'pointer', userSelect: 'none' }}
               onClick={() => setGenCollapsed(v => !v)}
             >
-              <h3>Configuración General</h3>
+              <h3 data-tour="general-card-title">Configuración General</h3>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 {isAdmin && (
-                  <button className="btn btn-primary btn-sm" onClick={e => {
+                  <button className="btn btn-primary btn-sm" data-tour="general-edit-btn" onClick={e => {
                     e.stopPropagation();
                     setEditGenForm({
                       name: t.name || '',
