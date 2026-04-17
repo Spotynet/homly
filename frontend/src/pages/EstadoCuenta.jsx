@@ -631,7 +631,24 @@ export default function EstadoCuenta() {
             {/* Summary strip */}
             {data && (
               <div className="ec-summary-strip">
-                {unitPrevDebt > 0 && (
+                {data.has_active_plan && (
+                  <div className="ec-sum-cell" style={{ background: 'rgba(13,124,110,0.08)', borderLeft: '3px solid var(--teal-500)', minWidth: 180 }}>
+                    <div className="ec-sum-label" style={{ color: 'var(--teal-700)' }}>
+                      📋 Plan de Pagos Activo
+                      <div style={{ fontSize: 9, color: 'var(--teal-500)', fontWeight: 400, marginTop: 1 }}>La deuda anterior está incluida en el plan</div>
+                    </div>
+                    {data.active_plan && (
+                      <div style={{ marginTop: 4, fontSize: 11, color: 'var(--teal-700)' }}>
+                        <div>{data.active_plan.installments?.length || 0} cuotas · {data.active_plan.option_number ? `Opción ${data.active_plan.option_number}` : ''}</div>
+                        <div style={{ marginTop: 2, fontWeight: 700 }}>
+                          {data.active_plan.installments?.filter(i => i.status === 'paid').length || 0} pagadas /&nbsp;
+                          {data.active_plan.installments?.filter(i => i.status === 'pending').length || 0} pendientes
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+                {!data.has_active_plan && unitPrevDebt > 0 && (
                   <div className="ec-sum-cell" style={{ background: 'var(--coral-50)', borderLeft: '3px solid var(--coral-400)' }}>
                     <div className="ec-sum-label" style={{ color: 'var(--coral-600)' }}>
                       ⚠ Deuda Anterior
@@ -735,7 +752,7 @@ export default function EstadoCuenta() {
                     </tr>
                   </thead>
                   <tbody>
-                    {unitPrevDebt > 0 && (
+                    {!data.has_active_plan && unitPrevDebt > 0 && (
                       <tr style={{ background: 'var(--coral-50)', borderLeft: '3px solid var(--coral-400)' }}>
                         <td style={{ fontWeight: 700, color: 'var(--coral-600)', whiteSpace: 'nowrap' }}>
                           <AlertCircle size={13} style={{ display: 'inline', verticalAlign: -2, marginRight: 6 }} />
@@ -891,6 +908,35 @@ export default function EstadoCuenta() {
                               <td></td>
                             </tr>
                           ))}
+                          {/* Sub-fila: cuota de plan de pagos activo */}
+                          {data.has_active_plan && (() => {
+                            const planFd = (p.field_detail || []).find(fd => fd.is_plan_installment);
+                            if (!planFd) return null;
+                            const pi = planFd.plan_inst || {};
+                            const instPaid = planFd.abono || 0;
+                            const instCharge = planFd.charge || 0;
+                            const instSaldo = instCharge - instPaid;
+                            const stLabel = pi.status === 'paid' ? 'Pagada' : pi.status === 'partial' ? 'Parcial' : 'Pendiente';
+                            const stClass = pi.status === 'paid' ? 'badge-teal' : pi.status === 'partial' ? 'badge-amber' : 'badge-gray';
+                            return (
+                              <tr key={`plan-inst-${i}`} style={{ background: 'rgba(13,124,110,0.05)', borderLeft: '3px solid var(--teal-400)' }}>
+                                <td style={{ paddingLeft: 28, fontSize: 11, color: 'var(--teal-700)', fontWeight: 600 }}>
+                                  📋 {planFd.label}
+                                  <div style={{ fontSize: 10, color: 'var(--teal-500)', fontWeight: 400 }}>Amortización de deuda · Plan activo</div>
+                                </td>
+                                <td style={{ textAlign: 'right', fontSize: 12, color: 'var(--ink-500)' }}>—</td>
+                                <td style={{ textAlign: 'right', fontSize: 12, fontWeight: 700, color: 'var(--ink-700)' }}>{fmt(instCharge)}</td>
+                                <td style={{ textAlign: 'right', fontSize: 12, fontWeight: 700, color: instPaid > 0 ? 'var(--teal-600)' : 'var(--ink-300)' }}>
+                                  {instPaid > 0 ? fmt(instPaid) : '—'}
+                                </td>
+                                <td><span className={`badge ${stClass}`} style={{ fontSize: 10 }}>{stLabel}</span></td>
+                                <td style={{ textAlign: 'right', fontSize: 12, color: instSaldo > 0 ? 'var(--coral-500)' : 'var(--teal-600)' }}>
+                                  {instSaldo > 0.01 ? `-${fmt(instSaldo)}` : instSaldo < -0.01 ? `+${fmt(Math.abs(instSaldo))}` : '✓'}
+                                </td>
+                                <td></td>
+                              </tr>
+                            );
+                          })()}
                         </React.Fragment>
                       );
                     })}

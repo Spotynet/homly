@@ -1118,7 +1118,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
                 period_str = data['period']
                 for inst in (active_plan.installments or []):
                     if inst.get('period_key') == period_str:
-                        plan_charge = Decimal(str(inst.get('total', 0)))
+                        plan_charge = Decimal(str(inst.get('debt_part', 0)))
                         plan_key = active_plan.field_key
                         break
         except Exception:
@@ -1603,7 +1603,7 @@ def _update_plan_installments(plan):
             field_key=plan_key,
         ).aggregate(s=Sum('received'))['s'] or Decimal('0')
 
-        inst_total = Decimal(str(inst.get('total', 0)))
+        inst_total = Decimal(str(inst.get('debt_part', 0)))
         new_paid_amount = float(total_paid)
 
         if total_paid >= inst_total and inst_total > 0:
@@ -3735,9 +3735,42 @@ def _compute_statement(tenant, unit_id, start_period, cutoff_period):
                 adeudo_spec_by_recv[recv_period] = adeudo_spec_by_recv.get(recv_period, Decimal('0')) + total
             adeudo_all_by_recv[recv_period] = adeudo_all_by_recv.get(recv_period, Decimal('0')) + total
 
+    # ── Plan de pagos activo ────────────────────────────────────────
+    # Cuando la unidad tiene un plan de pagos aceptado, la deuda anterior
+    # queda absorbida en las cuotas del plan (debt_part por periodo).
+    # El saldo inicial no incluye previous_debt; arranca limpio menos credit_balance.
+    active_plan = PaymentPlan.objects.filter(
+        tenant_id=tenant.id, unit_id=unit_id, status='accepted',
+    ).first()
+    plan_installments_by_period = {}
+    plan_field_payments_by_period = {}
+    if active_plan:
+        _plan_key = active_plan.field_key
+        for _inst in (active_plan.installments or []):
+            _pk = _inst.get('period_key')
+            if _pk:
+                plan_installments_by_period[_pk] = _inst
+        from .models import FieldPayment as _FP
+        _plan_fps = _FP.objects.filter(
+            payment__tenant_id=tenant.id,
+            payment__unit_id=unit_id,
+            field_key=_plan_key,
+        ).values('payment__period', 'received')
+        for _pfp in _plan_fps:
+            _prd = _pfp['payment__period']
+            plan_field_payments_by_period[_prd] = (
+                plan_field_payments_by_period.get(_prd, Decimal('0')) +
+                Decimal(str(_pfp['received'] or 0))
+            )
+    # ──────────────────────────────────────────────────────────────
+
     # Saldo inicial = deuda anterior - abonos a deuda - saldo a favor previo
     # Sin max(0,...): el excedente de saldo a favor reduce los cargos de los periodos
-    saldo_acum = Decimal(str(previous_debt)) - prev_debt_adeudo - Decimal(str(credit_balance))
+    # Cuando hay plan activo, la deuda anterior está absorbida en el plan.
+    if active_plan:
+        saldo_acum = Decimal('0') - Decimal(str(credit_balance))
+    else:
+        saldo_acum = Decimal(str(previous_debt)) - prev_debt_adeudo - Decimal(str(credit_balance))
 
     periods = _periods_between(start_period, cutoff_period)
     rows = []
@@ -3812,6 +3845,37 @@ def _compute_statement(tenant, unit_id, start_period, cutoff_period):
             })
 
         cargo_oblig = maint_charge + sum(Decimal(str(ef.default_amount or 0)) for ef in req_fields)
+
+        # ── Cuota de plan de pagos activo para este período ──────────────
+        plan_inst = plan_installments_by_period.get(period) if active_plan else None
+        if plan_inst:
+            _debt_part = Decimal(str(plan_inst.get('debt_part', 0)))
+            _plan_rcvd = plan_field_payments_by_period.get(period, Decimal('0'))
+            total_cargo_req += _debt_part
+            cargo_oblig += _debt_part
+            total_abono_req += _plan_rcvd
+            _n_inst = plan_inst.get('num', '?')
+            _n_total = len(active_plan.installments or [])
+            field_detail.append({
+                'id': active_plan.field_key,
+                'label': f'Plan de Pagos — Cuota {_n_inst}/{_n_total}',
+                'charge': float(_debt_part),
+                'received': float(_plan_rcvd),
+                'adelanto': 0.0,
+                'abono': float(_plan_rcvd),
+                'required': True,
+                'is_plan_installment': True,
+                'plan_inst': {
+                    'num': _n_inst,
+                    'n_total': _n_total,
+                    'debt_part': float(_debt_part),
+                    'regular_part': float(plan_inst.get('regular_part', 0)),
+                    'total': float(plan_inst.get('total', 0)),
+                    'status': plan_inst.get('status', 'pending'),
+                },
+            })
+        # ─────────────────────────────────────────────────────────────────
+
         cargo_opt = total_cargo_opt
         cargo_total = cargo_oblig + cargo_opt
         abono_balance = total_abono_req + total_abono_opt          # Solo pagos que afectan el saldo
@@ -3897,7 +3961,7 @@ def _compute_statement(tenant, unit_id, start_period, cutoff_period):
     total_paid_display = sum(r['paid'] for r in rows)           # Todos los pagos recibidos (para mostrar)
     balance = total_charges - total_paid_balance
 
-    return rows, float(total_charges), float(total_paid_display), float(balance), float(prev_debt_adeudo)
+    return rows, float(total_charges), float(total_paid_display), float(balance), float(prev_debt_adeudo), active_plan
 
 
 class EstadoCuentaView(APIView):
@@ -3947,11 +4011,15 @@ class EstadoCuentaView(APIView):
                 period_agg[p]['total_paid'] += amt
 
             for unit in units:
-                rows, tc, tp, bal, pda = _compute_statement(tenant, str(unit.id), start_period, cutoff)
+                rows, tc, tp, bal, pda, _unit_active_plan = _compute_statement(tenant, str(unit.id), start_period, cutoff)
                 # Apply same adjustment as unit detail: include previous_debt and credit_balance
+                # When unit has active payment plan, previous_debt is absorbed into plan installments
                 prev_debt = float(unit.previous_debt or 0)
                 credit_bal = float(unit.credit_balance or 0)
-                adj_bal = bal + prev_debt - float(pda) - credit_bal
+                if _unit_active_plan:
+                    adj_bal = bal - credit_bal
+                else:
+                    adj_bal = bal + prev_debt - float(pda) - credit_bal
                 total_cargo += Decimal(str(tc))
                 total_abono += Decimal(str(tp))
                 deuda = max(Decimal('0'), Decimal(str(adj_bal)))
@@ -4002,7 +4070,7 @@ class EstadoCuentaView(APIView):
             })
 
         unit = Unit.objects.get(id=unit_id, tenant_id=tenant_id)
-        rows, total_charges, total_paid, balance, prev_debt_adeudo = _compute_statement(tenant, str(unit_id), start_period, cutoff)
+        rows, total_charges, total_paid, balance, prev_debt_adeudo, active_plan = _compute_statement(tenant, str(unit_id), start_period, cutoff)
         previous_debt = float(unit.previous_debt or 0)
 
         periods_out = []
@@ -4017,6 +4085,8 @@ class EstadoCuentaView(APIView):
                 'payment_date': r.get('payment_date'),
                 'saldo_accum': str(r['saldo_accum']),
                 'pay': r.get('pay'),
+                'field_detail': r.get('field_detail', []),
+                'cross_unit_payment': r.get('cross_unit_payment'),
             })
 
         prev_debt_adeudo_val = float(prev_debt_adeudo)
@@ -4027,7 +4097,11 @@ class EstadoCuentaView(APIView):
         #   - abonos a deuda previa - saldo a favor previo
         # El saldo a favor resta del total adeudado (cubre primero la deuda previa y
         # luego los cargos de los periodos si hubiera excedente)
-        adjusted_balance = balance + previous_debt - prev_debt_adeudo_val - credit_balance
+        # Cuando hay plan activo, previous_debt está absorbido en las cuotas del plan.
+        if active_plan:
+            adjusted_balance = balance - credit_balance
+        else:
+            adjusted_balance = balance + previous_debt - prev_debt_adeudo_val - credit_balance
 
         return Response({
             'unit': UnitSerializer(unit).data,
@@ -4041,6 +4115,8 @@ class EstadoCuentaView(APIView):
             'prev_debt_adeudo': prev_debt_adeudo_val,
             'net_prev_debt': net_prev_debt,
             'credit_balance': credit_balance,
+            'has_active_plan': active_plan is not None,
+            'active_plan': PaymentPlanSerializer(active_plan).data if active_plan else None,
         })
 
 

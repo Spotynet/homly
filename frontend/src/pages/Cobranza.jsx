@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { paymentsAPI, unitsAPI, extraFieldsAPI, tenantsAPI, unrecognizedIncomeAPI, reservationsAPI, reportsAPI, periodsAPI } from '../api/client';
+import { paymentsAPI, unitsAPI, extraFieldsAPI, tenantsAPI, unrecognizedIncomeAPI, reservationsAPI, reportsAPI, periodsAPI, paymentPlansAPI } from '../api/client';
 import PaginationBar from '../components/PaginationBar';
 import PaymentReceiptModal from '../components/PaymentReceiptModal';
 import { todayPeriod, periodLabel, prevPeriod, nextPeriod, tenantStartPeriod, fmtCurrency, statusClass, statusLabel, PAYMENT_TYPES, fmtDate, ROLES, CURRENCIES, APP_VERSION } from '../utils/helpers';
@@ -136,16 +136,19 @@ export default function Cobranza() {
   const [captureUnitPeriods, setCaptureUnitPeriods] = useState([]); // períodos con adeudo de la unidad en captura
   const [captureUnitPeriodsLoading, setCaptureUnitPeriodsLoading] = useState(false);
   const [closedPeriods, setClosedPeriods] = useState([]);
+  // activePlansMap: unit_id (string) → PaymentPlan object (for accepted plans)
+  const [activePlansMap, setActivePlansMap] = useState({});
   const load = async () => {
     if (!tenantId) return;
     try {
-      const [uRes, pRes, efRes, tRes, uiRes, cpRes] = await Promise.all([
+      const [uRes, pRes, efRes, tRes, uiRes, cpRes, plRes] = await Promise.all([
         unitsAPI.list(tenantId, { page_size: 9999 }),
         paymentsAPI.list(tenantId, { period, page_size: 9999 }),
         extraFieldsAPI.list(tenantId, { page_size: 9999 }).catch(() => ({ data: [] })),
         tenantsAPI.get(tenantId).catch(() => ({ data: null })),
         unrecognizedIncomeAPI.list(tenantId, { period, page_size: 9999 }).catch(() => ({ data: [] })),
         periodsAPI.closedList(tenantId).catch(() => ({ data: [] })),
+        paymentPlansAPI.list(tenantId, { status: 'accepted', page_size: 9999 }).catch(() => ({ data: [] })),
       ]);
       setUnits(uRes.data.results || uRes.data);
       setPayments(pRes.data.results || pRes.data);
@@ -156,6 +159,11 @@ export default function Cobranza() {
       setTenantData(tRes.data);
       setUnrecognizedIncome(Array.isArray(uiRes.data) ? uiRes.data : (uiRes.data?.results || []));
       setClosedPeriods(Array.isArray(cpRes.data) ? cpRes.data : (cpRes.data?.results || []));
+      // Build unit_id → plan map for accepted plans
+      const rawPlans = Array.isArray(plRes.data) ? plRes.data : (plRes.data?.results || []);
+      const planMap = {};
+      rawPlans.forEach(pl => { planMap[String(pl.unit)] = pl; });
+      setActivePlansMap(planMap);
     } catch (err) { console.error(err); }
   };
 
@@ -269,6 +277,15 @@ export default function Cobranza() {
         fp[ef.id] || { received: '', targetUnitId: null, adelantoTargets: {} },
       ])),
     };
+    // If unit has an active payment plan with an installment for this period, add its field
+    const activePlan = activePlansMap[String(unit.id)];
+    if (activePlan) {
+      const planKey = activePlan.field_key; // e.g. "plan_{uuid}"
+      const planInst = (activePlan.installments || []).find(i => i.period_key === period);
+      if (planInst) {
+        fieldPayments[planKey] = fp[planKey] || { received: '', targetUnitId: null, adelantoTargets: {} };
+      }
+    }
     // Normalize received to string for inputs
     Object.keys(fieldPayments).forEach(k => {
       const v = fieldPayments[k];
@@ -390,7 +407,10 @@ export default function Cobranza() {
 
   const buildCapturePayload = () => {
     const fp = {};
-    const allKeys = ['maintenance', ...extraFields.map(ef => ef.id)];
+    // Include plan field key if present in captureForm
+    const activePlan = activePlansMap[String(captureForm.unit_id)];
+    const planInstKey = activePlan ? activePlan.field_key : null;
+    const allKeys = ['maintenance', ...extraFields.map(ef => ef.id), ...(planInstKey ? [planInstKey] : [])];
     allKeys.forEach(k => {
       const v = captureForm.field_payments?.[k];
       const rec = parseFloat(v?.received) || 0;
@@ -1192,6 +1212,22 @@ export default function Cobranza() {
         const autoStatus = (isUnitExempt && totalReqCharge === 0) ? 'pagado'
           : (totalReqAbono >= totalReqCharge ? 'pagado'
           : (maintCaptured === 0 && hasNonMaintPayment ? 'parcial' : 'pendiente'));
+        // Plan de pagos activo: cuota para el período actual
+        const captureActivePlan = activePlansMap[String(showCapture.id)];
+        const capturePlanInst = captureActivePlan
+          ? (captureActivePlan.installments || []).find(i => i.period_key === period)
+          : null;
+        const capturePlanKey = captureActivePlan ? captureActivePlan.field_key : null;
+        const capturePlanDebtPart = capturePlanInst ? (parseFloat(capturePlanInst.debt_part) || 0) : 0;
+        const capturePlanAbono = capturePlanInst
+          ? Math.min(parseFloat(captureForm.field_payments?.[capturePlanKey]?.received) || 0, capturePlanDebtPart)
+          : 0;
+        const capturePlanNInst = capturePlanInst?.num ?? '?';
+        const capturePlanNTotal = captureActivePlan ? (captureActivePlan.installments || []).length : 0;
+        if (capturePlanInst) {
+          totalReqCharge += capturePlanDebtPart;
+          totalReqAbono += capturePlanAbono;
+        }
         const obligFields = [{ id: 'maintenance', label: 'Mantenimiento', charge: maintCharge }, ...reqEFs.map(ef => ({ id: ef.id, label: ef.label, charge: parseFloat(ef.default_amount) || 0 }))];
         const totalAdelantoCount = obligFields.reduce((s, fd) => s + Object.keys(captureForm.field_payments?.[fd.id]?.adelantoTargets || {}).length, 0);
         const prevDebt = parseFloat(showCapture.previous_debt) || 0;
@@ -1296,6 +1332,32 @@ export default function Cobranza() {
                       </div>
                     );
                   })}
+                  {/* Plan de pagos: cuota del período */}
+                  {capturePlanInst && (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 100px 120px 85px', gap: 0, alignItems: 'center', padding: '11px 16px', borderBottom: '1px solid var(--sand-50)', background: 'rgba(13,124,110,0.04)' }}>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-800)' }}>
+                          📋 Plan de Pagos — Cuota {capturePlanNInst}/{capturePlanNTotal}
+                          <span style={{ marginLeft: 6, fontSize: 10, color: 'var(--teal-700)', background: 'var(--teal-100)', padding: '2px 6px', borderRadius: 4 }}>Plan Activo</span>
+                        </div>
+                        <div style={{ fontSize: 11, color: 'var(--ink-400)' }}>
+                          Amortización — período {period} · total cuota: {fmt(parseFloat(capturePlanInst.total) || 0)}
+                        </div>
+                      </div>
+                      <div style={{ textAlign: 'right', fontSize: 15, fontWeight: 700, color: 'var(--ink-700)' }}>{fmt(capturePlanDebtPart)}</div>
+                      <div style={{ textAlign: 'right' }}>
+                        <input
+                          type="number" className="field-input" min={0} step="0.01"
+                          style={{ textAlign: 'right', maxWidth: 100 }}
+                          value={captureForm.field_payments?.[capturePlanKey]?.received ?? ''}
+                          onChange={e => setReceived(capturePlanKey, e.target.value)}
+                        />
+                      </div>
+                      <div style={{ textAlign: 'right', fontWeight: 700, fontSize: 13, color: (capturePlanDebtPart - capturePlanAbono) > 0 ? 'var(--coral-500)' : 'var(--teal-600)' }}>
+                        {(capturePlanDebtPart - capturePlanAbono) === 0 ? '✓' : fmt(capturePlanDebtPart - capturePlanAbono)}
+                      </div>
+                    </div>
+                  )}
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 100px 120px 85px', gap: 0, padding: '10px 16px', background: 'var(--teal-50)', borderTop: '2px solid var(--teal-200)', alignItems: 'center' }}>
                     <div style={{ fontSize: 10, fontWeight: 800, color: 'var(--teal-700)' }}>SUBTOTAL OBLIGATORIOS</div>
                     <div style={{ textAlign: 'right', fontWeight: 700, fontSize: 13, color: 'var(--ink-700)' }}>{fmt(totalReqCharge)}</div>

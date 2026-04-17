@@ -293,12 +293,25 @@ export default function PlanPagos() {
   };
 
   const handleDownloadPDF = async (plan) => {
+    // Use native fetch to avoid any Axios blob-wrapping issues.
+    const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
+    const token = localStorage.getItem('access_token');
     try {
-      const res = await paymentPlansAPI.pdf(tenantId, plan.id);
-      // res.data is already a Blob when responseType:'blob' is set
-      const blob = res.data instanceof Blob
-        ? res.data
-        : new Blob([res.data], { type: 'application/pdf' });
+      const response = await fetch(
+        `${apiUrl}/tenants/${tenantId}/payment-plans/${plan.id}/pdf/`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (!response.ok) {
+        // Try to parse error JSON
+        let detail = 'No se pudo descargar el PDF.';
+        try {
+          const errJson = await response.json();
+          detail = errJson?.detail || detail;
+        } catch { /* ignore */ }
+        toast.error(detail);
+        return;
+      }
+      const blob = await response.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -309,16 +322,6 @@ export default function PlanPagos() {
       document.body.removeChild(a);
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (err) {
-      // If server returned a JSON error in a blob, try to parse it
-      const errBlob = err?.response?.data;
-      if (errBlob instanceof Blob) {
-        try {
-          const txt = await errBlob.text();
-          const parsed = JSON.parse(txt);
-          toast.error(parsed?.detail || 'No se pudo descargar el PDF.');
-          return;
-        } catch { /* ignore */ }
-      }
       toast.error('No se pudo descargar el PDF.');
     }
   };
