@@ -7,7 +7,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { reportsAPI, tenantsAPI, paymentPlansAPI, periodsAPI } from '../api/client';
+import { reportsAPI, tenantsAPI, paymentPlansAPI, periodsAPI, unitsAPI } from '../api/client';
 import { todayPeriod, periodLabel, prevPeriod } from '../utils/helpers';
 import {
   TrendingDown, Search, X, Send, Download,
@@ -69,8 +69,9 @@ export default function PlanPagos() {
   const [adeudosItems,  setAdeudosItems]  = useState([]);  // items from reporte-adeudos
   const [adeudosLoading, setAdeudosLoading] = useState(false);
   const [unitSearch,    setUnitSearch]    = useState('');
-  const [selectedUnit,  setSelectedUnit]  = useState(null);
-  const [selectedDebt,  setSelectedDebt]  = useState(0);
+  const [selectedUnit,       setSelectedUnit]       = useState(null);
+  const [selectedDebt,       setSelectedDebt]       = useState(0);
+  const [selectedAdeudoItem, setSelectedAdeudoItem] = useState(null); // full item incl. period_debts
 
   // ─── Plans state ───────────────────────────────────────────────────────────
   const [plans,        setPlans]        = useState([]);
@@ -117,6 +118,7 @@ export default function PlanPagos() {
     // Reset selection when period changes
     setSelectedUnit(null);
     setSelectedDebt(0);
+    setSelectedAdeudoItem(null);
     reportsAPI.reporteAdeudos(tenantId, { cutoff })
       .then(r => setAdeudosItems(r.data?.units || []))
       .catch(() => toast.error('No se pudieron cargar las unidades.'))
@@ -128,14 +130,29 @@ export default function PlanPagos() {
   // ─── Auto-select unit from URL ?unit_id= ─────────────────────────────────
   useEffect(() => {
     const uid = searchParams.get('unit_id');
-    if (!uid || adeudosItems.length === 0) return;
-    // Use loose string comparison — URL params are always strings, IDs may be int or UUID
+    if (!uid || isVecino) return;
+
+    // Try to find unit in the adeudos list (units with debt)
     const item = adeudosItems.find(i => String((i.unit || {}).id) === String(uid));
     if (item) {
       setSelectedUnit(item.unit);
       setSelectedDebt(parseFloat(item.total_adeudo || 0));
+      setSelectedAdeudoItem(item);
+      return;
     }
-  }, [adeudosItems, searchParams]);
+
+    // Fallback: unit has no adeudo for this cutoff period — load it directly
+    // Only attempt once loading has finished (adeudosLoading = false)
+    if (!adeudosLoading && tenantId) {
+      unitsAPI.get(tenantId, uid)
+        .then(r => {
+          setSelectedUnit(r.data);
+          setSelectedDebt(0);
+          setSelectedAdeudoItem(null);
+        })
+        .catch(() => {}); // silently fail if unit not found
+    }
+  }, [adeudosItems, adeudosLoading, searchParams, tenantId, isVecino]);
 
   // ─── Load plans for selected unit ─────────────────────────────────────────
   const loadPlans = useCallback(async () => {
@@ -570,20 +587,107 @@ export default function PlanPagos() {
   };
 
   // ─── New plan form ─────────────────────────────────────────────────────────
-  const renderNewPlanForm = () => (
+  const renderNewPlanForm = () => {
+    const u = selectedUnit || {};
+    const periodDebts = selectedAdeudoItem?.period_debts || [];
+    const netPrevDebt = parseFloat(selectedAdeudoItem?.net_prev_debt || 0);
+    // Occupancy label
+    const OCCUPANCY_LABEL = { propietario: 'Propietario', rentado: 'Rentado', 'vacío': 'Vacío' };
+    const occLabel = OCCUPANCY_LABEL[u.occupancy] || u.occupancy || '—';
+    // Contact info based on occupancy
+    const contactName  = u.responsible_name || [u.owner_first_name, u.owner_last_name].filter(Boolean).join(' ') || '—';
+    const contactEmail = u.occupancy === 'rentado' ? (u.tenant_email || u.owner_email || '—') : (u.owner_email || '—');
+    const contactPhone = u.occupancy === 'rentado' ? (u.tenant_phone || u.owner_phone || '—') : (u.owner_phone || '—');
+    const ownerFull    = [u.owner_first_name, u.owner_last_name].filter(Boolean).join(' ') || '—';
+
+    return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {/* Debt summary */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
-        {[
-          { label: `Adeudo al ${periodLabel(cutoff)}`, value: fmt(selectedDebt), color: 'var(--coral-500)', big: true  },
-          { label: 'Cuota Mensual Regular', value: fmt(maintenanceFee),             color: 'var(--ink-600)',   big: true  },
-          { label: 'Responsable',          value: selectedUnit?.responsible_name || '—', color: 'var(--ink-700)', big: false },
-        ].map(c => (
-          <div key={c.label} style={{ background: 'var(--sand-50)', border: '1px solid var(--sand-200)', borderRadius: 8, padding: '10px 14px' }}>
-            <div style={{ fontSize: 10, color: 'var(--ink-400)', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.04em', marginBottom: 4 }}>{c.label}</div>
-            <div style={{ fontSize: c.big ? 18 : 14, fontWeight: 700, color: c.color }}>{c.value}</div>
+
+      {/* ── UNIT INFO CARD ── */}
+      <div style={{ border: '1px solid var(--teal-200)', borderRadius: 10, overflow: 'hidden', background: '#fff' }}>
+        {/* Card header */}
+        <div style={{ background: '#1e3a5f', padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 10 }}>
+          <Building size={15} color="#fff" />
+          <span style={{ color: '#fff', fontWeight: 700, fontSize: 13 }}>
+            {u.unit_id_code && <span style={{ fontFamily: 'monospace', background: 'rgba(255,255,255,0.15)', padding: '1px 7px', borderRadius: 4, marginRight: 8 }}>{u.unit_id_code}</span>}
+            {u.unit_name || '—'}
+          </span>
+          <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.7)', background: 'rgba(255,255,255,0.1)', padding: '2px 8px', borderRadius: 10 }}>
+            {occLabel}
+          </span>
+        </div>
+
+        {/* Contact + debt totals */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0 }}>
+          {/* Contact info */}
+          <div style={{ padding: '12px 16px', borderRight: '1px solid var(--sand-100)' }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--ink-400)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
+              Información de contacto
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                <span style={{ fontSize: 11, color: 'var(--ink-400)', width: 60, flexShrink: 0 }}>Responsable</span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-700)' }}>{contactName}</span>
+              </div>
+              {u.occupancy === 'rentado' && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                  <span style={{ fontSize: 11, color: 'var(--ink-400)', width: 60, flexShrink: 0 }}>Propietario</span>
+                  <span style={{ fontSize: 12, color: 'var(--ink-600)' }}>{ownerFull}</span>
+                </div>
+              )}
+              {contactEmail !== '—' && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                  <span style={{ fontSize: 11, color: 'var(--ink-400)', width: 60, flexShrink: 0 }}>Correo</span>
+                  <span style={{ fontSize: 12, color: 'var(--teal-600)', wordBreak: 'break-all' }}>{contactEmail}</span>
+                </div>
+              )}
+              {contactPhone !== '—' && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                  <span style={{ fontSize: 11, color: 'var(--ink-400)', width: 60, flexShrink: 0 }}>Teléfono</span>
+                  <span style={{ fontSize: 12, color: 'var(--ink-700)' }}>{contactPhone}</span>
+                </div>
+              )}
+              {u.coowner_first_name && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                  <span style={{ fontSize: 11, color: 'var(--ink-400)', width: 60, flexShrink: 0 }}>Co-propiet.</span>
+                  <span style={{ fontSize: 12, color: 'var(--ink-600)' }}>{[u.coowner_first_name, u.coowner_last_name].filter(Boolean).join(' ')}</span>
+                </div>
+              )}
+            </div>
           </div>
-        ))}
+
+          {/* Debt totals */}
+          <div style={{ padding: '12px 16px' }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--ink-400)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
+              Resumen de adeudo al {periodLabel(cutoff)}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+              {netPrevDebt > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: 11, color: 'var(--ink-500)' }}>Deuda anterior</span>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: '#d97706' }}>{fmt(netPrevDebt)}</span>
+                </div>
+              )}
+              {periodDebts.filter(pd => pd.deficit > 0).map(pd => (
+                <div key={pd.period} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: 11, color: 'var(--ink-500)' }}>{periodLabel(pd.period)}</span>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--coral-500)' }}>{fmt(pd.deficit)}</span>
+                </div>
+              ))}
+              {selectedDebt === 0 && netPrevDebt === 0 && periodDebts.length === 0 && (
+                <div style={{ fontSize: 12, color: 'var(--teal-600)', fontStyle: 'italic' }}>Sin adeudos en este período</div>
+              )}
+              <div style={{ marginTop: 4, paddingTop: 6, borderTop: '1px solid var(--sand-200)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-600)' }}>Total adeudo</span>
+                <span style={{ fontSize: 16, fontWeight: 800, color: selectedDebt > 0 ? 'var(--coral-500)' : 'var(--teal-600)' }}>{fmt(selectedDebt)}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: 11, color: 'var(--ink-500)' }}>Cuota mensual</span>
+                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-700)' }}>{fmt(maintenanceFee)}</span>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Plan config */}
@@ -711,7 +815,8 @@ export default function PlanPagos() {
         </button>
       </div>
     </div>
-  );
+    );
+  };
 
   // ─── Vecino: auto-load plans on mount ─────────────────────────────────────
   // (loadPlans already handles isVecino case — no unit selection needed)
@@ -810,6 +915,7 @@ export default function PlanPagos() {
                       onClick={() => {
                         setSelectedUnit(u);
                         setSelectedDebt(debt);
+                        setSelectedAdeudoItem(item);
                         setSelectedPlan(null);
                         setTab('list');
                       }}
