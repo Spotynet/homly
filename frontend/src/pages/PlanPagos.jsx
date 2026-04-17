@@ -4,7 +4,7 @@
  * - Managers (admin/tesorero/contador/auditor): seleccionan unidad, crean/envían/cancelan planes.
  * - Vecinos: ven los planes de su unidad, pueden aceptar/rechazar.
  */
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { reportsAPI, tenantsAPI, paymentPlansAPI, periodsAPI, unitsAPI } from '../api/client';
@@ -59,6 +59,9 @@ export default function PlanPagos() {
   const isReadOnly = ['contador', 'auditor'].includes(role);
   const isVecino   = role === 'vecino';
   const canWrite   = isManager; // contador/auditor = read-only
+
+  // Tracks which unit_id we've already fetched via fallback to avoid repeated calls
+  const fallbackFetchedRef = useRef(null);
 
   // ─── Periodo de corte ──────────────────────────────────────────────────────
   const [cutoff,        setCutoff]        = useState(todayPeriod());
@@ -132,37 +135,44 @@ export default function PlanPagos() {
     const uid = searchParams.get('unit_id');
     if (!uid || isVecino) return;
 
-    // Try to find unit in the adeudos list (units with debt)
+    // Try to find unit in the adeudos list (units with debt in this period)
     const item = adeudosItems.find(i => String((i.unit || {}).id) === String(uid));
     if (item) {
+      fallbackFetchedRef.current = null; // reset so a later period change can retry
       setSelectedUnit(item.unit);
       setSelectedDebt(parseFloat(item.total_adeudo || 0));
       setSelectedAdeudoItem(item);
       return;
     }
 
-    // Fallback: unit has no adeudo for this cutoff period — load it directly
-    // Only attempt once loading has finished (adeudosLoading = false)
-    if (!adeudosLoading && tenantId) {
+    // Fallback: unit not in adeudos list (no debt this period) — load unit directly.
+    // Guard: only run once per uid to prevent repeated API calls.
+    if (!adeudosLoading && tenantId && fallbackFetchedRef.current !== uid) {
+      fallbackFetchedRef.current = uid;
       unitsAPI.get(tenantId, uid)
         .then(r => {
           setSelectedUnit(r.data);
           setSelectedDebt(0);
           setSelectedAdeudoItem(null);
         })
-        .catch(() => {}); // silently fail if unit not found
+        .catch(() => { fallbackFetchedRef.current = null; });
     }
   }, [adeudosItems, adeudosLoading, searchParams, tenantId, isVecino]);
 
   // ─── Load plans for selected unit ─────────────────────────────────────────
   const loadPlans = useCallback(async () => {
     if (!tenantId) return;
-    const params = isVecino ? {} : { unit_id: selectedUnit?.id };
+    // page_size=1000 bypasses backend pagination (FlexiblePageNumberPagination)
+    const params = isVecino
+      ? { page_size: 1000 }
+      : { unit_id: selectedUnit?.id, page_size: 1000 };
     if (!isVecino && !selectedUnit?.id) { setPlans([]); return; }
     setPlansLoading(true);
     try {
       const res = await paymentPlansAPI.list(tenantId, params);
-      setPlans(res.data || []);
+      // Handle both paginated { count, results: [...] } and plain array responses
+      const data = res.data;
+      setPlans(Array.isArray(data) ? data : (data?.results || []));
     } catch {
       toast.error('No se pudieron cargar los planes de pago.');
     } finally {
@@ -297,7 +307,8 @@ export default function PlanPagos() {
       const a = document.createElement('a');
       a.href = url;
       const unitCode = (selectedUnit?.unit_id_code || plan.unit_id_code || 'unidad').replace(/\s/g, '_');
-      a.download = `plan_pago_${unitCode}_${plan.id.slice(0, 8)}.pdf`;
+      const planShortId = String(plan.id || '').slice(0, 8) || 'plan';
+      a.download = `plan_pago_${unitCode}_${planShortId}.pdf`;
       document.body.appendChild(a); a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
