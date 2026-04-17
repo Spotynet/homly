@@ -3407,13 +3407,16 @@ class DashboardView(APIView):
         start_period = tenant.operation_start_date or '2024-01'
         deuda_total = Decimal('0')
         for unit in units:
-            _, _, _, bal, prev_debt_adeudo = _compute_statement(
+            _, _, _, bal, prev_debt_adeudo, _u_active_plan = _compute_statement(
                 tenant, str(unit.id), start_period, period
             )
             previous_debt_u = Decimal(str(unit.previous_debt or 0))
             credit_balance_u = Decimal(str(unit.credit_balance or 0))
             prev_debt_adeudo_dec = Decimal(str(prev_debt_adeudo))
-            adj_bal = Decimal(str(bal)) + previous_debt_u - prev_debt_adeudo_dec - credit_balance_u
+            if _u_active_plan:
+                adj_bal = Decimal(str(bal)) - credit_balance_u
+            else:
+                adj_bal = Decimal(str(bal)) + previous_debt_u - prev_debt_adeudo_dec - credit_balance_u
             deuda_total += max(Decimal('0'), adj_bal)
 
         # Total ingresos = mantenimiento + campos adicionales (SIN adeudos)
@@ -4369,7 +4372,7 @@ class ReporteAdeudosView(APIView):
         units_with_debt = 0
 
         for unit in units:
-            rows, tc, tp, bal, prev_debt_adeudo = _compute_statement(
+            rows, tc, tp, bal, prev_debt_adeudo, _u_active_plan = _compute_statement(
                 tenant, str(unit.id), start_period, cutoff
             )
             previous_debt = Decimal(str(unit.previous_debt or 0))
@@ -4377,10 +4380,14 @@ class ReporteAdeudosView(APIView):
             prev_debt_adeudo_dec = Decimal(str(prev_debt_adeudo))
 
             # Saldo ajustado igual que EstadoCuentaView (lista por unidad)
-            adj_bal = Decimal(str(bal)) + previous_debt - prev_debt_adeudo_dec - credit_balance
+            # Si hay plan activo, la deuda anterior está absorbida en las cuotas
+            if _u_active_plan:
+                adj_bal = Decimal(str(bal)) - credit_balance
+            else:
+                adj_bal = Decimal(str(bal)) + previous_debt - prev_debt_adeudo_dec - credit_balance
             total_adeudo = max(Decimal('0'), adj_bal)
 
-            net_prev_debt = max(
+            net_prev_debt = Decimal('0') if _u_active_plan else max(
                 Decimal('0'),
                 previous_debt - prev_debt_adeudo_dec - credit_balance
             )
@@ -4507,13 +4514,16 @@ class SendUnitStatementEmailView(APIView):
         tenant = Tenant.objects.get(id=tenant_id)
         start_period = from_period or tenant.operation_start_date or '2024-01'
 
-        rows, total_charges, total_paid, balance, prev_debt_adeudo = _compute_statement(
+        rows, total_charges, total_paid, balance, prev_debt_adeudo, _stmt_active_plan = _compute_statement(
             tenant, str(unit_id), start_period, to_period
         )
         # Adjust balance like EstadoCuentaView does
         prev_debt = float(unit.previous_debt or 0)
         credit_bal = float(unit.credit_balance or 0)
-        adj_balance = balance + prev_debt - float(prev_debt_adeudo) - credit_bal
+        if _stmt_active_plan:
+            adj_balance = balance - credit_bal
+        else:
+            adj_balance = balance + prev_debt - float(prev_debt_adeudo) - credit_bal
 
         email_rows = [
             {
@@ -5032,12 +5042,15 @@ class SendVecinoStatementEmailView(APIView):
         tenant = Tenant.objects.get(id=tenant_id)
         start_period = from_period or tenant.operation_start_date or '2024-01'
 
-        rows, total_charges, total_paid, balance, prev_debt_adeudo = _compute_statement(
+        rows, total_charges, total_paid, balance, prev_debt_adeudo, _stmt_active_plan2 = _compute_statement(
             tenant, str(unit.id), start_period, to_period
         )
         prev_debt  = float(unit.previous_debt  or 0)
         credit_bal = float(unit.credit_balance or 0)
-        adj_balance = balance + prev_debt - float(prev_debt_adeudo) - credit_bal
+        if _stmt_active_plan2:
+            adj_balance = balance - credit_bal
+        else:
+            adj_balance = balance + prev_debt - float(prev_debt_adeudo) - credit_bal
 
         # Build email rows
         email_rows = [
@@ -5127,10 +5140,13 @@ class SendGeneralStatementEmailView(APIView):
         total_deuda = 0.0
 
         for unit in units:
-            rows, tc, tp, bal, pda = _compute_statement(tenant, str(unit.id), start_period, cutoff)
+            rows, tc, tp, bal, pda, _u_ap = _compute_statement(tenant, str(unit.id), start_period, cutoff)
             prev_debt = float(unit.previous_debt or 0)
             credit_bal = float(unit.credit_balance or 0)
-            adj_bal = bal + prev_debt - float(pda) - credit_bal
+            if _u_ap:
+                adj_bal = bal - credit_bal
+            else:
+                adj_bal = bal + prev_debt - float(pda) - credit_bal
             deuda = max(0.0, adj_bal)
             total_cargo += tc
             total_abono += tp
@@ -5214,10 +5230,13 @@ class EstadoPorUnidadPDFView(APIView):
         con_adeudo = 0
 
         for unit in units:
-            rows, tc, tp, bal, pda = _compute_statement(tenant, str(unit.id), start_period, cutoff)
+            rows, tc, tp, bal, pda, _u_ap2 = _compute_statement(tenant, str(unit.id), start_period, cutoff)
             prev_debt = float(unit.previous_debt or 0)
             credit_bal = float(unit.credit_balance or 0)
-            adj_bal = bal + prev_debt - float(pda) - credit_bal
+            if _u_ap2:
+                adj_bal = bal - credit_bal
+            else:
+                adj_bal = bal + prev_debt - float(pda) - credit_bal
             total_cargo_all += Decimal(str(tc))
             total_abono_all += Decimal(str(tp))
             deuda = max(0, adj_bal)
@@ -5578,12 +5597,15 @@ class EstadoPorUnidadPDFView(APIView):
         if tu and tu.role == 'vecino' and str(tu.unit_id) != str(unit.id):
             return Response({'detail': 'No autorizado.'}, status=403)
 
-        rows, total_charges, total_paid, balance, prev_debt_adeudo = _compute_statement(
+        rows, total_charges, total_paid, balance, prev_debt_adeudo, _pdf_active_plan = _compute_statement(
             tenant, str(unit.id), start_period, cutoff
         )
         prev_debt   = float(unit.previous_debt  or 0)
         credit_bal  = float(unit.credit_balance or 0)
-        adj_balance = balance + prev_debt - float(prev_debt_adeudo) - credit_bal
+        if _pdf_active_plan:
+            adj_balance = balance - credit_bal
+        else:
+            adj_balance = balance + prev_debt - float(prev_debt_adeudo) - credit_bal
 
         # Convert rows to the format expected by the shared PDF helper
         email_rows = [

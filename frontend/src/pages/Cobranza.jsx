@@ -1203,15 +1203,7 @@ export default function Cobranza() {
           const ab = Math.min(parseFloat(captureForm.field_payments?.[ef.id]?.received) || 0, ch);
           totalReqCharge += ch; totalReqAbono += ab;
         });
-        const totalReqSaldo = Math.max(0, totalReqCharge - totalReqAbono);
         const totalOptAbono = optEFs.reduce((s, ef) => s + (parseFloat(captureForm.field_payments?.[ef.id]?.received) || 0), 0);
-        // Parcial: mantenimiento fijo sin captura + al menos un campo adicional activo con pago
-        const maintCaptured = isUnitExempt ? 0 : (parseFloat(captureForm.field_payments?.maintenance?.received) || 0);
-        const hasNonMaintPayment = reqEFs.some(ef => (parseFloat(captureForm.field_payments?.[ef.id]?.received) || 0) > 0)
-          || optEFs.some(ef => (parseFloat(captureForm.field_payments?.[ef.id]?.received) || 0) > 0);
-        const autoStatus = (isUnitExempt && totalReqCharge === 0) ? 'pagado'
-          : (totalReqAbono >= totalReqCharge ? 'pagado'
-          : (maintCaptured === 0 && hasNonMaintPayment ? 'parcial' : 'pendiente'));
         // Plan de pagos activo: cuota para el período actual
         const captureActivePlan = activePlansMap[String(showCapture.id)];
         const capturePlanInst = captureActivePlan
@@ -1228,6 +1220,15 @@ export default function Cobranza() {
           totalReqCharge += capturePlanDebtPart;
           totalReqAbono += capturePlanAbono;
         }
+        // totalReqSaldo and autoStatus must be computed AFTER plan installment is included in totals
+        const totalReqSaldo = Math.max(0, totalReqCharge - totalReqAbono);
+        // Parcial: mantenimiento fijo sin captura + al menos un campo adicional activo con pago
+        const maintCaptured = isUnitExempt ? 0 : (parseFloat(captureForm.field_payments?.maintenance?.received) || 0);
+        const hasNonMaintPayment = reqEFs.some(ef => (parseFloat(captureForm.field_payments?.[ef.id]?.received) || 0) > 0)
+          || optEFs.some(ef => (parseFloat(captureForm.field_payments?.[ef.id]?.received) || 0) > 0);
+        const autoStatus = (isUnitExempt && totalReqCharge === 0) ? 'pagado'
+          : (totalReqAbono >= totalReqCharge ? 'pagado'
+          : (maintCaptured === 0 && hasNonMaintPayment ? 'parcial' : 'pendiente'));
         const obligFields = [{ id: 'maintenance', label: 'Mantenimiento', charge: maintCharge }, ...reqEFs.map(ef => ({ id: ef.id, label: ef.label, charge: parseFloat(ef.default_amount) || 0 }))];
         const totalAdelantoCount = obligFields.reduce((s, fd) => s + Object.keys(captureForm.field_payments?.[fd.id]?.adelantoTargets || {}).length, 0);
         const prevDebt = parseFloat(showCapture.previous_debt) || 0;
