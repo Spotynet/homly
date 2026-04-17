@@ -7,10 +7,11 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { reportsAPI, tenantsAPI, paymentPlansAPI } from '../api/client';
+import { reportsAPI, tenantsAPI, paymentPlansAPI, periodsAPI } from '../api/client';
+import { todayPeriod, periodLabel, prevPeriod } from '../utils/helpers';
 import {
   TrendingDown, Search, X, Send, Download,
-  ChevronLeft, Building, CheckCircle,
+  ChevronLeft, Building, CheckCircle, Calendar,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -59,6 +60,10 @@ export default function PlanPagos() {
   const isVecino   = role === 'vecino';
   const canWrite   = isManager; // contador/auditor = read-only
 
+  // ─── Periodo de corte ──────────────────────────────────────────────────────
+  const [cutoff,        setCutoff]        = useState(todayPeriod());
+  const [closedPeriods, setClosedPeriods] = useState([]);
+
   // ─── Tenant & units ────────────────────────────────────────────────────────
   const [tenantData,    setTenantData]    = useState(null);
   const [adeudosItems,  setAdeudosItems]  = useState([]);  // items from reporte-adeudos
@@ -97,15 +102,26 @@ export default function PlanPagos() {
     tenantsAPI.get(tenantId).then(r => setTenantData(r.data)).catch(() => {});
   }, [tenantId]);
 
+  // ─── Load closed periods for the cutoff selector ───────────────────────────
+  useEffect(() => {
+    if (!tenantId || isVecino) return;
+    periodsAPI.closedList(tenantId)
+      .then(r => setClosedPeriods(Array.isArray(r.data) ? r.data : (r.data?.results || [])))
+      .catch(() => setClosedPeriods([]));
+  }, [tenantId, isVecino]);
+
   // ─── Load units with adeudos (managers) ────────────────────────────────────
   const loadUnits = useCallback(() => {
     if (!tenantId || isVecino) return;
     setAdeudosLoading(true);
-    reportsAPI.reporteAdeudos(tenantId, {})
+    // Reset selection when period changes
+    setSelectedUnit(null);
+    setSelectedDebt(0);
+    reportsAPI.reporteAdeudos(tenantId, { cutoff })
       .then(r => setAdeudosItems(r.data?.units || []))
       .catch(() => toast.error('No se pudieron cargar las unidades.'))
       .finally(() => setAdeudosLoading(false));
-  }, [tenantId, isVecino]);
+  }, [tenantId, isVecino, cutoff]);
 
   useEffect(() => { loadUnits(); }, [loadUnits]);
 
@@ -113,7 +129,8 @@ export default function PlanPagos() {
   useEffect(() => {
     const uid = searchParams.get('unit_id');
     if (!uid || adeudosItems.length === 0) return;
-    const item = adeudosItems.find(i => (i.unit || {}).id === uid);
+    // Use loose string comparison — URL params are always strings, IDs may be int or UUID
+    const item = adeudosItems.find(i => String((i.unit || {}).id) === String(uid));
     if (item) {
       setSelectedUnit(item.unit);
       setSelectedDebt(parseFloat(item.total_adeudo || 0));
@@ -182,6 +199,7 @@ export default function PlanPagos() {
     try {
       await paymentPlansAPI.create(tenantId, {
         unit:                selectedUnit.id,
+        cutoff_period:       cutoff,
         total_adeudo:        selectedDebt,
         maintenance_fee:     maintenanceFee,
         frequency:           freq,
@@ -270,6 +288,20 @@ export default function PlanPagos() {
       toast.error('No se pudo descargar el PDF.');
     }
   };
+
+  // ─── Period options for the cutoff selector ──────────────────────────────
+  const periodOptions = useMemo(() => {
+    const today = todayPeriod();
+    // Build a set of period strings from closed periods + last 12 months
+    const set = new Set();
+    // Add last 12 months back from today
+    let p = today;
+    for (let i = 0; i < 13; i++) { set.add(p); p = prevPeriod(p); }
+    // Add all closed periods
+    closedPeriods.forEach(cp => { if (cp.period) set.add(cp.period); });
+    // Sort descending
+    return Array.from(set).sort((a, b) => b.localeCompare(a));
+  }, [closedPeriods]);
 
   // ─── Filtered units list ──────────────────────────────────────────────────
   const filteredItems = useMemo(() => {
@@ -543,7 +575,7 @@ export default function PlanPagos() {
       {/* Debt summary */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
         {[
-          { label: 'Adeudo Total',         value: fmt(selectedDebt),                color: 'var(--coral-500)', big: true  },
+          { label: `Adeudo al ${periodLabel(cutoff)}`, value: fmt(selectedDebt), color: 'var(--coral-500)', big: true  },
           { label: 'Cuota Mensual Regular', value: fmt(maintenanceFee),             color: 'var(--ink-600)',   big: true  },
           { label: 'Responsable',          value: selectedUnit?.responsible_name || '—', color: 'var(--ink-700)', big: false },
         ].map(c => (
@@ -715,6 +747,34 @@ export default function PlanPagos() {
               <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-600)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
                 Unidades con adeudos
               </div>
+
+              {/* ── Periodo de corte selector ── */}
+              <div style={{ marginBottom: 10 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-500)', marginBottom: 5, display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <Calendar size={11} />
+                  Período de corte
+                </div>
+                <select
+                  value={cutoff}
+                  onChange={e => setCutoff(e.target.value)}
+                  style={{
+                    width: '100%', padding: '6px 8px', border: '1px solid var(--sand-200)',
+                    borderRadius: 7, fontSize: 12, boxSizing: 'border-box',
+                    background: '#fff', color: 'var(--ink-700)', cursor: 'pointer',
+                    fontWeight: 600,
+                  }}
+                >
+                  {periodOptions.map(opt => (
+                    <option key={opt} value={opt}>
+                      {opt === todayPeriod() ? `${periodLabel(opt)} (actual)` : periodLabel(opt)}
+                    </option>
+                  ))}
+                </select>
+                <div style={{ fontSize: 10, color: 'var(--ink-400)', marginTop: 3 }}>
+                  Adeudos calculados hasta este período
+                </div>
+              </div>
+
               <div style={{ position: 'relative' }}>
                 <Search size={13} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--ink-400)' }} />
                 <input
@@ -822,7 +882,9 @@ export default function PlanPagos() {
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
                     <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontSize: 11, color: 'var(--ink-400)', textTransform: 'uppercase', fontWeight: 600 }}>Adeudo total</div>
+                      <div style={{ fontSize: 10, color: 'var(--ink-400)', textTransform: 'uppercase', fontWeight: 600 }}>
+                        Adeudo al {periodLabel(cutoff)}
+                      </div>
                       <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--coral-500)' }}>{fmt(selectedDebt)}</div>
                     </div>
                   </div>
