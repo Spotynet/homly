@@ -569,6 +569,20 @@ class PaymentPlan(models.Model):
     # Installment schedule (see schema above)
     installments = models.JSONField(default=list)
 
+    # Multi-option proposal support
+    start_period   = models.CharField(
+        max_length=7, blank=True, default='',
+        help_text='YYYY-MM period when this plan starts applying to cobranza',
+    )
+    proposal_group = models.UUIDField(
+        null=True, blank=True, db_index=True,
+        help_text='Groups multiple options sent together as a proposal',
+    )
+    option_number  = models.PositiveSmallIntegerField(
+        default=1,
+        help_text='Option number within a proposal (1, 2, or 3)',
+    )
+
     class Meta:
         db_table = 'payment_plans'
         ordering = ['-created_at']

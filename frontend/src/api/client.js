@@ -200,11 +200,12 @@ export const paymentPlansAPI = {
   create:  (tenantId, data)   => api.post(`/tenants/${tenantId}/payment-plans/`, data),
   update:  (tenantId, id, data) => api.patch(`/tenants/${tenantId}/payment-plans/${id}/`, data),
   destroy: (tenantId, id)     => api.delete(`/tenants/${tenantId}/payment-plans/${id}/`),
-  send:    (tenantId, id)     => api.post(`/tenants/${tenantId}/payment-plans/${id}/send/`),
-  accept:  (tenantId, id)     => api.post(`/tenants/${tenantId}/payment-plans/${id}/accept/`),
-  reject:  (tenantId, id)     => api.post(`/tenants/${tenantId}/payment-plans/${id}/reject/`),
-  cancel:  (tenantId, id)     => api.post(`/tenants/${tenantId}/payment-plans/${id}/cancel/`),
-  pdf:     (tenantId, id)     => api.get(`/tenants/${tenantId}/payment-plans/${id}/pdf/`, { responseType: 'blob' }),
+  send:            (tenantId, id)     => api.post(`/tenants/${tenantId}/payment-plans/${id}/send/`),
+  accept:          (tenantId, id)     => api.post(`/tenants/${tenantId}/payment-plans/${id}/accept/`),
+  reject:          (tenantId, id)     => api.post(`/tenants/${tenantId}/payment-plans/${id}/reject/`),
+  cancel:          (tenantId, id)     => api.post(`/tenants/${tenantId}/payment-plans/${id}/cancel/`),
+  pdf:             (tenantId, id)     => api.get(`/tenants/${tenantId}/payment-plans/${id}/pdf/`, { responseType: 'blob' }),
+  createProposal:  (tenantId, data)   => api.post(`/tenants/${tenantId}/payment-plans/create_proposal/`, data),
 };
 
 // ─── Super Admins ────────────────────────────────

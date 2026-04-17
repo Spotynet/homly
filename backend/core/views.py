@@ -1682,9 +1682,52 @@ def _generate_payment_plan_pdf(plan, tenant):
     freq_map = {1: 'Mensual', 2: 'Bimestral', 3: 'Trimestral', 6: 'Semestral'}
     freq_label = freq_map.get(plan.frequency, str(plan.frequency))
 
+    # Build address line from tenant fiscal/physical info
+    addr_parts = []
+    for field in ['info_calle', 'info_colonia', 'info_ciudad', 'info_codigo_postal']:
+        val = (getattr(tenant, field, '') or '').strip()
+        if val:
+            addr_parts.append(val)
+    tenant_address = ', '.join(addr_parts) if addr_parts else ''
+
+    # Try to embed tenant logo (base64 stored in tenant.logo)
+    logo_image = None
+    logo_b64 = (getattr(tenant, 'logo', '') or '').strip()
+    if logo_b64:
+        try:
+            import base64 as _b64
+            import io as _io2
+            # Strip data URL prefix if present
+            if ',' in logo_b64:
+                logo_b64 = logo_b64.split(',', 1)[1]
+            logo_data = _b64.b64decode(logo_b64)
+            from reportlab.platypus import Image as RLImage
+            img_buf = _io2.BytesIO(logo_data)
+            logo_image = RLImage(img_buf, width=2.2 * cm, height=2.2 * cm)
+            logo_image.hAlign = 'LEFT'
+        except Exception:
+            logo_image = None
+
+    # Header row: logo + tenant name | folio
+    if logo_image:
+        header_left_content = [
+            [logo_image,
+             [Paragraph(tenant_display, st_hdr_title),
+              Paragraph(tenant_address, st_hdr_sub) if tenant_address else Paragraph('Plan de Pago de Adeudo', st_hdr_sub)]]
+        ]
+        logo_tbl = Table(header_left_content, colWidths=[2.6 * cm, (W * 0.65) - 2.6 * cm])
+        logo_tbl.setStyle(TableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('LEFTPADDING', (0, 0), (-1, -1), 0),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+        ]))
+        header_left = logo_tbl
+    else:
+        header_left = [Paragraph(tenant_display, st_hdr_title),
+                       Paragraph(tenant_address or 'Plan de Pago de Adeudo', st_hdr_sub)]
+
     header_data = [[
-        [Paragraph(tenant_display, st_hdr_title),
-         Paragraph('Plan de Pago de Adeudo', st_hdr_sub)],
+        header_left,
         Paragraph(f'Folio: {str(plan.id)[:8].upper()}', st_hdr_right),
     ]]
     header_tbl = Table(header_data, colWidths=[W * 0.65, W * 0.35])
@@ -1730,11 +1773,28 @@ def _generate_payment_plan_pdf(plan, tenant):
             return dt.strftime('%d/%m/%Y %H:%M')
         return str(dt)
 
+    # Owner contact info for PDF
+    owner_name = f'{unit.owner_first_name} {unit.owner_last_name}'.strip() or '—'
+    owner_email_str = unit.owner_email or '—'
+    owner_phone_str = unit.owner_phone or '—'
+    start_period_label = plan.start_period or '—'
+    option_label = f'Opción {plan.option_number}' if plan.option_number else '—'
+
     info_rows = [
         [
             [Paragraph('UNIDAD', st_lbl), Paragraph(unit_label or '—', st_val)],
             [Paragraph('RESPONSABLE', st_lbl), Paragraph(responsible, st_val)],
             [Paragraph('FRECUENCIA', st_lbl), Paragraph(freq_label, st_val)],
+        ],
+        [
+            [Paragraph('PROPIETARIO', st_lbl), Paragraph(owner_name, st_val)],
+            [Paragraph('CORREO', st_lbl), Paragraph(owner_email_str, st_val)],
+            [Paragraph('TELÉFONO', st_lbl), Paragraph(owner_phone_str, st_val)],
+        ],
+        [
+            [Paragraph('PERÍODO INICIAL', st_lbl), Paragraph(start_period_label, st_val)],
+            [Paragraph('OPCIÓN', st_lbl), Paragraph(option_label, st_val)],
+            [Paragraph('', st_lbl), Paragraph('', st_val)],
         ],
         [
             [Paragraph('CREADO POR', st_lbl), Paragraph(plan.created_by_name or '—', st_val)],
@@ -1933,6 +1993,190 @@ class PaymentPlanViewSet(viewsets.ModelViewSet):
             object_type='PaymentPlan', object_id=str(serializer.instance.id),
         )
 
+    @action(detail=False, methods=['post'])
+    def create_proposal(self, request, tenant_id=None):
+        """
+        Create up to 3 payment plan options for a unit and send them all to the owner/co-owner.
+
+        Expected payload:
+        {
+          "unit_id": "<uuid>",
+          "total_adeudo": 12000.00,
+          "maintenance_fee": 1500.00,
+          "notes": "...",           # optional, shared across options
+          "options": [
+            {
+              "frequency": 1,
+              "num_payments": 6,
+              "apply_interest": false,
+              "interest_rate": 0,
+              "start_period": "2026-05",
+              "notes": "..."        # optional, per-option notes
+            },
+            ...   # up to 3 items
+          ]
+        }
+        """
+        from decimal import Decimal as _D
+
+        unit_id       = request.data.get('unit_id')
+        options_raw   = request.data.get('options', [])
+        total_adeudo  = request.data.get('total_adeudo', 0)
+        maintenance   = request.data.get('maintenance_fee', 0)
+        shared_notes  = request.data.get('notes', '')
+
+        if not unit_id:
+            return Response({'detail': 'unit_id es requerido.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not options_raw:
+            return Response({'detail': 'Se requiere al menos una opción.'}, status=status.HTTP_400_BAD_REQUEST)
+        if len(options_raw) > 3:
+            return Response({'detail': 'Máximo 3 opciones por propuesta.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            unit = Unit.objects.get(id=unit_id, tenant_id=tenant_id)
+        except Unit.DoesNotExist:
+            return Response({'detail': 'Unidad no encontrada.'}, status=status.HTTP_404_NOT_FOUND)
+
+        try:
+            tenant = Tenant.objects.get(id=tenant_id)
+        except Tenant.DoesNotExist:
+            return Response({'detail': 'Tenant no encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+
+        name, email = self._get_user_info(tenant_id)
+        group_id    = uuid.uuid4()
+        now         = timezone.now()
+        created_plans = []
+
+        for idx, opt in enumerate(options_raw[:3], start=1):
+            frequency    = int(opt.get('frequency', 1))
+            num_payments = int(opt.get('num_payments', 1))
+            apply_int    = bool(opt.get('apply_interest', False))
+            int_rate     = _D(str(opt.get('interest_rate', 0)))
+            start_period = opt.get('start_period', '')
+            opt_notes    = opt.get('notes', '') or shared_notes
+
+            # Build installments schedule
+            total_debt = _D(str(total_adeudo))
+            if apply_int and int_rate > 0:
+                total_with_int = total_debt * (1 + int_rate / 100)
+            else:
+                total_with_int = total_debt
+                int_rate = _D('0')
+
+            debt_per_inst     = total_with_int / num_payments
+            maint             = _D(str(maintenance))
+            regular_per_period = maint * frequency
+
+            installments = []
+            # Build period keys starting from start_period or today's next period
+            def _next_period(yyyymm, steps=1):
+                y, m = int(yyyymm[:4]), int(yyyymm[5:7])
+                for _ in range(steps):
+                    m += 1
+                    if m > 12:
+                        m = 1; y += 1
+                return f'{y:04d}-{m:02d}'
+
+            def _period_label(yyyymm):
+                months_es = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
+                             'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
+                y, m = int(yyyymm[:4]), int(yyyymm[5:7])
+                return f'{months_es[m-1]} {y}'
+
+            # Use start_period if provided, else default to today's period
+            _today  = timezone.now()
+            _cur_period = f'{_today.year:04d}-{_today.month:02d}'
+            base_period = start_period if start_period else _cur_period
+
+            for n in range(1, num_payments + 1):
+                period_key = base_period if n == 1 else _next_period(base_period, n - 1)
+                installments.append({
+                    'num':          n,
+                    'period_key':   period_key,
+                    'period_label': _period_label(period_key),
+                    'debt_part':    float(round(debt_per_inst, 2)),
+                    'regular_part': float(round(regular_per_period, 2)),
+                    'total':        float(round(debt_per_inst + regular_per_period, 2)),
+                    'paid_amount':  0.0,
+                    'status':       'pending',
+                    'paid_at':      None,
+                })
+
+            plan = PaymentPlan.objects.create(
+                tenant_id        = tenant_id,
+                unit             = unit,
+                total_adeudo     = total_debt,
+                maintenance_fee  = maint,
+                frequency        = frequency,
+                num_payments     = num_payments,
+                apply_interest   = apply_int,
+                interest_rate    = int_rate,
+                total_with_interest = total_with_int,
+                status           = 'sent',
+                notes            = opt_notes,
+                created_by_name  = name,
+                created_by_email = email,
+                sent_by_name     = name,
+                sent_at          = now,
+                installments     = installments,
+                start_period     = start_period,
+                proposal_group   = group_id,
+                option_number    = idx,
+            )
+            created_plans.append(plan)
+
+        # Send email with all options
+        emails = [e for e in [unit.owner_email, unit.tenant_email] if e]
+        if emails:
+            try:
+                freq_map = {1: 'Mensual', 2: 'Bimestral', 3: 'Trimestral', 6: 'Semestral'}
+                responsible = (unit.tenant_name or unit.owner_name or '').strip()
+                options_for_email = []
+                for p in created_plans:
+                    options_for_email.append({
+                        'option_number':    p.option_number,
+                        'frequency_label':  freq_map.get(p.frequency, str(p.frequency)),
+                        'num_payments':     p.num_payments,
+                        'apply_interest':   p.apply_interest,
+                        'interest_rate':    float(p.interest_rate),
+                        'total_with_interest': float(p.total_with_interest),
+                        'start_period':     p.start_period,
+                        'installments':     p.installments or [],
+                    })
+                threading.Thread(
+                    target=send_payment_plan_email,
+                    kwargs=dict(
+                        emails=emails,
+                        tenant_name=tenant.name,
+                        unit_code=unit.unit_id_code or '',
+                        unit_name=unit.unit_name or '',
+                        responsible=responsible,
+                        total_adeudo=float(total_adeudo),
+                        total_with_interest=float(created_plans[0].total_with_interest),
+                        apply_interest=created_plans[0].apply_interest,
+                        interest_rate=float(created_plans[0].interest_rate),
+                        frequency_label=freq_map.get(created_plans[0].frequency, ''),
+                        num_payments=created_plans[0].num_payments,
+                        installments=created_plans[0].installments or [],
+                        created_by_name=name,
+                        notes=shared_notes,
+                    ),
+                    daemon=True,
+                ).start()
+            except Exception:
+                pass
+
+        _audit_log(
+            request, 'cobranza', 'create',
+            f'Propuesta de plan de pago enviada: unidad {unit.unit_id_code} ({len(created_plans)} opciones)',
+            tenant_id=tenant_id, object_type='PaymentPlan',
+            object_id=str(group_id),
+        )
+        return Response(
+            PaymentPlanSerializer(created_plans, many=True).data,
+            status=status.HTTP_201_CREATED,
+        )
+
     @action(detail=True, methods=['post'])
     def send(self, request, tenant_id=None, pk=None):
         """Enviar plan al vecino (cambia estado a 'sent', manda email)."""
@@ -2013,6 +2257,15 @@ class PaymentPlanViewSet(viewsets.ModelViewSet):
         plan.accepted_by_name = name
         plan.accepted_at = timezone.now()
         plan.save()
+
+        # If this plan is part of a proposal group, cancel all sibling options
+        if plan.proposal_group:
+            PaymentPlan.objects.filter(
+                tenant_id=tenant_id,
+                proposal_group=plan.proposal_group,
+            ).exclude(id=plan.id).filter(
+                status__in=['draft', 'sent'],
+            ).update(status='cancelled')
 
         _audit_log(
             request, 'cobranza', 'update',
