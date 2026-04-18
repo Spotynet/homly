@@ -26,7 +26,7 @@ const NAV_ITEMS = {
       { path: '/app/plan-pagos',       icon: TrendingDown, label: 'Plan de Pagos'     },
       { path: '/app/cierre-periodo',   icon: Lock,         label: 'Cierre de Período' },
       { path: '/app/notificaciones',   icon: Bell,         label: 'Notificaciones'    },
-      { path: '/app/onboarding',       icon: Compass,      label: 'Guía de Inicio'    },
+      { path: '/app/onboarding',       icon: Compass,      label: 'Guía de Uso'    },
       { path: '/app/config',           icon: Settings,     label: 'Configuración'     },
     ]},
   ],
@@ -40,7 +40,7 @@ const NAV_ITEMS = {
     { path: '/app/plan-pagos',       icon: TrendingDown,  label: 'Plan de Pagos'      },
     { path: '/app/cierre-periodo',   icon: Lock,          label: 'Cierre de Período'  },
     { path: '/app/notificaciones',   icon: Bell,          label: 'Notificaciones'     },
-    { path: '/app/onboarding',       icon: Compass,       label: 'Guía de Inicio'     },
+    { path: '/app/onboarding',       icon: Compass,       label: 'Guía de Uso'     },
     { path: '/app/config',           icon: Settings,      label: 'Configuración'      },
   ]}],
 
@@ -53,6 +53,7 @@ const NAV_ITEMS = {
     { path: '/app/plan-pagos',       icon: TrendingDown,  label: 'Plan de Pagos'      },
     { path: '/app/cierre-periodo',   icon: Lock,          label: 'Cierre de Período'  },
     { path: '/app/notificaciones',   icon: Bell,          label: 'Notificaciones'     },
+    { path: '/app/onboarding',       icon: Compass,       label: 'Guía de Uso'        },
   ]}],
 
   contador: [{ section: 'main', items: [
@@ -64,6 +65,7 @@ const NAV_ITEMS = {
     { path: '/app/plan-pagos',      icon: TrendingDown,  label: 'Plan de Pagos'     },
     { path: '/app/cierre-periodo',  icon: Lock,          label: 'Cierre de Período' },
     { path: '/app/notificaciones',  icon: Bell,          label: 'Notificaciones'    },
+    { path: '/app/onboarding',      icon: Compass,       label: 'Guía de Uso'       },
   ]}],
 
   auditor: [{ section: 'main', items: [
@@ -75,6 +77,7 @@ const NAV_ITEMS = {
     { path: '/app/plan-pagos',      icon: TrendingDown,  label: 'Plan de Pagos'     },
     { path: '/app/cierre-periodo',  icon: Lock,          label: 'Cierre de Período' },
     { path: '/app/notificaciones',  icon: Bell,          label: 'Notificaciones'    },
+    { path: '/app/onboarding',      icon: Compass,       label: 'Guía de Uso'       },
     { path: '/app/config',          icon: Settings,      label: 'Configuración'     },
   ]}],
 
@@ -90,6 +93,7 @@ const NAV_ITEMS = {
     { path: '/app/estado-cuenta',   icon: FileText,      label: 'Estado de Cuenta' },
     { path: '/app/plan-pagos',      icon: TrendingDown,  label: 'Plan de Pagos'    },
     { path: '/app/notificaciones',  icon: Bell,          label: 'Notificaciones'   },
+    { path: '/app/onboarding',      icon: Compass,       label: 'Guía de Uso'      },
   ]}],
 };
 
@@ -123,7 +127,7 @@ const PAGE_TITLES = {
   'my-unit': 'Mi Unidad',
   'reservas': 'Reservas de Áreas Comunes',
   'notificaciones': 'Notificaciones',
-  'onboarding': 'Guía de Inicio',
+  'onboarding': 'Guía de Uso',
 };
 
 function getPageTitle(pathname) {

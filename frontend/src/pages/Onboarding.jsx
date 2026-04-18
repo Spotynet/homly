@@ -1,28 +1,60 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import {
   Compass, Sparkles, PlayCircle, RotateCcw,
-  CheckCircle2, Clock, Settings, ChevronRight,
-  Building2, Receipt, Users, Shield, Globe, Layers,
+  CheckCircle2, Clock, ChevronRight, ChevronDown,
+  BookMarked,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { tenantsAPI } from '../api/client';
+import GUIDE_ROLES from '../constants/guideCatalog';
+import GuideModal from '../components/onboarding/GuideModal';
 
 /**
  * Onboarding.jsx
  * ─────────────────────────────────────────────────────────────────
- * Intro page for the interactive onboarding tour. This is the page
- * behind the "Guía de Inicio" sidebar item. It shows the current
- * status, the steps the tour will cover, and a CTA to launch the
- * interactive tour (which lives inside Configuración).
+ * Hub central de la Guía de Uso. Muestra las guías agrupadas por
+ * rol en secciones colapsables (Administrador, Tesorero, Contador,
+ * Vecino / Residente). Cada sección expone los capítulos operativos
+ * de ese rol.
+ *
+ * Tipos de capítulos:
+ *   - kind: 'interactive'  → lanza el tour Scribe (AdminConfigTour)
+ *     en la ruta `launchRoute` (p.ej. /app/config?tour=1).
+ *   - kind: 'modal'        → abre GuideModal con los steps del capítulo.
  */
+
+// Mapea el rol del usuario autenticado → key del catálogo
+function mapUserRoleToCatalog(role) {
+  if (role === 'superadmin' || role === 'admin') return 'admin';
+  if (role === 'tesorero')   return 'tesorero';
+  if (role === 'contador' || role === 'auditor') return 'contador';
+  if (role === 'vecino' || role === 'vigilante') return 'vecino';
+  return 'admin';
+}
+
 export default function Onboarding() {
-  const { tenantId, isAdmin } = useAuth();
+  const { tenantId, role, isAdmin, isSuperAdmin } = useAuth();
   const navigate = useNavigate();
+
   const [tenant, setTenant] = useState(null);
   const [loading, setLoading] = useState(true);
   const [resetting, setResetting] = useState(false);
+
+  // Rol activo del usuario mapeado al catálogo
+  const userRoleKey = useMemo(() => mapUserRoleToCatalog(role), [role]);
+
+  // Secciones colapsables por rol — autoexpandir la del usuario
+  const [expanded, setExpanded] = useState(() => ({ [userRoleKey]: true }));
+
+  // Capítulo que se está viendo en modal (null = cerrado)
+  const [activeChapter, setActiveChapter] = useState(null);
+
+  useEffect(() => {
+    // Al cambiar el rol del usuario, abrir automáticamente su sección
+    setExpanded(prev => ({ ...prev, [userRoleKey]: true }));
+  }, [userRoleKey]);
 
   useEffect(() => {
     if (!tenantId) { setLoading(false); return; }
@@ -33,7 +65,10 @@ export default function Onboarding() {
       .finally(() => setLoading(false));
   }, [tenantId]);
 
-  const startTour = () => navigate('/app/config?tour=1');
+  const completed = !!tenant?.onboarding_completed;
+  const tenantName = tenant?.name || 'tu condominio';
+
+  const startAdminTour = () => navigate('/app/config?tour=1');
 
   const resetTour = async () => {
     if (!tenantId) return;
@@ -49,36 +84,22 @@ export default function Onboarding() {
     }
   };
 
-  const completed = !!tenant?.onboarding_completed;
-  const tenantName = tenant?.name || 'tu condominio';
+  const toggle = (key) => setExpanded(prev => ({ ...prev, [key]: !prev[key] }));
 
-  const sections = [
-    { key: 'general', icon: Settings,   color: '#6366f1', title: 'General',             desc: 'Nombre, cuota, moneda, saldo inicial, domicilio' },
-    { key: 'units',   icon: Building2,  color: '#0ea5e9', title: 'Unidades',            desc: 'Alta de casas, deptos, propietarios y correos' },
-    { key: 'fields',  icon: Receipt,    color: '#22c55e', title: 'Gastos y Cobranza',   desc: 'Categorías y conceptos financieros' },
-    { key: 'users',   icon: Users,      color: '#f59e0b', title: 'Usuarios',            desc: 'Invitaciones y accesos al sistema' },
-    { key: 'roles',   icon: Shield,     color: '#ec4899', title: 'Roles y Perfiles',    desc: 'Permisos y perfiles personalizados' },
-    { key: 'org',     icon: Globe,      color: '#8b5cf6', title: 'Organización',        desc: 'Comité y flujo de aprobación de cierre' },
-    { key: 'modules', icon: Layers,     color: '#14b8a6', title: 'Módulos',             desc: 'Activar o desactivar funciones del sistema' },
-  ];
+  const launchChapter = (chapter) => {
+    if (chapter.kind === 'interactive') {
+      navigate(chapter.launchRoute || '/app/config?tour=1');
+      return;
+    }
+    setActiveChapter(chapter);
+  };
 
   if (loading) {
     return <div style={{ padding: 40, textAlign: 'center', color: 'var(--ink-400)' }}>Cargando…</div>;
   }
 
-  if (!isAdmin) {
-    return (
-      <div className="card" style={{ padding: 24, maxWidth: 620 }}>
-        <h3 style={{ margin: 0 }}>Guía de Inicio</h3>
-        <p style={{ color: 'var(--ink-500)', marginTop: 8 }}>
-          Esta guía está disponible únicamente para los administradores del condominio.
-        </p>
-      </div>
-    );
-  }
-
   return (
-    <div className="content-fade" style={{ maxWidth: 900 }}>
+    <div className="content-fade" style={{ maxWidth: 920 }}>
       {/* ── Hero ─────────────────────────────────────────────────── */}
       <div
         style={{
@@ -103,123 +124,89 @@ export default function Onboarding() {
             fontSize: 11, fontWeight: 800, letterSpacing: '0.08em',
             color: 'var(--teal-600)', textTransform: 'uppercase', marginBottom: 4,
           }}>
-            Guía de inicio interactiva
+            Guía de uso por rol
           </div>
           <h2 style={{
             margin: 0, fontSize: 24, fontWeight: 800,
             color: 'var(--ink-800)', lineHeight: 1.25,
           }}>
-            {completed
-              ? `${tenantName} ya está configurado`
-              : `Configuremos ${tenantName} paso a paso`}
+            Aprende a operar {tenantName} paso a paso
           </h2>
           <p style={{
             margin: '8px 0 0', fontSize: 14, color: 'var(--ink-600)',
             lineHeight: 1.55,
           }}>
-            {completed
-              ? 'Ya completaste el tour de onboarding. Puedes volver a ejecutarlo cuando quieras para repasar las configuraciones.'
-              : 'Un tour guiado te llevará por cada sección explicando para qué sirve y cómo completarla. No necesitas experiencia previa — te acompañamos hasta dejar todo listo.'}
+            Encuentra la guía operativa de tu rol y repásala cuando quieras.
+            Cada capítulo explica qué hacer, dónde hacerlo y por qué — sin
+            bloquear tu pantalla.
           </p>
         </div>
       </div>
 
-      {/* ── Status card ──────────────────────────────────────────── */}
-      <div
-        className="card"
-        style={{ padding: 20, marginBottom: 20, display: 'flex', alignItems: 'center', gap: 14 }}
-      >
-        {completed ? (
-          <>
-            <div style={{
-              width: 44, height: 44, borderRadius: 10,
-              background: 'var(--teal-50)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}>
-              <CheckCircle2 size={22} color="var(--teal-500)" />
-            </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink-800)' }}>
-                Onboarding completado
+      {/* ── Status card solo para admins ─────────────────────────── */}
+      {isAdmin && (
+        <div
+          className="card"
+          style={{ padding: 20, marginBottom: 20, display: 'flex', alignItems: 'center', gap: 14 }}
+        >
+          {completed ? (
+            <>
+              <div style={{
+                width: 44, height: 44, borderRadius: 10,
+                background: 'var(--teal-50)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                <CheckCircle2 size={22} color="var(--teal-500)" />
               </div>
-              <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>
-                {tenant?.updated_at ? `Última actualización: ${new Date(tenant.updated_at).toLocaleDateString('es-MX')}` : 'Listo para operar'}
-              </div>
-            </div>
-            <button className="btn btn-secondary btn-sm" onClick={resetTour} disabled={resetting}>
-              <RotateCcw size={14} /> {resetting ? 'Reiniciando…' : 'Reiniciar tour'}
-            </button>
-          </>
-        ) : (
-          <>
-            <div style={{
-              width: 44, height: 44, borderRadius: 10,
-              background: '#fef3c7',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}>
-              <Clock size={22} color="#f59e0b" />
-            </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink-800)' }}>
-                Configuración pendiente
-              </div>
-              <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>
-                Termina el tour para marcar este condominio como listo para operar.
-              </div>
-            </div>
-            <button className="btn btn-primary btn-sm" onClick={startTour}>
-              <PlayCircle size={14} /> Iniciar tour
-            </button>
-          </>
-        )}
-      </div>
-
-      {/* ── Sections preview ─────────────────────────────────────── */}
-      <div className="card" style={{ padding: 0, marginBottom: 20, overflow: 'hidden' }}>
-        <div className="card-head" style={{ padding: '16px 20px', borderBottom: '1px solid var(--sand-100)' }}>
-          <h3 style={{ margin: 0, fontSize: 15 }}>Lo que cubriremos</h3>
-          <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>
-            {sections.length} secciones de Configuración
-          </div>
-        </div>
-        <div>
-          {sections.map((s, i) => {
-            const Icon = s.icon;
-            return (
-              <button
-                key={s.key}
-                onClick={() => navigate(`/app/config?tour=1`)}
-                style={{
-                  width: '100%', border: 'none', background: 'transparent',
-                  display: 'flex', alignItems: 'center', gap: 14,
-                  padding: '14px 20px', cursor: 'pointer', textAlign: 'left',
-                  borderBottom: i < sections.length - 1 ? '1px solid var(--sand-50)' : 'none',
-                  transition: 'background 0.1s',
-                }}
-                onMouseEnter={e => e.currentTarget.style.background = 'var(--sand-50)'}
-                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-              >
-                <div style={{
-                  width: 38, height: 38, borderRadius: 10,
-                  background: `${s.color}15`,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  flexShrink: 0,
-                }}>
-                  <Icon size={19} color={s.color} />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink-800)' }}>
+                  Configuración inicial completada
                 </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink-800)' }}>
-                    {i + 1}. {s.title}
-                  </div>
-                  <div style={{ fontSize: 12, color: 'var(--ink-400)', marginTop: 1 }}>
-                    {s.desc}
-                  </div>
+                <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>
+                  {tenant?.updated_at ? `Última actualización: ${new Date(tenant.updated_at).toLocaleDateString('es-MX')}` : 'Listo para operar'}
                 </div>
-                <ChevronRight size={16} color="var(--ink-400)" />
+              </div>
+              <button className="btn btn-secondary btn-sm" onClick={resetTour} disabled={resetting}>
+                <RotateCcw size={14} /> {resetting ? 'Reiniciando…' : 'Reiniciar tour'}
               </button>
-            );
-          })}
+            </>
+          ) : (
+            <>
+              <div style={{
+                width: 44, height: 44, borderRadius: 10,
+                background: '#fef3c7',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                <Clock size={22} color="#f59e0b" />
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink-800)' }}>
+                  Configuración inicial pendiente
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>
+                  Termina el tour interactivo para marcar este condominio como listo para operar.
+                </div>
+              </div>
+              <button className="btn btn-primary btn-sm" onClick={startAdminTour}>
+                <PlayCircle size={14} /> Iniciar tour
+              </button>
+            </>
+          )}
         </div>
+      )}
+
+      {/* ── Secciones colapsables por rol ────────────────────────── */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 20 }}>
+        {GUIDE_ROLES.map(section => (
+          <RoleSection
+            key={section.key}
+            section={section}
+            isCurrentRole={section.key === userRoleKey}
+            open={!!expanded[section.key]}
+            onToggle={() => toggle(section.key)}
+            onLaunchChapter={launchChapter}
+          />
+        ))}
       </div>
 
       {/* ── Tips ─────────────────────────────────────────────────── */}
@@ -234,10 +221,176 @@ export default function Onboarding() {
       >
         <Sparkles size={20} color="var(--teal-500)" style={{ flexShrink: 0, marginTop: 2 }} />
         <div style={{ fontSize: 13, color: 'var(--ink-600)', lineHeight: 1.55 }}>
-          <strong>Tip:</strong> Puedes cerrar el tour en cualquier momento y continuarlo después.
-          Todo lo que captures se guarda al momento — el tour solo te indica por dónde empezar.
+          <strong>Tip:</strong> Puedes cerrar cualquier guía y retomarla luego.
+          Las guías de otros roles están visibles para que puedas entender
+          cómo colaboran las distintas personas del condominio.
+          {(isSuperAdmin || isAdmin) && ' Como administrador, también puedes lanzar el tour interactivo de la configuración sobre la pantalla real.'}
         </div>
       </div>
+
+      {/* ── Modal activo ─────────────────────────────────────────── */}
+      <GuideModal
+        open={!!activeChapter}
+        chapter={activeChapter}
+        onClose={() => setActiveChapter(null)}
+      />
     </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  RoleSection — tarjeta colapsable para un rol
+// ═══════════════════════════════════════════════════════════════
+function RoleSection({ section, isCurrentRole, open, onToggle, onLaunchChapter }) {
+  const Icon = section.icon;
+  const chapters = section.chapters || [];
+
+  return (
+    <div
+      className="card"
+      style={{
+        padding: 0, overflow: 'hidden',
+        border: isCurrentRole ? `1.5px solid ${section.color}` : undefined,
+        boxShadow: isCurrentRole ? `0 2px 12px ${section.color}22` : undefined,
+      }}
+    >
+      {/* Header colapsable */}
+      <button
+        onClick={onToggle}
+        style={{
+          width: '100%', border: 'none', background: 'transparent',
+          padding: '14px 20px',
+          display: 'flex', alignItems: 'center', gap: 14,
+          cursor: 'pointer', textAlign: 'left',
+          transition: 'background 0.15s',
+        }}
+        onMouseEnter={e => e.currentTarget.style.background = 'var(--sand-50)'}
+        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+      >
+        <div style={{
+          width: 44, height: 44, borderRadius: 12,
+          background: section.bg,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          flexShrink: 0,
+        }}>
+          <Icon size={22} color={section.color} />
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--ink-800)' }}>
+              {section.label}
+            </span>
+            {isCurrentRole && (
+              <span style={{
+                fontSize: 10, fontWeight: 800, letterSpacing: '0.05em',
+                padding: '2px 8px', borderRadius: 999,
+                background: section.color, color: 'white',
+                textTransform: 'uppercase',
+              }}>
+                Tu rol
+              </span>
+            )}
+            <span style={{
+              fontSize: 10, fontWeight: 700, color: 'var(--ink-400)',
+              background: 'var(--sand-100)', padding: '2px 7px',
+              borderRadius: 6,
+            }}>
+              {chapters.length} {chapters.length === 1 ? 'capítulo' : 'capítulos'}
+            </span>
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--ink-400)', marginTop: 2 }}>
+            {section.description}
+          </div>
+        </div>
+        <ChevronDown
+          size={18}
+          color="var(--ink-400)"
+          style={{
+            transform: open ? 'rotate(180deg)' : 'none',
+            transition: 'transform 0.25s',
+            flexShrink: 0,
+          }}
+        />
+      </button>
+
+      {/* Body con los capítulos */}
+      {open && (
+        <div style={{ borderTop: '1px solid var(--sand-100)' }}>
+          {chapters.map((ch, i) => (
+            <ChapterRow
+              key={ch.id}
+              chapter={ch}
+              last={i === chapters.length - 1}
+              onLaunch={() => onLaunchChapter(ch)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  ChapterRow — una línea por capítulo
+// ═══════════════════════════════════════════════════════════════
+function ChapterRow({ chapter, last, onLaunch }) {
+  const Icon = chapter.icon || BookMarked;
+  const interactive = chapter.kind === 'interactive';
+
+  return (
+    <button
+      onClick={onLaunch}
+      style={{
+        width: '100%', border: 'none', background: 'transparent',
+        display: 'flex', alignItems: 'center', gap: 14,
+        padding: '13px 20px', cursor: 'pointer', textAlign: 'left',
+        borderBottom: last ? 'none' : '1px solid var(--sand-50)',
+        transition: 'background 0.1s',
+      }}
+      onMouseEnter={e => e.currentTarget.style.background = 'var(--sand-50)'}
+      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+    >
+      <div style={{
+        width: 36, height: 36, borderRadius: 10,
+        background: chapter.bg || 'var(--sand-100)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        flexShrink: 0,
+      }}>
+        <Icon size={18} color={chapter.color || 'var(--ink-500)'} />
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink-800)' }}>
+            {chapter.title}
+          </span>
+          {interactive && (
+            <span style={{
+              fontSize: 9, fontWeight: 800, letterSpacing: '0.05em',
+              padding: '2px 7px', borderRadius: 6,
+              background: 'var(--teal-50)', color: 'var(--teal-600)',
+              textTransform: 'uppercase',
+            }}>
+              Interactivo
+            </span>
+          )}
+          {chapter.length && (
+            <span style={{
+              fontSize: 10, color: 'var(--ink-400)',
+              background: 'var(--sand-50)', padding: '1px 6px',
+              borderRadius: 5,
+            }}>
+              {chapter.length}
+            </span>
+          )}
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--ink-400)', marginTop: 2 }}>
+          {chapter.subtitle}
+        </div>
+      </div>
+      {interactive
+        ? <PlayCircle size={18} color="var(--teal-500)" style={{ flexShrink: 0 }} />
+        : <ChevronRight size={16} color="var(--ink-400)" style={{ flexShrink: 0 }} />
+      }
+    </button>
   );
 }
