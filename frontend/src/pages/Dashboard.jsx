@@ -15,15 +15,15 @@ import {
 } from 'lucide-react';
 
 // ─── Formatters ────────────────────────────────────────────────────────────
-function fmt(n) {
+function _fmt(n, currency = 'MXN') {
   return new Intl.NumberFormat('es-MX', {
-    style: 'currency', currency: 'MXN',
+    style: 'currency', currency,
     minimumFractionDigits: 0, maximumFractionDigits: 0,
   }).format(n ?? 0);
 }
-function fmtDec(n) {
+function _fmtDec(n, currency = 'MXN') {
   return new Intl.NumberFormat('es-MX', {
-    style: 'currency', currency: 'MXN',
+    style: 'currency', currency,
     minimumFractionDigits: 2, maximumFractionDigits: 2,
   }).format(n ?? 0);
 }
@@ -185,7 +185,7 @@ function SvgDonutMulti({ segments = [], size = 140 }) {
         <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--sand-50)" strokeWidth={sw} />
         <circle cx={cx} cy={cy} r={r} fill="none" stroke={seg.color} strokeWidth={sw}
           style={{ transition: 'all 0.5s ease' }}>
-          <title>{seg.label}: {fmt(seg.value)}</title>
+          <title>{seg.label}: {_fmt(seg.value)}</title>
         </circle>
       </svg>
     );
@@ -232,7 +232,7 @@ function SvgDonutMulti({ segments = [], size = 140 }) {
             transition: 'stroke-dasharray 0.5s ease',
           }}
         >
-          <title>{arc.label}: {fmt(arc.value)}</title>
+          <title>{arc.label}: {_fmt(arc.value)}</title>
         </circle>
       ))}
     </svg>
@@ -523,6 +523,10 @@ export default function Dashboard() {
 
   const s = stats || {};
   const t = tenant || {};
+  // Currency-aware formatters (shadow module-level _fmt/_fmtDec)
+  const cur = t.currency || 'MXN';
+  const fmt = (n) => _fmt(n, cur);
+  const fmtDec = (n) => _fmtDec(n, cur);
 
   // ── Período mínimo = inicio de operaciones del tenant ─────────────────
   const minPeriod = t.operation_start_date

@@ -9,8 +9,8 @@ import { statusClass, statusLabel, fmtDate, periodLabel, todayPeriod, prevPeriod
 import { Search, ChevronLeft, ChevronRight, Building, Globe, DollarSign, ArrowDown, TrendingDown, AlertCircle, Calendar, Printer, ShoppingBag, FileText, Mail, X, Send, Download, Paperclip, Eye, Upload } from 'lucide-react';
 import toast from 'react-hot-toast';
 
-function fmt(n) {
-  return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n ?? 0);
+function _fmt(n, currency = 'MXN') {
+  return new Intl.NumberFormat('es-MX', { style: 'currency', currency, minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n ?? 0);
 }
 
 /**
@@ -159,6 +159,9 @@ export default function EstadoCuenta() {
   }, [tenantId, isVecino]);
 
   const startPeriod = tenantData?.operation_start_date || tenantData?.created_at?.slice(0, 7) || '';
+  // Currency-aware formatter (shadows module-level _fmt)
+  const cur = tenantData?.currency || 'MXN';
+  const fmt = (n) => _fmt(n, cur);
 
   // When selecting a unit, initialize detailFrom from tenant start
   const handleSelectUnit = useCallback((unitId) => {
@@ -1318,6 +1321,7 @@ export default function EstadoCuenta() {
           onClose={() => setPlanUnitDebt(null)}
           tenantId={tenantId}
           role={role}
+          currency={tenantData?.currency || 'MXN'}
         />
       )}
 
@@ -1383,6 +1387,8 @@ function payTotalIncome(pay) {
    ESTADO GENERAL — per-period rows across all units
    ═══════════════════════════════════════════════════════════ */
 function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cutoff, setCutoff, startPeriod, periodAggregates, unitsCount }) {
+  const cur = tenantData?.currency || 'MXN';
+  const fmt = (n) => _fmt(n, cur);
   const [payments, setPayments] = useState([]);
   const [gastos, setGastos] = useState([]);
   // cajaChica ya no se incluye en el reporte general
@@ -2021,7 +2027,9 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
    REPORTE GENERAL (HTML original — conciliación bancaria)
    ═══════════════════════════════════════════════════════════ */
 function ReporteGeneralView({ tenantData, generalData, genLoading, cutoff, setCutoff, startPeriod, user, role }) {
-  const fmt2 = (n) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n ?? 0);
+  const cur = tenantData?.currency || 'MXN';
+  const fmt = (n) => _fmt(n, cur);
+  const fmt2 = fmt; // alias for backward compat within this component
   const rd = generalData?.report_data || {};
   const saldoInicial = generalData?.saldo_inicial ?? 0;
   const saldoFinal = generalData?.saldo_final ?? 0;
@@ -2434,7 +2442,8 @@ const PLAN_STATUS_COLORS = {
   rejected: '#e84040', completed: '#1E594F', cancelled: '#64748b',
 };
 
-function DebtPaymentPlanModal({ unit, totalAdeudo, maintenanceFee = 0, onClose, tenantId, role }) {
+function DebtPaymentPlanModal({ unit, totalAdeudo, maintenanceFee = 0, onClose, tenantId, role, currency = 'MXN' }) {
+  const fmt = (n) => _fmt(n, currency);
   const isManager = ['admin', 'tesorero', 'contador', 'superadmin'].includes(role);
   const isVecinoRole = role === 'vecino';
 
@@ -3032,6 +3041,8 @@ function DebtPaymentPlanModal({ unit, totalAdeudo, maintenanceFee = 0, onClose, 
 // ──────────────────────────────────────────────────────────────────────────────
 
 function ReporteAdeudosView({ tenantData, adeudosData, adeudosLoading, cutoff, setCutoff, startPeriod, search = '', setSearch, tenantId, role }) {
+  const cur = tenantData?.currency || 'MXN';
+  const fmt = (n) => _fmt(n, cur);
   const navigate = useNavigate();
   const [expanded, setExpanded] = useState({});
   const [planUnit, setPlanUnit] = useState(null);  // { unit, totalAdeudo } — kept for any legacy use
@@ -3452,6 +3463,7 @@ function ReporteAdeudosView({ tenantData, adeudosData, adeudosLoading, cutoff, s
           onClose={() => setPlanUnit(null)}
           tenantId={tenantId}
           role={role}
+          currency={tenantData?.currency || 'MXN'}
         />
       )}
 

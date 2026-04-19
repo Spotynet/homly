@@ -17,19 +17,20 @@ const CAJA_PAYMENT_TYPES = Object.entries(PAYMENT_TYPES)
   .filter(([k]) => k !== 'transferencia')
   .map(([k, v]) => ({ value: k, ...v }));
 
-function fmt(n) {
-  return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n ?? 0);
+function _fmt(n, currency = 'MXN') {
+  return new Intl.NumberFormat('es-MX', { style: 'currency', currency, minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n ?? 0);
 }
 
 function pdfTitle(report, period, tenant) {
   return `${(report || '').trim()} — ${(period || '').trim()} — ${(tenant || '').trim()}`;
 }
 
-function fmtShort(n) {
-  return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n ?? 0);
+function _fmtShort(n, currency = 'MXN') {
+  return new Intl.NumberFormat('es-MX', { style: 'currency', currency, minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n ?? 0);
 }
 
-function GastosTable({ rows, isReadOnly, onEdit, onDelete, showBadge }) {
+function GastosTable({ rows, isReadOnly, onEdit, onDelete, showBadge, currency = 'MXN' }) {
+  const fmt = (n) => _fmt(n, currency);
   return (
     <div className="table-wrap">
       <table>
@@ -79,6 +80,8 @@ function GastosTable({ rows, isReadOnly, onEdit, onDelete, showBadge }) {
    PDF EJECUTIVO — se muestra solo al imprimir (body.printing-gastos)
    ══════════════════════════════════════════════════════════════ */
 function GastosPrintLayout({ tenant, period, gastosConciliados, gastosNoConciliados, cajaChica, totalGastosConciliados, totalGastosNoConciliados, totalCaja }) {
+  const cur = tenant?.currency || 'MXN';
+  const fmt = (n) => _fmt(n, cur);
 
   // Agrupar gastos conciliados por categoría (field_label)
   const gruposConciliados = gastosConciliados.reduce((acc, g) => {
@@ -394,6 +397,10 @@ export default function Gastos() {
   const totalCaja   = cajaChica.reduce((s, c) => s + parseFloat(c.amount || 0), 0);
   // Egresos del periodo = solo gastos conciliados (caja chica NO se suma)
   const totalEgresos = totalGastos;
+  // Currency-aware formatters (shadow module-level _fmt/_fmtShort)
+  const cur = tenant?.currency || 'MXN';
+  const fmt = (n) => _fmt(n, cur);
+  const fmtShort = (n) => _fmtShort(n, cur);
 
   const handlePrint = () => {
     const prev = document.title;
@@ -552,6 +559,7 @@ export default function Gastos() {
                   onEdit={g => { setForm(g); setModal('gasto'); }}
                   onDelete={handleDeleteGasto}
                   showBadge={false}
+                  currency={cur}
                 />
                 <div style={{ padding: '10px 20px', background: 'var(--teal-50)', borderTop: '1px solid var(--teal-100)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontWeight: 800, fontSize: 13, color: 'var(--teal-700)' }}>TOTAL GASTOS CONCILIADOS</span>
@@ -586,6 +594,7 @@ export default function Gastos() {
                   onEdit={g => { setForm(g); setModal('gasto'); }}
                   onDelete={handleDeleteGasto}
                   showBadge={false}
+                  currency={cur}
                 />
                 <div style={{ padding: '10px 20px', background: 'var(--amber-50)', borderTop: '1px solid var(--amber-100)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontWeight: 800, fontSize: 13, color: 'var(--amber-700)' }}>

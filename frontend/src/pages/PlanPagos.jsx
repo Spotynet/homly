@@ -10,10 +10,11 @@ import { useAuth } from '../context/AuthContext';
 import { reportsAPI, tenantsAPI, paymentPlansAPI, periodsAPI, unitsAPI } from '../api/client';
 import { todayPeriod, periodLabel, prevPeriod } from '../utils/helpers';
 import {
-  TrendingDown, Search, X, Send, Download,
+  TrendingDown, Search, X, Send, Printer,
   ChevronLeft, Building, CheckCircle, Calendar, Plus, Trash2,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import PlanPagosPrintModal from '../components/PlanPagosPrintModal';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 const PLAN_FREQUENCIES = [
@@ -43,9 +44,9 @@ const PLAN_STATUS_COLORS = {
 const INSTALL_STATUS_COLOR = { paid: '#1E594F', partial: '#d97706', pending: '#e84040' };
 const INSTALL_STATUS_LABEL = { paid: 'Pagado', partial: 'Parcial', pending: 'Pendiente' };
 
-function fmt(n) {
+function _fmt(n, currency = 'MXN') {
   return new Intl.NumberFormat('es-MX', {
-    style: 'currency', currency: 'MXN',
+    style: 'currency', currency,
     minimumFractionDigits: 0, maximumFractionDigits: 2,
   }).format(n || 0);
 }
@@ -128,6 +129,9 @@ export default function PlanPagos() {
   const [cancelDialog, setCancelDialog] = useState(null); // null | { plan }
   const [cancelReason, setCancelReason] = useState('');
 
+  // ─── Print modal ───────────────────────────────────────────────────────────
+  const [printPlan, setPrintPlan] = useState(null); // plan to print
+
   // ─── Diálogo de selección de destinatarios ────────────────────────
   // Abre cuando el usuario pulsa "Enviar propuesta"; permite marcar/desmarcar
   // propietario y copropietario antes de realmente enviar.
@@ -141,6 +145,9 @@ export default function PlanPagos() {
   const [activeOptIdx, setActiveOptIdx] = useState(0);
 
   const maintenanceFee = parseFloat(tenantData?.maintenance_fee || 0);
+  // Currency-aware formatter (shadows module-level _fmt)
+  const cur = tenantData?.currency || 'MXN';
+  const fmt = (n) => _fmt(n, cur);
 
   // ─── Load tenant ───────────────────────────────────────────────────────────
   useEffect(() => {
@@ -578,8 +585,8 @@ export default function PlanPagos() {
         )}
 
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end', borderTop: '1px solid var(--sand-200)', paddingTop: 12 }}>
-          <button className="btn btn-outline btn-sm" onClick={() => handleDownloadPDF(plan)}>
-            <Download size={13} /> Descargar PDF
+          <button className="btn btn-outline btn-sm" onClick={() => setPrintPlan(plan)}>
+            <Printer size={13} /> Imprimir / PDF
           </button>
           {isVecino && plan.status === 'sent' && (
             <>
@@ -1662,6 +1669,16 @@ export default function PlanPagos() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── Plan PDF Print Modal ── */}
+      {printPlan && (
+        <PlanPagosPrintModal
+          plan={printPlan}
+          unit={selectedUnit}
+          tc={tenantData}
+          onClose={() => setPrintPlan(null)}
+        />
       )}
 
     </div>

@@ -78,7 +78,6 @@ const NAV_ITEMS = {
     { path: '/app/cierre-periodo',  icon: Lock,          label: 'Cierre de Período' },
     { path: '/app/notificaciones',  icon: Bell,          label: 'Notificaciones'    },
     { path: '/app/onboarding',      icon: Sparkles,      label: 'Guía de Uso'       },
-    { path: '/app/config',          icon: Settings,      label: 'Configuración'     },
   ]}],
 
   vigilante: [{ section: 'main', items: [

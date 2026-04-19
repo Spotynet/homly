@@ -17,15 +17,15 @@ import toast from 'react-hot-toast';
 import VecinoOnboarding, { onboardingKey } from '../components/onboarding/VecinoOnboarding';
 
 // ─── Formatters ────────────────────────────────────────────────────────────
-function fmt(n) {
+function _fmt(n, currency = 'MXN') {
   return new Intl.NumberFormat('es-MX', {
-    style: 'currency', currency: 'MXN',
+    style: 'currency', currency,
     minimumFractionDigits: 0, maximumFractionDigits: 0,
   }).format(n ?? 0);
 }
-function fmtDec(n) {
+function _fmtDec(n, currency = 'MXN') {
   return new Intl.NumberFormat('es-MX', {
-    style: 'currency', currency: 'MXN',
+    style: 'currency', currency,
     minimumFractionDigits: 2, maximumFractionDigits: 2,
   }).format(n ?? 0);
 }
@@ -145,7 +145,7 @@ function SvgDonutMulti({ segments = [], size = 140 }) {
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
       {arcs.map((arc, i) => arc.path ? (
         <path key={i} d={arc.path} fill={arc.color} style={{ transition: 'all 0.5s ease' }}>
-          <title>{arc.label}: {fmt(arc.value)}</title>
+          <title>{arc.label}: {_fmt(arc.value)}</title>
         </path>
       ) : null)}
     </svg>
@@ -416,6 +416,10 @@ export default function MyUnit() {
   // ── Computed: General + Económicos ───────────────────────────────────
   const s = stats || {};
   const t = tenantData || {};
+  // Currency-aware formatters (shadow module-level _fmt/_fmtDec)
+  const cur = t.currency || 'MXN';
+  const fmt = (n) => _fmt(n, cur);
+  const fmtDec = (n) => _fmtDec(n, cur);
 
   const minPeriod = t.operation_start_date
     ? t.operation_start_date.slice(0, 7)

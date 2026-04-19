@@ -7,13 +7,13 @@ import { todayPeriod, periodLabel, prevPeriod, nextPeriod, tenantStartPeriod, fm
 import { ChevronLeft, ChevronRight, Search, Receipt, X, Users, CheckCircle, Clock, AlertCircle, DollarSign, Calendar, Building2, Upload, FileText, Check, Plus, Edit, Edit2, Trash2, Banknote, Mail, Lock } from 'lucide-react';
 import toast from 'react-hot-toast';
 
-function fmt(n) {
-  return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 0 }).format(n ?? 0);
+function _fmt(n, currency = 'MXN') {
+  return new Intl.NumberFormat('es-MX', { style: 'currency', currency, maximumFractionDigits: 0 }).format(n ?? 0);
 }
 
 // Format with cents (2 decimal places) for payment inputs
-function fmtDec(n) {
-  return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(parseFloat(n) || 0);
+function _fmtDec(n, currency = 'MXN') {
+  return new Intl.NumberFormat('es-MX', { style: 'currency', currency, minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(parseFloat(n) || 0);
 }
 
 // Receipt format: symbol + toLocaleString (matches HTML exactly)
@@ -242,6 +242,10 @@ export default function Cobranza() {
   }, [units, paymentMap, unrecognizedIncome]);
 
   const maintenanceFee = parseFloat(tenantData?.maintenance_fee) || 0;
+  // Currency-aware formatters (shadow module-level _fmt/_fmtDec)
+  const cur = tenantData?.currency || 'MXN';
+  const fmt = (n) => _fmt(n, cur);
+  const fmtDec = (n) => _fmtDec(n, cur);
 
   const filtered = useMemo(() => {
     if (!filter) return units;
