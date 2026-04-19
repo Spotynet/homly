@@ -491,6 +491,9 @@ class PaymentPlanSerializer(serializers.ModelSerializer):
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     installments_paid = serializers.IntegerField(read_only=True)
     total_paid_toward_debt = serializers.FloatField(read_only=True)
+    # field_key is a model @property (e.g. "plan_<uuid>") — needed by the frontend
+    # to correctly identify and send FieldPayment records for plan installments.
+    field_key = serializers.CharField(read_only=True)
 
     def get_responsible_name(self, obj):
         u = obj.unit
@@ -512,6 +515,7 @@ class PaymentPlanSerializer(serializers.ModelSerializer):
             'installments', 'installments_paid', 'total_paid_toward_debt',
             'start_period', 'proposal_group', 'option_number',
             'cancel_reason', 'cancelled_by_name', 'cancelled_at',
+            'field_key',
         ]
         read_only_fields = [
             'id', 'tenant', 'status', 'created_at',

@@ -7,6 +7,14 @@ import { todayPeriod, periodLabel, prevPeriod, nextPeriod, tenantStartPeriod, fm
 import { ChevronLeft, ChevronRight, Search, Receipt, X, Users, CheckCircle, Clock, AlertCircle, DollarSign, Calendar, Building2, Upload, FileText, Check, Plus, Edit, Edit2, Trash2, Banknote, Mail, Lock } from 'lucide-react';
 import toast from 'react-hot-toast';
 
+// Derive the FieldPayment key for a PaymentPlan.
+// field_key is a @property on the model (= "plan_{id}") but historically was
+// missing from the serializer, so we fall back to building it from the plan id.
+function getPlanFieldKey(plan) {
+  if (!plan) return null;
+  return plan.field_key || (plan.id ? `plan_${plan.id}` : null);
+}
+
 function _fmt(n, currency = 'MXN') {
   return new Intl.NumberFormat('es-MX', { style: 'currency', currency, maximumFractionDigits: 0 }).format(n ?? 0);
 }
@@ -284,9 +292,9 @@ export default function Cobranza() {
     // If unit has an active payment plan with an installment for this period, add its field
     const activePlan = activePlansMap[String(unit.id)];
     if (activePlan) {
-      const planKey = activePlan.field_key; // e.g. "plan_{uuid}"
+      const planKey = getPlanFieldKey(activePlan); // e.g. "plan_{uuid}"
       const planInst = (activePlan.installments || []).find(i => i.period_key === period);
-      if (planInst) {
+      if (planInst && planKey) {
         fieldPayments[planKey] = fp[planKey] || { received: '', targetUnitId: null, adelantoTargets: {} };
       }
     }
@@ -413,7 +421,7 @@ export default function Cobranza() {
     const fp = {};
     // Include plan field key if present in captureForm
     const activePlan = activePlansMap[String(captureForm.unit_id)];
-    const planInstKey = activePlan ? activePlan.field_key : null;
+    const planInstKey = getPlanFieldKey(activePlan);
     const allKeys = ['maintenance', ...extraFields.map(ef => ef.id), ...(planInstKey ? [planInstKey] : [])];
     allKeys.forEach(k => {
       const v = captureForm.field_payments?.[k];
@@ -1224,7 +1232,7 @@ export default function Cobranza() {
         const capturePlanInst = captureActivePlan
           ? (captureActivePlan.installments || []).find(i => i.period_key === period)
           : null;
-        const capturePlanKey = captureActivePlan ? captureActivePlan.field_key : null;
+        const capturePlanKey = getPlanFieldKey(captureActivePlan);
         const capturePlanDebtPart = capturePlanInst ? (parseFloat(capturePlanInst.debt_part) || 0) : 0;
         const capturePlanAbono = capturePlanInst
           ? Math.min(parseFloat(captureForm.field_payments?.[capturePlanKey]?.received) || 0, capturePlanDebtPart)

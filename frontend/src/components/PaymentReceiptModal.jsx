@@ -145,8 +145,11 @@ export default function PaymentReceiptModal({ pay, unit, tc, extraFields = [], r
       .filter(f => f.field_key?.startsWith('plan_'))
       .map(f => f.field_key)
   );
-  // Active plan installment for this payment's period
-  const planFieldKey = activePlan?.field_key || '';
+  // Active plan installment for this payment's period.
+  // field_key is now returned by the serializer; fall back to plan_${id} for safety.
+  const planFieldKey = activePlan
+    ? (activePlan.field_key || (activePlan.id ? `plan_${activePlan.id}` : ''))
+    : '';
   const planInst = activePlan
     ? (activePlan.installments || []).find(i => i.period_key === pay?.period)
     : null;
