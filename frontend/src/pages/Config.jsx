@@ -11,7 +11,7 @@ import {
   Calendar, DollarSign, ShieldCheck, Receipt, ShoppingBag,
   AlertCircle, Shield, FileText, Globe, ChevronRight, TrendingUp,
   ShieldAlert, Mail, UserPlus, Bell, Layers, Eye, EyeOff,
-  ListOrdered, ArrowUp, ArrowDown, CheckCircle2, Star,
+  ListOrdered, ArrowUp, ArrowDown, CheckCircle2, Sparkles,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -58,7 +58,7 @@ const MODULE_DEFINITIONS = [
   { key: 'plan_pagos',      label: 'Plan de Pagos',       icon: TrendingUp,   desc: 'Gestión de planes de pago para adeudos de unidades' },
   { key: 'cierre_periodo',  label: 'Cierre de Período',   icon: Lock,         desc: 'Cierre y flujo de aprobación de períodos contables' },
   { key: 'notificaciones',  label: 'Notificaciones',      icon: Bell,         desc: 'Centro de avisos y notificaciones' },
-  { key: 'onboarding',      label: 'Guía de Inicio',      icon: Star,         desc: 'Tour interactivo para configurar el tenant paso a paso' },
+  { key: 'onboarding',      label: 'Guía de Inicio',      icon: Sparkles,     desc: 'Tour interactivo para configurar el tenant paso a paso' },
   { key: 'config',          label: 'Configuración',       icon: Settings,     desc: 'Configuración del condominio' },
   { key: 'my_unit',         label: 'Mi Unidad',           icon: Home,         desc: 'Vista de la unidad del residente (solo Vecino)' },
 ];

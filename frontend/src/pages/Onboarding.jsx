@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import {
-  Star, Sparkles, PlayCircle, RotateCcw,
+  Sparkles, PlayCircle, RotateCcw,
   CheckCircle2, Clock, ChevronRight, ChevronDown,
   BookMarked,
 } from 'lucide-react';
@@ -123,7 +123,7 @@ export default function Onboarding() {
           boxShadow: '0 4px 12px rgba(20,184,166,0.15)',
           flexShrink: 0,
         }}>
-          <Star size={38} color="var(--teal-500)" />
+          <Sparkles size={38} color="var(--teal-500)" />
         </div>
         <div style={{ flex: 1, minWidth: 240 }}>
           <div style={{

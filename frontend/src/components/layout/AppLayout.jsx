@@ -2,13 +2,13 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { HomlyBrand, APP_VERSION, ROLES } from '../../utils/helpers';
-import { notificationsAPI, tenantsAPI } from '../../api/client';
+import { notificationsAPI, tenantsAPI, paymentPlansAPI } from '../../api/client';
 import { ROLE_BASE_MODULES } from '../../constants/modulePermissions';
 import {
   Home, Globe, FileText, ShoppingBag, Receipt, Settings,
   Users, Building, Shield, LogOut, Menu, X, Calendar,
   ChevronDown, Check, Building2, Bell, CheckCheck, Activity, Lock, TrendingDown,
-  Star,
+  Sparkles,
 } from 'lucide-react';
 
 const NAV_ITEMS = {
@@ -26,7 +26,7 @@ const NAV_ITEMS = {
       { path: '/app/plan-pagos',       icon: TrendingDown, label: 'Plan de Pagos'     },
       { path: '/app/cierre-periodo',   icon: Lock,         label: 'Cierre de Período' },
       { path: '/app/notificaciones',   icon: Bell,         label: 'Notificaciones'    },
-      { path: '/app/onboarding',       icon: Star,         label: 'Guía de Uso'    },
+      { path: '/app/onboarding',       icon: Sparkles,     label: 'Guía de Uso'    },
       { path: '/app/config',           icon: Settings,     label: 'Configuración'     },
     ]},
   ],
@@ -40,7 +40,7 @@ const NAV_ITEMS = {
     { path: '/app/plan-pagos',       icon: TrendingDown,  label: 'Plan de Pagos'      },
     { path: '/app/cierre-periodo',   icon: Lock,          label: 'Cierre de Período'  },
     { path: '/app/notificaciones',   icon: Bell,          label: 'Notificaciones'     },
-    { path: '/app/onboarding',       icon: Star,          label: 'Guía de Uso'     },
+    { path: '/app/onboarding',       icon: Sparkles,      label: 'Guía de Uso'     },
     { path: '/app/config',           icon: Settings,      label: 'Configuración'      },
   ]}],
 
@@ -53,7 +53,7 @@ const NAV_ITEMS = {
     { path: '/app/plan-pagos',       icon: TrendingDown,  label: 'Plan de Pagos'      },
     { path: '/app/cierre-periodo',   icon: Lock,          label: 'Cierre de Período'  },
     { path: '/app/notificaciones',   icon: Bell,          label: 'Notificaciones'     },
-    { path: '/app/onboarding',       icon: Star,          label: 'Guía de Uso'        },
+    { path: '/app/onboarding',       icon: Sparkles,      label: 'Guía de Uso'        },
   ]}],
 
   contador: [{ section: 'main', items: [
@@ -65,7 +65,7 @@ const NAV_ITEMS = {
     { path: '/app/plan-pagos',      icon: TrendingDown,  label: 'Plan de Pagos'     },
     { path: '/app/cierre-periodo',  icon: Lock,          label: 'Cierre de Período' },
     { path: '/app/notificaciones',  icon: Bell,          label: 'Notificaciones'    },
-    { path: '/app/onboarding',      icon: Star,          label: 'Guía de Uso'       },
+    { path: '/app/onboarding',      icon: Sparkles,      label: 'Guía de Uso'       },
   ]}],
 
   auditor: [{ section: 'main', items: [
@@ -77,7 +77,7 @@ const NAV_ITEMS = {
     { path: '/app/plan-pagos',      icon: TrendingDown,  label: 'Plan de Pagos'     },
     { path: '/app/cierre-periodo',  icon: Lock,          label: 'Cierre de Período' },
     { path: '/app/notificaciones',  icon: Bell,          label: 'Notificaciones'    },
-    { path: '/app/onboarding',      icon: Star,          label: 'Guía de Uso'       },
+    { path: '/app/onboarding',      icon: Sparkles,      label: 'Guía de Uso'       },
     { path: '/app/config',          icon: Settings,      label: 'Configuración'     },
   ]}],
 
@@ -88,13 +88,12 @@ const NAV_ITEMS = {
   ]}],
 
   vecino: [{ section: 'main', items: [
-    { path: '/app/dashboard',       icon: Home,          label: 'Dashboard'        },
-    { path: '/app/my-unit',         icon: Building2,     label: 'Mi Unidad'        },
+    { path: '/app/my-unit',         icon: Home,          label: 'Mi Unidad'        },
     { path: '/app/reservas',        icon: Calendar,      label: 'Reservas'         },
     { path: '/app/estado-cuenta',   icon: FileText,      label: 'Estado de Cuenta' },
     { path: '/app/plan-pagos',      icon: TrendingDown,  label: 'Plan de Pagos'    },
     { path: '/app/notificaciones',  icon: Bell,          label: 'Notificaciones'   },
-    { path: '/app/onboarding',      icon: Star,          label: 'Guía de Uso'      },
+    { path: '/app/onboarding',      icon: Sparkles,      label: 'Guía de Uso'      },
   ]}],
 };
 
@@ -305,7 +304,7 @@ function GuideTourButton() {
       onMouseEnter={e => { e.currentTarget.style.background = 'var(--teal-50)'; e.currentTarget.style.color = 'var(--teal-600)'; }}
       onMouseLeave={e => { e.currentTarget.style.background = isActive ? 'var(--teal-50)' : 'none'; e.currentTarget.style.color = isActive ? 'var(--teal-600)' : 'var(--ink-500)'; }}
     >
-      <Star size={20} />
+      <Sparkles size={20} />
     </button>
   );
 }
@@ -524,6 +523,8 @@ export default function AppLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [tenantModulePerms, setTenantModulePerms] = useState({});
   const [customProfiles,    setCustomProfiles]    = useState([]);
+  // For vecino: only show Plan de Pagos if they have at least one plan (any status)
+  const [vecHasPlan, setVecHasPlan] = useState(false);
   const navigate  = useNavigate();
   const location  = useLocation();
 
@@ -543,6 +544,17 @@ export default function AppLayout() {
       })
       .catch(() => { setTenantModulePerms({}); setCustomProfiles([]); });
   }, [tenantId, role]);
+
+  // Fetch vecino's plan de pagos — show the nav item only if at least one plan exists
+  useEffect(() => {
+    if (role !== 'vecino' || !tenantId) { setVecHasPlan(false); return; }
+    paymentPlansAPI.list(tenantId, { page_size: 1 })
+      .then(r => {
+        const results = Array.isArray(r.data) ? r.data : (r.data?.results || []);
+        setVecHasPlan(results.length > 0);
+      })
+      .catch(() => setVecHasPlan(false));
+  }, [role, tenantId]);
 
   // Resolve the active custom profile (if any)
   const activeProfile = profileId
@@ -586,6 +598,9 @@ export default function AppLayout() {
         items: group.items.filter(item => {
           const moduleKey = PATH_TO_MODULE[item.path];
           if (!moduleKey) return true;
+
+          // Vecino: hide Plan de Pagos when no plan exists in any status
+          if (role === 'vecino' && moduleKey === 'plan_pagos' && !vecHasPlan) return false;
 
           // Custom profile: filter by profile's own modules config
           if (activeProfile) {

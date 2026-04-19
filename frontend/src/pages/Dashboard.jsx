@@ -11,7 +11,7 @@ import {
   ChevronLeft, ChevronRight, RefreshCw, TrendingDown, TrendingUp,
   Users, UserCheck, Mail, Phone, Wallet, Activity,
   CheckCircle, AlertCircle, Clock, BarChart2, Calendar, X, Check, Lock, LockOpen,
-  Star, Sparkles,
+  Sparkles,
 } from 'lucide-react';
 
 // ─── Formatters ────────────────────────────────────────────────────────────
@@ -689,7 +689,7 @@ export default function Dashboard() {
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             boxShadow: '0 2px 6px rgba(20,184,166,0.15)', flexShrink: 0,
           }}>
-            <Star size={20} color="var(--teal-500)" />
+            <Sparkles size={20} color="var(--teal-500)" />
           </div>
           <div style={{ flex: 1, minWidth: 200 }}>
             <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--ink-800)', display: 'flex', alignItems: 'center', gap: 6 }}>

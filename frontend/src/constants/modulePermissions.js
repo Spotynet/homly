@@ -16,5 +16,5 @@ export const ROLE_BASE_MODULES = {
   contador:  ['dashboard', 'reservas', 'cobranza', 'gastos', 'estado_cuenta', 'plan_pagos', 'cierre_periodo', 'notificaciones', 'onboarding'],
   auditor:   ['dashboard', 'config', 'cobranza', 'reservas', 'gastos', 'estado_cuenta', 'plan_pagos', 'cierre_periodo', 'notificaciones', 'onboarding'],
   vigilante: ['dashboard', 'reservas', 'notificaciones'],
-  vecino:    ['dashboard', 'my_unit', 'reservas', 'estado_cuenta', 'plan_pagos', 'notificaciones', 'onboarding'],
+  vecino:    ['my_unit', 'reservas', 'estado_cuenta', 'plan_pagos', 'notificaciones', 'onboarding'],
 };

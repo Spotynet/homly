@@ -1,4 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
+  Legend, ResponsiveContainer, Cell,
+} from 'recharts';
 import { useAuth } from '../context/AuthContext';
 import { reportsAPI, tenantsAPI, assemblyAPI, unitsAPI } from '../api/client';
 import { periodLabel, statusClass, statusLabel, fmtDate } from '../utils/helpers';
@@ -223,6 +227,10 @@ export default function MyUnit() {
   const [generalReport, setGeneralReport] = useState(null);
   const [dashLoading, setDashLoading] = useState(false);
 
+  // Gráfica comparativa de períodos
+  const [periodHistory,  setPeriodHistory]  = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
   // Mis Datos form state
   const [myInfoForm, setMyInfoForm] = useState(null); // null = not initialized
   const [myInfoSaving, setMyInfoSaving] = useState(false);
@@ -334,6 +342,47 @@ export default function MyUnit() {
   }, [tenantId, period]);
 
   useEffect(() => { loadDash(); }, [loadDash]);
+
+  // ── Cargar historial de 6 períodos para la gráfica comparativa ──────────
+  useEffect(() => {
+    if (activeTab !== 'economico' || !tenantId) return;
+    setHistoryLoading(true);
+    const getPrevPeriods = (current, n) => {
+      const [y, m] = current.split('-').map(Number);
+      const result = [];
+      for (let i = n - 1; i >= 0; i--) {
+        let month = m - i;
+        let year  = y;
+        while (month <= 0) { month += 12; year--; }
+        result.push(`${year}-${String(month).padStart(2, '0')}`);
+      }
+      return result;
+    };
+    const periods = getPrevPeriods(period, 6);
+    Promise.allSettled(periods.map(p => reportsAPI.reporteGeneral(tenantId, p)))
+      .then(results => {
+        const shortMonth = p => {
+          const [y, m] = p.split('-');
+          return new Date(+y, +m - 1, 1)
+            .toLocaleDateString('es-MX', { month: 'short' }).replace('.', '');
+        };
+        setPeriodHistory(results.map((r, i) => {
+          const p = periods[i];
+          if (r.status === 'fulfilled') {
+            const d = r.value.data;
+            const rd = d?.report_data || {};
+            return {
+              period: p, label: shortMonth(p),
+              ingresos: parseFloat(rd.total_ingresos_reconciled ?? 0),
+              gastos:   parseFloat(rd.total_egresos_reconciled  ?? 0),
+              saldo:    parseFloat(d?.saldo_final ?? 0),
+            };
+          }
+          return { period: p, label: shortMonth(p), ingresos: 0, gastos: 0, saldo: 0 };
+        }));
+      })
+      .finally(() => setHistoryLoading(false));
+  }, [activeTab, tenantId, period]);
 
   // ── Loading state ─────────────────────────────────────────────────────
   if (loading) {
@@ -1066,6 +1115,80 @@ export default function MyUnit() {
                   );
                 })}
               </div>
+            </div>
+          </div>
+
+          {/* ── Gráfica comparativa de períodos ─────────────────────── */}
+          <SubLabel>Comparativo de Períodos</SubLabel>
+          <div className="card" style={{ marginBottom: 20 }}>
+            <div className="card-head">
+              <h3>Ingresos · Gastos · Saldo Final</h3>
+              <span style={{ fontSize: 11, color: 'var(--ink-400)' }}>Últimos 6 períodos</span>
+            </div>
+            <div className="card-body">
+              {historyLoading ? (
+                <div style={{ height: 220, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--ink-400)', fontSize: 13 }}>
+                  Cargando historial…
+                </div>
+              ) : periodHistory.length === 0 ? (
+                <div style={{ height: 220, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--ink-300)', fontSize: 13, fontStyle: 'italic' }}>
+                  Sin datos históricos
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height={240}>
+                  <BarChart
+                    data={periodHistory}
+                    margin={{ top: 4, right: 8, left: 8, bottom: 0 }}
+                    barCategoryGap="28%"
+                    barGap={3}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--sand-100)" vertical={false} />
+                    <XAxis
+                      dataKey="label"
+                      tick={{ fontSize: 11, fill: 'var(--ink-500)' }}
+                      axisLine={false} tickLine={false}
+                    />
+                    <YAxis
+                      tickFormatter={v => {
+                        if (Math.abs(v) >= 1_000_000) return `$${(v/1_000_000).toFixed(1)}M`;
+                        if (Math.abs(v) >= 1_000)     return `$${(v/1_000).toFixed(0)}k`;
+                        return `$${v}`;
+                      }}
+                      tick={{ fontSize: 10, fill: 'var(--ink-400)' }}
+                      axisLine={false} tickLine={false} width={52}
+                    />
+                    <Tooltip
+                      formatter={(value, name) => [fmtDec(value), name]}
+                      labelFormatter={label => {
+                        const entry = periodHistory.find(d => d.label === label);
+                        return entry ? monthLabel(entry.period) : label;
+                      }}
+                      contentStyle={{
+                        background: 'white',
+                        border: '1px solid var(--sand-100)',
+                        borderRadius: 10,
+                        boxShadow: '0 4px 16px rgba(0,0,0,0.10)',
+                        fontSize: 12,
+                      }}
+                    />
+                    <Legend
+                      wrapperStyle={{ fontSize: 12, paddingTop: 8 }}
+                      formatter={value => ({
+                        ingresos: 'Ingresos conciliados',
+                        gastos:   'Gastos conciliados',
+                        saldo:    'Saldo final',
+                      }[value] || value)}
+                    />
+                    <Bar dataKey="ingresos" name="ingresos" fill="var(--teal-400)"  radius={[4,4,0,0]} maxBarSize={40} />
+                    <Bar dataKey="gastos"   name="gastos"   fill="var(--coral-400)" radius={[4,4,0,0]} maxBarSize={40} />
+                    <Bar dataKey="saldo"    name="saldo"    fill="#6366f1"           radius={[4,4,0,0]} maxBarSize={40}>
+                      {periodHistory.map((entry, idx) => (
+                        <Cell key={`cell-${idx}`} fill={entry.saldo >= 0 ? '#6366f1' : 'var(--coral-600)'} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
             </div>
           </div>
 
