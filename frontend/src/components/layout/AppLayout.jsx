@@ -308,8 +308,26 @@ function GuideTourButton() {
   );
 }
 
+// ── Notification module map (mirrors backend _NOTIF_MODULE_MAP) ──────────────
+const NOTIF_MODULE_MAP = {
+  reservation_new:       'reservas',
+  reservation_approved:  'reservas',
+  reservation_rejected:  'reservas',
+  reservation_cancelled: 'reservas',
+  payment_registered:    'estado_cuenta',
+  payment_updated:       'estado_cuenta',
+  payment_deleted:       'estado_cuenta',
+  period_closed:         'cobranza',
+  period_reopened:       'cobranza',
+  plan_proposal_sent:    'plan_pagos',
+  plan_accepted:         'plan_pagos',
+  plan_rejected:         'plan_pagos',
+  plan_cancelled:        'plan_pagos',
+  plan_installment_paid: 'plan_pagos',
+};
+
 // ── Notification Bell + Dropdown ────────────────────────────────────────────
-function NotificationBell({ tenantId }) {
+function NotificationBell({ tenantId, role, tenantModulePerms, activeProfile }) {
   const navigate = useNavigate();
   const [open,        setOpen]        = useState(false);
   const [unread,      setUnread]      = useState(0);
@@ -364,12 +382,36 @@ function NotificationBell({ tenantId }) {
     setUnread(0);
   };
 
+  // Returns true if the current user's role has access to the module
+  // associated with a notification type. Superadmin/admin always have access.
+  const canNavigateNotif = (n) => {
+    if (!role || role === 'superadmin' || role === 'admin') return true;
+    const moduleKey = n.related_reservation_id ? 'reservas' : NOTIF_MODULE_MAP[n.notif_type];
+    if (!moduleKey) return false; // no known destination → read-only
+    let permsEntry;
+    if (activeProfile) {
+      const profileMods = activeProfile.modules;
+      if (!profileMods || (Array.isArray(profileMods) && profileMods.length === 0) ||
+          (typeof profileMods === 'object' && !Array.isArray(profileMods) && Object.keys(profileMods).length === 0)) return true;
+      permsEntry = profileMods;
+    } else {
+      permsEntry = tenantModulePerms ? tenantModulePerms[role] : undefined;
+    }
+    if (!permsEntry) return true;
+    if (Array.isArray(permsEntry)) {
+      return permsEntry.includes(moduleKey) || !!(ROLE_BASE_MODULES[role]?.includes(moduleKey));
+    }
+    const level = permsEntry[moduleKey];
+    return level === undefined || level !== 'hidden';
+  };
+
   const handleClickNotif = async (n) => {
     if (!n.is_read) {
       await notificationsAPI.markRead(tenantId, n.id).catch(() => {});
       setNotifs(prev => prev.map(x => x.id === n.id ? { ...x, is_read: true } : x));
       setUnread(prev => Math.max(0, prev - 1));
     }
+    if (!canNavigateNotif(n)) return; // no permission → mark read only, no navigation
     setOpen(false);
     if (n.related_reservation_id) navigate('/app/reservas');
     else if (['plan_proposal_sent','plan_accepted','plan_rejected','plan_cancelled','plan_installment_paid'].includes(n.notif_type)) navigate('/app/plan-pagos');
@@ -473,17 +515,20 @@ function NotificationBell({ tenantId }) {
                 <div style={{ fontSize: 13, color: 'var(--ink-400)' }}>Sin notificaciones</div>
               </div>
             ) : (
-              notifs.map(n => (
+              notifs.map(n => {
+                const canNav = canNavigateNotif(n);
+                return (
                 <button
                   key={n.id}
                   onClick={() => handleClickNotif(n)}
+                  title={canNav ? undefined : 'Tu rol no tiene acceso a este módulo'}
                   style={{
                     width: '100%', display: 'flex', alignItems: 'flex-start', gap: 10,
                     padding: '11px 16px', border: 'none', background: n.is_read ? 'transparent' : 'var(--teal-50)',
-                    cursor: 'pointer', textAlign: 'left', borderBottom: '1px solid var(--sand-50)',
-                    transition: 'background 0.1s',
+                    cursor: canNav ? 'pointer' : 'default', textAlign: 'left', borderBottom: '1px solid var(--sand-50)',
+                    transition: 'background 0.1s', opacity: canNav ? 1 : 0.75,
                   }}
-                  onMouseEnter={e => e.currentTarget.style.background = n.is_read ? 'var(--sand-50)' : 'var(--teal-100)'}
+                  onMouseEnter={e => { if (canNav) e.currentTarget.style.background = n.is_read ? 'var(--sand-50)' : 'var(--teal-100)'; }}
                   onMouseLeave={e => e.currentTarget.style.background = n.is_read ? 'transparent' : 'var(--teal-50)'}
                 >
                   <span style={{ fontSize: 18, flexShrink: 0, marginTop: 1 }}>{TYPE_ICON[n.notif_type] || 'ℹ️'}</span>
@@ -496,13 +541,17 @@ function NotificationBell({ tenantId }) {
                         {n.message}
                       </div>
                     )}
-                    <div style={{ fontSize: 10, color: 'var(--ink-300)', marginTop: 3 }}>{timeAgo(n.created_at)}</div>
+                    <div style={{ fontSize: 10, color: 'var(--ink-300)', marginTop: 3 }}>
+                      {timeAgo(n.created_at)}
+                      {!canNav && <span style={{ marginLeft: 6, color: 'var(--coral-400)', fontWeight: 600 }}>· Sin acceso</span>}
+                    </div>
                   </div>
                   {!n.is_read && (
                     <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--teal-500)', flexShrink: 0, marginTop: 5 }} />
                   )}
                 </button>
-              ))
+                );
+              })
             )}
           </div>
         </div>
@@ -753,7 +802,7 @@ export default function AppLayout() {
               (activeProfile
                 ? isModuleVisible(activeProfile.modules, 'notificaciones', activeProfile.base_role)
                 : isModuleVisible(tenantModulePerms[role], 'notificaciones', role))
-            ) && <NotificationBell tenantId={tenantId} />}
+            ) && <NotificationBell tenantId={tenantId} role={role} tenantModulePerms={tenantModulePerms} activeProfile={activeProfile} />}
           </div>
         </header>
 

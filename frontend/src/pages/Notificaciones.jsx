@@ -1,9 +1,28 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { notificationsAPI } from '../api/client';
-import { Bell, CheckCheck, Calendar, Filter } from 'lucide-react';
+import { notificationsAPI, tenantsAPI } from '../api/client';
+import { ROLE_BASE_MODULES } from '../constants/modulePermissions';
+import { Bell, CheckCheck, Calendar, Filter, Lock } from 'lucide-react';
 import toast from 'react-hot-toast';
+
+// Maps notification type → required module key (mirrors backend _NOTIF_MODULE_MAP)
+const NOTIF_MODULE_MAP = {
+  reservation_new:       'reservas',
+  reservation_approved:  'reservas',
+  reservation_rejected:  'reservas',
+  reservation_cancelled: 'reservas',
+  payment_registered:    'estado_cuenta',
+  payment_updated:       'estado_cuenta',
+  payment_deleted:       'estado_cuenta',
+  period_closed:         'cobranza',
+  period_reopened:       'cobranza',
+  plan_proposal_sent:    'plan_pagos',
+  plan_accepted:         'plan_pagos',
+  plan_rejected:         'plan_pagos',
+  plan_cancelled:        'plan_pagos',
+  plan_installment_paid: 'plan_pagos',
+};
 
 const TYPE_CFG = {
   // Reservas
@@ -39,13 +58,15 @@ function timeAgo(dateStr) {
 }
 
 export default function Notificaciones() {
-  const { tenantId } = useAuth();
+  const { tenantId, role, profileId } = useAuth();
   const navigate = useNavigate();
 
-  const [notifs,   setNotifs]   = useState([]);
-  const [loading,  setLoading]  = useState(true);
-  const [filter,   setFilter]   = useState('all'); // 'all' | 'unread'
-  const [typeFilter, setTypeFilter] = useState('all');
+  const [notifs,          setNotifs]          = useState([]);
+  const [loading,         setLoading]         = useState(true);
+  const [filter,          setFilter]          = useState('all'); // 'all' | 'unread'
+  const [typeFilter,      setTypeFilter]      = useState('all');
+  const [modulePerms,     setModulePerms]     = useState({});
+  const [customProfiles,  setCustomProfiles]  = useState([]);
 
   const loadNotifs = useCallback(async () => {
     if (!tenantId) return;
@@ -62,6 +83,44 @@ export default function Notificaciones() {
 
   useEffect(() => { loadNotifs(); }, [loadNotifs]);
 
+  // Load tenant module permissions so we can enforce access from notifications
+  useEffect(() => {
+    if (!tenantId || role === 'superadmin') { setModulePerms({}); setCustomProfiles([]); return; }
+    tenantsAPI.get(tenantId)
+      .then(r => {
+        setModulePerms(r.data?.module_permissions || {});
+        setCustomProfiles(Array.isArray(r.data?.custom_profiles) ? r.data.custom_profiles : []);
+      })
+      .catch(() => { setModulePerms({}); setCustomProfiles([]); });
+  }, [tenantId, role]);
+
+  // Resolve active custom profile
+  const activeProfile = profileId
+    ? customProfiles.find(p => String(p.id) === String(profileId)) || null
+    : null;
+
+  // Returns true if current role has access to the module linked to a notification
+  const canNavigateNotif = (n) => {
+    if (!role || role === 'superadmin' || role === 'admin') return true;
+    const moduleKey = n.related_reservation_id ? 'reservas' : NOTIF_MODULE_MAP[n.notif_type];
+    if (!moduleKey) return false;
+    let permsEntry;
+    if (activeProfile) {
+      const profileMods = activeProfile.modules;
+      if (!profileMods || (Array.isArray(profileMods) && profileMods.length === 0) ||
+          (typeof profileMods === 'object' && !Array.isArray(profileMods) && Object.keys(profileMods).length === 0)) return true;
+      permsEntry = profileMods;
+    } else {
+      permsEntry = modulePerms[role];
+    }
+    if (!permsEntry) return true;
+    if (Array.isArray(permsEntry)) {
+      return permsEntry.includes(moduleKey) || !!(ROLE_BASE_MODULES[role]?.includes(moduleKey));
+    }
+    const level = permsEntry[moduleKey];
+    return level === undefined || level !== 'hidden';
+  };
+
   const handleMarkAll = async () => {
     await notificationsAPI.markAllRead(tenantId).catch(() => {});
     setNotifs(prev => prev.map(n => ({ ...n, is_read: true })));
@@ -73,6 +132,7 @@ export default function Notificaciones() {
       await notificationsAPI.markRead(tenantId, n.id).catch(() => {});
       setNotifs(prev => prev.map(x => x.id === n.id ? { ...x, is_read: true } : x));
     }
+    if (!canNavigateNotif(n)) return; // no module access → mark read only, no navigation
     if (n.related_reservation_id) navigate('/app/reservas');
     else if (['plan_proposal_sent','plan_accepted','plan_rejected','plan_cancelled','plan_installment_paid'].includes(n.notif_type)) navigate('/app/plan-pagos');
     else if (['payment_registered','payment_updated','payment_deleted'].includes(n.notif_type)) navigate('/app/cobranza');
@@ -177,20 +237,23 @@ export default function Notificaciones() {
       ) : (
         <div className="card" style={{ overflow: 'hidden' }}>
           {visible.map((n, idx) => {
-            const cfg = TYPE_CFG[n.notif_type] || TYPE_CFG.general;
+            const cfg    = TYPE_CFG[n.notif_type] || TYPE_CFG.general;
+            const canNav = canNavigateNotif(n);
             return (
               <button
                 key={n.id}
                 onClick={() => handleClickNotif(n)}
+                title={canNav ? undefined : 'Tu rol no tiene acceso al módulo de esta notificación'}
                 style={{
                   width: '100%', display: 'flex', alignItems: 'flex-start', gap: 14,
                   padding: '14px 20px', border: 'none', textAlign: 'left',
                   background: n.is_read ? 'transparent' : 'var(--teal-50)',
                   borderBottom: idx < visible.length - 1 ? '1px solid var(--sand-50)' : 'none',
-                  cursor: n.related_reservation_id ? 'pointer' : 'default',
+                  cursor: canNav ? 'pointer' : 'default',
                   transition: 'background 0.1s',
+                  opacity: canNav ? 1 : 0.72,
                 }}
-                onMouseEnter={e => { if (n.related_reservation_id) e.currentTarget.style.background = n.is_read ? 'var(--sand-50)' : 'var(--teal-100)'; }}
+                onMouseEnter={e => { if (canNav) e.currentTarget.style.background = n.is_read ? 'var(--sand-50)' : 'var(--teal-100)'; }}
                 onMouseLeave={e => e.currentTarget.style.background = n.is_read ? 'transparent' : 'var(--teal-50)'}
               >
                 {/* Icon bubble */}
@@ -214,6 +277,15 @@ export default function Notificaciones() {
                     }}>
                       {cfg.label}
                     </span>
+                    {!canNav && (
+                      <span style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 3,
+                        fontSize: 10, fontWeight: 600, padding: '1px 7px', borderRadius: 20,
+                        background: 'var(--sand-100)', color: 'var(--ink-400)', flexShrink: 0,
+                      }}>
+                        <Lock size={9} /> Sin acceso
+                      </span>
+                    )}
                   </div>
                   {n.message && (
                     <div style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: 3, lineHeight: 1.5 }}>
@@ -223,7 +295,7 @@ export default function Notificaciones() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
                     <Calendar size={11} color="var(--ink-300)" />
                     <span style={{ fontSize: 11, color: 'var(--ink-300)' }}>{timeAgo(n.created_at)}</span>
-                    {n.related_reservation_id && (
+                    {canNav && n.related_reservation_id && (
                       <span style={{ fontSize: 11, color: 'var(--teal-500)', fontWeight: 600 }}>Ver reserva →</span>
                     )}
                   </div>

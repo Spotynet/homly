@@ -68,12 +68,24 @@ _NOTIF_MODULE_MAP = {
 
 def _role_has_module(module_perms, role, module_key):
     """Return True if *role* has access to *module_key* given tenant module_permissions.
-    When module_permissions is empty / not configured, all modules are accessible."""
+    When module_permissions is empty / not configured, all modules are accessible.
+
+    Supports two formats:
+    - Old format: { role: ['module1', 'module2', ...] }  (list of allowed modules)
+    - New format: { role: { module_key: 'write'|'read'|'hidden' } }
+    """
     if not module_perms:
         return True
     role_modules = module_perms.get(role)
     if role_modules is None:
         return True   # role not explicitly restricted → allow
+    if isinstance(role_modules, dict):
+        # New format: check the level value; 'hidden' means no access
+        level = role_modules.get(module_key)
+        if level is None:
+            return True   # not in dict → not restricted
+        return level != 'hidden'
+    # Old format: list of allowed module keys
     return module_key in role_modules
 
 
