@@ -727,10 +727,25 @@ class UnitViewSet(viewsets.ModelViewSet):
 
         unit = tenant_user.unit
         if not unit:
-            return Response(
-                {'detail': 'Tu usuario no tiene una unidad asignada.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            # Fallback: find a unit whose owner/coowner/tenant email matches the user
+            user_email = (request.user.email or '').strip().lower()
+            from django.db.models import Q
+            matched_unit = Unit.objects.filter(
+                tenant_id=tenant_id
+            ).filter(
+                Q(owner_email__iexact=user_email) |
+                Q(coowner_email__iexact=user_email) |
+                Q(tenant_email__iexact=user_email)
+            ).first()
+            if matched_unit:
+                tenant_user.unit = matched_unit
+                tenant_user.save(update_fields=['unit'])
+                unit = matched_unit
+            else:
+                return Response(
+                    {'detail': 'Tu usuario no tiene una unidad asignada.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
         # Whitelist: only contact fields are allowed — admin fields are never touched
         ALLOWED_FIELDS = {
@@ -4207,7 +4222,23 @@ class EstadoCuentaView(APIView):
                 if tu.unit_id:
                     unit_id = str(tu.unit_id)
                 else:
-                    return Response({'detail': 'No tienes una unidad asignada. Contacta al administrador.'}, status=404)
+                    # Fallback: find a unit whose owner/coowner/tenant email matches the user
+                    user_email = (request.user.email or '').strip().lower()
+                    from django.db.models import Q
+                    matched_unit = Unit.objects.filter(
+                        tenant_id=tenant_id
+                    ).filter(
+                        Q(owner_email__iexact=user_email) |
+                        Q(coowner_email__iexact=user_email) |
+                        Q(tenant_email__iexact=user_email)
+                    ).first()
+                    if matched_unit:
+                        # Auto-assign the unit to this TenantUser for future requests
+                        tu.unit = matched_unit
+                        tu.save(update_fields=['unit'])
+                        unit_id = str(matched_unit.id)
+                    else:
+                        return Response({'detail': 'No tienes una unidad asignada. Contacta al administrador.'}, status=404)
             except TenantUser.DoesNotExist:
                 return Response({'detail': 'Usuario no encontrado en este condominio.'}, status=404)
 
@@ -5263,13 +5294,28 @@ class SendVecinoStatementEmailView(APIView):
             return Response({'detail': 'No tienes acceso a este condominio.'}, status=status.HTTP_403_FORBIDDEN)
 
         unit = tenant_user.unit
-        if not unit:
-            return Response(
-                {'detail': 'Tu usuario no tiene una unidad asignada. Contacta al administrador.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
         user_email = (request.user.email or '').strip().lower()
+        if not unit:
+            # Fallback: find a unit whose owner/coowner/tenant email matches the user
+            if user_email:
+                from django.db.models import Q
+                matched_unit = Unit.objects.filter(
+                    tenant_id=tenant_id
+                ).filter(
+                    Q(owner_email__iexact=user_email) |
+                    Q(coowner_email__iexact=user_email) |
+                    Q(tenant_email__iexact=user_email)
+                ).first()
+                if matched_unit:
+                    tenant_user.unit = matched_unit
+                    tenant_user.save(update_fields=['unit'])
+                    unit = matched_unit
+            if not unit:
+                return Response(
+                    {'detail': 'Tu usuario no tiene una unidad asignada. Contacta al administrador.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
         if not user_email:
             return Response(
                 {'detail': 'Tu usuario no tiene un correo electrónico registrado.'},

@@ -657,8 +657,8 @@ export default function Config() {
   const saveEditUser = async () => {
     if (!editUserForm.name?.trim())
       return toast.error('El nombre es obligatorio');
-    // If no custom profile, require role; if profile set, backend resolves role from base_role
-    if (!editUserForm.profile_id && editUserForm.role === 'vecino' && !editUserForm.unit_id)
+    // Vecinos always require a unit, regardless of whether a custom profile is set
+    if (editUserForm.role === 'vecino' && !editUserForm.unit_id)
       return toast.error('Los vecinos deben tener una unidad asignada');
     try {
       await usersAPI.update(tenantId, editUserId, {
