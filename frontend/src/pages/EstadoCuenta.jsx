@@ -65,8 +65,9 @@ export default function EstadoCuenta() {
   const [downloadingStatement, setDownloadingStatement] = useState(false);
   // plan de pago — Estado por Unidad
   const [planUnitDebt, setPlanUnitDebt] = useState(null); // { unit, totalAdeudo }
-  // active plans lookup: Set of unit IDs that have an accepted payment plan
+  // active plans lookup: Set of unit IDs + map of unit_id → plan object
   const [activePlanUnitIds, setActivePlanUnitIds] = useState(new Set());
+  const [activePlansMap, setActivePlansMap] = useState({});
 
   const handleDownloadReceipt = async (payId, period) => {
     setDownloadingReceipt(payId);
@@ -198,6 +199,9 @@ export default function EstadoCuenta() {
       .then(r => {
         const plans = Array.isArray(r.data) ? r.data : (r.data?.results || []);
         setActivePlanUnitIds(new Set(plans.map(p => String(p.unit))));
+        const _planMap = {};
+        plans.forEach(p => { _planMap[String(p.unit)] = p; });
+        setActivePlansMap(_planMap);
       })
       .catch(() => {});
   }, [tenantId, selectedUnit, isVecino]);
@@ -1333,6 +1337,7 @@ export default function EstadoCuenta() {
           tc={tenantData}
           extraFields={extraFields}
           reservations={receiptReservations}
+          activePlan={activePlansMap[String(showReceiptModal.unit?.id)] || null}
           onClose={() => setShowReceiptModal(null)}
         />
       )}

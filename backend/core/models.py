@@ -561,6 +561,10 @@ class PaymentPlan(models.Model):
 
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft', db_index=True)
     notes  = models.TextField(blank=True, default='')
+    terms_conditions = models.TextField(
+        blank=True, default='',
+        help_text='Políticas, condiciones y/o términos de la propuesta que el residente acepta al tomar el plan',
+    )
 
     # Workflow audit (denormalized for display without joins)
     created_by_name  = models.CharField(max_length=200, blank=True)

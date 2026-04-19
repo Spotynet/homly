@@ -1257,16 +1257,32 @@ class PaymentViewSet(viewsets.ModelViewSet):
         extra_fields = ExtraField.objects.filter(
             tenant_id=tenant_id, enabled=True, required=True
         )
-        payment.status = _compute_payment_status(payment, tenant, list(extra_fields))
+        # Include plan installment charge in status calculation
+        _add_plan_charge = Decimal('0')
+        _add_plan_key = ''
+        _add_active_plan = None
+        try:
+            _add_active_plan = PaymentPlan.objects.filter(
+                tenant_id=tenant_id, unit_id=payment.unit_id, status='accepted',
+            ).first()
+            if _add_active_plan:
+                for _inst in (_add_active_plan.installments or []):
+                    if _inst.get('period_key') == payment.period:
+                        _add_plan_charge = Decimal(str(_inst.get('debt_part', 0)))
+                        _add_plan_key = _add_active_plan.field_key
+                        break
+        except Exception:
+            pass
+        payment.status = _compute_payment_status(
+            payment, tenant, list(extra_fields),
+            plan_charge=_add_plan_charge, plan_key=_add_plan_key,
+        )
         payment.save()
 
         # Sync plan installments if there is an active plan for this unit
         try:
-            active_plan = PaymentPlan.objects.filter(
-                tenant_id=tenant_id, unit_id=payment.unit_id, status='accepted',
-            ).first()
-            if active_plan:
-                _update_plan_installments(active_plan)
+            if _add_active_plan:
+                _update_plan_installments(_add_active_plan)
         except Exception:
             pass
 
@@ -1343,15 +1359,31 @@ class PaymentViewSet(viewsets.ModelViewSet):
         payment.additional_payments = new_list
         tenant = Tenant.objects.get(id=tenant_id)
         extra_fields = ExtraField.objects.filter(tenant_id=tenant_id, enabled=True, required=True)
-        payment.status = _compute_payment_status(payment, tenant, list(extra_fields))
+        # Include plan installment charge in status calculation
+        _del_plan_charge = Decimal('0')
+        _del_plan_key = ''
+        _del_active_plan = None
+        try:
+            _del_active_plan = PaymentPlan.objects.filter(
+                tenant_id=tenant_id, unit_id=payment.unit_id, status='accepted',
+            ).first()
+            if _del_active_plan:
+                for _inst in (_del_active_plan.installments or []):
+                    if _inst.get('period_key') == payment.period:
+                        _del_plan_charge = Decimal(str(_inst.get('debt_part', 0)))
+                        _del_plan_key = _del_active_plan.field_key
+                        break
+        except Exception:
+            pass
+        payment.status = _compute_payment_status(
+            payment, tenant, list(extra_fields),
+            plan_charge=_del_plan_charge, plan_key=_del_plan_key,
+        )
         payment.save()
         # Sync plan installments
         try:
-            active_plan = PaymentPlan.objects.filter(
-                tenant_id=tenant_id, unit_id=payment.unit_id, status='accepted',
-            ).first()
-            if active_plan:
-                _update_plan_installments(active_plan)
+            if _del_active_plan:
+                _update_plan_installments(_del_active_plan)
         except Exception:
             pass
         return Response(PaymentSerializer(payment).data, status=status.HTTP_200_OK)
@@ -1388,15 +1420,31 @@ class PaymentViewSet(viewsets.ModelViewSet):
         payment.additional_payments = new_list
         tenant = Tenant.objects.get(id=tenant_id)
         extra_fields = ExtraField.objects.filter(tenant_id=tenant_id, enabled=True, required=True)
-        payment.status = _compute_payment_status(payment, tenant, list(extra_fields))
+        # Include plan installment charge in status calculation
+        _upd_plan_charge = Decimal('0')
+        _upd_plan_key = ''
+        _upd_active_plan = None
+        try:
+            _upd_active_plan = PaymentPlan.objects.filter(
+                tenant_id=tenant_id, unit_id=payment.unit_id, status='accepted',
+            ).first()
+            if _upd_active_plan:
+                for _inst in (_upd_active_plan.installments or []):
+                    if _inst.get('period_key') == payment.period:
+                        _upd_plan_charge = Decimal(str(_inst.get('debt_part', 0)))
+                        _upd_plan_key = _upd_active_plan.field_key
+                        break
+        except Exception:
+            pass
+        payment.status = _compute_payment_status(
+            payment, tenant, list(extra_fields),
+            plan_charge=_upd_plan_charge, plan_key=_upd_plan_key,
+        )
         payment.save()
         # Sync plan installments
         try:
-            active_plan = PaymentPlan.objects.filter(
-                tenant_id=tenant_id, unit_id=payment.unit_id, status='accepted',
-            ).first()
-            if active_plan:
-                _update_plan_installments(active_plan)
+            if _upd_active_plan:
+                _update_plan_installments(_upd_active_plan)
         except Exception:
             pass
         return Response(PaymentSerializer(payment).data, status=status.HTTP_200_OK)
@@ -2100,11 +2148,12 @@ class PaymentPlanViewSet(viewsets.ModelViewSet):
         """
         from decimal import Decimal as _D
 
-        unit_id       = request.data.get('unit_id')
-        options_raw   = request.data.get('options', [])
-        total_adeudo  = request.data.get('total_adeudo', 0)
-        maintenance   = request.data.get('maintenance_fee', 0)
-        shared_notes  = request.data.get('notes', '')
+        unit_id          = request.data.get('unit_id')
+        options_raw      = request.data.get('options', [])
+        total_adeudo     = request.data.get('total_adeudo', 0)
+        maintenance      = request.data.get('maintenance_fee', 0)
+        shared_notes     = request.data.get('notes', '')
+        terms_conditions = request.data.get('terms_conditions', '')
         # Lista explícita de emails seleccionados por el usuario (propietario / copropietario).
         # Si viene vacía o no se manda, se usan los de la unidad por defecto.
         emails_param  = request.data.get('emails', None)
@@ -2208,6 +2257,7 @@ class PaymentPlanViewSet(viewsets.ModelViewSet):
                 total_with_interest = total_with_int,
                 status           = 'sent',
                 notes            = opt_notes,
+                terms_conditions = terms_conditions,
                 created_by_name  = name,
                 created_by_email = email,
                 sent_by_name     = name,
@@ -2267,6 +2317,8 @@ class PaymentPlanViewSet(viewsets.ModelViewSet):
                         installments=created_plans[0].installments or [],
                         created_by_name=name,
                         notes=shared_notes,
+                        terms_conditions=terms_conditions,
+                        num_options=len(created_plans),
                     ),
                     daemon=True,
                 ).start()
@@ -2350,6 +2402,8 @@ class PaymentPlanViewSet(viewsets.ModelViewSet):
                         installments=plan.installments or [],
                         created_by_name=plan.created_by_name,
                         notes=plan.notes,
+                        terms_conditions=plan.terms_conditions or '',
+                        num_options=1,
                     ),
                     daemon=True,
                 ).start()

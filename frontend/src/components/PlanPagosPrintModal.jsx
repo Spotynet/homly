@@ -258,6 +258,21 @@ export default function PlanPagosPrintModal({ plan, unit, tc, onClose }) {
               </div>
             )}
 
+            {/* ── Políticas y Condiciones ── */}
+            {plan.terms_conditions && (
+              <div style={{ borderTop: '1.5px solid #0d7c6e40', paddingTop: 12, marginTop: 4 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: '#0d7c6e', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <span>📋</span> Políticas y Condiciones de la Propuesta
+                </div>
+                <div style={{ fontSize: 11, color: '#334155', whiteSpace: 'pre-wrap', lineHeight: 1.7, background: 'rgba(13,124,110,0.04)', borderRadius: 6, padding: '8px 12px', border: '1px solid #0d7c6e20' }}>
+                  {plan.terms_conditions}
+                </div>
+                <div style={{ fontSize: 10, color: '#64748b', marginTop: 6, fontStyle: 'italic' }}>
+                  Al aceptar esta propuesta, el residente declara haber leído y aceptado las condiciones anteriores.
+                </div>
+              </div>
+            )}
+
             {/* ── Pie de página ── */}
             <div style={{ borderTop: '1px solid var(--sand-200)', marginTop: 14, paddingTop: 8, display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#94a3b8' }}>
               <span>Plan de Pago de Adeudos · {tc?.razon_social || tc?.name || ''}</span>

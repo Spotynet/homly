@@ -1467,6 +1467,8 @@ def send_payment_plan_email(
     installments: list,   # [{num, period_label, debt_part, regular_part, total}]
     created_by_name: str,
     notes: str = '',
+    terms_conditions: str = '',
+    num_options: int = 1,
 ) -> bool:
     """Send a payment plan proposal email to the vecino."""
     c = COLORS
@@ -1494,6 +1496,7 @@ def send_payment_plan_email(
             f'* El total incluye interés moratorio del {interest_rate}% anual sobre el adeudo.'
             f'</p>'
         )
+
     notes_block = ''
     if notes:
         notes_block = (
@@ -1504,12 +1507,38 @@ def send_payment_plan_email(
             f'</div>'
         )
 
+    # Terms & conditions block
+    terms_block = ''
+    if terms_conditions:
+        tc_lines = terms_conditions.replace('\n', '<br>')
+        terms_block = (
+            f'<tr><td style="padding:0 32px 20px;">'
+            f'<div style="background:#F0F7F5;border-radius:8px;padding:16px 18px;border:1.5px solid {c["green"]}20;">'
+            f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">'
+            f'<span style="font-size:15px;">📋</span>'
+            f'<span style="font-size:13px;font-weight:700;color:{c["green"]};text-transform:uppercase;letter-spacing:.04em;">Políticas y Condiciones de la Propuesta</span>'
+            f'</div>'
+            f'<p style="margin:0;font-size:13px;color:{c["ink_800"]};line-height:1.6;">{tc_lines}</p>'
+            f'<p style="margin:10px 0 0;font-size:12px;color:{c["ink_600"]};font-style:italic;">'
+            f'Al aceptar esta propuesta, el residente declara haber leído y estar de acuerdo con las condiciones anteriores.'
+            f'</p>'
+            f'</div>'
+            f'</td></tr>'
+        )
+
+    # Intro block: explanation of the proposal
+    options_text = (
+        f'Esta propuesta incluye <strong>{num_options} opción{"es" if num_options > 1 else ""} de pago</strong> para que puedas elegir la que mejor se adapte a tu situación.'
+        if num_options > 1 else
+        'A continuación encontrarás el detalle del plan de pago sugerido.'
+    )
+
     logo_img = f'<img src="cid:{LOGO_CID}" alt="Homly" width="150" style="display:block;height:auto;max-width:150px;" />'
 
     html = f"""<!DOCTYPE html>
 <html lang="es">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Plan de Pago — {unit_code}</title></head>
+<title>Propuesta de Plan de Pago — {unit_code}</title></head>
 <body style="margin:0;padding:0;font-family:'Segoe UI',system-ui,sans-serif;background:{c['cream_outer']};">
   <table width="100%" cellpadding="0" cellspacing="0" style="background:{c['cream_outer']};padding:32px 0;">
     <tr><td align="center">
@@ -1527,6 +1556,25 @@ def send_payment_plan_email(
           <p style="margin:6px 0 0;font-size:14px;color:{c['ink_600']};">
             Unidad <strong>{unit_code}</strong> — {unit_name} &nbsp;·&nbsp; Responsable: <strong>{responsible}</strong>
           </p>
+        </td></tr>
+
+        <!-- Introduction -->
+        <tr><td style="padding:0 32px 20px;">
+          <div style="background:{c['cream_outer']};border-radius:8px;padding:16px 18px;border-left:4px solid {c['green']};">
+            <p style="margin:0 0 8px;font-size:14px;font-weight:700;color:{c['ink_800']};">
+              Estimado/a {responsible},
+            </p>
+            <p style="margin:0 0 8px;font-size:13px;color:{c['ink_600']};line-height:1.6;">
+              La administración de <strong>{tenant_name}</strong> te ha enviado una <strong>Propuesta de Plan de Pago</strong>
+              para liquidar el adeudo registrado en tu cuenta correspondiente a la unidad <strong>{unit_code}</strong>.
+              {options_text}
+            </p>
+            <p style="margin:0;font-size:13px;color:{c['ink_600']};line-height:1.6;">
+              <strong>¿Cómo funciona?</strong> El plan divide tu adeudo en cuotas periódicas que se suman a tu cuota regular de mantenimiento,
+              permitiéndote ponerte al corriente de forma gradual y ordenada.
+              Cada período verás reflejada tu cuota del plan en tu cobranza mensual.
+            </p>
+          </div>
         </td></tr>
 
         <!-- Debt summary -->
@@ -1570,14 +1618,21 @@ def send_payment_plan_email(
           {notes_block}
         </td></tr>
 
+        <!-- Terms & Conditions (only rendered if provided) -->
+        {terms_block}
+
         <!-- CTA -->
         <tr><td style="padding:8px 32px 28px;">
-          <div style="background:{c['orange_light']};border-radius:8px;padding:16px;border-left:4px solid {c['orange']};">
-            <p style="margin:0;font-size:14px;font-weight:700;color:{c['ink_800']};">¿Qué debo hacer?</p>
-            <p style="margin:6px 0 0;font-size:13px;color:{c['ink_600']};">
-              Ingresa a la plataforma Homly, ve a tu <strong>Estado de Cuenta</strong> y
-              revisa tu plan de pago. Puedes <strong>aceptarlo o rechazarlo</strong> desde ahí.
-              Si tienes dudas, contacta a la administración de <strong>{tenant_name}</strong>.
+          <div style="background:{c['orange_light']};border-radius:8px;padding:16px 18px;border-left:4px solid {c['orange']};">
+            <p style="margin:0 0 6px;font-size:14px;font-weight:700;color:{c['ink_800']};">¿Qué debo hacer?</p>
+            <ol style="margin:0;padding-left:18px;font-size:13px;color:{c['ink_600']};line-height:1.8;">
+              <li>Ingresa a la plataforma <strong>Homly</strong> con tu usuario y contraseña.</li>
+              <li>Ve al módulo de <strong>Plan de Pagos</strong> o a tu <strong>Estado de Cuenta</strong>.</li>
+              <li>Revisa los detalles de la propuesta y la tabla de cuotas.</li>
+              <li>Presiona <strong>"Aceptar"</strong> para activar el plan, o <strong>"Rechazar"</strong> si no estás de acuerdo.</li>
+            </ol>
+            <p style="margin:10px 0 0;font-size:12px;color:{c['ink_600']};">
+              ¿Tienes dudas? Contacta directamente a la administración de <strong>{tenant_name}</strong>.
             </p>
           </div>
         </td></tr>
@@ -1595,18 +1650,29 @@ def send_payment_plan_email(
 </body></html>"""
 
     plain = (
-        f"Plan de Pago — {unit_code} {unit_name}\n"
+        f"PROPUESTA DE PLAN DE PAGO\n"
+        f"{'=' * 40}\n"
+        f"Estimado/a {responsible},\n\n"
+        f"La administración de {tenant_name} te ha enviado una Propuesta de Plan de Pago\n"
+        f"para la unidad {unit_code} — {unit_name}.\n\n"
         f"Adeudo: {fmt(total_adeudo)}  |  Monto a liquidar: {fmt(total_with_interest)}\n"
         f"Plan: {num_payments} pagos {frequency_label}\n\n"
+        f"TABLA DE PAGOS:\n"
         + "\n".join(
             f"  {i['num']}. {i['period_label']} — Abono: {fmt(i['debt_part'])} + Cuota: {fmt(i['regular_part'])} = Total: {fmt(i['total'])}"
             for i in installments
         )
-        + f"\n\nPor favor ingresa a la plataforma Homly para aceptar o rechazar este plan."
+        + (f"\n\nNOTAS: {notes}" if notes else "")
+        + (f"\n\nPOLÍTICAS Y CONDICIONES:\n{terms_conditions}" if terms_conditions else "")
+        + f"\n\n¿Qué debo hacer?\n"
+          f"1. Ingresa a la plataforma Homly.\n"
+          f"2. Ve al módulo de Plan de Pagos o Estado de Cuenta.\n"
+          f"3. Revisa los detalles y presiona 'Aceptar' o 'Rechazar'.\n\n"
+          f"Enviado por {created_by_name} · {tenant_name}"
     )
 
     return _send_branded_email(
-        subject=f"Plan de Pago — {unit_code} · {tenant_name}",
+        subject=f"Propuesta de Plan de Pago — {unit_code} · {tenant_name}",
         plain=plain,
         html=html,
         to_emails=emails,

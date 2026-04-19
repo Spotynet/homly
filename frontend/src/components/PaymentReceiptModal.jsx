@@ -107,7 +107,7 @@ function EvidencePopup({ ev, onClose }) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function PaymentReceiptModal({ pay, unit, tc, extraFields = [], reservations = [], onClose }) {
+export default function PaymentReceiptModal({ pay, unit, tc, extraFields = [], reservations = [], activePlan = null, onClose }) {
   const { tenantId, user } = useAuth();
   const [evidencePopup, setEvidencePopup] = useState(null);
   const [sendingReceipt, setSendingReceipt] = useState(false);
@@ -139,9 +139,29 @@ export default function PaymentReceiptModal({ pay, unit, tc, extraFields = [], r
     totReqCharge += ch; totReqAbono += ab;
   });
 
+  // Plan de pagos: detect plan field payments (field_key starts with 'plan_')
+  const planFieldKeys = new Set(
+    (pay?.field_payments || [])
+      .filter(f => f.field_key?.startsWith('plan_'))
+      .map(f => f.field_key)
+  );
+  // Active plan installment for this payment's period
+  const planFieldKey = activePlan?.field_key || '';
+  const planInst = activePlan
+    ? (activePlan.installments || []).find(i => i.period_key === pay?.period)
+    : null;
+  const planInstCharge = planInst ? (parseFloat(planInst.debt_part) || 0) : 0;
+  const planInstReceived = (planFieldKey && planInstCharge > 0)
+    ? Math.min(effTotals[planFieldKey] || 0, planInstCharge)
+    : 0;
+  // Include plan installment in required totals
+  if (planInstCharge > 0) {
+    totReqCharge += planInstCharge;
+    totReqAbono += planInstReceived;
+  }
+
   // Optional totals: sum ALL amounts in effTotals that are not maintenance, not required,
-  // and not an adelanto field (adelanto amounts are counted separately via totalAdelanto).
-  // This correctly captures optional fields regardless of show_in_normal filtering.
+  // not an adelanto field, and not a plan field (each has its own section).
   const reqFieldIdSet = new Set(['maintenance', ...reqEFs.map(ef => ef.id)]);
   const adelantoFieldIdSet = new Set(
     (pay?.field_payments || [])
@@ -152,6 +172,7 @@ export default function PaymentReceiptModal({ pay, unit, tc, extraFields = [], r
   Object.entries(effTotals).forEach(([fk, amt]) => {
     if (reqFieldIdSet.has(fk)) return;
     if (adelantoFieldIdSet.has(fk)) return;
+    if (planFieldKeys.has(fk)) return; // plan payments have their own section
     totOptAbono += parseFloat(amt) || 0;
   });
 
@@ -310,6 +331,54 @@ export default function PaymentReceiptModal({ pay, unit, tc, extraFields = [], r
                       </tr>
                     );
                   })}
+                  {/* Plan de Pagos installment section */}
+                  {(planInstCharge > 0 || [...planFieldKeys].some(k => (effTotals[k] || 0) > 0)) && (() => {
+                    if (planInstCharge > 0) {
+                      const instTotal = activePlan?.installments?.length || '?';
+                      const instNum = planInst?.num || '?';
+                      return (
+                        <>
+                          <tr className="receipt-section-header">
+                            <td colSpan={4} style={{ color: 'var(--teal-700)', background: 'rgba(13,124,110,0.06)', fontWeight: 800 }}>
+                              📋 PLAN DE PAGO DE ADEUDOS
+                            </td>
+                          </tr>
+                          <tr>
+                            <td>
+                              Cuota {instNum}/{instTotal}
+                              <br /><small style={{ color: 'var(--teal-600)' }}>Amortización de adeudos — {periodLabel(pay.period)}</small>
+                            </td>
+                            <td style={{ textAlign: 'right' }}>{rfmt(planInstCharge)}</td>
+                            <td style={{ textAlign: 'right', color: 'var(--teal-600)', fontWeight: 700 }}>{rfmt(planInstReceived)}</td>
+                            <td style={{ textAlign: 'right', color: (planInstCharge - planInstReceived) > 0 ? 'var(--coral-500)' : 'var(--teal-600)' }}>
+                              {rfmt(planInstCharge - planInstReceived)}
+                            </td>
+                          </tr>
+                        </>
+                      );
+                    }
+                    // Fallback: plan data not available (e.g. plan completed) — show received only
+                    return (
+                      <>
+                        <tr className="receipt-section-header">
+                          <td colSpan={4} style={{ color: 'var(--teal-700)', background: 'rgba(13,124,110,0.06)', fontWeight: 800 }}>
+                            📋 PLAN DE PAGO DE ADEUDOS
+                          </td>
+                        </tr>
+                        {[...planFieldKeys].filter(k => (effTotals[k] || 0) > 0).map(fk => (
+                          <tr key={fk}>
+                            <td>
+                              Cuota del plan de pago
+                              <br /><small style={{ color: 'var(--teal-600)' }}>Amortización — {periodLabel(pay.period)}</small>
+                            </td>
+                            <td style={{ textAlign: 'right', color: 'var(--ink-300)' }}>—</td>
+                            <td style={{ textAlign: 'right', color: 'var(--teal-600)', fontWeight: 700 }}>{rfmt(effTotals[fk] || 0)}</td>
+                            <td style={{ textAlign: 'right', color: 'var(--ink-300)' }}>—</td>
+                          </tr>
+                        ))}
+                      </>
+                    );
+                  })()}
                   {optEFs.filter(ef => (effTotals[ef.id] || 0) > 0).length > 0 && (
                     <>
                       <tr className="receipt-section-header"><td colSpan={4}>○ CAMPOS OPCIONALES</td></tr>
@@ -433,6 +502,11 @@ export default function PaymentReceiptModal({ pay, unit, tc, extraFields = [], r
                   {adeudoRowsPrev.length > 0 && <tr><td colSpan={4} style={{ textAlign: 'right', fontSize: 11, color: 'var(--coral-600)', padding: '4px 12px' }}>Incluye {rfmt(adeudoRowsPrev.reduce((s, r) => s + r.amount, 0))} en abono a <strong>deuda anterior</strong></td></tr>}
                   {adeudoRowsPeriods.length > 0 && <tr><td colSpan={4} style={{ textAlign: 'right', fontSize: 11, color: 'var(--amber-700)', padding: '4px 12px' }}>Incluye {rfmt(adeudoRowsPeriods.reduce((s, r) => s + r.amount, 0))} en abono a <strong>período(s) anterior(es) no pagado(s)</strong></td></tr>}
                   {totalReservations > 0 && <tr><td colSpan={4} style={{ textAlign: 'right', fontSize: 11, color: 'var(--teal-600)', padding: '4px 12px' }}>Incluye {rfmt(totalReservations)} en reservas de áreas comunes</td></tr>}
+                  {planInstReceived > 0 && <tr><td colSpan={4} style={{ textAlign: 'right', fontSize: 11, color: 'var(--teal-600)', padding: '4px 12px' }}>Incluye {rfmt(planInstReceived)} en cuota de <strong>plan de pago de adeudos</strong></td></tr>}
+                  {planInstCharge === 0 && [...planFieldKeys].some(k => (effTotals[k] || 0) > 0) && (() => {
+                    const planTotal = [...planFieldKeys].reduce((s, k) => s + (effTotals[k] || 0), 0);
+                    return planTotal > 0 ? <tr><td colSpan={4} style={{ textAlign: 'right', fontSize: 11, color: 'var(--teal-600)', padding: '4px 12px' }}>Incluye {rfmt(planTotal)} en cuota de <strong>plan de pago de adeudos</strong></td></tr> : null;
+                  })()}
                   {(pay?.additional_payments || []).length > 0 && (() => {
                     let t = 0;
                     (pay.additional_payments || []).forEach(ap => {

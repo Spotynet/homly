@@ -2742,10 +2742,10 @@ export default function Config() {
             </div>
             <div className="field">
               <label className="field-label">Inicio de Operaciones</label>
-              {isSuperAdmin
+              {(isSuperAdmin || isAdmin)
                 ? <>
                     <input type="month" className="field-input" value={editGenForm.operation_start_date||''} onChange={e=>setEditGenForm(f=>({...f,operation_start_date:e.target.value}))} />
-                    <div style={{ fontSize:11, color:'var(--teal-600)', marginTop:4, display:'flex', alignItems:'center', gap:4 }}><ShieldCheck size={11}/> Como Super Admin puedes modificar la fecha de inicio</div>
+                    <div style={{ fontSize:11, color:'var(--teal-600)', marginTop:4, display:'flex', alignItems:'center', gap:4 }}><ShieldCheck size={11}/> {isSuperAdmin ? 'Como Super Admin puedes modificar la fecha de inicio' : 'Como Administrador puedes modificar la fecha de inicio'}</div>
                   </>
                 : <>
                     <div className="field-value">
@@ -2753,7 +2753,7 @@ export default function Config() {
                         <Calendar size={12}/> {editGenForm.operation_start_date ? periodLabel(editGenForm.operation_start_date) : 'No configurado'}
                       </span>
                     </div>
-                    <div style={{ fontSize:11, color:'var(--amber-500)', marginTop:4, display:'flex', alignItems:'center', gap:4 }}><Lock size={11}/> Solo el Super Administrador puede modificar el período inicial</div>
+                    <div style={{ fontSize:11, color:'var(--amber-500)', marginTop:4, display:'flex', alignItems:'center', gap:4 }}><Lock size={11}/> Solo el Administrador o Super Admin puede modificar el período inicial</div>
                   </>
               }
             </div>

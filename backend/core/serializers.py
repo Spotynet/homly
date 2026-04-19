@@ -505,7 +505,7 @@ class PaymentPlanSerializer(serializers.ModelSerializer):
             'owner_email', 'tenant_email',
             'total_adeudo', 'maintenance_fee',
             'frequency', 'num_payments', 'apply_interest', 'interest_rate',
-            'total_with_interest', 'status', 'status_display', 'notes',
+            'total_with_interest', 'status', 'status_display', 'notes', 'terms_conditions',
             'created_by_name', 'created_by_email', 'created_at',
             'sent_by_name', 'sent_at',
             'accepted_by_name', 'accepted_at',

@@ -141,6 +141,7 @@ export default function PlanPagos() {
   // ─── Multi-option proposal form ────────────────────────────────────────────
   const [options,  setOptions]  = useState([defaultOption()]);  // up to 3
   const [sharedNotes, setSharedNotes] = useState('');
+  const [termsConditions, setTermsConditions] = useState('');
   const [saving,   setSaving]   = useState(false);
   const [activeOptIdx, setActiveOptIdx] = useState(0);
 
@@ -383,10 +384,11 @@ export default function PlanPagos() {
     setSaving(true);
     try {
       const payload = {
-        unit_id:         selectedUnit.id,
-        total_adeudo:    selectedDebt,
-        maintenance_fee: maintenanceFee,
-        notes:           sharedNotes,
+        unit_id:          selectedUnit.id,
+        total_adeudo:     selectedDebt,
+        maintenance_fee:  maintenanceFee,
+        notes:            sharedNotes,
+        terms_conditions: termsConditions,
         emails,  // lista final de destinatarios (vacía = no mandar email)
         options: options.map(opt => ({
           frequency:      opt.freq,
@@ -417,6 +419,7 @@ export default function PlanPagos() {
       setTab('list');
       setOptions([defaultOption()]);
       setSharedNotes('');
+      setTermsConditions('');
       setActiveOptIdx(0);
       setRecipientDialog(null);
     } catch (err) {
@@ -575,6 +578,21 @@ export default function PlanPagos() {
         {plan.notes && (
           <div style={{ background: 'var(--sand-50)', border: '1px solid var(--sand-200)', borderRadius: 7, padding: '10px 14px', fontSize: 12, color: 'var(--ink-600)', fontStyle: 'italic' }}>
             <strong>Notas:</strong> {plan.notes}
+          </div>
+        )}
+        {plan.terms_conditions && (
+          <div style={{ background: 'rgba(13,124,110,0.04)', border: '1.5px solid var(--teal-200)', borderRadius: 8, padding: '12px 16px' }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--teal-700)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span>📋</span> Políticas y Condiciones de la Propuesta
+            </div>
+            <div style={{ fontSize: 13, color: 'var(--ink-700)', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
+              {plan.terms_conditions}
+            </div>
+            {(plan.status === 'accepted' || plan.status === 'completed') && (
+              <div style={{ marginTop: 8, fontSize: 11, color: 'var(--teal-600)', fontStyle: 'italic' }}>
+                ✓ El residente aceptó estas condiciones al aceptar el plan.
+              </div>
+            )}
           </div>
         )}
         {plan.status === 'cancelled' && plan.cancel_reason && (
@@ -1224,6 +1242,33 @@ export default function PlanPagos() {
             rows={3}
             style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--sand-200)', borderRadius: 8, fontSize: 13, resize: 'vertical', boxSizing: 'border-box' }}
           />
+        </div>
+
+        {/* Terms & Conditions */}
+        <div style={{ marginTop: 4 }}>
+          <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--teal-700)', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+            <span style={{ fontSize: 15 }}>📋</span> Políticas, condiciones y términos (opcional)
+          </label>
+          <textarea
+            value={termsConditions} onChange={e => setTermsConditions(e.target.value)}
+            placeholder={
+              'Escribe aquí las políticas y condiciones de la propuesta. Por ejemplo:\n' +
+              '• El residente se compromete a realizar el pago puntual cada período.\n' +
+              '• El incumplimiento de dos cuotas consecutivas cancela este plan.\n' +
+              '• La administración se reserva el derecho de renegociar los términos en caso de mora.'
+            }
+            rows={5}
+            style={{
+              width: '100%', padding: '10px 12px',
+              border: '1.5px solid var(--teal-200)', borderRadius: 8,
+              fontSize: 13, resize: 'vertical', boxSizing: 'border-box',
+              background: 'rgba(13,124,110,0.03)',
+              lineHeight: 1.6,
+            }}
+          />
+          <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span>Si se completa, este texto aparecerá en el correo y en el PDF del plan. Al aceptar, el residente declara haber leído y aceptado estos términos.</span>
+          </div>
         </div>
 
         {/* Actions */}

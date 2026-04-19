@@ -594,6 +594,11 @@ export default function Cobranza() {
                 const effTotals = getEffectiveFieldTotals(pay);
                 // Total físicamente cobrado (received + adelantos + adeudos + adicionales)
                 const totalRec = getUnitRecaudo(pay);
+                // Active plan with installment due this period
+                const rowActivePlan = activePlansMap[String(u.id)];
+                const rowPlanInst = rowActivePlan
+                  ? (rowActivePlan.installments || []).find(i => i.period_key === period)
+                  : null;
                 return (
                   <tr key={u.id}>
                     <td>
@@ -601,6 +606,12 @@ export default function Cobranza() {
                         {u.unit_id_code}
                       </span>
                       <span style={{ fontWeight: 600, fontSize: 13 }}>{u.unit_name}</span>
+                      {rowPlanInst && (
+                        <span title={`Plan de pago activo — Cuota ${rowPlanInst.num || '?'}: ${fmt(parseFloat(rowPlanInst.debt_part) || 0)}`}
+                          style={{ marginLeft: 6, fontSize: 10, color: 'var(--teal-700)', background: 'var(--teal-50)', border: '1px solid var(--teal-200)', padding: '1px 5px', borderRadius: 4, cursor: 'default', verticalAlign: 'middle' }}>
+                          📋 Plan
+                        </span>
+                      )}
                     </td>
                     <td style={{ fontSize: 13, color: 'var(--ink-500)' }}>{u.responsible_name || '—'}</td>
                     <td style={{ textAlign: 'right', fontWeight: 600, fontSize: 13 }}>
@@ -1755,6 +1766,7 @@ export default function Cobranza() {
             tc={tenantData}
             extraFields={allNormalFields}
             reservations={receiptReservations}
+            activePlan={activePlansMap[String(unit?.id)] || null}
             onClose={() => setShowReceipt(null)}
           />
         );
