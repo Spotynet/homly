@@ -4142,8 +4142,8 @@ def _compute_statement(tenant, unit_id, start_period, cutoff_period, _prefetched
         abono_display += adeudo_recv_all
         abono_balance += adeudo_recv_spec
 
-        oblig_abono = maint_abono + sum((fd['abono'] for fd in field_detail if fd.get('required')), 0)
-        oblig_abono = Decimal(str(oblig_abono)) if not isinstance(oblig_abono, Decimal) else oblig_abono
+        oblig_abono = maint_abono + sum((Decimal(str(fd['abono'])) for fd in field_detail if fd.get('required')), Decimal('0'))
+        # oblig_abono is always Decimal now (maint_abono is Decimal, sum starts at Decimal('0'))
         oblig_abono_capped = min(oblig_abono, cargo_oblig) if cargo_oblig > 0 else oblig_abono
 
         # Parcial: mantenimiento fijo sin abono + al menos un campo adicional activo con abono,
