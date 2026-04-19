@@ -2015,10 +2015,8 @@ class PaymentPlanViewSet(viewsets.ModelViewSet):
     serializer_class = PaymentPlanSerializer
 
     def get_permissions(self):
-        # Vecino can list/retrieve/accept/reject; management roles can do everything
-        if self.action in ['accept', 'reject']:
-            return [IsTenantMember()]
-        if self.action in ['list', 'retrieve']:
+        # Vecino can list/retrieve/accept/reject/pdf; management roles can do everything
+        if self.action in ['accept', 'reject', 'list', 'retrieve', 'pdf']:
             return [IsTenantMember()]
         return [IsAdminOrTesOrAuditor()]
 
@@ -3701,6 +3699,37 @@ def _compute_receipt_email_data(payment, unit, tenant, extra_fields: list) -> di
     if adeudo_rows:
         rows.append({'is_section': True, 'concept': '↑ Abonos a Adeudos Previos'})
         rows.extend(adeudo_rows)
+
+    # Plan de pagos installments
+    plan_rows = []
+    for fk, fp in fp_map.items():
+        if not fk.startswith('plan_'):
+            continue
+        plan_uuid = fk[5:]  # strip 'plan_' prefix
+        try:
+            from .models import PaymentPlan as _PP
+            plan_obj = _PP.objects.get(id=plan_uuid, tenant_id=tenant.id, unit_id=unit.id)
+        except Exception:
+            continue
+        inst = next((i for i in (plan_obj.installments or []) if i.get('period_key') == payment.period), None)
+        if inst is None:
+            continue
+        debt = Decimal(str(inst.get('debt_part', 0)))
+        paid_amt = min(fp.received, debt) if debt > 0 else fp.received
+        bal_amt  = max(Decimal('0'), debt - paid_amt)
+        inst_label = inst.get('period_label') or _period_label_es(payment.period)
+        plan_rows.append({
+            'concept': f'Cuota Plan de Pago — {inst_label}',
+            'charge': float(debt),
+            'paid': float(paid_amt),
+            'balance': float(bal_amt),
+        })
+        total_req_charges += debt
+        total_req_paid += paid_amt
+        total_received += paid_amt
+    if plan_rows:
+        rows.append({'is_section': True, 'concept': '📋 Plan de Pago de Adeudos'})
+        rows.extend(plan_rows)
 
     saldo = max(Decimal('0'), total_req_charges - total_req_paid)
 

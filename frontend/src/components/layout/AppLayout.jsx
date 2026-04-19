@@ -8,7 +8,7 @@ import {
   Home, Globe, FileText, ShoppingBag, Receipt, Settings,
   Users, Building, Shield, LogOut, Menu, X, Calendar,
   ChevronDown, Check, Building2, Bell, CheckCheck, Activity, Lock, TrendingDown,
-  Compass,
+  Star,
 } from 'lucide-react';
 
 const NAV_ITEMS = {
@@ -26,7 +26,7 @@ const NAV_ITEMS = {
       { path: '/app/plan-pagos',       icon: TrendingDown, label: 'Plan de Pagos'     },
       { path: '/app/cierre-periodo',   icon: Lock,         label: 'Cierre de Período' },
       { path: '/app/notificaciones',   icon: Bell,         label: 'Notificaciones'    },
-      { path: '/app/onboarding',       icon: Compass,      label: 'Guía de Uso'    },
+      { path: '/app/onboarding',       icon: Star,         label: 'Guía de Uso'    },
       { path: '/app/config',           icon: Settings,     label: 'Configuración'     },
     ]},
   ],
@@ -40,7 +40,7 @@ const NAV_ITEMS = {
     { path: '/app/plan-pagos',       icon: TrendingDown,  label: 'Plan de Pagos'      },
     { path: '/app/cierre-periodo',   icon: Lock,          label: 'Cierre de Período'  },
     { path: '/app/notificaciones',   icon: Bell,          label: 'Notificaciones'     },
-    { path: '/app/onboarding',       icon: Compass,       label: 'Guía de Uso'     },
+    { path: '/app/onboarding',       icon: Star,          label: 'Guía de Uso'     },
     { path: '/app/config',           icon: Settings,      label: 'Configuración'      },
   ]}],
 
@@ -53,7 +53,7 @@ const NAV_ITEMS = {
     { path: '/app/plan-pagos',       icon: TrendingDown,  label: 'Plan de Pagos'      },
     { path: '/app/cierre-periodo',   icon: Lock,          label: 'Cierre de Período'  },
     { path: '/app/notificaciones',   icon: Bell,          label: 'Notificaciones'     },
-    { path: '/app/onboarding',       icon: Compass,       label: 'Guía de Uso'        },
+    { path: '/app/onboarding',       icon: Star,          label: 'Guía de Uso'        },
   ]}],
 
   contador: [{ section: 'main', items: [
@@ -65,7 +65,7 @@ const NAV_ITEMS = {
     { path: '/app/plan-pagos',      icon: TrendingDown,  label: 'Plan de Pagos'     },
     { path: '/app/cierre-periodo',  icon: Lock,          label: 'Cierre de Período' },
     { path: '/app/notificaciones',  icon: Bell,          label: 'Notificaciones'    },
-    { path: '/app/onboarding',      icon: Compass,       label: 'Guía de Uso'       },
+    { path: '/app/onboarding',      icon: Star,          label: 'Guía de Uso'       },
   ]}],
 
   auditor: [{ section: 'main', items: [
@@ -77,7 +77,7 @@ const NAV_ITEMS = {
     { path: '/app/plan-pagos',      icon: TrendingDown,  label: 'Plan de Pagos'     },
     { path: '/app/cierre-periodo',  icon: Lock,          label: 'Cierre de Período' },
     { path: '/app/notificaciones',  icon: Bell,          label: 'Notificaciones'    },
-    { path: '/app/onboarding',      icon: Compass,       label: 'Guía de Uso'       },
+    { path: '/app/onboarding',      icon: Star,          label: 'Guía de Uso'       },
     { path: '/app/config',          icon: Settings,      label: 'Configuración'     },
   ]}],
 
@@ -88,12 +88,13 @@ const NAV_ITEMS = {
   ]}],
 
   vecino: [{ section: 'main', items: [
-    { path: '/app/my-unit',         icon: Home,          label: 'Mi Unidad'        },
+    { path: '/app/dashboard',       icon: Home,          label: 'Dashboard'        },
+    { path: '/app/my-unit',         icon: Building2,     label: 'Mi Unidad'        },
     { path: '/app/reservas',        icon: Calendar,      label: 'Reservas'         },
     { path: '/app/estado-cuenta',   icon: FileText,      label: 'Estado de Cuenta' },
     { path: '/app/plan-pagos',      icon: TrendingDown,  label: 'Plan de Pagos'    },
     { path: '/app/notificaciones',  icon: Bell,          label: 'Notificaciones'   },
-    { path: '/app/onboarding',      icon: Compass,       label: 'Guía de Uso'      },
+    { path: '/app/onboarding',      icon: Star,          label: 'Guía de Uso'      },
   ]}],
 };
 
@@ -281,6 +282,31 @@ function TenantSwitcher({ tenantId, tenantName, userTenants, onSwitch }) {
         </div>
       )}
     </div>
+  );
+}
+
+// ── Guide Tour Button ─────────────────────────────────────────────────────────
+function GuideTourButton() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const isActive = location.pathname === '/app/onboarding';
+  return (
+    <button
+      onClick={() => navigate('/app/onboarding')}
+      title="Guía de Uso"
+      aria-label="Guía de Uso"
+      style={{
+        position: 'relative', background: isActive ? 'var(--teal-50)' : 'none',
+        border: 'none', cursor: 'pointer', padding: '6px', borderRadius: 8,
+        color: isActive ? 'var(--teal-600)' : 'var(--ink-500)',
+        display: 'flex', alignItems: 'center',
+        transition: 'background 0.15s, color 0.15s',
+      }}
+      onMouseEnter={e => { e.currentTarget.style.background = 'var(--teal-50)'; e.currentTarget.style.color = 'var(--teal-600)'; }}
+      onMouseLeave={e => { e.currentTarget.style.background = isActive ? 'var(--teal-50)' : 'none'; e.currentTarget.style.color = isActive ? 'var(--teal-600)' : 'var(--ink-500)'; }}
+    >
+      <Star size={20} />
+    </button>
   );
 }
 
@@ -700,6 +726,14 @@ export default function AppLayout() {
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {/* Guide Tour Button — visible to all roles with onboarding module access */}
+            {tenantId && (
+              role === 'superadmin' ||
+              (activeProfile
+                ? isModuleVisible(activeProfile.modules, 'onboarding', activeProfile.base_role)
+                : isModuleVisible(tenantModulePerms[role], 'onboarding', role))
+            ) && <GuideTourButton />}
+            {/* Notification Bell */}
             {tenantId && (
               role === 'superadmin' ||
               (activeProfile

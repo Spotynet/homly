@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import {
-  Compass, Sparkles, PlayCircle, RotateCcw,
+  Star, Sparkles, PlayCircle, RotateCcw,
   CheckCircle2, Clock, ChevronRight, ChevronDown,
   BookMarked,
 } from 'lucide-react';
@@ -32,6 +32,12 @@ function mapUserRoleToCatalog(role) {
   if (role === 'contador' || role === 'auditor') return 'contador';
   if (role === 'vecino' || role === 'vigilante') return 'vecino';
   return 'admin';
+}
+
+// Admin and superadmin see all role sections; everyone else sees only their own.
+function visibleSections(roleKey, isAdmin, isSuperAdmin) {
+  if (isAdmin || isSuperAdmin) return GUIDE_ROLES;
+  return GUIDE_ROLES.filter(s => s.key === roleKey);
 }
 
 export default function Onboarding() {
@@ -117,7 +123,7 @@ export default function Onboarding() {
           boxShadow: '0 4px 12px rgba(20,184,166,0.15)',
           flexShrink: 0,
         }}>
-          <Compass size={38} color="var(--teal-500)" />
+          <Star size={38} color="var(--teal-500)" />
         </div>
         <div style={{ flex: 1, minWidth: 240 }}>
           <div style={{
@@ -197,7 +203,7 @@ export default function Onboarding() {
 
       {/* ── Secciones colapsables por rol ────────────────────────── */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 20 }}>
-        {GUIDE_ROLES.map(section => (
+        {visibleSections(userRoleKey, isAdmin, isSuperAdmin).map(section => (
           <RoleSection
             key={section.key}
             section={section}
@@ -221,10 +227,10 @@ export default function Onboarding() {
       >
         <Sparkles size={20} color="var(--teal-500)" style={{ flexShrink: 0, marginTop: 2 }} />
         <div style={{ fontSize: 13, color: 'var(--ink-600)', lineHeight: 1.55 }}>
-          <strong>Tip:</strong> Puedes cerrar cualquier guía y retomarla luego.
-          Las guías de otros roles están visibles para que puedas entender
-          cómo colaboran las distintas personas del condominio.
-          {(isSuperAdmin || isAdmin) && ' Como administrador, también puedes lanzar el tour interactivo de la configuración sobre la pantalla real.'}
+          <strong>Tip:</strong> Puedes cerrar cualquier guía y retomarla cuando quieras.
+          {(isSuperAdmin || isAdmin)
+            ? ' Como administrador puedes ver las guías de todos los roles y lanzar el tour interactivo de configuración sobre la pantalla real.'
+            : ' Aquí encontrarás los capítulos operativos que corresponden a tu perfil.'}
         </div>
       </div>
 
