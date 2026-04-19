@@ -68,6 +68,8 @@ export default function EstadoCuenta() {
   // active plans lookup: Set of unit IDs + map of unit_id → plan object
   const [activePlanUnitIds, setActivePlanUnitIds] = useState(new Set());
   const [activePlansMap, setActivePlansMap] = useState({});
+  // vecino: loading while resolving own unit
+  const [vecinoUnitLoading, setVecinoUnitLoading] = useState(false);
 
   const handleDownloadReceipt = async (payId, period) => {
     setDownloadingReceipt(payId);
@@ -141,9 +143,11 @@ export default function EstadoCuenta() {
     if (!tenantId) return;
     // Vecinos: resolve their assigned unit via 'me' — no need to list all units
     if (isVecino) {
+      setVecinoUnitLoading(true);
       reportsAPI.estadoCuenta(tenantId, { unit_id: 'me' })
         .then(r => { if (r.data?.unit?.id) setSelectedUnit(r.data.unit.id); })
-        .catch(() => {});
+        .catch(() => {})
+        .finally(() => setVecinoUnitLoading(false));
     } else {
       unitsAPI.list(tenantId, { page_size: 9999 }).then(r => {
         setUnits(r.data.results || r.data);
@@ -962,6 +966,15 @@ export default function EstadoCuenta() {
         </div>
       ) : (
         <>
+          {/* ════ Vecino: loading / no-unit placeholder ════ */}
+          {isVecino && vecinoView === 'cuenta' && !selectedUnit && (
+            <div className="card" style={{ textAlign: 'center', padding: '50px 20px', color: 'var(--ink-400)', fontSize: 14 }}>
+              {vecinoUnitLoading
+                ? 'Cargando tu estado de cuenta…'
+                : 'No tienes una unidad asignada. Contacta al administrador del condominio.'}
+            </div>
+          )}
+
           {/* ════════════════════════ UNIT LIST VIEW ════════════════════════ */}
           {view === 'units' && !isVecino && (
             <>
