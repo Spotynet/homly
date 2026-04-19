@@ -37,9 +37,11 @@ export default function GuideModal({ open, onClose, onFinish, chapter }) {
   if (steps.length === 0) return null;
 
   const total   = steps.length;
-  const current = steps[step];
-  const isFirst = step === 0;
-  const isLast  = step === total - 1;
+  // Clamp en caso de que step quedó fuera de rango al cambiar de capítulo
+  const safeStep = step < total ? step : 0;
+  const current  = steps[safeStep];
+  const isFirst = safeStep === 0;
+  const isLast  = safeStep === total - 1;
   const accentColor = current.color || chapter.color || 'var(--teal-500)';
   const accentBg    = current.bg    || chapter.bg    || 'var(--teal-50)';
   const IconComp    = current.icon;
@@ -106,17 +108,17 @@ export default function GuideModal({ open, onClose, onFinish, chapter }) {
               {steps.map((_, i) => (
                 <button
                   key={i}
-                  onClick={() => { if (i < step) { setExiting(true); setTimeout(() => { setStep(i); setExiting(false); }, 160); } }}
+                  onClick={() => { if (i < safeStep) { setExiting(true); setTimeout(() => { setStep(i); setExiting(false); }, 160); } }}
                   aria-label={`Paso ${i + 1}`}
                   style={{
-                    width: i === step ? 22 : 8,
+                    width: i === safeStep ? 22 : 8,
                     height: 8,
                     borderRadius: 999,
-                    background: i === step
+                    background: i === safeStep
                       ? accentColor
-                      : i < step ? 'var(--teal-200)' : 'var(--sand-200)',
+                      : i < safeStep ? 'var(--teal-200)' : 'var(--sand-200)',
                     border: 'none',
-                    cursor: i < step ? 'pointer' : 'default',
+                    cursor: i < safeStep ? 'pointer' : 'default',
                     padding: 0,
                     transition: 'all 0.3s ease',
                     flexShrink: 0,
@@ -126,7 +128,7 @@ export default function GuideModal({ open, onClose, onFinish, chapter }) {
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <span style={{ fontSize: 11, color: 'var(--ink-400)', fontWeight: 600 }}>
-                {step + 1} de {total}
+                {safeStep + 1} de {total}
               </span>
               <button
                 onClick={onClose}
@@ -144,7 +146,7 @@ export default function GuideModal({ open, onClose, onFinish, chapter }) {
 
           {/* Cuerpo del paso */}
           <div style={{ padding: '24px 26px 18px', minHeight: 300 }}>
-            <div className={`gm-step${exiting ? ' exiting' : ''}`}>
+            <div key={safeStep} className={`gm-step${exiting ? ' exiting' : ''}`}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16 }}>
                 <div style={{
                   width: 58, height: 58, borderRadius: 16,

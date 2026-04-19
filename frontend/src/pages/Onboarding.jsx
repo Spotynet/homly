@@ -229,7 +229,9 @@ export default function Onboarding() {
       </div>
 
       {/* ── Modal activo ─────────────────────────────────────────── */}
+      {/* key={id} remonta el componente en cada capítulo para resetear step */}
       <GuideModal
+        key={activeChapter?.id ?? '__none__'}
         open={!!activeChapter}
         chapter={activeChapter}
         onClose={() => setActiveChapter(null)}

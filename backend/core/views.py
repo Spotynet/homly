@@ -1260,6 +1260,16 @@ class PaymentViewSet(viewsets.ModelViewSet):
         payment.status = _compute_payment_status(payment, tenant, list(extra_fields))
         payment.save()
 
+        # Sync plan installments if there is an active plan for this unit
+        try:
+            active_plan = PaymentPlan.objects.filter(
+                tenant_id=tenant_id, unit_id=payment.unit_id, status='accepted',
+            ).first()
+            if active_plan:
+                _update_plan_installments(active_plan)
+        except Exception:
+            pass
+
         return Response(PaymentSerializer(payment).data, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=['delete'], url_path='clear')
@@ -1280,8 +1290,24 @@ class PaymentViewSet(viewsets.ModelViewSet):
         pay_id   = str(payment.id)
         pay_repr = f'{payment.unit.unit_id_code} / {payment.period}'
 
+        # Capture active plan before deleting the payment (needed for sync after deletion)
+        active_plan_for_sync = None
+        try:
+            active_plan_for_sync = PaymentPlan.objects.filter(
+                tenant_id=tenant_id, unit_id=payment.unit_id, status='accepted',
+            ).first()
+        except Exception:
+            pass
+
         payment.field_payments.all().delete()
         payment.delete()
+
+        # Sync plan installments after payment deletion
+        if active_plan_for_sync:
+            try:
+                _update_plan_installments(active_plan_for_sync)
+            except Exception:
+                pass
 
         # Notify vecinos after deletion
         if unit_id_str:
@@ -1319,6 +1345,15 @@ class PaymentViewSet(viewsets.ModelViewSet):
         extra_fields = ExtraField.objects.filter(tenant_id=tenant_id, enabled=True, required=True)
         payment.status = _compute_payment_status(payment, tenant, list(extra_fields))
         payment.save()
+        # Sync plan installments
+        try:
+            active_plan = PaymentPlan.objects.filter(
+                tenant_id=tenant_id, unit_id=payment.unit_id, status='accepted',
+            ).first()
+            if active_plan:
+                _update_plan_installments(active_plan)
+        except Exception:
+            pass
         return Response(PaymentSerializer(payment).data, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=['patch'], url_path='update-additional/(?P<additional_id>[^/.]+)')
@@ -1355,6 +1390,15 @@ class PaymentViewSet(viewsets.ModelViewSet):
         extra_fields = ExtraField.objects.filter(tenant_id=tenant_id, enabled=True, required=True)
         payment.status = _compute_payment_status(payment, tenant, list(extra_fields))
         payment.save()
+        # Sync plan installments
+        try:
+            active_plan = PaymentPlan.objects.filter(
+                tenant_id=tenant_id, unit_id=payment.unit_id, status='accepted',
+            ).first()
+            if active_plan:
+                _update_plan_installments(active_plan)
+        except Exception:
+            pass
         return Response(PaymentSerializer(payment).data, status=status.HTTP_200_OK)
 
     def _check_payment_period_open(self, payment):

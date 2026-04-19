@@ -1,5 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
+  Legend, ResponsiveContainer, Cell,
+} from 'recharts';
 import { useAuth } from '../context/AuthContext';
 import { reportsAPI, tenantsAPI, assemblyAPI, reservationsAPI, periodsAPI } from '../api/client';
 import {
@@ -319,6 +323,10 @@ export default function Dashboard() {
   const [generalReport, setGeneralReport] = useState(null);
   const [closedPeriods, setClosedPeriods] = useState([]);
 
+  // ── Period History (para gráfica comparativa en tab Económicos) ────────
+  const [periodHistory,     setPeriodHistory]     = useState([]);
+  const [historyLoading,    setHistoryLoading]    = useState(false);
+
   // ── Reservas tab state ──────────────────────────────────
   const today = new Date();
   const [calYear,  setCalYear]  = useState(today.getFullYear());
@@ -404,6 +412,53 @@ export default function Dashboard() {
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { if (activeTab === 'reservas') loadReservations(); }, [activeTab, loadReservations]);
+
+  // Carga los últimos 6 períodos para la gráfica comparativa
+  useEffect(() => {
+    if (activeTab !== 'economic' || !tenantId) return;
+    setHistoryLoading(true);
+
+    // Genera los últimos `n` períodos en orden ascendente (más antiguo → más reciente)
+    const getPrevPeriods = (current, n) => {
+      const [y, m] = current.split('-').map(Number);
+      const result = [];
+      for (let i = n - 1; i >= 0; i--) {
+        let month = m - i;
+        let year  = y;
+        while (month <= 0) { month += 12; year--; }
+        result.push(`${year}-${String(month).padStart(2, '0')}`);
+      }
+      return result;
+    };
+
+    const periods = getPrevPeriods(period, 6);
+    Promise.allSettled(periods.map(p => reportsAPI.reporteGeneral(tenantId, p)))
+      .then(results => {
+        const shortMonth = p => {
+          const [y, m] = p.split('-');
+          return new Date(+y, +m - 1, 1)
+            .toLocaleDateString('es-MX', { month: 'short' })
+            .replace('.', '');
+        };
+        const data = results.map((r, i) => {
+          const p = periods[i];
+          if (r.status === 'fulfilled') {
+            const d  = r.value.data;
+            const rd = d.report_data || {};
+            return {
+              period: p,
+              label:  shortMonth(p),
+              ingresos: parseFloat(rd.total_ingresos_reconciled ?? 0),
+              gastos:   parseFloat(rd.total_egresos_reconciled  ?? 0),
+              saldo:    parseFloat(d.saldo_final ?? 0),
+            };
+          }
+          return { period: p, label: shortMonth(p), ingresos: 0, gastos: 0, saldo: 0 };
+        });
+        setPeriodHistory(data);
+      })
+      .finally(() => setHistoryLoading(false));
+  }, [activeTab, tenantId, period]);
 
   useEffect(() => {
     if (isSuperAdmin) {
@@ -1380,6 +1435,105 @@ export default function Dashboard() {
                   );
                 })}
               </div>
+            </div>
+          </div>
+
+          {/* ── Gráfica comparativa de períodos ──────────────── */}
+          <SectionLabel>Comparativo de Períodos</SectionLabel>
+          <div className="card" style={{ marginBottom: 20 }}>
+            <div className="card-head">
+              <h3>Ingresos · Gastos · Saldo Final</h3>
+              <span style={{ fontSize: 11, color: 'var(--ink-400)' }}>Últimos 6 períodos</span>
+            </div>
+            <div className="card-body">
+              {historyLoading ? (
+                <div style={{ height: 220, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--ink-400)', fontSize: 13 }}>
+                  Cargando historial…
+                </div>
+              ) : periodHistory.length === 0 ? (
+                <div style={{ height: 220, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--ink-300)', fontSize: 13, fontStyle: 'italic' }}>
+                  Sin datos históricos
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height={240}>
+                  <BarChart
+                    data={periodHistory}
+                    margin={{ top: 4, right: 8, left: 8, bottom: 0 }}
+                    barCategoryGap="28%"
+                    barGap={3}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--sand-100)" vertical={false} />
+                    <XAxis
+                      dataKey="label"
+                      tick={{ fontSize: 11, fill: 'var(--ink-500)' }}
+                      axisLine={false} tickLine={false}
+                    />
+                    <YAxis
+                      tickFormatter={v => {
+                        if (Math.abs(v) >= 1_000_000) return `$${(v/1_000_000).toFixed(1)}M`;
+                        if (Math.abs(v) >= 1_000)     return `$${(v/1_000).toFixed(0)}k`;
+                        return `$${v}`;
+                      }}
+                      tick={{ fontSize: 10, fill: 'var(--ink-400)' }}
+                      axisLine={false} tickLine={false} width={52}
+                    />
+                    <Tooltip
+                      formatter={(value, name) => [fmtDec(value), name]}
+                      labelFormatter={label => {
+                        const entry = periodHistory.find(d => d.label === label);
+                        return entry ? monthLabel(entry.period) : label;
+                      }}
+                      contentStyle={{
+                        background: 'white',
+                        border: '1px solid var(--sand-100)',
+                        borderRadius: 10,
+                        boxShadow: '0 4px 16px rgba(0,0,0,0.10)',
+                        fontSize: 12,
+                      }}
+                    />
+                    <Legend
+                      wrapperStyle={{ fontSize: 12, paddingTop: 8 }}
+                      formatter={value => ({
+                        ingresos: 'Ingresos conciliados',
+                        gastos:   'Gastos conciliados',
+                        saldo:    'Saldo final',
+                      }[value] || value)}
+                    />
+                    <Bar dataKey="ingresos" name="ingresos" fill="var(--teal-400)"  radius={[4,4,0,0]} maxBarSize={40} />
+                    <Bar dataKey="gastos"   name="gastos"   fill="var(--coral-400)" radius={[4,4,0,0]} maxBarSize={40} />
+                    <Bar dataKey="saldo"    name="saldo"    fill="#6366f1"           radius={[4,4,0,0]} maxBarSize={40}>
+                      {periodHistory.map((entry, idx) => (
+                        <Cell
+                          key={`cell-saldo-${idx}`}
+                          fill={entry.saldo >= 0 ? '#6366f1' : 'var(--coral-600)'}
+                        />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+
+              {/* Leyenda de colores de saldo */}
+              {!historyLoading && periodHistory.length > 0 && (
+                <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginTop: 6, fontSize: 11, color: 'var(--ink-400)' }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <span style={{ width: 10, height: 10, borderRadius: 3, background: 'var(--teal-400)', display: 'inline-block' }} />
+                    Ingresos conciliados
+                  </span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <span style={{ width: 10, height: 10, borderRadius: 3, background: 'var(--coral-400)', display: 'inline-block' }} />
+                    Gastos conciliados
+                  </span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <span style={{ width: 10, height: 10, borderRadius: 3, background: '#6366f1', display: 'inline-block' }} />
+                    Saldo final positivo
+                  </span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <span style={{ width: 10, height: 10, borderRadius: 3, background: 'var(--coral-600)', display: 'inline-block' }} />
+                    Saldo final negativo
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 

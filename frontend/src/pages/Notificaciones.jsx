@@ -7,19 +7,25 @@ import toast from 'react-hot-toast';
 
 const TYPE_CFG = {
   // Reservas
-  reservation_new:       { icon: '📅', label: 'Nueva reserva',     color: 'var(--blue-500)',   bg: 'var(--blue-50)'   },
-  reservation_approved:  { icon: '✅', label: 'Reserva aprobada',  color: 'var(--teal-600)',   bg: 'var(--teal-50)'   },
-  reservation_rejected:  { icon: '❌', label: 'Reserva rechazada', color: 'var(--coral-600)',  bg: 'var(--coral-50)'  },
-  reservation_cancelled: { icon: '🚫', label: 'Reserva cancelada', color: 'var(--ink-500)',    bg: 'var(--sand-50)'   },
+  reservation_new:       { icon: '📅', label: 'Nueva reserva',         color: 'var(--blue-500)',   bg: 'var(--blue-50)'   },
+  reservation_approved:  { icon: '✅', label: 'Reserva aprobada',      color: 'var(--teal-600)',   bg: 'var(--teal-50)'   },
+  reservation_rejected:  { icon: '❌', label: 'Reserva rechazada',     color: 'var(--coral-600)',  bg: 'var(--coral-50)'  },
+  reservation_cancelled: { icon: '🚫', label: 'Reserva cancelada',     color: 'var(--ink-500)',    bg: 'var(--sand-50)'   },
   // Cobranza
-  payment_registered:    { icon: '💰', label: 'Pago registrado',   color: 'var(--teal-700)',   bg: 'var(--teal-50)'   },
-  payment_updated:       { icon: '✏️', label: 'Pago actualizado',  color: 'var(--blue-600)',   bg: 'var(--blue-50)'   },
-  payment_deleted:       { icon: '🗑️', label: 'Cobro eliminado',   color: 'var(--coral-600)',  bg: 'var(--coral-50)'  },
+  payment_registered:    { icon: '💰', label: 'Pago registrado',       color: 'var(--teal-700)',   bg: 'var(--teal-50)'   },
+  payment_updated:       { icon: '✏️', label: 'Pago actualizado',      color: 'var(--blue-600)',   bg: 'var(--blue-50)'   },
+  payment_deleted:       { icon: '🗑️', label: 'Cobro eliminado',       color: 'var(--coral-600)',  bg: 'var(--coral-50)'  },
+  // Plan de pagos
+  plan_proposal_sent:    { icon: '📋', label: 'Propuesta de plan',     color: '#6366f1',           bg: '#eef2ff'          },
+  plan_accepted:         { icon: '🤝', label: 'Plan aceptado',         color: 'var(--teal-700)',   bg: 'var(--teal-50)'   },
+  plan_rejected:         { icon: '↩️', label: 'Plan rechazado',        color: 'var(--coral-600)',  bg: 'var(--coral-50)'  },
+  plan_cancelled:        { icon: '🚫', label: 'Plan cancelado',        color: 'var(--ink-500)',    bg: 'var(--sand-50)'   },
+  plan_installment_paid: { icon: '✅', label: 'Cuota del plan pagada', color: 'var(--teal-700)',   bg: 'var(--teal-50)'   },
   // Períodos
-  period_closed:         { icon: '🔒', label: 'Período cerrado',   color: 'var(--amber-700)',  bg: 'var(--amber-50)'  },
-  period_reopened:       { icon: '🔓', label: 'Período reabierto', color: 'var(--teal-600)',   bg: 'var(--teal-50)'   },
+  period_closed:         { icon: '🔒', label: 'Período cerrado',       color: 'var(--amber-700)',  bg: 'var(--amber-50)'  },
+  period_reopened:       { icon: '🔓', label: 'Período reabierto',     color: 'var(--teal-600)',   bg: 'var(--teal-50)'   },
   // General
-  general:               { icon: 'ℹ️', label: 'General',           color: 'var(--amber-600)',  bg: 'var(--amber-50)'  },
+  general:               { icon: 'ℹ️', label: 'General',               color: 'var(--amber-600)',  bg: 'var(--amber-50)'  },
 };
 
 function timeAgo(dateStr) {
@@ -68,6 +74,9 @@ export default function Notificaciones() {
       setNotifs(prev => prev.map(x => x.id === n.id ? { ...x, is_read: true } : x));
     }
     if (n.related_reservation_id) navigate('/app/reservas');
+    else if (['plan_proposal_sent','plan_accepted','plan_rejected','plan_cancelled','plan_installment_paid'].includes(n.notif_type)) navigate('/app/plan-pagos');
+    else if (['payment_registered','payment_updated','payment_deleted'].includes(n.notif_type)) navigate('/app/cobranza');
+    else if (['period_closed','period_reopened'].includes(n.notif_type)) navigate('/app/cobranza');
   };
 
   // Apply filters
@@ -80,12 +89,21 @@ export default function Notificaciones() {
   const unreadCount = notifs.filter(n => !n.is_read).length;
 
   const typeOptions = [
-    { value: 'all', label: 'Todos los tipos' },
-    { value: 'reservation_new', label: '📅 Nueva reserva' },
-    { value: 'reservation_approved', label: '✅ Aprobada' },
-    { value: 'reservation_rejected', label: '❌ Rechazada' },
-    { value: 'reservation_cancelled', label: '🚫 Cancelada' },
-    { value: 'general', label: 'ℹ️ General' },
+    { value: 'all',                  label: 'Todos los tipos' },
+    { value: 'reservation_new',      label: '📅 Nueva reserva' },
+    { value: 'reservation_approved', label: '✅ Reserva aprobada' },
+    { value: 'reservation_rejected', label: '❌ Reserva rechazada' },
+    { value: 'reservation_cancelled',label: '🚫 Reserva cancelada' },
+    { value: 'payment_registered',   label: '💰 Pago registrado' },
+    { value: 'payment_updated',      label: '✏️ Pago actualizado' },
+    { value: 'payment_deleted',      label: '🗑️ Cobro eliminado' },
+    { value: 'plan_proposal_sent',   label: '📋 Propuesta de plan' },
+    { value: 'plan_accepted',        label: '🤝 Plan aceptado' },
+    { value: 'plan_rejected',        label: '↩️ Plan rechazado' },
+    { value: 'plan_cancelled',       label: '🚫 Plan cancelado' },
+    { value: 'period_closed',        label: '🔒 Período cerrado' },
+    { value: 'period_reopened',      label: '🔓 Período reabierto' },
+    { value: 'general',              label: 'ℹ️ General' },
   ];
 
   return (

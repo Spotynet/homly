@@ -348,6 +348,8 @@ function NotificationBell({ tenantId }) {
     }
     setOpen(false);
     if (n.related_reservation_id) navigate('/app/reservas');
+    else if (['plan_proposal_sent','plan_accepted','plan_rejected','plan_cancelled','plan_installment_paid'].includes(n.notif_type)) navigate('/app/plan-pagos');
+    else if (['payment_registered','payment_updated','payment_deleted'].includes(n.notif_type)) navigate('/app/cobranza');
   };
 
   const TYPE_ICON = {
@@ -360,6 +362,12 @@ function NotificationBell({ tenantId }) {
     payment_registered:    '💰',
     payment_updated:       '✏️',
     payment_deleted:       '🗑️',
+    // Plan de pagos
+    plan_proposal_sent:    '📋',
+    plan_accepted:         '🤝',
+    plan_rejected:         '↩️',
+    plan_cancelled:        '🚫',
+    plan_installment_paid: '✅',
     // Períodos
     period_closed:         '🔒',
     period_reopened:       '🔓',
