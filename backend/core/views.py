@@ -1080,6 +1080,10 @@ def _compute_payment_status(payment, tenant, extra_fields, plan_charge=Decimal('
     # Pago de mantenimiento base fija registrado de forma incompleta → Parcial
     if maint_charge > 0 and 0 < maint_captured < maint_charge:
         return 'parcial'
+    # Catch-all: algún cargo obligatorio tiene pago pero no es suficiente para "pagado".
+    # Cubre el caso de mantenimiento cubierto pero cuota del plan solo parcialmente pagada.
+    if total_req_received > 0 and total_req_charge > 0:
+        return 'parcial'
     return 'pendiente'
 
 
@@ -4096,6 +4100,14 @@ def _compute_statement(tenant, unit_id, start_period, cutoff_period, _prefetched
             total_abono_req += _plan_rcvd
             _n_inst = plan_inst.get('num', '?')
             _n_total = len(active_plan.installments or [])
+            # Compute installment status dynamically from actual payment data
+            # (the JSON field may be stale if _update_plan_installments wasn't called)
+            if _debt_part > 0 and _plan_rcvd >= _debt_part:
+                _inst_status = 'paid'
+            elif _plan_rcvd > 0:
+                _inst_status = 'partial'
+            else:
+                _inst_status = plan_inst.get('status', 'pending')  # fall back to JSON if no payment
             field_detail.append({
                 'id': active_plan.field_key,
                 'label': f'Plan de Pagos — Cuota {_n_inst}/{_n_total}',
@@ -4111,7 +4123,8 @@ def _compute_statement(tenant, unit_id, start_period, cutoff_period, _prefetched
                     'debt_part': float(_debt_part),
                     'regular_part': float(plan_inst.get('regular_part', 0)),
                     'total': float(plan_inst.get('total', 0)),
-                    'status': plan_inst.get('status', 'pending'),
+                    'paid_amount': float(_plan_rcvd),  # always from real payment data
+                    'status': _inst_status,             # always from real payment data
                 },
             })
         # ─────────────────────────────────────────────────────────────────
@@ -4153,9 +4166,15 @@ def _compute_statement(tenant, unit_id, start_period, cutoff_period, _prefetched
         elif cargo_oblig > 0 and oblig_abono_capped >= cargo_oblig:
             eff_status = 'exento' if is_exempt else 'pagado'
         elif maint_abono == Decimal('0') and has_non_maint_abono:
+            # Mantenimiento no cubierto pero algún otro campo sí tiene pago
             eff_status = 'parcial'
         # Pago de mantenimiento base fija registrado de forma incompleta → Parcial
         elif maint_charge > 0 and Decimal('0') < maint_abono < maint_charge:
+            eff_status = 'parcial'
+        elif cargo_oblig > Decimal('0') and oblig_abono > Decimal('0'):
+            # Catch-all: algún cargo obligatorio tiene pago pero no es suficiente para "pagado".
+            # Cubre el caso de mantenimiento cubierto pero cuota del plan de pagos solo parcialmente pagada,
+            # o cualquier combinación donde hay pago registrado pero no cubre el total de cargos obligatorios.
             eff_status = 'parcial'
         elif is_past:
             eff_status = 'pendiente'
@@ -4334,6 +4353,19 @@ class EstadoCuentaView(APIView):
             })
 
         unit = Unit.objects.get(id=unit_id, tenant_id=tenant_id)
+
+        # Sync plan installment statuses against actual FieldPayment records
+        # before computing the statement, so plan badges and totals are always accurate.
+        _sync_plan = PaymentPlan.objects.filter(
+            tenant_id=tenant_id, unit_id=unit_id, status='accepted'
+        ).first()
+        if _sync_plan:
+            try:
+                _update_plan_installments(_sync_plan)
+                _sync_plan.refresh_from_db()
+            except Exception:
+                pass
+
         rows, total_charges, total_paid, balance, prev_debt_adeudo, active_plan = _compute_statement(tenant, str(unit_id), start_period, cutoff)
         previous_debt = float(unit.previous_debt or 0)
 
