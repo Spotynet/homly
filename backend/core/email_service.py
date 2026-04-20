@@ -1677,3 +1677,411 @@ def send_payment_plan_email(
         html=html,
         to_emails=emails,
     )
+
+
+# ─── Subscription / Trial emails ────────────────────────────────────────────
+
+
+def send_trial_welcome_email(
+    email: str,
+    nombre: str,
+    condominio: str,
+    trial_days: int,
+    plan_name: str,
+) -> bool:
+    """
+    Sent immediately when a new customer fills the 'Empezar Gratis' form on the landing page.
+    Confirms receipt and explains the trial process.
+    """
+    c = COLORS
+    app_url = getattr(settings, 'HOMLY_APP_URL', 'https://homly.com.mx')
+    logo_img = f'<img src="cid:{LOGO_CID}" alt="Homly" width="180" style="display:block;height:auto;max-width:180px;" />'
+
+    html = f"""<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>¡Bienvenido a Homly!</title>
+</head>
+<body style="margin:0;padding:0;font-family:'Segoe UI',system-ui,sans-serif;background:{c['cream_outer']};">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:{c['cream_outer']};padding:40px 20px;">
+    <tr><td align="center">
+      <table width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;background:{c['cream']};border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(26,22,18,0.08);">
+
+        <!-- Header -->
+        <tr>
+          <td style="background:{c['cream']};padding:28px 28px 20px;text-align:center;border-bottom:3px solid {c['green']};">
+            {logo_img}
+            <p style="margin:12px 0 0;font-size:20px;font-weight:800;color:{c['ink_800']};">¡Gracias por registrarte!</p>
+            <p style="margin:6px 0 0;font-size:13px;color:{c['ink_600']};">Recibimos tu solicitud para <strong>{condominio}</strong></p>
+          </td>
+        </tr>
+
+        <!-- Body -->
+        <tr>
+          <td style="padding:28px;">
+            <p style="margin:0 0 16px;font-size:14px;color:{c['ink_800']};line-height:1.7;">
+              Hola <strong>{nombre}</strong>, nos alegra que hayas elegido <strong style="color:{c['green']};">Homly</strong>
+              para administrar tu condominio.
+            </p>
+
+            <!-- Plan card -->
+            <table width="100%" cellpadding="0" cellspacing="0"
+              style="background:{c['cream_outer']};border-radius:12px;padding:20px;margin-bottom:20px;">
+              <tr>
+                <td>
+                  <p style="margin:0 0 6px;font-size:11px;font-weight:700;color:{c['ink_600']};text-transform:uppercase;letter-spacing:0.06em;">
+                    Tu plan seleccionado
+                  </p>
+                  <p style="margin:0;font-size:20px;font-weight:800;color:{c['green']};">{plan_name}</p>
+                </td>
+              </tr>
+              <tr><td style="height:12px;"></td></tr>
+              <tr>
+                <td>
+                  <p style="margin:0;font-size:14px;color:{c['ink_800']};line-height:1.6;">
+                    🎁 <strong>{trial_days} días de prueba gratuita</strong> para que explores todas las funciones
+                    sin compromiso.
+                  </p>
+                </td>
+              </tr>
+            </table>
+
+            <!-- Next steps -->
+            <p style="margin:0 0 12px;font-size:12px;font-weight:700;color:{c['ink_600']};text-transform:uppercase;letter-spacing:0.06em;">
+              ¿Qué sigue?
+            </p>
+            <table width="100%" cellpadding="0" cellspacing="0">
+              <tr>
+                <td style="padding:6px 0;">
+                  <p style="margin:0;font-size:13px;color:{c['ink_800']};line-height:1.5;">
+                    <strong style="color:{c['orange']};">1.</strong>
+                    Nuestro equipo revisará tu solicitud en las próximas horas.
+                  </p>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:6px 0;">
+                  <p style="margin:0;font-size:13px;color:{c['ink_800']};line-height:1.5;">
+                    <strong style="color:{c['orange']};">2.</strong>
+                    Te enviaremos un correo de confirmación con tus credenciales de acceso.
+                  </p>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:6px 0;">
+                  <p style="margin:0;font-size:13px;color:{c['ink_800']};line-height:1.5;">
+                    <strong style="color:{c['orange']};">3.</strong>
+                    ¡Empieza a gestionar tu condominio desde el primer día!
+                  </p>
+                </td>
+              </tr>
+            </table>
+
+            <!-- Divider -->
+            <tr><td style="height:1px;background:#E8DFD1;display:block;margin:20px 0;"></td></tr>
+
+            <p style="margin:20px 0 0;font-size:13px;color:{c['ink_600']};line-height:1.6;">
+              Si tienes alguna pregunta, no dudes en contactarnos respondiendo este correo.
+            </p>
+          </td>
+        </tr>
+
+        <!-- Footer -->
+        <tr>
+          <td style="padding:18px 28px;border-top:1px solid #E8DFD1;text-align:center;">
+            <p style="margin:0;font-size:12px;color:{c['ink_600']};">Este correo fue generado automáticamente por Homly.</p>
+            <p style="margin:6px 0 0;font-size:11px;color:{c['ink_600']};">© Homly — La administración que tu hogar se merece</p>
+          </td>
+        </tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body></html>"""
+
+    plain = (
+        f"¡Bienvenido a Homly, {nombre}!\n\n"
+        f"Recibimos tu solicitud de registro para el condominio '{condominio}'.\n\n"
+        f"PLAN SELECCIONADO: {plan_name}\n"
+        f"Período de prueba gratuita: {trial_days} días\n\n"
+        f"¿QUÉ SIGUE?\n"
+        f"1. Nuestro equipo revisará tu solicitud en las próximas horas.\n"
+        f"2. Te enviaremos un correo con tus credenciales de acceso cuando sea aprobada.\n"
+        f"3. ¡Empieza a gestionar tu condominio!\n\n"
+        f"Si tienes preguntas, responde a este correo.\n\n"
+        f"© Homly — La administración que tu hogar se merece"
+    )
+
+    return _send_branded_email(
+        subject=f"¡Bienvenido a Homly! Tu solicitud fue recibida — {condominio}",
+        plain=plain,
+        html=html,
+        to_emails=[email],
+    )
+
+
+def send_trial_approved_email(
+    email: str,
+    nombre: str,
+    condominio: str,
+    temp_password: str,
+    trial_start: str,
+    trial_end: str,
+    trial_days: int,
+    plan_name: str,
+) -> bool:
+    """
+    Sent when a superadmin approves a trial request.
+    Includes login credentials (temp password), trial period details, and login instructions.
+    """
+    c = COLORS
+    app_url = getattr(settings, 'HOMLY_APP_URL', 'https://homly.com.mx')
+    logo_img = f'<img src="cid:{LOGO_CID}" alt="Homly" width="180" style="display:block;height:auto;max-width:180px;" />'
+
+    html = f"""<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tu cuenta Homly está lista</title>
+</head>
+<body style="margin:0;padding:0;font-family:'Segoe UI',system-ui,sans-serif;background:{c['cream_outer']};">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:{c['cream_outer']};padding:40px 20px;">
+    <tr><td align="center">
+      <table width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;background:{c['cream']};border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(26,22,18,0.08);">
+
+        <!-- Header -->
+        <tr>
+          <td style="background:{c['green']};padding:28px 28px 20px;text-align:center;">
+            {logo_img}
+            <p style="margin:12px 0 0;font-size:20px;font-weight:800;color:{c['white']};"> ¡Tu cuenta está activa!</p>
+            <p style="margin:6px 0 0;font-size:13px;color:rgba(255,255,255,0.85);">{condominio} — Período de prueba aprobado</p>
+          </td>
+        </tr>
+
+        <!-- Body -->
+        <tr>
+          <td style="padding:28px;">
+            <p style="margin:0 0 20px;font-size:14px;color:{c['ink_800']};line-height:1.7;">
+              Hola <strong>{nombre}</strong>, tu solicitud fue <strong style="color:{c['green']};">aprobada</strong>.
+              Ya puedes acceder a Homly y comenzar a gestionar <strong>{condominio}</strong>.
+            </p>
+
+            <!-- Credentials box -->
+            <table width="100%" cellpadding="0" cellspacing="0"
+              style="background:{c['orange_light']};border-left:4px solid {c['orange']};border-radius:0 10px 10px 0;padding:18px;margin-bottom:20px;">
+              <tr>
+                <td>
+                  <p style="margin:0 0 10px;font-size:12px;font-weight:700;color:{c['orange']};text-transform:uppercase;letter-spacing:0.06em;">
+                    Tus credenciales de acceso
+                  </p>
+                  <p style="margin:0 0 6px;font-size:13px;color:{c['ink_800']};">
+                    <strong>Usuario:</strong> {email}
+                  </p>
+                  <p style="margin:0 0 6px;font-size:13px;color:{c['ink_800']};">
+                    <strong>Contraseña temporal:</strong>
+                    <span style="font-family:monospace;font-size:15px;font-weight:700;color:{c['orange']};
+                      background:{c['white']};padding:3px 10px;border-radius:6px;letter-spacing:0.05em;">
+                      {temp_password}
+                    </span>
+                  </p>
+                  <p style="margin:8px 0 0;font-size:11px;color:{c['ink_600']};">
+                    ⚠️ Al ingresar por primera vez se te pedirá cambiar tu contraseña.
+                  </p>
+                </td>
+              </tr>
+            </table>
+
+            <!-- Trial period -->
+            <table width="100%" cellpadding="0" cellspacing="0"
+              style="background:{c['cream_outer']};border-radius:12px;padding:18px;margin-bottom:20px;">
+              <tr>
+                <td>
+                  <p style="margin:0 0 10px;font-size:12px;font-weight:700;color:{c['ink_600']};text-transform:uppercase;letter-spacing:0.06em;">
+                    Detalles de tu membresía
+                  </p>
+                  <p style="margin:0 0 6px;font-size:13px;color:{c['ink_800']};">
+                    <strong>Plan:</strong> {plan_name}
+                  </p>
+                  <p style="margin:0 0 6px;font-size:13px;color:{c['ink_800']};">
+                    <strong>Prueba gratuita:</strong> {trial_days} días
+                  </p>
+                  <p style="margin:0 0 6px;font-size:13px;color:{c['ink_800']};">
+                    <strong>Inicio:</strong> {trial_start}
+                  </p>
+                  <p style="margin:0;font-size:13px;color:{c['ink_800']};">
+                    <strong>Vence:</strong> {trial_end}
+                  </p>
+                </td>
+              </tr>
+            </table>
+
+            <!-- Login steps -->
+            <p style="margin:0 0 12px;font-size:12px;font-weight:700;color:{c['ink_600']};text-transform:uppercase;letter-spacing:0.06em;">
+              Cómo ingresar
+            </p>
+            <table width="100%" cellpadding="0" cellspacing="0">
+              <tr>
+                <td style="padding:5px 0;">
+                  <p style="margin:0;font-size:13px;color:{c['ink_800']};line-height:1.5;">
+                    <strong style="color:{c['orange']};">1.</strong>
+                    Ve a <a href="{app_url}/login" style="color:{c['green']};font-weight:700;">{app_url}/login</a>
+                  </p>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:5px 0;">
+                  <p style="margin:0;font-size:13px;color:{c['ink_800']};line-height:1.5;">
+                    <strong style="color:{c['orange']};">2.</strong>
+                    Ingresa tu correo: <strong>{email}</strong>
+                  </p>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:5px 0;">
+                  <p style="margin:0;font-size:13px;color:{c['ink_800']};line-height:1.5;">
+                    <strong style="color:{c['orange']};">3.</strong>
+                    Usa tu contraseña temporal y cámbiala en tu primer inicio de sesión.
+                  </p>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- Footer -->
+        <tr>
+          <td style="padding:18px 28px;border-top:1px solid #E8DFD1;text-align:center;">
+            <p style="margin:0;font-size:12px;color:{c['ink_600']};">Este correo fue generado automáticamente por Homly.</p>
+            <p style="margin:6px 0 0;font-size:11px;color:{c['ink_600']};">© Homly — La administración que tu hogar se merece</p>
+          </td>
+        </tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body></html>"""
+
+    plain = (
+        f"¡Bienvenido a Homly, {nombre}!\n\n"
+        f"Tu solicitud para '{condominio}' fue APROBADA. Ya puedes ingresar al sistema.\n\n"
+        f"CREDENCIALES DE ACCESO:\n"
+        f"  Usuario: {email}\n"
+        f"  Contraseña temporal: {temp_password}\n"
+        f"  (Al ingresar, se te pedirá cambiar tu contraseña.)\n\n"
+        f"DETALLES DE TU MEMBRESÍA:\n"
+        f"  Plan: {plan_name}\n"
+        f"  Prueba gratuita: {trial_days} días\n"
+        f"  Inicio: {trial_start}\n"
+        f"  Vence: {trial_end}\n\n"
+        f"CÓMO INGRESAR:\n"
+        f"  1. Ve a {app_url}/login\n"
+        f"  2. Ingresa tu correo: {email}\n"
+        f"  3. Usa tu contraseña temporal y cámbiala al primer inicio.\n\n"
+        f"© Homly — La administración que tu hogar se merece"
+    )
+
+    return _send_branded_email(
+        subject=f"¡Tu cuenta Homly está lista! — {condominio}",
+        plain=plain,
+        html=html,
+        to_emails=[email],
+    )
+
+
+def send_trial_rejected_email(
+    email: str,
+    nombre: str,
+    condominio: str,
+    reason: str,
+) -> bool:
+    """
+    Sent when a superadmin rejects a trial request.
+    Includes the rejection reason and an invitation to contact support.
+    """
+    c = COLORS
+    logo_img = f'<img src="cid:{LOGO_CID}" alt="Homly" width="180" style="display:block;height:auto;max-width:180px;" />'
+    reason_html = reason.replace('\n', '<br>') if reason else 'No se especificó una razón.'
+
+    html = f"""<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Actualización de tu solicitud Homly</title>
+</head>
+<body style="margin:0;padding:0;font-family:'Segoe UI',system-ui,sans-serif;background:{c['cream_outer']};">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:{c['cream_outer']};padding:40px 20px;">
+    <tr><td align="center">
+      <table width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;background:{c['cream']};border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(26,22,18,0.08);">
+
+        <!-- Header -->
+        <tr>
+          <td style="background:{c['cream']};padding:28px 28px 20px;text-align:center;border-bottom:3px solid {c['orange']};">
+            {logo_img}
+            <p style="margin:12px 0 0;font-size:18px;font-weight:800;color:{c['ink_800']};">Actualización sobre tu solicitud</p>
+            <p style="margin:6px 0 0;font-size:13px;color:{c['ink_600']};">{condominio}</p>
+          </td>
+        </tr>
+
+        <!-- Body -->
+        <tr>
+          <td style="padding:28px;">
+            <p style="margin:0 0 16px;font-size:14px;color:{c['ink_800']};line-height:1.7;">
+              Hola <strong>{nombre}</strong>, revisamos tu solicitud para
+              <strong>{condominio}</strong> y lamentablemente no pudimos aprobarla en este momento.
+            </p>
+
+            <!-- Reason box -->
+            <table width="100%" cellpadding="0" cellspacing="0"
+              style="background:{c['cream_outer']};border-left:4px solid {c['orange']};border-radius:0 10px 10px 0;padding:16px;margin-bottom:20px;">
+              <tr>
+                <td>
+                  <p style="margin:0 0 8px;font-size:12px;font-weight:700;color:{c['orange']};text-transform:uppercase;letter-spacing:0.06em;">
+                    Motivo
+                  </p>
+                  <p style="margin:0;font-size:13px;color:{c['ink_800']};line-height:1.6;">{reason_html}</p>
+                </td>
+              </tr>
+            </table>
+
+            <p style="margin:0 0 12px;font-size:13px;color:{c['ink_600']};line-height:1.6;">
+              Si crees que esto es un error o deseas obtener más información, responde a este correo y
+              con gusto te atendemos.
+            </p>
+            <p style="margin:0;font-size:13px;color:{c['ink_600']};line-height:1.6;">
+              Gracias por tu interés en Homly. Esperamos poder servirte en el futuro.
+            </p>
+          </td>
+        </tr>
+
+        <!-- Footer -->
+        <tr>
+          <td style="padding:18px 28px;border-top:1px solid #E8DFD1;text-align:center;">
+            <p style="margin:0;font-size:12px;color:{c['ink_600']};">Este correo fue generado automáticamente por Homly.</p>
+            <p style="margin:6px 0 0;font-size:11px;color:{c['ink_600']};">© Homly — La administración que tu hogar se merece</p>
+          </td>
+        </tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body></html>"""
+
+    plain = (
+        f"Hola {nombre},\n\n"
+        f"Revisamos tu solicitud para '{condominio}' y lamentablemente no pudimos aprobarla.\n\n"
+        f"MOTIVO:\n{reason or 'No se especificó una razón.'}\n\n"
+        f"Si crees que esto es un error o deseas más información, responde a este correo.\n"
+        f"Gracias por tu interés en Homly.\n\n"
+        f"© Homly — La administración que tu hogar se merece"
+    )
+
+    return _send_branded_email(
+        subject=f"Actualización sobre tu solicitud Homly — {condominio}",
+        plain=plain,
+        html=html,
+        to_emails=[email],
+    )

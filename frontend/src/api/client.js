@@ -212,6 +212,31 @@ export const paymentPlansAPI = {
   createProposal:  (tenantId, data)   => api.post(`/tenants/${tenantId}/payment-plans/create_proposal/`, data),
 };
 
+// ─── Subscription Plans (superadmin) ─────────────
+export const subscriptionPlansAPI = {
+  list:    (params) => api.get('/subscription-plans/', { params: params || {} }),
+  get:     (id)     => api.get(`/subscription-plans/${id}/`),
+  create:  (data)   => api.post('/subscription-plans/', data),
+  update:  (id, data) => api.patch(`/subscription-plans/${id}/`, data),
+  destroy: (id)     => api.delete(`/subscription-plans/${id}/`),
+};
+
+// ─── Trial Requests (superadmin) ─────────────────
+export const trialRequestsAPI = {
+  list:    (params) => api.get('/trial-requests/', { params: params || {} }),
+  get:     (id)     => api.get(`/trial-requests/${id}/`),
+  update:  (id, data) => api.patch(`/trial-requests/${id}/`, data),
+  approve: (id, data) => api.post(`/trial-requests/${id}/approve/`, data),
+  reject:  (id, data) => api.post(`/trial-requests/${id}/reject/`, data),
+};
+
+// ─── Tenant Subscriptions (superadmin) ───────────
+export const tenantSubscriptionsAPI = {
+  list:   (params) => api.get('/tenant-subscriptions/', { params: params || {} }),
+  get:    (id)     => api.get(`/tenant-subscriptions/${id}/`),
+  update: (id, data) => api.patch(`/tenant-subscriptions/${id}/`, data),
+};
+
 // ─── Super Admins ────────────────────────────────
 export const superAdminAPI = {
   list: () => api.get('/super-admins/'),

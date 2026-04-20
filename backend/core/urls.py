@@ -9,6 +9,9 @@ router = DefaultRouter()
 router.register(r'tenants', views.TenantViewSet, basename='tenants')
 router.register(r'super-admins', views.SuperAdminViewSet, basename='super-admins')
 router.register(r'audit-logs', views.AuditLogViewSet, basename='audit-logs')
+router.register(r'subscription-plans', views.SubscriptionPlanViewSet, basename='subscription-plans')
+router.register(r'trial-requests', views.TrialRequestViewSet, basename='trial-requests')
+router.register(r'tenant-subscriptions', views.TenantSubscriptionViewSet, basename='tenant-subscriptions')
 
 # Nested routes under tenant
 tenant_router = DefaultRouter()

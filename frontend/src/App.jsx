@@ -20,6 +20,7 @@ import Reservas from './pages/Reservas';
 import Notificaciones from './pages/Notificaciones';
 import CierrePeriodo from './pages/CierrePeriodo';
 import Logs from './pages/Logs';
+import Suscripciones from './pages/Suscripciones';
 import Registro from './pages/Registro';
 import PlanPagos from './pages/PlanPagos';
 import Onboarding from './pages/Onboarding';
@@ -77,8 +78,9 @@ function AppRoutes() {
         <Route path="dashboard" element={<Dashboard />} />
         {isSuperAdmin && (
           <Route path="sistema">
-            <Route path="tenants" element={<Tenants />} />
-            <Route path="logs"    element={<Logs />} />
+            <Route path="tenants"        element={<Tenants />} />
+            <Route path="logs"           element={<Logs />} />
+            <Route path="suscripciones"  element={<Suscripciones />} />
           </Route>
         )}
         <Route path="cobranza" element={<Cobranza />} />

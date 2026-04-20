@@ -23,9 +23,13 @@ from .models import (
     PeriodClosureRequest, PeriodClosureStep,
     AssemblyPosition, Committee, UnrecognizedIncome,
     AmenityReservation, CondominioRequest, EmailVerificationCode,
-    Notification, AuditLog, PaymentPlan,
+    Notification, AuditLog, PaymentPlan, SubscriptionPlan, TenantSubscription,
 )
-from .email_service import send_verification_email, send_notification_email, CODE_EXPIRY_MINUTES, send_payment_plan_email
+from .email_service import (
+    send_verification_email, send_notification_email, CODE_EXPIRY_MINUTES,
+    send_payment_plan_email, send_trial_welcome_email, send_trial_approved_email,
+    send_trial_rejected_email,
+)
 from .serializers import (
     LoginSerializer, RequestCodeSerializer, LoginWithCodeSerializer,
     UserSerializer, UserCreateSerializer,
@@ -38,6 +42,7 @@ from .serializers import (
     AssemblyPositionSerializer, CommitteeSerializer, UnrecognizedIncomeSerializer,
     DashboardSerializer, AmenityReservationSerializer, CondominioRequestSerializer,
     NotificationSerializer, AuditLogSerializer, PaymentPlanSerializer,
+    SubscriptionPlanSerializer, TenantSubscriptionSerializer,
 )
 from .permissions import IsSuperAdmin, IsTenantAdmin, IsTenantMember, IsAdminOrTesorero, IsAdminOrTesOrAuditor, CanApproveReservation
 
@@ -5992,19 +5997,229 @@ class CondominioRequestView(APIView):
         serializer = CondominioRequestSerializer(data=request.data)
         if serializer.is_valid():
             instance = serializer.save()
-            # Send confirmation to applicant + internal alert — run in background
-            # so a slow SMTP server never blocks the API response.
+            # Send welcome email to applicant in background
             import threading
-            from .email_service import send_registration_notification
             def _send():
                 try:
-                    send_registration_notification(serializer.validated_data)
+                    plan = instance.subscription_plan
+                    send_trial_welcome_email(
+                        email=instance.admin_email,
+                        nombre=f'{instance.admin_nombre} {instance.admin_apellido}'.strip(),
+                        condominio=instance.condominio_nombre,
+                        trial_days=instance.trial_days,
+                        plan_name=plan.name if plan else None,
+                    )
                 except Exception:
-                    pass  # log silently — registration is already saved
+                    pass
             threading.Thread(target=_send, daemon=True).start()
             return Response(
                 {'message': 'Solicitud recibida. Nos pondremos en contacto pronto.'},
                 status=status.HTTP_201_CREATED,
             )
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+# ═══════════════════════════════════════════════════════════
+#  SUBSCRIPTION PLANS — CRUD (superadmin only)
+# ═══════════════════════════════════════════════════════════
+
+class SubscriptionPlanViewSet(viewsets.ModelViewSet):
+    """CRUD for subscription plans. Only superadmins can access."""
+    serializer_class = SubscriptionPlanSerializer
+    permission_classes = [IsSuperAdmin]
+
+    def get_queryset(self):
+        qs = SubscriptionPlan.objects.all()
+        active_only = self.request.query_params.get('active_only')
+        if active_only in ('1', 'true', 'True'):
+            qs = qs.filter(is_active=True)
+        return qs
+
+
+# ═══════════════════════════════════════════════════════════
+#  TRIAL REQUESTS — manage CondominioRequests with subscription flow
+# ═══════════════════════════════════════════════════════════
+
+class TrialRequestViewSet(viewsets.ModelViewSet):
+    """
+    Manage incoming trial/registration requests from the landing page.
+    Superadmin only. Supports approve and reject custom actions.
+    """
+    serializer_class = CondominioRequestSerializer
+    permission_classes = [IsSuperAdmin]
+    http_method_names = ['get', 'patch', 'head', 'options']
+
+    def get_queryset(self):
+        qs = CondominioRequest.objects.all()
+        status_filter = self.request.query_params.get('status')
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+        return qs
+
+    @action(detail=True, methods=['post'], url_path='approve')
+    def approve(self, request, pk=None):
+        """
+        Approve a trial request:
+        1. Create Tenant from request data
+        2. Create admin User with temporary password
+        3. Create TenantUser as admin
+        4. Create TenantSubscription (trial)
+        5. Update CondominioRequest (enrolled + tenant FK)
+        6. Send approval email with credentials
+        """
+        from datetime import date, timedelta
+        import secrets, string
+
+        trial_req = self.get_object()
+        if trial_req.status == 'enrolled':
+            return Response({'detail': 'Ya fue aprobada y procesada.'}, status=400)
+        if trial_req.status == 'rejected':
+            return Response({'detail': 'No se puede aprobar una solicitud rechazada.'}, status=400)
+
+        plan_id = request.data.get('subscription_plan')
+        trial_days = int(request.data.get('trial_days', trial_req.trial_days or 7))
+        admin_notes = request.data.get('admin_notes', trial_req.admin_notes or '')
+
+        plan = None
+        if plan_id:
+            plan = SubscriptionPlan.objects.filter(id=plan_id).first()
+
+        # 1. Create Tenant
+        tenant = Tenant.objects.create(
+            name=trial_req.condominio_nombre,
+            units_count=trial_req.condominio_unidades or 0,
+            currency=trial_req.condominio_currency or 'MXN',
+            operation_start_date=date.today().strftime('%Y-%m'),
+            admin_type=trial_req.condominio_tipo_admin or 'administrador',
+        )
+
+        # 2. Generate temp password
+        alphabet = string.ascii_letters + string.digits
+        temp_password = ''.join(secrets.choice(alphabet) for _ in range(12))
+
+        # 3. Create or reuse User
+        admin_email = trial_req.admin_email.lower().strip()
+        admin_name = f'{trial_req.admin_nombre} {trial_req.admin_apellido}'.strip()
+        user, created = User.objects.get_or_create(
+            email=admin_email,
+            defaults={'name': admin_name, 'is_active': True, 'must_change_password': True},
+        )
+        if created:
+            user.set_password(temp_password)
+            user.save(update_fields=['password', 'must_change_password'])
+        else:
+            # Existing user: set a new temp password and must_change_password flag
+            user.set_password(temp_password)
+            user.must_change_password = True
+            user.save(update_fields=['password', 'must_change_password'])
+
+        # 4. Create TenantUser as admin
+        TenantUser.objects.get_or_create(
+            tenant=tenant, user=user,
+            defaults={'role': 'admin'},
+        )
+
+        # 5. Create TenantSubscription
+        trial_start = date.today()
+        trial_end   = trial_start + timedelta(days=trial_days)
+        units_count = trial_req.condominio_unidades or 0
+        amount = plan.price_for_units(units_count) if plan else 0
+        TenantSubscription.objects.create(
+            tenant=tenant,
+            plan=plan,
+            status='trial',
+            trial_start=trial_start,
+            trial_end=trial_end,
+            units_count=units_count,
+            amount_per_cycle=amount,
+            currency=plan.currency if plan else (trial_req.condominio_currency or 'MXN'),
+            notes=admin_notes,
+        )
+
+        # 6. Update trial request
+        trial_req.status = 'enrolled'
+        trial_req.approved_at = _django_now()
+        trial_req.approved_by = request.user
+        trial_req.subscription_plan = plan
+        trial_req.trial_days = trial_days
+        trial_req.admin_notes = admin_notes
+        trial_req.tenant = tenant
+        trial_req.save()
+
+        # 7. Send approval email
+        import threading
+        def _notify():
+            try:
+                send_trial_approved_email(
+                    email=admin_email,
+                    nombre=admin_name,
+                    condominio=tenant.name,
+                    temp_password=temp_password,
+                    trial_start=trial_start,
+                    trial_end=trial_end,
+                    trial_days=trial_days,
+                    plan_name=plan.name if plan else None,
+                )
+            except Exception:
+                pass
+        threading.Thread(target=_notify, daemon=True).start()
+
+        return Response({
+            'detail': 'Solicitud aprobada. Tenant y usuario creados correctamente.',
+            'tenant_id': str(tenant.id),
+            'user_email': admin_email,
+            'trial_end': str(trial_end),
+        })
+
+    @action(detail=True, methods=['post'], url_path='reject')
+    def reject(self, request, pk=None):
+        """Reject a trial request and optionally send a rejection email."""
+        trial_req = self.get_object()
+        if trial_req.status == 'enrolled':
+            return Response({'detail': 'No se puede rechazar una solicitud ya aprobada.'}, status=400)
+
+        reason = request.data.get('rejection_reason', '').strip()
+        trial_req.status = 'rejected'
+        trial_req.rejected_at = _django_now()
+        trial_req.rejection_reason = reason
+        trial_req.save(update_fields=['status', 'rejected_at', 'rejection_reason'])
+
+        import threading
+        def _notify():
+            try:
+                send_trial_rejected_email(
+                    email=trial_req.admin_email,
+                    nombre=f'{trial_req.admin_nombre} {trial_req.admin_apellido}'.strip(),
+                    condominio=trial_req.condominio_nombre,
+                    reason=reason,
+                )
+            except Exception:
+                pass
+        threading.Thread(target=_notify, daemon=True).start()
+
+        return Response({'detail': 'Solicitud rechazada.'})
+
+
+# ═══════════════════════════════════════════════════════════
+#  TENANT SUBSCRIPTIONS — view and manage per-tenant subscriptions
+# ═══════════════════════════════════════════════════════════
+
+class TenantSubscriptionViewSet(viewsets.ModelViewSet):
+    """List and manage tenant subscriptions. Superadmin only."""
+    serializer_class = TenantSubscriptionSerializer
+    permission_classes = [IsSuperAdmin]
+    http_method_names = ['get', 'patch', 'head', 'options']
+
+    def get_queryset(self):
+        qs = TenantSubscription.objects.select_related('tenant', 'plan').all()
+        status_filter = self.request.query_params.get('status')
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+        return qs
+
+
+def _django_now():
+    """Return timezone-aware now (or naive if USE_TZ=False)."""
+    from django.utils import timezone
+    return timezone.now()
 

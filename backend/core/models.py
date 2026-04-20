@@ -1065,6 +1065,27 @@ class CondominioRequest(models.Model):
     # Additional
     mensaje = models.TextField(blank=True, default='')
 
+    # Subscription / trial tracking
+    subscription_plan = models.ForeignKey(
+        'SubscriptionPlan', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='trial_requests'
+    )
+    trial_days       = models.PositiveIntegerField(default=7)
+    approved_at      = models.DateTimeField(null=True, blank=True)
+    approved_by      = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='approved_trial_requests'
+    )
+    rejected_at      = models.DateTimeField(null=True, blank=True)
+    rejection_reason = models.TextField(blank=True, default='')
+    # Set after approval — FK to the auto-created tenant
+    tenant           = models.OneToOneField(
+        'Tenant', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='trial_request'
+    )
+    # Admin notes (internal, not visible to applicant)
+    admin_notes      = models.TextField(blank=True, default='')
+
     # Internal tracking
     status     = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending', db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -1100,4 +1121,110 @@ class EmailVerificationCode(models.Model):
 
     def __str__(self):
         return f'{self.email} — {self.code[:3]}*** (exp: {self.expires_at})'
+
+
+# ═══════════════════════════════════════════════════════════
+#  SUBSCRIPTION PLANS
+# ═══════════════════════════════════════════════════════════
+
+class SubscriptionPlan(models.Model):
+    """
+    Configurable subscription tiers offered to tenants.
+    Supports per-unit pricing, volume tiers, and multi-currency.
+    """
+    CURRENCY_CHOICES = [
+        ('MXN', 'Peso Mexicano'),
+        ('USD', 'US Dollar'),
+        ('EUR', 'Euro'),
+        ('COP', 'Peso Colombiano'),
+    ]
+    BILLING_CHOICES = [
+        ('monthly', 'Mensual'),
+        ('annual',  'Anual'),
+    ]
+
+    id               = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name             = models.CharField(max_length=100)
+    description      = models.TextField(blank=True, default='')
+    price_per_unit   = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    currency         = models.CharField(max_length=3, choices=CURRENCY_CHOICES, default='MXN')
+    billing_cycle    = models.CharField(max_length=10, choices=BILLING_CHOICES, default='monthly')
+    trial_days       = models.PositiveIntegerField(default=7)
+    # Volume tiers JSON: [{"min_units": 1, "max_units": 50, "price_per_unit": 50.00}, ...]
+    # max_units=null means "unlimited"
+    volume_tiers     = models.JSONField(default=list, blank=True)
+    # Features list: ["Cobranza mensual", "Estado de cuenta", ...]
+    features         = models.JSONField(default=list, blank=True)
+    is_active        = models.BooleanField(default=True, db_index=True)
+    sort_order       = models.PositiveIntegerField(default=0)
+    created_at       = models.DateTimeField(auto_now_add=True)
+    updated_at       = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'subscription_plans'
+        ordering = ['sort_order', 'name']
+
+    def __str__(self):
+        return f'{self.name} ({self.currency} {self.price_per_unit}/unidad/{self.billing_cycle})'
+
+    def price_for_units(self, units_count):
+        """Calculate monthly price for a given number of units using volume tiers."""
+        if self.volume_tiers:
+            for tier in sorted(self.volume_tiers, key=lambda t: t.get('min_units', 0)):
+                min_u = tier.get('min_units', 0)
+                max_u = tier.get('max_units')  # None = unlimited
+                if units_count >= min_u and (max_u is None or units_count <= max_u):
+                    return float(tier.get('price_per_unit', 0)) * units_count
+        return float(self.price_per_unit) * units_count
+
+
+# ═══════════════════════════════════════════════════════════
+#  TENANT SUBSCRIPTION
+# ═══════════════════════════════════════════════════════════
+
+class TenantSubscription(models.Model):
+    """
+    Tracks the subscription status for each tenant.
+    One record per tenant (upserted on each plan change).
+    """
+    STATUS_CHOICES = [
+        ('trial',     'Período de Prueba'),
+        ('active',    'Activa'),
+        ('past_due',  'Vencida'),
+        ('cancelled', 'Cancelada'),
+        ('expired',   'Expirada'),
+    ]
+
+    id               = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant           = models.OneToOneField(Tenant, on_delete=models.CASCADE, related_name='subscription')
+    plan             = models.ForeignKey(
+        SubscriptionPlan, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='subscriptions'
+    )
+    status           = models.CharField(max_length=12, choices=STATUS_CHOICES, default='trial', db_index=True)
+    trial_start      = models.DateField(null=True, blank=True)
+    trial_end        = models.DateField(null=True, blank=True)
+    billing_start    = models.DateField(null=True, blank=True)
+    units_count      = models.PositiveIntegerField(default=0)
+    amount_per_cycle = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    currency         = models.CharField(max_length=3, default='MXN')
+    next_billing_date = models.DateField(null=True, blank=True)
+    notes            = models.TextField(blank=True, default='')
+    created_at       = models.DateTimeField(auto_now_add=True)
+    updated_at       = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'tenant_subscriptions'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.tenant.name} — {self.get_status_display()}'
+
+    @property
+    def trial_days_remaining(self):
+        from datetime import date
+        if self.status == 'trial' and self.trial_end:
+            delta = (self.trial_end - date.today()).days
+            return max(0, delta)
+        return 0
 

@@ -8,15 +8,16 @@ import {
   Home, Globe, FileText, ShoppingBag, Receipt, Settings,
   Users, Building, Shield, LogOut, Menu, X, Calendar,
   ChevronDown, Check, Building2, Bell, CheckCheck, Activity, Lock, TrendingDown,
-  Sparkles,
+  Sparkles, CreditCard,
 } from 'lucide-react';
 
 const NAV_ITEMS = {
   superadmin: [
     { section: 'system', label: 'Sistema', items: [
-      { path: '/app/dashboard',       icon: Home,     label: 'Dashboard' },
-      { path: '/app/sistema/tenants', icon: Globe,    label: 'Tenants'  },
-      { path: '/app/sistema/logs',    icon: Activity, label: 'Logs del Sistema' },
+      { path: '/app/dashboard',                icon: Home,       label: 'Dashboard'       },
+      { path: '/app/sistema/tenants',          icon: Globe,      label: 'Tenants'         },
+      { path: '/app/sistema/suscripciones',    icon: CreditCard, label: 'Suscripciones'   },
+      { path: '/app/sistema/logs',             icon: Activity,   label: 'Logs del Sistema' },
     ]},
     { section: 'tenant', label: 'Tenant Actual', items: [
       { path: '/app/reservas',         icon: Calendar,     label: 'Reservas'          },
@@ -114,6 +115,7 @@ const PATH_TO_MODULE = {
 const PAGE_TITLES = {
   dashboard: 'Dashboard',
   'sistema/tenants': 'Gestión de Tenants',
+  'sistema/suscripciones': 'Suscripciones',
   'sistema/logs': 'Logs del Sistema',
   cobranza: 'Cobranza Mensual',
   gastos: 'Gastos del Condominio',

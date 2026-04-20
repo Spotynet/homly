@@ -11,7 +11,7 @@ from .models import (
     PeriodClosureRequest, PeriodClosureStep,
     AssemblyPosition, Committee, UnrecognizedIncome,
     AmenityReservation, CondominioRequest, Notification,
-    AuditLog, PaymentPlan,
+    AuditLog, PaymentPlan, SubscriptionPlan, TenantSubscription,
 )
 
 
@@ -699,6 +699,9 @@ class NotificationSerializer(serializers.ModelSerializer):
 # ═══════════════════════════════════════════════════════════
 
 class CondominioRequestSerializer(serializers.ModelSerializer):
+    subscription_plan_name = serializers.SerializerMethodField()
+    tenant_id = serializers.SerializerMethodField()
+
     class Meta:
         model  = CondominioRequest
         fields = [
@@ -709,9 +712,19 @@ class CondominioRequestSerializer(serializers.ModelSerializer):
             'admin_nombre', 'admin_apellido', 'admin_email',
             'admin_telefono', 'admin_cargo',
             'mensaje',
-            'status', 'created_at',
+            'subscription_plan', 'subscription_plan_name',
+            'trial_days', 'admin_notes',
+            'approved_at', 'rejected_at', 'rejection_reason',
+            'tenant_id',
+            'status', 'created_at', 'updated_at',
         ]
-        read_only_fields = ['id', 'status', 'created_at']
+        read_only_fields = ['id', 'approved_at', 'rejected_at', 'tenant_id', 'created_at', 'updated_at']
+
+    def get_subscription_plan_name(self, obj):
+        return obj.subscription_plan.name if obj.subscription_plan else None
+
+    def get_tenant_id(self, obj):
+        return str(obj.tenant_id) if obj.tenant_id else None
 
     def validate_admin_email(self, value):
         return value.lower().strip()
@@ -746,4 +759,60 @@ class AuditLogSerializer(serializers.ModelSerializer):
 
     def get_action_label(self, obj):
         return obj.get_action_display()
+
+
+# ═══════════════════════════════════════════════════════════
+#  SUBSCRIPTION PLANS
+# ═══════════════════════════════════════════════════════════
+
+class SubscriptionPlanSerializer(serializers.ModelSerializer):
+    subscriptions_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SubscriptionPlan
+        fields = [
+            'id', 'name', 'description',
+            'price_per_unit', 'currency', 'billing_cycle', 'trial_days',
+            'volume_tiers', 'features',
+            'is_active', 'sort_order',
+            'subscriptions_count',
+            'created_at', 'updated_at',
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at', 'subscriptions_count']
+
+    def get_subscriptions_count(self, obj):
+        return obj.subscriptions.count()
+
+
+class TenantSubscriptionSerializer(serializers.ModelSerializer):
+    tenant_name = serializers.SerializerMethodField()
+    plan_name   = serializers.SerializerMethodField()
+    trial_days_remaining = serializers.SerializerMethodField()
+    status_label = serializers.SerializerMethodField()
+
+    class Meta:
+        model = TenantSubscription
+        fields = [
+            'id', 'tenant', 'tenant_name',
+            'plan', 'plan_name',
+            'status', 'status_label',
+            'trial_start', 'trial_end', 'trial_days_remaining',
+            'billing_start', 'next_billing_date',
+            'units_count', 'amount_per_cycle', 'currency',
+            'notes',
+            'created_at', 'updated_at',
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at', 'trial_days_remaining', 'status_label']
+
+    def get_tenant_name(self, obj):
+        return obj.tenant.name if obj.tenant else None
+
+    def get_plan_name(self, obj):
+        return obj.plan.name if obj.plan else None
+
+    def get_trial_days_remaining(self, obj):
+        return obj.trial_days_remaining
+
+    def get_status_label(self, obj):
+        return obj.get_status_display()
 
