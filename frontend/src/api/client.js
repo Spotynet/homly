@@ -56,11 +56,13 @@ export const authAPI = {
 
 // ─── Tenants ────────────────────────────────────
 export const tenantsAPI = {
-  list: () => api.get('/tenants/'),
+  list: (params) => api.get('/tenants/', { params: { page_size: 1000, ...params } }),
   get: (id) => api.get(`/tenants/${id}/`),
   create: (data) => api.post('/tenants/', data),
   update: (id, data) => api.patch(`/tenants/${id}/`, data),
   delete: (id) => api.delete(`/tenants/${id}/`),
+  // Subscription info (accessible to tenant members)
+  getSubscription: (id) => api.get(`/tenants/${id}/subscription/`),
   // Onboarding tour state
   onboardingComplete: (id) => api.post(`/tenants/${id}/onboarding/complete/`),
   onboardingDismiss: (id) => api.post(`/tenants/${id}/onboarding/dismiss/`),

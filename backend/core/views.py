@@ -538,6 +538,16 @@ class TenantViewSet(viewsets.ModelViewSet):
             return [IsSuperAdmin()]
         return [permissions.IsAuthenticated()]
 
+    def get_queryset(self):
+        user = self.request.user
+        if not user or not user.is_authenticated:
+            return Tenant.objects.none()
+        if user.is_super_admin:
+            return Tenant.objects.all()
+        # Regular users: only tenants they belong to
+        tenant_ids = TenantUser.objects.filter(user=user).values_list('tenant_id', flat=True)
+        return Tenant.objects.filter(id__in=tenant_ids)
+
     def perform_create(self, serializer):
         obj = serializer.save()
         _audit_log(self.request, 'tenants', 'create',
@@ -557,6 +567,24 @@ class TenantViewSet(viewsets.ModelViewSet):
         instance.delete()
 
     # ─── Onboarding tour state ─────────────────────────────────
+    @action(detail=True, methods=['get'], url_path='subscription', permission_classes=[permissions.IsAuthenticated])
+    def get_subscription(self, request, pk=None):
+        """
+        GET /api/tenants/{id}/subscription/
+        Returns the subscription for this tenant.
+        Accessible to the tenant's own members (admin, tesorero, etc.) and superadmins.
+        """
+        tenant = self.get_object()
+        # Extra guard: non-superadmin must be a member of this tenant
+        if not request.user.is_super_admin:
+            if not TenantUser.objects.filter(user=request.user, tenant=tenant).exists():
+                return Response({'detail': 'No tienes acceso a este condominio.'}, status=403)
+        try:
+            sub = tenant.subscription
+            return Response(TenantSubscriptionSerializer(sub).data)
+        except Exception:
+            return Response({'detail': 'Sin suscripción registrada.'}, status=404)
+
     @action(detail=True, methods=['post'], url_path='onboarding/complete')
     def mark_onboarding_complete(self, request, pk=None):
         """Marca el tour de onboarding como completado para este tenant."""

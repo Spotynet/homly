@@ -41,7 +41,8 @@ const NAV_ITEMS = {
     { path: '/app/plan-pagos',       icon: TrendingDown,  label: 'Plan de Pagos'      },
     { path: '/app/cierre-periodo',   icon: Lock,          label: 'Cierre de Período'  },
     { path: '/app/notificaciones',   icon: Bell,          label: 'Notificaciones'     },
-    { path: '/app/onboarding',       icon: Sparkles,      label: 'Guía de Uso'     },
+    { path: '/app/onboarding',       icon: Sparkles,      label: 'Guía de Uso'        },
+    { path: '/app/mi-membresia',     icon: CreditCard,    label: 'Mi Membresía'       },
     { path: '/app/config',           icon: Settings,      label: 'Configuración'      },
   ]}],
 
@@ -110,6 +111,7 @@ const PATH_TO_MODULE = {
   '/app/config':          'config',
   '/app/my-unit':         'my_unit',
   '/app/onboarding':      'onboarding',
+  '/app/mi-membresia':    'mi_membresia',
 };
 
 const PAGE_TITLES = {
@@ -129,6 +131,7 @@ const PAGE_TITLES = {
   'reservas': 'Reservas de Áreas Comunes',
   'notificaciones': 'Notificaciones',
   'onboarding': 'Guía de Uso',
+  'mi-membresia': 'Mi Membresía',
 };
 
 function getPageTitle(pathname) {

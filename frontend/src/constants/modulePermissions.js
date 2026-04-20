@@ -11,7 +11,7 @@
  * array format (which acted as an explicit allowlist).
  */
 export const ROLE_BASE_MODULES = {
-  admin:     ['dashboard', 'reservas', 'cobranza', 'gastos', 'estado_cuenta', 'plan_pagos', 'cierre_periodo', 'notificaciones', 'onboarding', 'config'],
+  admin:     ['dashboard', 'reservas', 'cobranza', 'gastos', 'estado_cuenta', 'plan_pagos', 'cierre_periodo', 'notificaciones', 'onboarding', 'mi_membresia', 'config'],
   tesorero:  ['dashboard', 'reservas', 'cobranza', 'gastos', 'estado_cuenta', 'plan_pagos', 'cierre_periodo', 'notificaciones', 'onboarding'],
   contador:  ['dashboard', 'reservas', 'cobranza', 'gastos', 'estado_cuenta', 'plan_pagos', 'cierre_periodo', 'notificaciones', 'onboarding'],
   auditor:   ['dashboard', 'cobranza', 'reservas', 'gastos', 'estado_cuenta', 'plan_pagos', 'cierre_periodo', 'notificaciones', 'onboarding'],

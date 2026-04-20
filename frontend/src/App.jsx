@@ -24,6 +24,7 @@ import Suscripciones from './pages/Suscripciones';
 import Registro from './pages/Registro';
 import PlanPagos from './pages/PlanPagos';
 import Onboarding from './pages/Onboarding';
+import MiMembresia from './pages/MiMembresia';
 
 const LOADER = (
   <div className="flex items-center justify-center h-screen bg-white">
@@ -95,6 +96,7 @@ function AppRoutes() {
         <Route path="cierre-periodo" element={<CierrePeriodo />} />
         <Route path="plan-pagos" element={<PlanPagos />} />
         <Route path="onboarding" element={<Onboarding />} />
+        <Route path="mi-membresia" element={<MiMembresia />} />
       </Route>
 
       {/* Fallback */}
