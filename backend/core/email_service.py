@@ -1687,14 +1687,15 @@ def send_trial_welcome_email(
     nombre: str,
     condominio: str,
     trial_days: int,
-    plan_name: str,
+    plan_name: str | None = None,
 ) -> bool:
     """
     Sent immediately when a new customer fills the 'Empezar Gratis' form on the landing page.
     Confirms receipt and explains the trial process.
     """
     c = COLORS
-    app_url = getattr(settings, 'HOMLY_APP_URL', 'https://homly.com.mx')
+    # Use a friendly default when no plan is assigned yet
+    display_plan = plan_name or 'Demo gratuita'
     logo_img = f'<img src="cid:{LOGO_CID}" alt="Homly" width="180" style="display:block;height:auto;max-width:180px;" />'
 
     html = f"""<!DOCTYPE html>
@@ -1734,15 +1735,14 @@ def send_trial_welcome_email(
                   <p style="margin:0 0 6px;font-size:11px;font-weight:700;color:{c['ink_600']};text-transform:uppercase;letter-spacing:0.06em;">
                     Tu plan seleccionado
                   </p>
-                  <p style="margin:0;font-size:20px;font-weight:800;color:{c['green']};">{plan_name}</p>
+                  <p style="margin:0;font-size:20px;font-weight:800;color:{c['green']};">{display_plan}</p>
                 </td>
               </tr>
               <tr><td style="height:12px;"></td></tr>
               <tr>
                 <td>
                   <p style="margin:0;font-size:14px;color:{c['ink_800']};line-height:1.6;">
-                    🎁 <strong>{trial_days} días de prueba gratuita</strong> para que explores todas las funciones
-                    sin compromiso.
+                    🎁 <strong>{trial_days} días de prueba gratuita</strong> para que explores todas las funciones sin límites.
                   </p>
                 </td>
               </tr>
@@ -1779,9 +1779,6 @@ def send_trial_welcome_email(
               </tr>
             </table>
 
-            <!-- Divider -->
-            <tr><td style="height:1px;background:#E8DFD1;display:block;margin:20px 0;"></td></tr>
-
             <p style="margin:20px 0 0;font-size:13px;color:{c['ink_600']};line-height:1.6;">
               Si tienes alguna pregunta, no dudes en contactarnos respondiendo este correo.
             </p>
@@ -1804,8 +1801,8 @@ def send_trial_welcome_email(
     plain = (
         f"¡Bienvenido a Homly, {nombre}!\n\n"
         f"Recibimos tu solicitud de registro para el condominio '{condominio}'.\n\n"
-        f"PLAN SELECCIONADO: {plan_name}\n"
-        f"Período de prueba gratuita: {trial_days} días\n\n"
+        f"PLAN SELECCIONADO: {display_plan}\n"
+        f"Período de prueba gratuita: {trial_days} días para que explores todas las funciones sin límites.\n\n"
         f"¿QUÉ SIGUE?\n"
         f"1. Nuestro equipo revisará tu solicitud en las próximas horas.\n"
         f"2. Te enviaremos un correo con tus credenciales de acceso cuando sea aprobada.\n"
@@ -1830,13 +1827,17 @@ def send_trial_approved_email(
     trial_start: str,
     trial_end: str,
     trial_days: int,
-    plan_name: str,
+    plan_name: str | None = None,
 ) -> bool:
     """
     Sent when a superadmin approves a trial request.
     Includes login credentials (temp password), trial period details, and login instructions.
     """
     c = COLORS
+    display_plan = plan_name or 'Demo gratuita'
+    # Normalize date args to string for display
+    trial_start_str = str(trial_start)
+    trial_end_str = str(trial_end)
     app_url = getattr(settings, 'HOMLY_APP_URL', 'https://homly.com.mx')
     logo_img = f'<img src="cid:{LOGO_CID}" alt="Homly" width="180" style="display:block;height:auto;max-width:180px;" />'
 
@@ -1903,16 +1904,16 @@ def send_trial_approved_email(
                     Detalles de tu membresía
                   </p>
                   <p style="margin:0 0 6px;font-size:13px;color:{c['ink_800']};">
-                    <strong>Plan:</strong> {plan_name}
+                    <strong>Plan:</strong> {display_plan}
                   </p>
                   <p style="margin:0 0 6px;font-size:13px;color:{c['ink_800']};">
                     <strong>Prueba gratuita:</strong> {trial_days} días
                   </p>
                   <p style="margin:0 0 6px;font-size:13px;color:{c['ink_800']};">
-                    <strong>Inicio:</strong> {trial_start}
+                    <strong>Inicio:</strong> {trial_start_str}
                   </p>
                   <p style="margin:0;font-size:13px;color:{c['ink_800']};">
-                    <strong>Vence:</strong> {trial_end}
+                    <strong>Vence:</strong> {trial_end_str}
                   </p>
                 </td>
               </tr>
@@ -1972,10 +1973,10 @@ def send_trial_approved_email(
         f"  Contraseña temporal: {temp_password}\n"
         f"  (Al ingresar, se te pedirá cambiar tu contraseña.)\n\n"
         f"DETALLES DE TU MEMBRESÍA:\n"
-        f"  Plan: {plan_name}\n"
+        f"  Plan: {display_plan}\n"
         f"  Prueba gratuita: {trial_days} días\n"
-        f"  Inicio: {trial_start}\n"
-        f"  Vence: {trial_end}\n\n"
+        f"  Inicio: {trial_start_str}\n"
+        f"  Vence: {trial_end_str}\n\n"
         f"CÓMO INGRESAR:\n"
         f"  1. Ve a {app_url}/login\n"
         f"  2. Ingresa tu correo: {email}\n"

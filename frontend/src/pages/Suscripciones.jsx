@@ -59,7 +59,8 @@ function Modal({ title, onClose, children, wide = false }) {
 
 const EMPTY_PLAN = {
   name: '', description: '', price_per_unit: '', currency: 'MXN',
-  billing_cycle: 'monthly', trial_days: 7, is_active: true, sort_order: 0,
+  billing_cycle: 'monthly', annual_discount_percent: 0,
+  trial_days: 7, is_active: true, sort_order: 0,
   volume_tiers: [], features: [],
 };
 
@@ -94,6 +95,7 @@ function PlanForm({ initial, onSave, onClose, saving }) {
     const payload = {
       ...form,
       price_per_unit: Number(form.price_per_unit) || 0,
+      annual_discount_percent: Number(form.annual_discount_percent) || 0,
       trial_days: Number(form.trial_days) || 7,
       sort_order: Number(form.sort_order) || 0,
     };
@@ -128,12 +130,36 @@ function PlanForm({ initial, onSave, onClose, saving }) {
           </select>
         </div>
         <div>
-          <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">Ciclo de Facturación</label>
+          <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">Modalidad de Facturación</label>
           <select value={form.billing_cycle} onChange={f('billing_cycle')}
             className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500">
             <option value="monthly">Mensual</option>
             <option value="annual">Anual</option>
           </select>
+        </div>
+        <div>
+          <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">
+            Descuento Pago Anual&nbsp;<span className="normal-case font-normal text-slate-400">(% sobre precio mensual × 12)</span>
+          </label>
+          <div className="relative">
+            <input type="number" min="0" max="100" step="0.5" value={form.annual_discount_percent}
+              onChange={f('annual_discount_percent')}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 pr-8 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" />
+            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-400 pointer-events-none">%</span>
+          </div>
+          {Number(form.annual_discount_percent) > 0 && Number(form.price_per_unit) > 0 && (
+            <p className="text-xs text-teal-600 mt-1 font-medium">
+              Precio anual:{' '}
+              {fmtAmt(
+                Number(form.price_per_unit) * 12 * (1 - Number(form.annual_discount_percent) / 100),
+                form.currency
+              )}{' '}
+              <span className="text-slate-400 line-through">
+                {fmtAmt(Number(form.price_per_unit) * 12, form.currency)}
+              </span>
+              {' '}por unidad/año
+            </p>
+          )}
         </div>
         <div>
           <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">Días de Prueba</label>
@@ -342,6 +368,20 @@ function TabPlanes() {
                 </span>
                 <span className="text-sm text-slate-500">/ unidad / {plan.billing_cycle === 'monthly' ? 'mes' : 'año'}</span>
               </div>
+
+              {Number(plan.annual_discount_percent) > 0 && (
+                <div className="mb-2 flex items-center gap-2">
+                  <span className="text-xs text-green-700 font-semibold bg-green-100 px-2 py-0.5 rounded-full">
+                    {plan.annual_discount_percent}% descuento anual
+                  </span>
+                  <span className="text-xs text-slate-500">
+                    = {fmtAmt(
+                      Number(plan.price_per_unit) * 12 * (1 - Number(plan.annual_discount_percent) / 100),
+                      plan.currency
+                    )}/u/año
+                  </span>
+                </div>
+              )}
 
               <div className="flex gap-4 text-xs text-slate-500 mb-3">
                 <span className="flex items-center gap-1">

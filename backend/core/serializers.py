@@ -772,7 +772,9 @@ class SubscriptionPlanSerializer(serializers.ModelSerializer):
         model = SubscriptionPlan
         fields = [
             'id', 'name', 'description',
-            'price_per_unit', 'currency', 'billing_cycle', 'trial_days',
+            'price_per_unit', 'currency', 'billing_cycle',
+            'annual_discount_percent',
+            'trial_days',
             'volume_tiers', 'features',
             'is_active', 'sort_order',
             'subscriptions_count',

@@ -5998,7 +5998,8 @@ class CondominioRequestView(APIView):
         if serializer.is_valid():
             instance = serializer.save()
             # Send welcome email to applicant in background
-            import threading
+            import threading, logging as _logging
+            _log = _logging.getLogger(__name__)
             def _send():
                 try:
                     plan = instance.subscription_plan
@@ -6009,8 +6010,8 @@ class CondominioRequestView(APIView):
                         trial_days=instance.trial_days,
                         plan_name=plan.name if plan else None,
                     )
-                except Exception:
-                    pass
+                except Exception as _e:
+                    _log.exception('Error sending trial welcome email to %s: %s', instance.admin_email, _e)
             threading.Thread(target=_send, daemon=True).start()
             return Response(
                 {'message': 'Solicitud recibida. Nos pondremos en contacto pronto.'},
@@ -6047,7 +6048,8 @@ class TrialRequestViewSet(viewsets.ModelViewSet):
     """
     serializer_class = CondominioRequestSerializer
     permission_classes = [IsSuperAdmin]
-    http_method_names = ['get', 'patch', 'head', 'options']
+    # Must include 'post' so the /approve/ and /reject/ custom actions are reachable
+    http_method_names = ['get', 'post', 'patch', 'head', 'options']
 
     def get_queryset(self):
         qs = CondominioRequest.objects.all()
@@ -6147,7 +6149,8 @@ class TrialRequestViewSet(viewsets.ModelViewSet):
         trial_req.save()
 
         # 7. Send approval email
-        import threading
+        import threading, logging as _logging
+        _log = _logging.getLogger(__name__)
         def _notify():
             try:
                 send_trial_approved_email(
@@ -6160,8 +6163,8 @@ class TrialRequestViewSet(viewsets.ModelViewSet):
                     trial_days=trial_days,
                     plan_name=plan.name if plan else None,
                 )
-            except Exception:
-                pass
+            except Exception as _e:
+                _log.exception('Error sending trial approval email to %s: %s', admin_email, _e)
         threading.Thread(target=_notify, daemon=True).start()
 
         return Response({
@@ -6184,7 +6187,8 @@ class TrialRequestViewSet(viewsets.ModelViewSet):
         trial_req.rejection_reason = reason
         trial_req.save(update_fields=['status', 'rejected_at', 'rejection_reason'])
 
-        import threading
+        import threading, logging as _logging
+        _log = _logging.getLogger(__name__)
         def _notify():
             try:
                 send_trial_rejected_email(
@@ -6193,8 +6197,8 @@ class TrialRequestViewSet(viewsets.ModelViewSet):
                     condominio=trial_req.condominio_nombre,
                     reason=reason,
                 )
-            except Exception:
-                pass
+            except Exception as _e:
+                _log.exception('Error sending trial rejection email to %s: %s', trial_req.admin_email, _e)
         threading.Thread(target=_notify, daemon=True).start()
 
         return Response({'detail': 'Solicitud rechazada.'})

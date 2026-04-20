@@ -1149,6 +1149,11 @@ class SubscriptionPlan(models.Model):
     price_per_unit   = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     currency         = models.CharField(max_length=3, choices=CURRENCY_CHOICES, default='MXN')
     billing_cycle    = models.CharField(max_length=10, choices=BILLING_CHOICES, default='monthly')
+    # Discount applied when tenant pays the full annual amount upfront (0–100 %)
+    annual_discount_percent = models.DecimalField(
+        max_digits=5, decimal_places=2, default=0,
+        help_text='Porcentaje de descuento por pago anual anticipado (0–100)',
+    )
     trial_days       = models.PositiveIntegerField(default=7)
     # Volume tiers JSON: [{"min_units": 1, "max_units": 50, "price_per_unit": 50.00}, ...]
     # max_units=null means "unlimited"
@@ -1167,15 +1172,28 @@ class SubscriptionPlan(models.Model):
     def __str__(self):
         return f'{self.name} ({self.currency} {self.price_per_unit}/unidad/{self.billing_cycle})'
 
-    def price_for_units(self, units_count):
-        """Calculate monthly price for a given number of units using volume tiers."""
+    def price_for_units(self, units_count, annual=False):
+        """
+        Calculate price for a given number of units.
+        If annual=True, returns the annual total after applying annual_discount_percent.
+        Otherwise returns the monthly total.
+        """
         if self.volume_tiers:
             for tier in sorted(self.volume_tiers, key=lambda t: t.get('min_units', 0)):
                 min_u = tier.get('min_units', 0)
                 max_u = tier.get('max_units')  # None = unlimited
                 if units_count >= min_u and (max_u is None or units_count <= max_u):
-                    return float(tier.get('price_per_unit', 0)) * units_count
-        return float(self.price_per_unit) * units_count
+                    monthly = float(tier.get('price_per_unit', 0)) * units_count
+                    break
+            else:
+                monthly = float(self.price_per_unit) * units_count
+        else:
+            monthly = float(self.price_per_unit) * units_count
+
+        if annual:
+            discount = float(self.annual_discount_percent or 0) / 100
+            return monthly * 12 * (1 - discount)
+        return monthly
 
 
 # ═══════════════════════════════════════════════════════════
