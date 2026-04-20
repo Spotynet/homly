@@ -542,11 +542,13 @@ class TenantViewSet(viewsets.ModelViewSet):
         user = self.request.user
         if not user or not user.is_authenticated:
             return Tenant.objects.none()
+        # Pre-fetch subscription + plan to avoid N+1 queries in TenantListSerializer
+        qs_base = Tenant.objects.select_related('subscription', 'subscription__plan')
         if user.is_super_admin:
-            return Tenant.objects.all()
+            return qs_base.all()
         # Regular users: only tenants they belong to
         tenant_ids = TenantUser.objects.filter(user=user).values_list('tenant_id', flat=True)
-        return Tenant.objects.filter(id__in=tenant_ids)
+        return qs_base.filter(id__in=tenant_ids)
 
     def perform_create(self, serializer):
         obj = serializer.save()
@@ -6253,13 +6255,11 @@ class TenantSubscriptionViewSet(viewsets.ModelViewSet):
             qs = qs.filter(tenant_id=tenant_id)
         return qs
 
-    def partial_update(self, request, *args, **kwargs):
-        """Override PATCH to also sync tenant is_active when status changes."""
-        response = super().partial_update(request, *args, **kwargs)
-        if 'status' in request.data:
-            instance = self.get_object()
+    def perform_update(self, serializer):
+        """Override to sync tenant is_active whenever status is part of the PATCH."""
+        instance = serializer.save()
+        if 'status' in self.request.data:
             instance.sync_tenant_active()
-        return response
 
     @action(detail=True, methods=['post'], url_path='record-payment')
     def record_payment(self, request, pk=None):
@@ -6315,18 +6315,26 @@ class TenantSubscriptionViewSet(viewsets.ModelViewSet):
         already_count = 0
         results = []
 
+        # Fetch all existing subscription tenant IDs in one query
+        existing_tenant_ids = set(
+            TenantSubscription.objects.filter(tenant__in=tenants)
+            .values_list('tenant_id', flat=True)
+        )
+
         for tenant in tenants:
-            try:
-                # OneToOneField: if it exists, accessing .subscription succeeds
-                existing = tenant.subscription
+            if tenant.id in existing_tenant_ids:
+                try:
+                    existing_status = tenant.subscription.status
+                except TenantSubscription.DoesNotExist:
+                    existing_status = 'unknown'
                 already_count += 1
                 results.append({
                     'id': str(tenant.id),
                     'name': tenant.name,
-                    'status': existing.status,
+                    'status': existing_status,
                     'action': 'existing',
                 })
-            except Exception:
+            else:
                 # No subscription yet — create trial
                 sub = TenantSubscription.objects.create(
                     tenant=tenant,

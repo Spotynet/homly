@@ -388,6 +388,12 @@ function TabPlanes() {
 
   const handleDelete = async (id) => {
     if (deleting) return;
+    const plan = plans.find(p => p.id === id);
+    if (!window.confirm(
+      `¿Eliminar el plan "${plan?.name || 'este plan'}"?\n\n` +
+      `Los tenants que ya tienen este plan asignado no pierden su suscripción, ` +
+      `pero el plan dejará de estar disponible para nuevas asignaciones.`
+    )) return;
     setDeleting(id);
     try {
       await subscriptionPlansAPI.destroy(id);
@@ -1278,10 +1284,10 @@ function TabSuscripciones() {
                         {sub.amount_per_cycle > 0 ? fmtAmt(sub.amount_per_cycle, sub.currency) : '—'}
                       </td>
                       <td className="px-4 py-3 text-slate-500 text-xs">
-                        {sub.trial_end ? new Date(sub.trial_end).toLocaleDateString('es-MX') : '—'}
+                        {sub.trial_end ? new Date(sub.trial_end + 'T00:00:00').toLocaleDateString('es-MX') : '—'}
                       </td>
                       <td className="px-4 py-3 text-slate-500 text-xs">
-                        {sub.next_billing_date ? new Date(sub.next_billing_date).toLocaleDateString('es-MX') : '—'}
+                        {sub.next_billing_date ? new Date(sub.next_billing_date + 'T00:00:00').toLocaleDateString('es-MX') : '—'}
                       </td>
                       <td className="px-4 py-3 text-slate-400">
                         {isOpen ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
