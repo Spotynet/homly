@@ -171,6 +171,14 @@ class Tenant(models.Model):
         help_text='Period closure approval flow: enabled flag and ordered list of approver steps.',
     )
 
+    # Active / inactive flag — managed by TenantSubscription.sync_tenant_active().
+    # When False, users of this tenant cannot log in (access is blocked).
+    is_active = models.BooleanField(
+        default=True,
+        db_index=True,
+        help_text='Si es False el acceso al condominio está bloqueado para sus usuarios.',
+    )
+
     # Onboarding tour state
     # onboarding_completed: el admin terminó el tour y confirmó que el tenant está listo
     # onboarding_dismissed_at: fecha cuando un admin descartó el banner/auto-launch
