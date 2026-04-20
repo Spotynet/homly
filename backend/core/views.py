@@ -24,6 +24,7 @@ from .models import (
     AssemblyPosition, Committee, UnrecognizedIncome,
     AmenityReservation, CondominioRequest, EmailVerificationCode,
     Notification, AuditLog, PaymentPlan, SubscriptionPlan, TenantSubscription,
+    SubscriptionPayment,
 )
 from .email_service import (
     send_verification_email, send_notification_email, CODE_EXPIRY_MINUTES,
@@ -43,6 +44,7 @@ from .serializers import (
     DashboardSerializer, AmenityReservationSerializer, CondominioRequestSerializer,
     NotificationSerializer, AuditLogSerializer, PaymentPlanSerializer,
     SubscriptionPlanSerializer, TenantSubscriptionSerializer,
+    SubscriptionPaymentSerializer,
 )
 from .permissions import IsSuperAdmin, IsTenantAdmin, IsTenantMember, IsAdminOrTesorero, IsAdminOrTesOrAuditor, CanApproveReservation
 
@@ -6157,7 +6159,6 @@ class TrialRequestViewSet(viewsets.ModelViewSet):
                     email=admin_email,
                     nombre=admin_name,
                     condominio=tenant.name,
-                    temp_password=temp_password,
                     trial_start=trial_start,
                     trial_end=trial_end,
                     trial_days=trial_days,
@@ -6212,14 +6213,59 @@ class TenantSubscriptionViewSet(viewsets.ModelViewSet):
     """List and manage tenant subscriptions. Superadmin only."""
     serializer_class = TenantSubscriptionSerializer
     permission_classes = [IsSuperAdmin]
-    http_method_names = ['get', 'patch', 'head', 'options']
+    http_method_names = ['get', 'post', 'patch', 'head', 'options']
 
     def get_queryset(self):
         qs = TenantSubscription.objects.select_related('tenant', 'plan').all()
         status_filter = self.request.query_params.get('status')
         if status_filter:
             qs = qs.filter(status=status_filter)
+        tenant_id = self.request.query_params.get('tenant')
+        if tenant_id:
+            qs = qs.filter(tenant_id=tenant_id)
         return qs
+
+    def partial_update(self, request, *args, **kwargs):
+        """Override PATCH to also sync tenant is_active when status changes."""
+        response = super().partial_update(request, *args, **kwargs)
+        if 'status' in request.data:
+            instance = self.get_object()
+            instance.sync_tenant_active()
+        return response
+
+    @action(detail=True, methods=['post'], url_path='record-payment')
+    def record_payment(self, request, pk=None):
+        """Record a manual payment for this subscription (superadmin only)."""
+        from datetime import date as _date
+        sub = self.get_object()
+        data = request.data.copy()
+        data['subscription'] = str(sub.id)
+        ser = SubscriptionPaymentSerializer(data=data)
+        if not ser.is_valid():
+            return Response(ser.errors, status=400)
+        payment = ser.save(recorded_by=request.user)
+
+        # After a payment is recorded, if subscription was past_due → activate
+        if sub.status == 'past_due':
+            sub.status = 'active'
+            sub.save(update_fields=['status', 'updated_at'])
+            sub.sync_tenant_active()
+
+        return Response(SubscriptionPaymentSerializer(payment).data, status=201)
+
+    @action(detail=True, methods=['get'], url_path='payments')
+    def payments(self, request, pk=None):
+        """List all payments for this subscription."""
+        sub = self.get_object()
+        payments = sub.payments.select_related('recorded_by').all()
+        return Response(SubscriptionPaymentSerializer(payments, many=True).data)
+
+    @action(detail=True, methods=['post'], url_path='sync-status')
+    def sync_status(self, request, pk=None):
+        """Manually trigger tenant is_active sync from subscription status."""
+        sub = self.get_object()
+        sub.sync_tenant_active()
+        return Response({'detail': 'Sincronizado correctamente.', 'is_active': sub.tenant.is_active})
 
 
 def _django_now():

@@ -1158,8 +1158,15 @@ class SubscriptionPlan(models.Model):
     # Volume tiers JSON: [{"min_units": 1, "max_units": 50, "price_per_unit": 50.00}, ...]
     # max_units=null means "unlimited"
     volume_tiers     = models.JSONField(default=list, blank=True)
-    # Features list: ["Cobranza mensual", "Estado de cuenta", ...]
+    # Features list: ["Cobranza mensual", "Estado de cuenta", ...]  (marketing copy)
     features         = models.JSONField(default=list, blank=True)
+    # Module keys included in this plan. Empty list = all modules allowed.
+    # Keys: dashboard, reservas, cobranza, gastos, estado_cuenta, plan_pagos,
+    #       cierre_periodo, notificaciones, config, my_unit, onboarding
+    allowed_modules  = models.JSONField(
+        default=list, blank=True,
+        help_text='Module keys visible to tenants on this plan. Empty = all modules.',
+    )
     is_active        = models.BooleanField(default=True, db_index=True)
     sort_order       = models.PositiveIntegerField(default=0)
     created_at       = models.DateTimeField(auto_now_add=True)
@@ -1245,4 +1252,62 @@ class TenantSubscription(models.Model):
             delta = (self.trial_end - date.today()).days
             return max(0, delta)
         return 0
+
+    def sync_tenant_active(self):
+        """
+        Keep Tenant.is_active in sync with subscription status.
+        Active statuses → tenant active; cancelled/expired → tenant inactive.
+        """
+        active_statuses = {'trial', 'active', 'past_due'}
+        should_be_active = self.status in active_statuses
+        if self.tenant.is_active != should_be_active:
+            Tenant.objects.filter(pk=self.tenant_id).update(is_active=should_be_active)
+            self.tenant.is_active = should_be_active
+
+
+# ═══════════════════════════════════════════════════════════
+#  SUBSCRIPTION PAYMENTS (manual confirmations by superadmin)
+# ═══════════════════════════════════════════════════════════
+
+class SubscriptionPayment(models.Model):
+    """
+    Manual payment record for a tenant subscription.
+    Superadmins create these to confirm received payments.
+    """
+    PAYMENT_METHOD_CHOICES = [
+        ('transfer', 'Transferencia Bancaria'),
+        ('cash',     'Efectivo'),
+        ('card',     'Tarjeta'),
+        ('other',    'Otro'),
+    ]
+
+    id               = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    subscription     = models.ForeignKey(
+        TenantSubscription, on_delete=models.CASCADE, related_name='payments',
+    )
+    amount           = models.DecimalField(max_digits=12, decimal_places=2)
+    currency         = models.CharField(max_length=3, default='MXN')
+    period_label     = models.CharField(
+        max_length=100, blank=True, default='',
+        help_text='Billing period covered, e.g. "Enero 2025" or "2025-01 / 2025-12"',
+    )
+    payment_date     = models.DateField()
+    payment_method   = models.CharField(
+        max_length=15, choices=PAYMENT_METHOD_CHOICES, default='transfer',
+    )
+    reference        = models.CharField(max_length=200, blank=True, default='',
+                                        help_text='Transaction ID, check number, etc.')
+    notes            = models.TextField(blank=True, default='')
+    recorded_by      = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='recorded_payments',
+    )
+    created_at       = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'subscription_payments'
+        ordering = ['-payment_date', '-created_at']
+
+    def __str__(self):
+        return f'{self.subscription.tenant.name} — {self.amount} {self.currency} ({self.payment_date})'
 

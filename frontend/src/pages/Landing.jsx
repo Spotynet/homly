@@ -591,10 +591,6 @@ export default function Landing() {
                 a: 'Homly es una plataforma de gestión administrativa para condominios residenciales: conjuntos habitacionales, fraccionamientos, edificios de departamentos o privadas. Funciona para condominios de cualquier tamaño, desde 8 unidades hasta los que tienen cientos.',
               },
               {
-                q: '¿Cuánto cuesta usar la plataforma?',
-                a: 'Puedes crear tu condominio y explorar todas las funciones de forma gratuita. Para condominios activos con más unidades o funciones avanzadas existen planes accesibles. El precio nunca es por usuario: pagas por condominio, no por cuántas personas lo usan.',
-              },
-              {
                 q: '¿Necesito conocimientos técnicos o contables para usarlo?',
                 a: 'No. Homly está diseñado para administradores, tesoreros y vecinos sin formación técnica. La interfaz es visual e intuitiva — si sabes usar WhatsApp o Excel, sabrás usar Homly sin necesidad de capacitación.',
               },
@@ -625,6 +621,26 @@ export default function Landing() {
               {
                 q: '¿Puedo exportar o descargar la información del condominio?',
                 a: 'Sí. Los estados de cuenta, recibos de pago, reportes de gastos y resúmenes financieros se pueden exportar a PDF en cualquier momento. Siempre tendrás acceso a tu información sin depender de la plataforma para presentarla.',
+              },
+              {
+                q: '¿Qué planes de membresía existen y cómo funcionan?',
+                a: 'Homly ofrece varios planes según el tamaño y las necesidades de tu condominio. Todos incluyen un período de prueba gratuita para que explores la plataforma sin límites. Una vez concluido el período de prueba, el administrador de Homly te asignará el plan que mejor se adapte a tu condominio y definirá las condiciones de facturación.',
+              },
+              {
+                q: '¿Cómo activo mi membresía después del período de prueba?',
+                a: 'Al completar tu registro en Homly, un asesor revisará tu solicitud y te contactará para confirmar el plan adecuado para tu condominio. Una vez aprobado, recibirás un correo de confirmación y tu cuenta quedará activada con los módulos incluidos en tu plan. No necesitas ingresar tarjeta de crédito para empezar.',
+              },
+              {
+                q: '¿Puedo cambiar de plan si mis necesidades crecen?',
+                a: 'Sí. Puedes solicitar un upgrade de plan en cualquier momento contactando a soporte. Si tu condominio crece en unidades o requieres módulos adicionales, el equipo de Homly ajustará tu suscripción y actualizará los módulos disponibles de forma inmediata.',
+              },
+              {
+                q: '¿Qué sucede si mi membresía vence o se cancela?',
+                a: 'Si la suscripción expira o se cancela, el acceso al sistema se suspende automáticamente. Los datos de tu condominio se conservan de forma segura. Para reactivar el acceso basta con contactar a soporte y regularizar la membresía; todo quedará tal y como lo dejaste.',
+              },
+              {
+                q: '¿Los módulos disponibles dependen del plan contratado?',
+                a: 'Sí. Cada plan define qué módulos están habilitados para tu condominio (cobranza, reservas, gastos, estado de cuenta, plan de pagos, etc.). Si necesitas un módulo que no está incluido en tu plan actual, puedes solicitar un upgrade y el equipo de Homly lo activará en tu cuenta.',
               },
             ].map((item, i) => {
               const isOpen = openFaq === i;
@@ -692,31 +708,6 @@ export default function Landing() {
             })}
           </div>
 
-          {/* Bottom nudge */}
-          <div style={{ textAlign: 'center', marginTop: 52 }}>
-            <p style={{ color: '#7A7166', fontSize: 15, marginBottom: 20 }}>
-              ¿Tienes una pregunta que no aparece aquí?
-            </p>
-            <a
-              href="mailto:hola@homly.app"
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: 8,
-                padding: '11px 26px', borderRadius: 999,
-                border: '1.5px solid #C5BAB0',
-                background: 'transparent', color: '#443D33',
-                fontWeight: 700, fontSize: 14, textDecoration: 'none',
-                transition: 'border-color 0.2s, color 0.2s',
-              }}
-              onMouseEnter={e => { e.currentTarget.style.borderColor = '#E85D43'; e.currentTarget.style.color = '#E85D43'; }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor = '#C5BAB0'; e.currentTarget.style.color = '#443D33'; }}
-            >
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
-                <polyline points="22,6 12,13 2,6"/>
-              </svg>
-              Escríbenos
-            </a>
-          </div>
 
         </div>
       </section>

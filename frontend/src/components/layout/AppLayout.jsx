@@ -575,8 +575,9 @@ export default function AppLayout() {
   } = useAuth();
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [tenantModulePerms, setTenantModulePerms] = useState({});
-  const [customProfiles,    setCustomProfiles]    = useState([]);
+  const [tenantModulePerms,        setTenantModulePerms]        = useState({});
+  const [customProfiles,           setCustomProfiles]           = useState([]);
+  const [subscriptionAllowedModules, setSubscriptionAllowedModules] = useState([]);
   // For vecino: only show Plan de Pagos if they have at least one plan (any status)
   const [vecHasPlan, setVecHasPlan] = useState(false);
   const navigate  = useNavigate();
@@ -589,14 +590,22 @@ export default function AppLayout() {
     if (!tenantId || role === 'superadmin') {
       setTenantModulePerms({});
       setCustomProfiles([]);
+      setSubscriptionAllowedModules([]);
       return;
     }
     tenantsAPI.get(tenantId)
       .then(r => {
         setTenantModulePerms(r.data?.module_permissions || {});
         setCustomProfiles(Array.isArray(r.data?.custom_profiles) ? r.data.custom_profiles : []);
+        setSubscriptionAllowedModules(
+          Array.isArray(r.data?.subscription_allowed_modules) ? r.data.subscription_allowed_modules : []
+        );
       })
-      .catch(() => { setTenantModulePerms({}); setCustomProfiles([]); });
+      .catch(() => {
+        setTenantModulePerms({});
+        setCustomProfiles([]);
+        setSubscriptionAllowedModules([]);
+      });
   }, [tenantId, role]);
 
   // Fetch vecino's plan de pagos — show the nav item only if at least one plan exists
@@ -655,6 +664,13 @@ export default function AppLayout() {
 
           // Vecino: hide Plan de Pagos when no plan exists in any status
           if (role === 'vecino' && moduleKey === 'plan_pagos' && !vecHasPlan) return false;
+
+          // ── Subscription plan filter ─────────────────────────────────────
+          // If the tenant's subscription plan defines allowed_modules, only
+          // show modules included in that list. Empty list = no restriction.
+          if (subscriptionAllowedModules.length > 0 && !subscriptionAllowedModules.includes(moduleKey)) {
+            return false;
+          }
 
           // Custom profile: filter by profile's own modules config
           if (activeProfile) {
@@ -798,16 +814,22 @@ export default function AppLayout() {
             {/* Guide Tour Button — visible to all roles with onboarding module access */}
             {tenantId && (
               role === 'superadmin' ||
-              (activeProfile
-                ? isModuleVisible(activeProfile.modules, 'onboarding', activeProfile.base_role)
-                : isModuleVisible(tenantModulePerms[role], 'onboarding', role))
+              (
+                (subscriptionAllowedModules.length === 0 || subscriptionAllowedModules.includes('onboarding')) &&
+                (activeProfile
+                  ? isModuleVisible(activeProfile.modules, 'onboarding', activeProfile.base_role)
+                  : isModuleVisible(tenantModulePerms[role], 'onboarding', role))
+              )
             ) && <GuideTourButton />}
             {/* Notification Bell */}
             {tenantId && (
               role === 'superadmin' ||
-              (activeProfile
-                ? isModuleVisible(activeProfile.modules, 'notificaciones', activeProfile.base_role)
-                : isModuleVisible(tenantModulePerms[role], 'notificaciones', role))
+              (
+                (subscriptionAllowedModules.length === 0 || subscriptionAllowedModules.includes('notificaciones')) &&
+                (activeProfile
+                  ? isModuleVisible(activeProfile.modules, 'notificaciones', activeProfile.base_role)
+                  : isModuleVisible(tenantModulePerms[role], 'notificaciones', role))
+              )
             ) && <NotificationBell tenantId={tenantId} role={role} tenantModulePerms={tenantModulePerms} activeProfile={activeProfile} />}
           </div>
         </header>

@@ -12,6 +12,7 @@ from .models import (
     AssemblyPosition, Committee, UnrecognizedIncome,
     AmenityReservation, CondominioRequest, Notification,
     AuditLog, PaymentPlan, SubscriptionPlan, TenantSubscription,
+    SubscriptionPayment,
 )
 
 
@@ -261,20 +262,56 @@ class UserCreateSerializer(serializers.ModelSerializer):
 # ═══════════════════════════════════════════════════════════
 
 class TenantListSerializer(serializers.ModelSerializer):
-    units_actual = serializers.IntegerField(source='units.count', read_only=True)
-    users_count = serializers.IntegerField(source='tenant_users.count', read_only=True)
+    units_actual          = serializers.IntegerField(source='units.count', read_only=True)
+    users_count           = serializers.IntegerField(source='tenant_users.count', read_only=True)
+    subscription_status   = serializers.SerializerMethodField()
+    subscription_plan_name = serializers.SerializerMethodField()
+    subscription_trial_end = serializers.SerializerMethodField()
 
     class Meta:
         model = Tenant
-        fields = ['id', 'name', 'units_count', 'units_actual', 'users_count',
-                  'maintenance_fee', 'currency', 'country', 'state', 'created_at']
+        fields = [
+            'id', 'name', 'units_count', 'units_actual', 'users_count',
+            'maintenance_fee', 'currency', 'country', 'state',
+            'is_active', 'created_at',
+            'subscription_status', 'subscription_plan_name', 'subscription_trial_end',
+        ]
+
+    def _sub(self, obj):
+        try:
+            return obj.subscription
+        except Exception:
+            return None
+
+    def get_subscription_status(self, obj):
+        sub = self._sub(obj)
+        return sub.status if sub else None
+
+    def get_subscription_plan_name(self, obj):
+        sub = self._sub(obj)
+        return sub.plan.name if sub and sub.plan else None
+
+    def get_subscription_trial_end(self, obj):
+        sub = self._sub(obj)
+        return str(sub.trial_end) if sub and sub.trial_end else None
 
 
 class TenantDetailSerializer(serializers.ModelSerializer):
+    subscription_allowed_modules = serializers.SerializerMethodField()
+
     class Meta:
         model = Tenant
         fields = '__all__'
         read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def get_subscription_allowed_modules(self, obj):
+        try:
+            sub = obj.subscription
+            if sub and sub.plan and sub.plan.allowed_modules:
+                return sub.plan.allowed_modules
+        except Exception:
+            pass
+        return []  # empty = all modules allowed
 
 
 class TenantUserSerializer(serializers.ModelSerializer):
@@ -775,7 +812,7 @@ class SubscriptionPlanSerializer(serializers.ModelSerializer):
             'price_per_unit', 'currency', 'billing_cycle',
             'annual_discount_percent',
             'trial_days',
-            'volume_tiers', 'features',
+            'volume_tiers', 'features', 'allowed_modules',
             'is_active', 'sort_order',
             'subscriptions_count',
             'created_at', 'updated_at',
@@ -817,4 +854,27 @@ class TenantSubscriptionSerializer(serializers.ModelSerializer):
 
     def get_status_label(self, obj):
         return obj.get_status_display()
+
+
+class SubscriptionPaymentSerializer(serializers.ModelSerializer):
+    recorded_by_name = serializers.SerializerMethodField()
+    payment_method_label = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SubscriptionPayment
+        fields = [
+            'id', 'subscription',
+            'amount', 'currency', 'period_label',
+            'payment_date', 'payment_method', 'payment_method_label',
+            'reference', 'notes',
+            'recorded_by', 'recorded_by_name',
+            'created_at',
+        ]
+        read_only_fields = ['id', 'created_at', 'recorded_by', 'recorded_by_name', 'payment_method_label']
+
+    def get_recorded_by_name(self, obj):
+        return obj.recorded_by.name if obj.recorded_by else None
+
+    def get_payment_method_label(self, obj):
+        return obj.get_payment_method_display()
 

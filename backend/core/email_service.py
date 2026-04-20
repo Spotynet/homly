@@ -1823,15 +1823,17 @@ def send_trial_approved_email(
     email: str,
     nombre: str,
     condominio: str,
-    temp_password: str,
     trial_start: str,
     trial_end: str,
     trial_days: int,
     plan_name: str | None = None,
+    # kept for backward-compat but no longer used
+    temp_password: str = '',
 ) -> bool:
     """
     Sent when a superadmin approves a trial request.
-    Includes login credentials (temp password), trial period details, and login instructions.
+    Explains the magic-link / verification-code login flow (no passwords).
+    Includes trial period details and step-by-step login instructions.
     """
     c = COLORS
     display_plan = plan_name or 'Demo gratuita'
@@ -1870,26 +1872,20 @@ def send_trial_approved_email(
               Ya puedes acceder a Homly y comenzar a gestionar <strong>{condominio}</strong>.
             </p>
 
-            <!-- Credentials box -->
+            <!-- Login info box (verification-code flow) -->
             <table width="100%" cellpadding="0" cellspacing="0"
               style="background:{c['orange_light']};border-left:4px solid {c['orange']};border-radius:0 10px 10px 0;padding:18px;margin-bottom:20px;">
               <tr>
                 <td>
                   <p style="margin:0 0 10px;font-size:12px;font-weight:700;color:{c['orange']};text-transform:uppercase;letter-spacing:0.06em;">
-                    Tus credenciales de acceso
+                    Tu acceso a Homly
                   </p>
                   <p style="margin:0 0 6px;font-size:13px;color:{c['ink_800']};">
-                    <strong>Usuario:</strong> {email}
+                    <strong>Correo registrado:</strong> {email}
                   </p>
-                  <p style="margin:0 0 6px;font-size:13px;color:{c['ink_800']};">
-                    <strong>Contraseña temporal:</strong>
-                    <span style="font-family:monospace;font-size:15px;font-weight:700;color:{c['orange']};
-                      background:{c['white']};padding:3px 10px;border-radius:6px;letter-spacing:0.05em;">
-                      {temp_password}
-                    </span>
-                  </p>
-                  <p style="margin:8px 0 0;font-size:11px;color:{c['ink_600']};">
-                    ⚠️ Al ingresar por primera vez se te pedirá cambiar tu contraseña.
+                  <p style="margin:8px 0 0;font-size:12px;color:{c['ink_600']};line-height:1.6;">
+                    🔐 Homly utiliza <strong>códigos de verificación por correo</strong> en lugar de contraseñas.
+                    No necesitas recordar ni crear ninguna clave.
                   </p>
                 </td>
               </tr>
@@ -1921,7 +1917,7 @@ def send_trial_approved_email(
 
             <!-- Login steps -->
             <p style="margin:0 0 12px;font-size:12px;font-weight:700;color:{c['ink_600']};text-transform:uppercase;letter-spacing:0.06em;">
-              Cómo ingresar
+              Cómo ingresar — 3 pasos simples
             </p>
             <table width="100%" cellpadding="0" cellspacing="0">
               <tr>
@@ -1929,6 +1925,7 @@ def send_trial_approved_email(
                   <p style="margin:0;font-size:13px;color:{c['ink_800']};line-height:1.5;">
                     <strong style="color:{c['orange']};">1.</strong>
                     Ve a <a href="{app_url}/login" style="color:{c['green']};font-weight:700;">{app_url}/login</a>
+                    e ingresa tu correo: <strong>{email}</strong>
                   </p>
                 </td>
               </tr>
@@ -1936,7 +1933,7 @@ def send_trial_approved_email(
                 <td style="padding:5px 0;">
                   <p style="margin:0;font-size:13px;color:{c['ink_800']};line-height:1.5;">
                     <strong style="color:{c['orange']};">2.</strong>
-                    Ingresa tu correo: <strong>{email}</strong>
+                    Recibirás un <strong>código de 6 dígitos</strong> en este correo. El código es válido por unos minutos.
                   </p>
                 </td>
               </tr>
@@ -1944,11 +1941,14 @@ def send_trial_approved_email(
                 <td style="padding:5px 0;">
                   <p style="margin:0;font-size:13px;color:{c['ink_800']};line-height:1.5;">
                     <strong style="color:{c['orange']};">3.</strong>
-                    Usa tu contraseña temporal y cámbiala en tu primer inicio de sesión.
+                    Ingresa el código en la pantalla de verificación y ¡listo! Ya estarás dentro de tu cuenta.
                   </p>
                 </td>
               </tr>
             </table>
+            <p style="margin:16px 0 0;font-size:12px;color:{c['ink_600']};line-height:1.6;">
+              💡 Cada vez que quieras ingresar, simplemente repite este proceso. Sin contraseñas que recordar.
+            </p>
           </td>
         </tr>
 
@@ -1968,19 +1968,19 @@ def send_trial_approved_email(
     plain = (
         f"¡Bienvenido a Homly, {nombre}!\n\n"
         f"Tu solicitud para '{condominio}' fue APROBADA. Ya puedes ingresar al sistema.\n\n"
-        f"CREDENCIALES DE ACCESO:\n"
-        f"  Usuario: {email}\n"
-        f"  Contraseña temporal: {temp_password}\n"
-        f"  (Al ingresar, se te pedirá cambiar tu contraseña.)\n\n"
+        f"TU ACCESO A HOMLY:\n"
+        f"  Correo registrado: {email}\n"
+        f"  Homly usa códigos de verificación por correo — no necesitas contraseña.\n\n"
         f"DETALLES DE TU MEMBRESÍA:\n"
         f"  Plan: {display_plan}\n"
         f"  Prueba gratuita: {trial_days} días\n"
         f"  Inicio: {trial_start_str}\n"
         f"  Vence: {trial_end_str}\n\n"
-        f"CÓMO INGRESAR:\n"
-        f"  1. Ve a {app_url}/login\n"
-        f"  2. Ingresa tu correo: {email}\n"
-        f"  3. Usa tu contraseña temporal y cámbiala al primer inicio.\n\n"
+        f"CÓMO INGRESAR (3 pasos):\n"
+        f"  1. Ve a {app_url}/login e ingresa tu correo: {email}\n"
+        f"  2. Recibirás un código de 6 dígitos en este correo.\n"
+        f"  3. Ingresa el código y listo — ya estarás dentro de tu cuenta.\n\n"
+        f"Cada vez que quieras ingresar, simplemente repite este proceso. Sin contraseñas que recordar.\n\n"
         f"© Homly — La administración que tu hogar se merece"
     )
 

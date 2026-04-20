@@ -57,15 +57,35 @@ function Modal({ title, onClose, children, wide = false }) {
 
 // ─── Plan Form ───────────────────────────────────────────────────────────────
 
+// All modules available in Homly. Key must match PATH_TO_MODULE in AppLayout.jsx.
+const SYSTEM_MODULES = [
+  { key: 'dashboard',       label: 'Dashboard',              desc: 'Vista general del condominio' },
+  { key: 'cobranza',        label: 'Cobranza Mensual',       desc: 'Registro y seguimiento de cuotas' },
+  { key: 'gastos',          label: 'Gastos',                 desc: 'Control de egresos y caja chica' },
+  { key: 'estado_cuenta',   label: 'Estado de Cuenta',       desc: 'Resumen financiero por unidad' },
+  { key: 'plan_pagos',      label: 'Plan de Pagos',          desc: 'Acuerdos de pago diferido' },
+  { key: 'cierre_periodo',  label: 'Cierre de Período',      desc: 'Cierre y reapertura de períodos' },
+  { key: 'reservas',        label: 'Reservas',               desc: 'Reservas de áreas comunes' },
+  { key: 'notificaciones',  label: 'Notificaciones',         desc: 'Avisos y alertas internos' },
+  { key: 'config',          label: 'Configuración',          desc: 'Ajustes generales del condominio' },
+  { key: 'my_unit',         label: 'Mi Unidad',              desc: 'Vista individual para vecinos' },
+  { key: 'onboarding',      label: 'Guía de Uso',            desc: 'Tutoriales y guía de inicio' },
+];
+
 const EMPTY_PLAN = {
   name: '', description: '', price_per_unit: '', currency: 'MXN',
   billing_cycle: 'monthly', annual_discount_percent: 0,
   trial_days: 7, is_active: true, sort_order: 0,
-  volume_tiers: [], features: [],
+  volume_tiers: [], features: [], allowed_modules: [],
 };
 
 function PlanForm({ initial, onSave, onClose, saving }) {
-  const [form, setForm] = useState(initial || EMPTY_PLAN);
+  const [form, setForm] = useState(() => ({
+    ...EMPTY_PLAN,
+    ...(initial || {}),
+    // Ensure allowed_modules is always an array (older plans may not have it)
+    allowed_modules: Array.isArray(initial?.allowed_modules) ? initial.allowed_modules : [],
+  }));
   const [newFeature, setNewFeature] = useState('');
   const [newTier, setNewTier] = useState({ min_units: '', max_units: '', price_per_unit: '' });
 
@@ -251,6 +271,64 @@ function PlanForm({ initial, onSave, onClose, saving }) {
         )}
       </div>
 
+      {/* Módulos incluidos */}
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider">
+            Módulos del sistema incluidos
+          </label>
+          <span className="text-xs text-slate-400">
+            {form.allowed_modules.length === 0
+              ? 'Sin restricción (todos los módulos)'
+              : `${form.allowed_modules.length} módulo${form.allowed_modules.length !== 1 ? 's' : ''} seleccionado${form.allowed_modules.length !== 1 ? 's' : ''}`}
+          </span>
+        </div>
+        <p className="text-xs text-slate-400 mb-3">
+          Deja todo sin marcar para incluir todos los módulos. Selecciona sólo los que quieres habilitar en este plan.
+        </p>
+        <div className="grid grid-cols-1 gap-1.5">
+          {SYSTEM_MODULES.map(mod => {
+            const checked = form.allowed_modules.includes(mod.key);
+            const toggle  = () => setForm(p => ({
+              ...p,
+              allowed_modules: checked
+                ? p.allowed_modules.filter(k => k !== mod.key)
+                : [...p.allowed_modules, mod.key],
+            }));
+            return (
+              <label
+                key={mod.key}
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border cursor-pointer transition-colors ${
+                  checked
+                    ? 'border-teal-300 bg-teal-50'
+                    : 'border-slate-200 bg-white hover:bg-slate-50'
+                }`}
+              >
+                <input
+                  type="checkbox" checked={checked} onChange={toggle}
+                  className="w-4 h-4 accent-teal-600 flex-shrink-0"
+                />
+                <div className="min-w-0">
+                  <span className={`text-sm font-semibold ${checked ? 'text-teal-800' : 'text-slate-700'}`}>
+                    {mod.label}
+                  </span>
+                  <span className="text-xs text-slate-400 ml-2">{mod.desc}</span>
+                </div>
+              </label>
+            );
+          })}
+        </div>
+        {form.allowed_modules.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setForm(p => ({ ...p, allowed_modules: [] }))}
+            className="mt-2 text-xs text-slate-400 hover:text-red-500 transition-colors"
+          >
+            Limpiar selección (incluir todos)
+          </button>
+        )}
+      </div>
+
       <div className="flex justify-end gap-3 pt-2 border-t border-slate-100">
         <button type="button" onClick={onClose}
           className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">
@@ -393,7 +471,7 @@ function TabPlanes() {
               </div>
 
               {plan.features?.length > 0 && (
-                <ul className="space-y-1 mb-4">
+                <ul className="space-y-1 mb-3">
                   {plan.features.slice(0, 4).map((f, i) => (
                     <li key={i} className="flex items-center gap-1.5 text-xs text-slate-600">
                       <Check size={12} className="text-teal-600 flex-shrink-0" /> {f}
@@ -404,6 +482,30 @@ function TabPlanes() {
                   )}
                 </ul>
               )}
+
+              {/* Módulos incluidos */}
+              <div className="mb-3">
+                {!plan.allowed_modules || plan.allowed_modules.length === 0 ? (
+                  <span className="text-xs text-slate-400 flex items-center gap-1">
+                    <Zap size={11} /> Todos los módulos incluidos
+                  </span>
+                ) : (
+                  <div>
+                    <p className="text-xs font-semibold text-slate-500 mb-1.5">Módulos:</p>
+                    <div className="flex flex-wrap gap-1">
+                      {plan.allowed_modules.map(key => {
+                        const mod = SYSTEM_MODULES.find(m => m.key === key);
+                        return (
+                          <span key={key}
+                            className="px-2 py-0.5 bg-teal-50 text-teal-700 text-xs font-medium rounded-full border border-teal-200">
+                            {mod?.label || key}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
 
               <div className="flex gap-2 pt-3 border-t border-slate-100">
                 <button onClick={() => openEdit(plan)}
