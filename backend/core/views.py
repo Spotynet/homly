@@ -563,10 +563,134 @@ class TenantViewSet(viewsets.ModelViewSet):
                    object_type='Tenant', object_id=str(obj.id), object_repr=obj.name)
 
     def perform_destroy(self, instance):
-        _audit_log(self.request, 'tenants', 'delete',
-                   f'Tenant eliminado: {instance.name}',
-                   object_type='Tenant', object_id=str(instance.id), object_repr=instance.name)
-        instance.delete()
+        """
+        Physical deletion is disabled for tenants.
+        If the tenant has any records in any module, return 409 Conflict.
+        Otherwise (completely empty tenant), also block and suggest hibernation —
+        the correct action is always hibernate, never hard-delete.
+        """
+        from rest_framework.exceptions import PermissionDenied
+        from .models import (
+            Unit, TenantUser, Payment, GastoEntry, CajaChicaEntry,
+            BankStatement, ClosedPeriod, AmenityReservation,
+        )
+        counts = {
+            'unidades':    Unit.objects.filter(tenant=instance).count(),
+            'usuarios':    TenantUser.objects.filter(tenant=instance).count(),
+            'pagos':       Payment.objects.filter(tenant=instance).count(),
+            'gastos':      GastoEntry.objects.filter(tenant=instance).count(),
+            'caja_chica':  CajaChicaEntry.objects.filter(tenant=instance).count(),
+            'estados_bancarios': BankStatement.objects.filter(tenant=instance).count(),
+            'reservas':    AmenityReservation.objects.filter(tenant=instance).count(),
+            'periodos':    ClosedPeriod.objects.filter(tenant=instance).count(),
+        }
+        total = sum(counts.values())
+        if total > 0:
+            detail = (
+                f'No es posible eliminar "{instance.name}" porque tiene {total} '
+                f'registro(s) en sus módulos. Usa la acción "hibernar" para '
+                f'desactivarlo de forma segura preservando todos sus datos.'
+            )
+        else:
+            detail = (
+                f'La eliminación de condominios está deshabilitada. '
+                f'Usa la acción "hibernar" para desactivar "{instance.name}" '
+                f'de forma segura.'
+            )
+        raise PermissionDenied(detail)
+
+    # ─── Hibernate / Reactivate ────────────────────────────────
+
+    @action(detail=True, methods=['post'], url_path='hibernate',
+            permission_classes=[IsSuperAdmin])
+    def hibernate(self, request, pk=None):
+        """
+        POST /api/tenants/{id}/hibernate/
+        Hiberna el tenant: bloquea el acceso de usuarios y deja los datos en
+        modo solo-lectura hasta que el superadmin lo reactive.
+        Body opcional: { "reason": "..." }
+        Responde: { detail, record_counts, total_records }
+        """
+        tenant = self.get_object()
+        if tenant.hibernated:
+            return Response(
+                {'detail': 'El condominio ya está en modo hibernación.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        reason = (request.data.get('reason') or '').strip()
+
+        # Count records across all modules for informational purposes
+        from .models import (
+            Unit, TenantUser, Payment, GastoEntry, CajaChicaEntry,
+            BankStatement, ClosedPeriod, AmenityReservation,
+        )
+        record_counts = {
+            'unidades':          Unit.objects.filter(tenant=tenant).count(),
+            'usuarios':          TenantUser.objects.filter(tenant=tenant).count(),
+            'pagos':             Payment.objects.filter(tenant=tenant).count(),
+            'gastos':            GastoEntry.objects.filter(tenant=tenant).count(),
+            'caja_chica':        CajaChicaEntry.objects.filter(tenant=tenant).count(),
+            'estados_bancarios': BankStatement.objects.filter(tenant=tenant).count(),
+            'reservas':          AmenityReservation.objects.filter(tenant=tenant).count(),
+            'periodos_cerrados': ClosedPeriod.objects.filter(tenant=tenant).count(),
+        }
+        total_records = sum(record_counts.values())
+
+        tenant.hibernated = True
+        tenant.is_active = False
+        tenant.hibernation_reason = reason
+        tenant.save(update_fields=['hibernated', 'is_active', 'hibernation_reason', 'updated_at'])
+
+        _audit_log(
+            request, 'tenants', 'update',
+            f'Tenant hibernado: {tenant.name}. '
+            f'Razón: {reason or "No especificada"}. '
+            f'Registros preservados: {total_records}.',
+            object_type='Tenant', object_id=str(tenant.id), object_repr=tenant.name,
+        )
+
+        return Response({
+            'detail': f'Condominio "{tenant.name}" hibernado correctamente.',
+            'record_counts': record_counts,
+            'total_records': total_records,
+        })
+
+    @action(detail=True, methods=['post'], url_path='reactivate',
+            permission_classes=[IsSuperAdmin])
+    def reactivate(self, request, pk=None):
+        """
+        POST /api/tenants/{id}/reactivate/
+        Reactiva un tenant previamente hibernado.
+        Restaura is_active según el estado de su suscripción (o True si no tiene).
+        """
+        tenant = self.get_object()
+        if not tenant.hibernated:
+            return Response(
+                {'detail': 'El condominio no está en modo hibernación.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        tenant.hibernated = False
+        tenant.hibernation_reason = ''
+        tenant.save(update_fields=['hibernated', 'hibernation_reason', 'updated_at'])
+
+        # Restore is_active: sync from subscription status; default to True if no sub
+        try:
+            tenant.subscription.sync_tenant_active()
+        except Exception:
+            tenant.is_active = True
+            tenant.save(update_fields=['is_active', 'updated_at'])
+
+        _audit_log(
+            request, 'tenants', 'update',
+            f'Tenant reactivado desde hibernación: {tenant.name}.',
+            object_type='Tenant', object_id=str(tenant.id), object_repr=tenant.name,
+        )
+
+        return Response({
+            'detail': f'Condominio "{tenant.name}" reactivado correctamente.',
+        })
 
     # ─── Onboarding tour state ─────────────────────────────────
     @action(detail=True, methods=['get'], url_path='subscription', permission_classes=[permissions.IsAuthenticated])

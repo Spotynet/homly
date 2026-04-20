@@ -472,26 +472,122 @@ export default function Dashboard() {
   // ── Super admin sin tenant ──────────────────────────────────────────────
   if (isSuperAdmin && !tenantId) {
     return (
-      <div className="content-fade">
-        <div style={{ marginBottom: 24 }}>
-          <p style={{ color: 'var(--ink-400)', fontSize: 15 }}>Selecciona un condominio para continuar.</p>
+      <div className="content-fade" style={{
+        display: 'flex', flexDirection: 'column', alignItems: 'center',
+        justifyContent: 'center', minHeight: '60vh', padding: '40px 20px',
+      }}>
+        {/* Ilustración */}
+        <div style={{
+          width: 80, height: 80, borderRadius: '50%',
+          background: 'linear-gradient(135deg, var(--teal-50), var(--blue-50))',
+          border: '2px solid var(--teal-100)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          marginBottom: 24,
+        }}>
+          <Building2 size={36} color="var(--teal-500)" />
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px,1fr))', gap: 16 }}>
-          {tenants.map(t => (
-            <button key={t.id} onClick={() => navigate('/app/sistema/tenants')}
-              style={{ background: 'var(--white)', border: '1px solid var(--sand-100)', borderRadius: 'var(--radius-lg)', padding: 24, cursor: 'pointer', textAlign: 'left', transition: 'all 0.2s' }}
-              onMouseEnter={e => { e.currentTarget.style.boxShadow = 'var(--shadow-md)'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
-              onMouseLeave={e => { e.currentTarget.style.boxShadow = ''; e.currentTarget.style.transform = ''; }}
-            >
-              <div style={{ fontWeight: 700, color: 'var(--ink-800)', marginBottom: 4 }}>{t.name}</div>
-              <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>{t.units_count ?? 0} unidades · {fmt(t.maintenance_fee)}/mes</div>
-            </button>
-          ))}
-          <button onClick={() => navigate('/app/sistema/tenants')}
-            style={{ background: 'var(--teal-50)', border: '2px dashed var(--teal-200)', borderRadius: 'var(--radius-lg)', padding: 24, cursor: 'pointer', color: 'var(--teal-700)', fontWeight: 600, fontSize: 14 }}>
-            + Ver todos los condominios
-          </button>
-        </div>
+
+        {/* Título */}
+        <h2 style={{
+          fontSize: 22, fontWeight: 800, color: 'var(--ink-800)',
+          marginBottom: 10, textAlign: 'center',
+        }}>
+          Selecciona un condominio
+        </h2>
+
+        {/* Subtítulo */}
+        <p style={{
+          fontSize: 15, color: 'var(--ink-400)', textAlign: 'center',
+          maxWidth: 400, lineHeight: 1.6, marginBottom: 32,
+        }}>
+          Para visualizar el dashboard debes ingresar a un condominio específico.
+          Dirígete al módulo de <strong style={{ color: 'var(--ink-600)' }}>Condominios</strong> y
+          selecciona el que deseas administrar.
+        </p>
+
+        {/* Botón principal */}
+        <button
+          onClick={() => navigate('/app/sistema/tenants')}
+          className="btn btn-primary"
+          style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '11px 28px', fontSize: 15 }}
+        >
+          <Building2 size={18} />
+          Ir a Condominios
+        </button>
+
+        {/* Lista rápida de tenants (si ya cargaron) */}
+        {tenants.length > 0 && (
+          <div style={{ marginTop: 40, width: '100%', maxWidth: 560 }}>
+            <p style={{
+              fontSize: 12, fontWeight: 700, color: 'var(--ink-400)',
+              textTransform: 'uppercase', letterSpacing: '0.06em',
+              marginBottom: 12, textAlign: 'center',
+            }}>
+              Condominios registrados
+            </p>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
+              gap: 10,
+            }}>
+              {tenants.slice(0, 6).map(tn => (
+                <button
+                  key={tn.id}
+                  onClick={() => navigate('/app/sistema/tenants')}
+                  style={{
+                    background: 'var(--white)', border: '1px solid var(--sand-100)',
+                    borderRadius: 12, padding: '12px 16px',
+                    cursor: 'pointer', textAlign: 'left', transition: 'all 0.15s',
+                    display: 'flex', alignItems: 'center', gap: 12,
+                  }}
+                  onMouseEnter={e => {
+                    e.currentTarget.style.borderColor = 'var(--teal-300)';
+                    e.currentTarget.style.boxShadow = '0 2px 10px rgba(20,184,166,0.1)';
+                    e.currentTarget.style.transform = 'translateY(-1px)';
+                  }}
+                  onMouseLeave={e => {
+                    e.currentTarget.style.borderColor = 'var(--sand-100)';
+                    e.currentTarget.style.boxShadow = '';
+                    e.currentTarget.style.transform = '';
+                  }}
+                >
+                  <div style={{
+                    width: 36, height: 36, borderRadius: 10, flexShrink: 0,
+                    background: 'var(--teal-50)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 15, fontWeight: 800, color: 'var(--teal-600)',
+                  }}>
+                    {tn.name?.[0]?.toUpperCase()}
+                  </div>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{
+                      fontWeight: 700, color: 'var(--ink-800)', fontSize: 13,
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}>
+                      {tn.name}
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 1 }}>
+                      {tn.units_count ?? 0} unidades
+                    </div>
+                  </div>
+                </button>
+              ))}
+              {tenants.length > 6 && (
+                <button
+                  onClick={() => navigate('/app/sistema/tenants')}
+                  style={{
+                    background: 'var(--teal-50)', border: '2px dashed var(--teal-200)',
+                    borderRadius: 12, padding: '12px 16px',
+                    cursor: 'pointer', color: 'var(--teal-700)',
+                    fontWeight: 600, fontSize: 13, textAlign: 'center',
+                  }}
+                >
+                  +{tenants.length - 6} más…
+                </button>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     );
   }

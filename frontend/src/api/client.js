@@ -61,6 +61,9 @@ export const tenantsAPI = {
   create: (data) => api.post('/tenants/', data),
   update: (id, data) => api.patch(`/tenants/${id}/`, data),
   delete: (id) => api.delete(`/tenants/${id}/`),
+  // Hibernation (superadmin only — replaces hard deletion)
+  hibernate: (id, data) => api.post(`/tenants/${id}/hibernate/`, data || {}),
+  reactivate: (id) => api.post(`/tenants/${id}/reactivate/`),
   // Subscription info (accessible to tenant members)
   getSubscription: (id) => api.get(`/tenants/${id}/subscription/`),
   // Onboarding tour state

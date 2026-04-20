@@ -179,6 +179,19 @@ class Tenant(models.Model):
         help_text='Si es False el acceso al condominio está bloqueado para sus usuarios.',
     )
 
+    # Hibernation — superadmin alternative to deletion.
+    # Preserves all data in read-only mode until the superadmin reactivates it.
+    hibernated = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text='Modo hibernación: datos preservados en solo lectura.',
+    )
+    hibernation_reason = models.TextField(
+        blank=True,
+        default='',
+        help_text='Razón por la que el superadmin hibernó este condominio.',
+    )
+
     # Onboarding tour state
     # onboarding_completed: el admin terminó el tour y confirmó que el tenant está listo
     # onboarding_dismissed_at: fecha cuando un admin descartó el banner/auto-launch

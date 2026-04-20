@@ -4,9 +4,10 @@ import { useAuth } from '../context/AuthContext';
 import { tenantsAPI, tenantSubscriptionsAPI, subscriptionPlansAPI } from '../api/client';
 import { fmtCurrency, CURRENCIES, COUNTRIES, getStatesForCountry } from '../utils/helpers';
 import {
-  Plus, Edit, Trash2, LogIn, Building2, Check, X, CreditCard,
+  Plus, Edit, LogIn, Building2, Check, X, CreditCard,
   AlertCircle, CheckCircle, Clock, XCircle, ShieldOff, RefreshCw,
   DollarSign, Calendar, ChevronDown, ChevronUp,
+  Moon, RotateCcw, Lock,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -461,6 +462,177 @@ function SubscriptionModal({ tenant, onClose, onUpdated }) {
   );
 }
 
+// ─── Hibernate Confirmation Modal ─────────────────────────────────────────────
+
+function HibernateModal({ tenant, onClose, onConfirm, loading }) {
+  const [reason, setReason] = React.useState('');
+
+  // Record counts already available from the list response
+  const knownCounts = [
+    { label: 'Unidades', value: tenant.units_actual ?? tenant.units_count ?? 0 },
+    { label: 'Usuarios',  value: tenant.users_count ?? 0 },
+  ].filter(c => c.value > 0);
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 200,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(3px)',
+      padding: 16,
+    }} onClick={onClose}>
+      <div style={{
+        background: 'var(--white)', borderRadius: 20, width: '100%', maxWidth: 480,
+        boxShadow: '0 24px 64px rgba(0,0,0,0.22)',
+        overflow: 'hidden',
+      }} onClick={e => e.stopPropagation()}>
+
+        {/* Header */}
+        <div style={{
+          background: 'linear-gradient(135deg, #7C3AED08, #7C3AED12)',
+          borderBottom: '1px solid #EDE9FE',
+          padding: '20px 24px 16px',
+          display: 'flex', alignItems: 'flex-start', gap: 14,
+        }}>
+          <div style={{
+            width: 44, height: 44, borderRadius: 12, flexShrink: 0,
+            background: '#EDE9FE',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <Moon size={22} color="#7C3AED" />
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 17, fontWeight: 800, color: 'var(--ink-800)' }}>
+              Hibernar condominio
+            </div>
+            <div style={{ fontSize: 13, color: '#7C3AED', fontWeight: 600, marginTop: 2 }}>
+              {tenant.name}
+            </div>
+          </div>
+          <button onClick={onClose} style={{
+            background: 'none', border: 'none', cursor: 'pointer',
+            color: 'var(--ink-400)', padding: 4, flexShrink: 0,
+          }}>
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+          {/* Explanation */}
+          <div style={{
+            background: '#F5F3FF', border: '1px solid #DDD6FE',
+            borderRadius: 12, padding: '12px 14px',
+            fontSize: 13, color: '#5B21B6', lineHeight: 1.6,
+          }}>
+            <strong>¿Qué significa hibernar?</strong><br />
+            El condominio quedará en <strong>modo solo lectura</strong>. Todos sus datos
+            se conservan intactos pero los usuarios no podrán acceder al sistema.
+            Solo el superadministrador puede reactivarlo cuando sea necesario.
+          </div>
+
+          {/* Known record counts */}
+          {knownCounts.length > 0 && (
+            <div>
+              <p style={{
+                fontSize: 11, fontWeight: 700, color: 'var(--ink-400)',
+                textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8,
+              }}>
+                Datos que serán preservados
+              </p>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {knownCounts.map(({ label, value }) => (
+                  <div key={label} style={{
+                    background: 'var(--sand-50)', border: '1px solid var(--sand-200)',
+                    borderRadius: 8, padding: '6px 12px',
+                    display: 'flex', alignItems: 'center', gap: 6,
+                  }}>
+                    <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--ink-800)' }}>{value}</span>
+                    <span style={{ fontSize: 12, color: 'var(--ink-500)' }}>{label}</span>
+                  </div>
+                ))}
+                <div style={{
+                  background: 'var(--sand-50)', border: '1px solid var(--sand-200)',
+                  borderRadius: 8, padding: '6px 12px',
+                  fontSize: 12, color: 'var(--ink-400)', fontStyle: 'italic',
+                }}>
+                  + pagos, gastos y más módulos
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Reason */}
+          <div>
+            <label style={{
+              display: 'block', fontSize: 11, fontWeight: 700,
+              color: 'var(--ink-500)', textTransform: 'uppercase',
+              letterSpacing: '0.06em', marginBottom: 6,
+            }}>
+              Motivo de hibernación <span style={{ fontWeight: 400, textTransform: 'none', color: 'var(--ink-400)' }}>(opcional)</span>
+            </label>
+            <textarea
+              value={reason}
+              onChange={e => setReason(e.target.value)}
+              placeholder="Ej: Contrato vencido, falta de pago, cierre temporal del condominio…"
+              rows={3}
+              style={{
+                width: '100%', boxSizing: 'border-box',
+                border: '1px solid var(--sand-200)', borderRadius: 10,
+                padding: '9px 12px', fontSize: 13, resize: 'vertical',
+                fontFamily: 'inherit', lineHeight: 1.5,
+                outline: 'none',
+              }}
+            />
+          </div>
+
+          {/* Warning */}
+          <div style={{
+            display: 'flex', alignItems: 'flex-start', gap: 8,
+            background: '#FFFBEB', border: '1px solid #FDE68A',
+            borderRadius: 10, padding: '10px 12px',
+          }}>
+            <AlertCircle size={15} color="#D97706" style={{ flexShrink: 0, marginTop: 1 }} />
+            <span style={{ fontSize: 12, color: '#92400E', lineHeight: 1.5 }}>
+              Los usuarios del condominio perderán acceso inmediatamente.
+              Esta acción puede revertirse en cualquier momento desde esta misma pantalla.
+            </span>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div style={{
+          padding: '0 24px 20px',
+          display: 'flex', gap: 10, justifyContent: 'flex-end',
+        }}>
+          <button onClick={onClose} disabled={loading}
+            style={{
+              padding: '9px 20px', background: 'var(--sand-50)',
+              border: '1px solid var(--sand-200)', borderRadius: 10,
+              fontSize: 13, fontWeight: 600, cursor: 'pointer',
+              color: 'var(--ink-600)',
+            }}>
+            Cancelar
+          </button>
+          <button
+            onClick={() => onConfirm(reason)}
+            disabled={loading}
+            style={{
+              padding: '9px 20px',
+              background: loading ? '#C4B5FD' : '#7C3AED',
+              color: 'white', border: 'none', borderRadius: 10,
+              fontSize: 13, fontWeight: 700, cursor: loading ? 'default' : 'pointer',
+              display: 'flex', alignItems: 'center', gap: 7,
+            }}>
+            <Moon size={14} />
+            {loading ? 'Hibernando…' : 'Confirmar hibernación'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Tenants page ────────────────────────────────────────────────────────
 
 export default function Tenants() {
@@ -478,6 +650,9 @@ export default function Tenants() {
   const [subModal,      setSubModal]      = useState(null); // tenant object for sub modal
   const [search,        setSearch]        = useState('');
   const [initializing,  setInitializing]  = useState(false);
+  const [hibernateModal, setHibernateModal] = useState(null); // tenant object
+  const [hibernating,    setHibernating]    = useState(false);
+  const [reactivating,   setReactivating]   = useState(null); // tenant id
 
   const load = useCallback(() => {
     setLoading(true);
@@ -586,13 +761,40 @@ export default function Tenants() {
     }
   };
 
-  const handleDelete = async (id, name) => {
-    if (!window.confirm(`¿Eliminar "${name}"? Esta acción es irreversible.`)) return;
+  const handleHibernateConfirm = async (reason) => {
+    if (!hibernateModal) return;
+    setHibernating(true);
     try {
-      await tenantsAPI.delete(id);
-      toast.success('Condominio eliminado');
+      const res = await tenantsAPI.hibernate(hibernateModal.id, { reason });
+      const total = res.data?.total_records ?? 0;
+      toast.success(
+        `"${hibernateModal.name}" hibernado. ${total > 0 ? `${total} registro(s) preservado(s).` : ''}`,
+        { duration: 5000 }
+      );
+      setHibernateModal(null);
       load();
-    } catch { toast.error('Error al eliminar'); }
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Error al hibernar el condominio.');
+    } finally {
+      setHibernating(false);
+    }
+  };
+
+  const handleReactivate = async (t) => {
+    if (!window.confirm(
+      `¿Reactivar "${t.name}"?\n\n` +
+      `El condominio volverá a estar accesible para sus usuarios según el estado de su suscripción.`
+    )) return;
+    setReactivating(t.id);
+    try {
+      await tenantsAPI.reactivate(t.id);
+      toast.success(`"${t.name}" reactivado correctamente.`);
+      load();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Error al reactivar el condominio.');
+    } finally {
+      setReactivating(null);
+    }
   };
 
   if (loading) return (
@@ -720,34 +922,50 @@ export default function Tenants() {
           gap: 16,
         }}>
           {filtered.map(t => {
-            const isActive  = t.id === activeTenantId;
-            const isLoading = entering === t.id;
-            const subStatus = t.subscription_status;
+            const isActive    = t.id === activeTenantId;
+            const isLoading   = entering === t.id;
+            const isHibernated = !!t.hibernated;
+            const subStatus   = t.subscription_status;
+
+            // Card border: purple for hibernated, teal for current, red for inactive, default otherwise
+            const cardBorder = isHibernated
+              ? '2px solid #DDD6FE'
+              : isActive
+                ? '2px solid var(--teal-400)'
+                : t.is_active === false ? '2px solid #FECACA' : '2px solid var(--sand-100)';
+            const cardShadow = isHibernated
+              ? '0 2px 10px rgba(124,58,237,0.08)'
+              : isActive
+                ? '0 0 0 3px rgba(20,184,166,0.12)'
+                : t.is_active === false ? '0 2px 8px rgba(220,38,38,0.08)' : '0 1px 4px rgba(0,0,0,0.06)';
 
             return (
               <div key={t.id} style={{
-                background: 'var(--white)',
-                border: `2px solid ${isActive ? 'var(--teal-400)' : t.is_active === false ? '#FECACA' : 'var(--sand-100)'}`,
+                background: isHibernated ? '#FAFAFA' : 'var(--white)',
+                border: cardBorder,
                 borderRadius: 16, padding: 20,
                 display: 'flex', flexDirection: 'column', gap: 14,
                 transition: 'box-shadow 0.15s, border-color 0.15s',
-                boxShadow: isActive
-                  ? '0 0 0 3px rgba(20,184,166,0.12)'
-                  : t.is_active === false ? '0 2px 8px rgba(220,38,38,0.08)' : '0 1px 4px rgba(0,0,0,0.06)',
+                boxShadow: cardShadow,
+                opacity: isHibernated ? 0.85 : 1,
               }}>
                 {/* Top row */}
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
                   <div style={{
                     width: 44, height: 44, borderRadius: 12, flexShrink: 0,
-                    background: t.is_active === false ? '#FEE2E2' : isActive ? 'var(--teal-500)' : 'var(--sand-100)',
+                    background: isHibernated ? '#EDE9FE'
+                      : t.is_active === false ? '#FEE2E2'
+                      : isActive ? 'var(--teal-500)' : 'var(--sand-100)',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     fontSize: 18, fontWeight: 800,
-                    color: t.is_active === false ? '#DC2626' : isActive ? 'white' : 'var(--ink-500)',
+                    color: isHibernated ? '#7C3AED'
+                      : t.is_active === false ? '#DC2626'
+                      : isActive ? 'white' : 'var(--ink-500)',
                   }}>
-                    {t.name?.[0]?.toUpperCase()}
+                    {isHibernated ? <Moon size={20} /> : t.name?.[0]?.toUpperCase()}
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink-800)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: isHibernated ? 'var(--ink-500)' : 'var(--ink-800)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {t.name}
                     </div>
                     {t.country && (
@@ -757,7 +975,18 @@ export default function Tenants() {
                     )}
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
-                    {isActive && (
+                    {isHibernated && (
+                      <span style={{
+                        display: 'flex', alignItems: 'center', gap: 4,
+                        fontSize: 10, fontWeight: 700, color: '#7C3AED',
+                        background: '#EDE9FE', border: '1px solid #DDD6FE',
+                        borderRadius: 20, padding: '2px 8px',
+                        textTransform: 'uppercase', letterSpacing: '0.05em', flexShrink: 0,
+                      }}>
+                        <Moon size={9} /> Hibernado
+                      </span>
+                    )}
+                    {!isHibernated && isActive && (
                       <span style={{
                         display: 'flex', alignItems: 'center', gap: 4,
                         fontSize: 10, fontWeight: 700, color: 'var(--teal-600)',
@@ -768,7 +997,7 @@ export default function Tenants() {
                         <Check size={10} /> Activo
                       </span>
                     )}
-                    {t.is_active === false && (
+                    {!isHibernated && t.is_active === false && (
                       <span style={{
                         fontSize: 10, fontWeight: 700, color: '#DC2626',
                         background: '#FEE2E2', borderRadius: 20, padding: '2px 8px',
@@ -777,6 +1006,20 @@ export default function Tenants() {
                     )}
                   </div>
                 </div>
+
+                {/* Hibernation reason banner */}
+                {isHibernated && t.hibernation_reason && (
+                  <div style={{
+                    display: 'flex', alignItems: 'flex-start', gap: 8,
+                    background: '#F5F3FF', border: '1px solid #DDD6FE',
+                    borderRadius: 9, padding: '8px 11px',
+                  }}>
+                    <Lock size={12} color="#7C3AED" style={{ flexShrink: 0, marginTop: 1 }} />
+                    <span style={{ fontSize: 12, color: '#5B21B6', lineHeight: 1.4 }}>
+                      {t.hibernation_reason}
+                    </span>
+                  </div>
+                )}
 
                 {/* Subscription status row */}
                 <div style={{
@@ -818,17 +1061,50 @@ export default function Tenants() {
 
                 {/* Actions */}
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <button onClick={() => handleEnter(t)} disabled={!!entering}
-                    style={{
-                      flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      gap: 6, padding: '8px 14px',
-                      background: isActive ? 'var(--teal-500)' : 'var(--teal-600)',
-                      color: 'white', border: 'none', borderRadius: 10,
-                      fontSize: 13, fontWeight: 700, cursor: entering ? 'default' : 'pointer',
-                      opacity: entering && !isLoading ? 0.5 : 1,
-                    }}>
-                    {isLoading ? 'Entrando…' : isActive ? <><Check size={14} /> Activo</> : <><LogIn size={14} /> Entrar</>}
-                  </button>
+                  {isHibernated ? (
+                    /* Hibernated: show read-only lock + reactivate button */
+                    <>
+                      <div style={{
+                        flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        gap: 6, padding: '8px 14px',
+                        background: '#F5F3FF', border: '1px solid #DDD6FE',
+                        borderRadius: 10, fontSize: 13, fontWeight: 600, color: '#7C3AED',
+                      }}>
+                        <Lock size={13} /> Solo lectura
+                      </div>
+                      {isSuperAdmin && (
+                        <button
+                          title="Reactivar condominio"
+                          disabled={reactivating === t.id}
+                          onClick={() => handleReactivate(t)}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: 6,
+                            padding: '8px 14px',
+                            background: reactivating === t.id ? 'var(--sand-100)' : '#ECFDF5',
+                            color: reactivating === t.id ? 'var(--ink-400)' : '#065F46',
+                            border: '1px solid #A7F3D0', borderRadius: 10,
+                            fontSize: 13, fontWeight: 700,
+                            cursor: reactivating === t.id ? 'default' : 'pointer',
+                          }}>
+                          <RotateCcw size={13} />
+                          {reactivating === t.id ? 'Reactivando…' : 'Reactivar'}
+                        </button>
+                      )}
+                    </>
+                  ) : (
+                    /* Normal: enter button */
+                    <button onClick={() => handleEnter(t)} disabled={!!entering}
+                      style={{
+                        flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        gap: 6, padding: '8px 14px',
+                        background: isActive ? 'var(--teal-500)' : 'var(--teal-600)',
+                        color: 'white', border: 'none', borderRadius: 10,
+                        fontSize: 13, fontWeight: 700, cursor: entering ? 'default' : 'pointer',
+                        opacity: entering && !isLoading ? 0.5 : 1,
+                      }}>
+                      {isLoading ? 'Entrando…' : isActive ? <><Check size={14} /> Activo</> : <><LogIn size={14} /> Entrar</>}
+                    </button>
+                  )}
 
                   {/* Subscription */}
                   <button title="Gestionar Membresía"
@@ -846,10 +1122,14 @@ export default function Tenants() {
                     <Edit size={14} />
                   </button>
 
-                  {isSuperAdmin && (
-                    <button className="btn-icon" style={{ color: 'var(--coral-500)' }}
-                      onClick={() => handleDelete(t.id, t.name)} title="Eliminar">
-                      <Trash2 size={14} />
+                  {isSuperAdmin && !isHibernated && (
+                    <button
+                      className="btn-icon"
+                      title="Hibernar condominio"
+                      style={{ color: '#7C3AED' }}
+                      onClick={() => setHibernateModal(t)}
+                    >
+                      <Moon size={14} />
                     </button>
                   )}
                 </div>
@@ -959,6 +1239,16 @@ export default function Tenants() {
           tenant={subModal}
           onClose={() => setSubModal(null)}
           onUpdated={load}
+        />
+      )}
+
+      {/* Hibernate confirmation modal */}
+      {hibernateModal && (
+        <HibernateModal
+          tenant={hibernateModal}
+          onClose={() => { if (!hibernating) setHibernateModal(null); }}
+          onConfirm={handleHibernateConfirm}
+          loading={hibernating}
         />
       )}
     </div>
