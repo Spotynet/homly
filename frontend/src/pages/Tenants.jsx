@@ -470,27 +470,43 @@ export default function Tenants() {
   const [tenants,       setTenants]       = useState([]);
   const [plans,         setPlans]         = useState([]);
   const [loading,       setLoading]       = useState(true);
+  const [loadError,     setLoadError]     = useState(false);
   const [saving,        setSaving]        = useState(false);
   const [showModal,     setShowModal]     = useState(false);
   const [form,          setForm]          = useState({});
   const [entering,      setEntering]      = useState(null);
   const [subModal,      setSubModal]      = useState(null); // tenant object for sub modal
+  const [search,        setSearch]        = useState('');
 
-  const load = () => {
+  const load = useCallback(() => {
+    setLoading(true);
+    setLoadError(false);
     tenantsAPI.list()
-      .then(r => setTenants(r.data.results || r.data))
-      .catch(console.error)
+      .then(r => {
+        const data = r.data.results ?? r.data;
+        setTenants(Array.isArray(data) ? data : []);
+      })
+      .catch(err => {
+        console.error('Tenants load error:', err);
+        setLoadError(true);
+        toast.error('No se pudieron cargar los condominios.');
+      })
       .finally(() => setLoading(false));
-  };
+  }, []);
 
-  useEffect(load, []);
+  useEffect(() => { load(); }, [load]);
 
   // Load active subscription plans once (for create-tenant modal)
   useEffect(() => {
     subscriptionPlansAPI.list({ active_only: 1 })
-      .then(r => setPlans(r.data.results || r.data))
+      .then(r => setPlans(r.data.results ?? r.data))
       .catch(() => {});
   }, []);
+
+  // Filter by search term
+  const filtered = search.trim()
+    ? tenants.filter(t => t.name?.toLowerCase().includes(search.trim().toLowerCase()))
+    : tenants;
 
   const handleEnter = async (t) => {
     if (entering) return;
@@ -559,7 +575,24 @@ export default function Tenants() {
 
   if (loading) return (
     <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--ink-400)' }}>
+      <RefreshCw size={28} color="var(--teal-500)" className="spin" style={{ display: 'block', margin: '0 auto 12px' }} />
       Cargando condominios…
+    </div>
+  );
+
+  if (loadError) return (
+    <div className="content-fade" style={{ textAlign: 'center', padding: '60px 20px' }}>
+      <AlertCircle size={36} color="#DC2626" style={{ display: 'block', margin: '0 auto 12px' }} />
+      <p style={{ fontWeight: 700, color: '#DC2626', marginBottom: 8 }}>Error al cargar condominios</p>
+      <p style={{ fontSize: 13, color: 'var(--ink-400)', marginBottom: 20 }}>
+        Revisa tu conexión o los permisos del usuario.
+      </p>
+      <button onClick={load} style={{
+        padding: '9px 22px', background: 'var(--teal-600)', color: 'white',
+        border: 'none', borderRadius: 10, fontWeight: 700, cursor: 'pointer',
+      }}>
+        Reintentar
+      </button>
     </div>
   );
 
@@ -567,24 +600,75 @@ export default function Tenants() {
     <div className="content-fade">
 
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <span className="badge badge-teal">{tenants.length} condominios</span>
+          {search && filtered.length !== tenants.length && (
+            <span className="badge badge-gray">{filtered.length} resultado{filtered.length !== 1 ? 's' : ''}</span>
+          )}
           {activeTenantId && <span className="badge badge-gray">Activo seleccionado</span>}
         </div>
-        {isSuperAdmin && (
-          <button className="btn btn-primary" onClick={() => { setForm({}); setShowModal(true); }}>
-            <Plus size={16} /> Nuevo Condominio
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {/* Search input */}
+          <div style={{ position: 'relative' }}>
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Buscar por nombre…"
+              style={{
+                padding: '7px 32px 7px 10px',
+                border: '1px solid var(--sand-200)', borderRadius: 10,
+                fontSize: 13, outline: 'none', width: 200,
+                background: 'var(--white)',
+              }}
+            />
+            {search && (
+              <button onClick={() => setSearch('')} style={{
+                position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
+                background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-400)',
+                padding: 0, display: 'flex',
+              }}>
+                <X size={13} />
+              </button>
+            )}
+          </div>
+          {/* Refresh button */}
+          <button onClick={load} title="Actualizar lista" style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            width: 34, height: 34, background: 'var(--sand-50)',
+            border: '1px solid var(--sand-200)', borderRadius: 10, cursor: 'pointer',
+            color: 'var(--ink-500)',
+          }}>
+            <RefreshCw size={14} />
           </button>
-        )}
+          {isSuperAdmin && (
+            <button className="btn btn-primary" onClick={() => { setForm({}); setShowModal(true); }}>
+              <Plus size={16} /> Nuevo Condominio
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Tenant cards */}
-      {tenants.length === 0 ? (
+      {filtered.length === 0 ? (
         <div className="card" style={{ padding: '48px 20px', textAlign: 'center', color: 'var(--ink-400)' }}>
           <Building2 size={40} style={{ opacity: 0.3, marginBottom: 12, display: 'block', margin: '0 auto 12px' }} />
-          <p style={{ fontWeight: 600 }}>No hay condominios registrados.</p>
-          <p style={{ fontSize: 13, marginTop: 4 }}>Crea el primer condominio con el botón superior.</p>
+          {search ? (
+            <>
+              <p style={{ fontWeight: 600 }}>Sin resultados para "{search}"</p>
+              <p style={{ fontSize: 13, marginTop: 4 }}>
+                Intenta con otro término o&nbsp;
+                <button onClick={() => setSearch('')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--teal-600)', fontWeight: 700, fontSize: 13, padding: 0 }}>
+                  ver todos
+                </button>.
+              </p>
+            </>
+          ) : (
+            <>
+              <p style={{ fontWeight: 600 }}>No hay condominios registrados.</p>
+              <p style={{ fontSize: 13, marginTop: 4 }}>Crea el primer condominio con el botón superior.</p>
+            </>
+          )}
         </div>
       ) : (
         <div style={{
@@ -592,7 +676,7 @@ export default function Tenants() {
           gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
           gap: 16,
         }}>
-          {tenants.map(t => {
+          {filtered.map(t => {
             const isActive  = t.id === activeTenantId;
             const isLoading = entering === t.id;
             const subStatus = t.subscription_status;

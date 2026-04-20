@@ -1464,6 +1464,12 @@ tr:hover td { background: rgba(59,185,144,0.02); }
 }
 .content-fade { animation: fadeUp 0.4s var(--ease); }
 
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+.spin { animation: spin 1s linear infinite; }
+
 /* ─── Collapsible panels ─── */
 .collapsible-head {
   display: flex;

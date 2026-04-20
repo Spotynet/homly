@@ -79,7 +79,7 @@ export default function MiMembresia() {
     return (
       <div className="content-fade" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 300 }}>
         <div style={{ textAlign: 'center', color: 'var(--ink-400)' }}>
-          <RefreshCw size={28} style={{ marginBottom: 12, animation: 'spin 1s linear infinite', display: 'block', margin: '0 auto 12px' }} />
+          <RefreshCw size={28} className="spin" style={{ display: 'block', margin: '0 auto 12px' }} />
           Cargando membresía…
         </div>
       </div>
