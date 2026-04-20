@@ -477,6 +477,7 @@ export default function Tenants() {
   const [entering,      setEntering]      = useState(null);
   const [subModal,      setSubModal]      = useState(null); // tenant object for sub modal
   const [search,        setSearch]        = useState('');
+  const [initializing,  setInitializing]  = useState(false);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -564,6 +565,27 @@ export default function Tenants() {
     }
   };
 
+  const handleInitializeAll = async () => {
+    if (!window.confirm(
+      '¿Inicializar suscripciones en Período de Prueba para todos los condominios sin membresía?\n\n' +
+      'Los condominios que ya tienen suscripción activa no serán modificados.'
+    )) return;
+    setInitializing(true);
+    try {
+      const res = await tenantSubscriptionsAPI.initializeAll();
+      const { created, already_had } = res.data;
+      toast.success(
+        `✓ Listo. Creadas: ${created} · Ya tenían: ${already_had}`,
+        { duration: 5000 }
+      );
+      load();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Error al inicializar suscripciones.');
+    } finally {
+      setInitializing(false);
+    }
+  };
+
   const handleDelete = async (id, name) => {
     if (!window.confirm(`¿Eliminar "${name}"? Esta acción es irreversible.`)) return;
     try {
@@ -642,9 +664,30 @@ export default function Tenants() {
             <RefreshCw size={14} />
           </button>
           {isSuperAdmin && (
-            <button className="btn btn-primary" onClick={() => { setForm({}); setShowModal(true); }}>
-              <Plus size={16} /> Nuevo Condominio
-            </button>
+            <>
+              <button
+                onClick={handleInitializeAll}
+                disabled={initializing}
+                title="Crear suscripción de prueba para condominios sin membresía"
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  padding: '7px 14px',
+                  background: initializing ? 'var(--sand-100)' : '#EFF6FF',
+                  color: initializing ? 'var(--ink-400)' : '#2563EB',
+                  border: '1px solid #BFDBFE', borderRadius: 10,
+                  fontWeight: 700, fontSize: 13, cursor: initializing ? 'not-allowed' : 'pointer',
+                  transition: 'background 0.15s',
+                }}
+              >
+                {initializing
+                  ? <><RefreshCw size={14} className="spin" /> Inicializando…</>
+                  : <><Clock size={14} /> Inicializar Prueba</>
+                }
+              </button>
+              <button className="btn btn-primary" onClick={() => { setForm({}); setShowModal(true); }}>
+                <Plus size={16} /> Nuevo Condominio
+              </button>
+            </>
           )}
         </div>
       </div>

@@ -6295,6 +6295,63 @@ class TenantSubscriptionViewSet(viewsets.ModelViewSet):
         sub.sync_tenant_active()
         return Response({'detail': 'Sincronizado correctamente.', 'is_active': sub.tenant.is_active})
 
+    @action(detail=False, methods=['post'], url_path='initialize-all')
+    def initialize_all(self, request):
+        """
+        POST /api/tenant-subscriptions/initialize-all/
+        Creates a 'trial' TenantSubscription for every tenant that doesn't
+        already have one, then syncs tenant.is_active.
+        Superadmin only.
+        Returns: { created: N, already_had: M, tenants: [{id, name, status}] }
+        """
+        from django.utils import timezone
+        import datetime
+
+        today = timezone.now().date()
+        trial_end = today + datetime.timedelta(days=30)
+
+        tenants = Tenant.objects.all()
+        created_count = 0
+        already_count = 0
+        results = []
+
+        for tenant in tenants:
+            try:
+                # OneToOneField: if it exists, accessing .subscription succeeds
+                existing = tenant.subscription
+                already_count += 1
+                results.append({
+                    'id': str(tenant.id),
+                    'name': tenant.name,
+                    'status': existing.status,
+                    'action': 'existing',
+                })
+            except Exception:
+                # No subscription yet — create trial
+                sub = TenantSubscription.objects.create(
+                    tenant=tenant,
+                    status='trial',
+                    trial_start=today,
+                    trial_end=trial_end,
+                    amount_per_cycle=0,
+                    currency=getattr(tenant, 'currency', 'MXN') or 'MXN',
+                )
+                sub.sync_tenant_active()
+                created_count += 1
+                results.append({
+                    'id': str(tenant.id),
+                    'name': tenant.name,
+                    'status': 'trial',
+                    'action': 'created',
+                })
+
+        return Response({
+            'detail': f'Inicialización completada. Creadas: {created_count}, ya tenían: {already_count}.',
+            'created': created_count,
+            'already_had': already_count,
+            'tenants': results,
+        })
+
 
 def _django_now():
     """Return timezone-aware now (or naive if USE_TZ=False)."""

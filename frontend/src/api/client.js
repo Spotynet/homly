@@ -241,6 +241,8 @@ export const tenantSubscriptionsAPI = {
   recordPayment: (id, data) => api.post(`/tenant-subscriptions/${id}/record-payment/`, data),
   payments:      (id)     => api.get(`/tenant-subscriptions/${id}/payments/`),
   syncStatus:    (id)     => api.post(`/tenant-subscriptions/${id}/sync-status/`),
+  // Create trial subscriptions for ALL tenants that don't have one
+  initializeAll: ()       => api.post('/tenant-subscriptions/initialize-all/'),
 };
 
 // ─── Super Admins ────────────────────────────────
