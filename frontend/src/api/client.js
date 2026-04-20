@@ -234,6 +234,7 @@ export const trialRequestsAPI = {
 export const tenantSubscriptionsAPI = {
   list:          (params) => api.get('/tenant-subscriptions/', { params: params || {} }),
   get:           (id)     => api.get(`/tenant-subscriptions/${id}/`),
+  create:        (data)   => api.post('/tenant-subscriptions/', data),
   update:        (id, data) => api.patch(`/tenant-subscriptions/${id}/`, data),
   recordPayment: (id, data) => api.post(`/tenant-subscriptions/${id}/record-payment/`, data),
   payments:      (id)     => api.get(`/tenant-subscriptions/${id}/payments/`),

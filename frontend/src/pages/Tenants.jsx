@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { tenantsAPI, tenantSubscriptionsAPI, subscriptionPlansAPI } from '../api/client';
-import { fmtCurrency, CURRENCIES } from '../utils/helpers';
+import { fmtCurrency, CURRENCIES, COUNTRIES, getStatesForCountry } from '../utils/helpers';
 import {
   Plus, Edit, Trash2, LogIn, Building2, Check, X, CreditCard,
   AlertCircle, CheckCircle, Clock, XCircle, ShieldOff, RefreshCw,
@@ -468,6 +468,7 @@ export default function Tenants() {
   const navigate = useNavigate();
 
   const [tenants,       setTenants]       = useState([]);
+  const [plans,         setPlans]         = useState([]);
   const [loading,       setLoading]       = useState(true);
   const [saving,        setSaving]        = useState(false);
   const [showModal,     setShowModal]     = useState(false);
@@ -483,6 +484,13 @@ export default function Tenants() {
   };
 
   useEffect(load, []);
+
+  // Load active subscription plans once (for create-tenant modal)
+  useEffect(() => {
+    subscriptionPlansAPI.list({ active_only: 1 })
+      .then(r => setPlans(r.data.results || r.data))
+      .catch(() => {});
+  }, []);
 
   const handleEnter = async (t) => {
     if (entering) return;
@@ -512,7 +520,23 @@ export default function Tenants() {
         await tenantsAPI.update(form.id, payload);
         toast.success('Condominio actualizado');
       } else {
-        await tenantsAPI.create(payload);
+        const res = await tenantsAPI.create(payload);
+        const newTenantId = res.data.id;
+        // Create initial subscription if a plan was selected
+        if (newTenantId) {
+          const subPayload = {
+            tenant: newTenantId,
+            plan: form.initial_plan || null,
+            status: form.initial_sub_status || 'trial',
+            currency: form.currency || 'MXN',
+          };
+          try {
+            const subRes = await tenantSubscriptionsAPI.create(subPayload);
+            if (subRes.data?.id) {
+              await tenantSubscriptionsAPI.syncStatus(subRes.data.id);
+            }
+          } catch { /* subscription creation is optional — don't block tenant creation */ }
+        }
         toast.success('Condominio creado');
       }
       setShowModal(false);
@@ -709,7 +733,9 @@ export default function Tenants() {
       )}
 
       {/* Edit/Create modal */}
-      {showModal && (
+      {showModal && (() => {
+        const countryStates = getStatesForCountry(form.country || '');
+        return (
         <div className="modal-bg open" onClick={() => setShowModal(false)}>
           <div className="modal lg" onClick={e => e.stopPropagation()}>
             <div className="modal-head">
@@ -736,14 +762,59 @@ export default function Tenants() {
                     {Object.entries(CURRENCIES).map(([k, v]) => <option key={k} value={k}>{v.name}</option>)}
                   </select>
                 </div>
+                {/* País — dropdown */}
                 <div className="field">
                   <label className="field-label">País</label>
-                  <input className="field-input" value={form.country || ''} onChange={e => setForm({...form, country: e.target.value})} />
+                  <select className="field-select" value={form.country || ''}
+                    onChange={e => setForm({...form, country: e.target.value, state: ''})}>
+                    <option value="">Selecciona un país</option>
+                    {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
                 </div>
+                {/* Estado / Región — dropdown si hay estados, texto libre si no */}
                 <div className="field">
                   <label className="field-label">Estado / Región</label>
-                  <input className="field-input" value={form.state || ''} onChange={e => setForm({...form, state: e.target.value})} />
+                  {countryStates.length > 0 ? (
+                    <select className="field-select" value={form.state || ''}
+                      onChange={e => setForm({...form, state: e.target.value})}>
+                      <option value="">Selecciona un estado</option>
+                      {countryStates.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  ) : (
+                    <input className="field-input" value={form.state || ''}
+                      placeholder="Ej. Jalisco"
+                      onChange={e => setForm({...form, state: e.target.value})} />
+                  )}
                 </div>
+
+                {/* Membresía inicial — sólo al crear */}
+                {!form.id && (
+                  <>
+                    <div style={{ gridColumn: '1 / -1', borderTop: '1px solid var(--sand-100)', paddingTop: 14, marginTop: 4 }}>
+                      <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-500)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>
+                        Membresía inicial (opcional)
+                      </p>
+                    </div>
+                    <div className="field">
+                      <label className="field-label">Plan de Suscripción</label>
+                      <select className="field-select" value={form.initial_plan || ''}
+                        onChange={e => setForm({...form, initial_plan: e.target.value})}>
+                        <option value="">Sin plan (solo registrar)</option>
+                        {plans.map(p => (
+                          <option key={p.id} value={p.id}>{p.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="field">
+                      <label className="field-label">Estado de Membresía</label>
+                      <select className="field-select" value={form.initial_sub_status || 'trial'}
+                        onChange={e => setForm({...form, initial_sub_status: e.target.value})}>
+                        <option value="trial">Período de Prueba</option>
+                        <option value="active">Activa</option>
+                      </select>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
             <div className="modal-foot">
@@ -752,7 +823,8 @@ export default function Tenants() {
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* Subscription modal */}
       {subModal && (

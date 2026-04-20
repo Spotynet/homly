@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { subscriptionPlansAPI, trialRequestsAPI, tenantSubscriptionsAPI } from '../api/client';
+import { subscriptionPlansAPI, trialRequestsAPI, tenantSubscriptionsAPI, tenantsAPI } from '../api/client';
 import {
   Plus, Edit, Trash2, Check, X, ChevronDown, ChevronUp,
   DollarSign, Users, Clock, Zap, Star, AlertCircle, RefreshCw,
-  CheckCircle, XCircle, ShieldCheck, Building2,
+  CheckCircle, XCircle, ShieldCheck, Building2, CreditCard,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -856,17 +856,338 @@ function TabSolicitudes() {
   );
 }
 
+// ─── Row Panel (inline status edit + payment) ────────────────────────────────
+
+function RowPanel({ sub, plans, onRefresh }) {
+  const [status, setStatus]   = useState(sub.status);
+  const [plan,   setPlan]     = useState(sub.plan || '');
+  const [saving, setSaving]   = useState(false);
+  const [showPay, setShowPay] = useState(false);
+  const [pay, setPay] = useState({
+    amount: '', currency: sub.currency || 'MXN', period_label: '',
+    payment_date: '', payment_method: 'transfer', reference: '', notes: '',
+  });
+
+  const inputSt = { width: '100%', border: '1px solid #E2E8F0', borderRadius: 8, padding: '7px 10px', fontSize: 13, boxSizing: 'border-box' };
+  const labelSt = { display: 'block', fontSize: 11, fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 };
+
+  const handleUpdateStatus = async () => {
+    setSaving(true);
+    try {
+      await tenantSubscriptionsAPI.update(sub.id, { status, plan: plan || null });
+      await tenantSubscriptionsAPI.syncStatus(sub.id);
+      toast.success('Membresía actualizada');
+      onRefresh();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || 'Error al actualizar');
+    } finally { setSaving(false); }
+  };
+
+  const handleRecordPayment = async () => {
+    if (!pay.amount || !pay.payment_date) { toast.error('Monto y fecha son obligatorios'); return; }
+    setSaving(true);
+    try {
+      await tenantSubscriptionsAPI.recordPayment(sub.id, { ...pay, amount: Number(pay.amount) });
+      toast.success('Pago registrado');
+      setPay({ amount: '', currency: sub.currency || 'MXN', period_label: '', payment_date: '', payment_method: 'transfer', reference: '', notes: '' });
+      setShowPay(false);
+      onRefresh();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || 'Error al registrar pago');
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <div className="bg-slate-50 border-t border-slate-100 px-4 py-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+        {/* Left: status + plan edit */}
+        <div>
+          <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Modificar membresía</p>
+          <div className="grid grid-cols-2 gap-3 mb-3">
+            <div>
+              <label style={labelSt}>Estado</label>
+              <select value={status} onChange={e => setStatus(e.target.value)} style={inputSt}>
+                <option value="trial">Período de Prueba</option>
+                <option value="active">Activa</option>
+                <option value="past_due">Vencida</option>
+                <option value="cancelled">Cancelada</option>
+                <option value="expired">Expirada</option>
+              </select>
+            </div>
+            <div>
+              <label style={labelSt}>Plan</label>
+              <select value={plan} onChange={e => setPlan(e.target.value)} style={inputSt}>
+                <option value="">Sin plan</option>
+                {plans.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </div>
+          </div>
+          {(status === 'cancelled' || status === 'expired') && (
+            <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
+              ⚠️ Cambiar a este estado desactivará el acceso del tenant.
+            </p>
+          )}
+          <button onClick={handleUpdateStatus} disabled={saving}
+            className="w-full py-2 bg-teal-600 text-white text-xs font-bold rounded-lg hover:bg-teal-700 disabled:opacity-50 transition-colors">
+            {saving ? 'Guardando…' : 'Guardar Cambios'}
+          </button>
+        </div>
+
+        {/* Right: payment form */}
+        <div>
+          <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Confirmar pago</p>
+          <button onClick={() => setShowPay(p => !p)}
+            className="flex items-center gap-2 px-4 py-2 text-xs font-bold text-teal-700 bg-teal-50 border border-teal-200 rounded-lg hover:bg-teal-100 transition-colors mb-3">
+            <DollarSign size={13} />
+            {showPay ? 'Cancelar' : 'Registrar Pago'}
+            {showPay ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+          </button>
+          {showPay && (
+            <div className="space-y-2">
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { key: 'amount',       label: 'Monto',             type: 'number', placeholder: '0.00' },
+                  { key: 'payment_date', label: 'Fecha',             type: 'date' },
+                  { key: 'period_label', label: 'Período cubierto',  type: 'text',   placeholder: 'Ej: Enero 2025' },
+                  { key: 'reference',    label: 'Referencia',        type: 'text',   placeholder: 'No. transacción' },
+                ].map(({ key, label, type, placeholder }) => (
+                  <div key={key}>
+                    <label style={labelSt}>{label}</label>
+                    <input type={type} value={pay[key]} placeholder={placeholder}
+                      onChange={e => setPay(p => ({ ...p, [key]: e.target.value }))}
+                      style={inputSt} />
+                  </div>
+                ))}
+                <div>
+                  <label style={labelSt}>Método</label>
+                  <select value={pay.payment_method} onChange={e => setPay(p => ({ ...p, payment_method: e.target.value }))} style={inputSt}>
+                    <option value="transfer">Transferencia</option>
+                    <option value="cash">Efectivo</option>
+                    <option value="card">Tarjeta</option>
+                    <option value="other">Otro</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={labelSt}>Moneda</label>
+                  <select value={pay.currency} onChange={e => setPay(p => ({ ...p, currency: e.target.value }))} style={inputSt}>
+                    {['MXN','USD','EUR','COP'].map(c => <option key={c}>{c}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label style={labelSt}>Notas</label>
+                <textarea value={pay.notes} onChange={e => setPay(p => ({ ...p, notes: e.target.value }))} rows={2}
+                  style={{ ...inputSt, resize: 'vertical' }} />
+              </div>
+              <button onClick={handleRecordPayment} disabled={saving}
+                className="w-full py-2 bg-teal-600 text-white text-xs font-bold rounded-lg hover:bg-teal-700 disabled:opacity-50 transition-colors">
+                {saving ? 'Guardando…' : 'Confirmar Pago'}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── New Subscription Modal ───────────────────────────────────────────────────
+
+function NewSubModal({ plans, onClose, onDone }) {
+  const [allTenants,    setAllTenants]    = useState([]);
+  const [existingIds,   setExistingIds]   = useState(new Set());
+  const [loading,       setLoading]       = useState(true);
+  const [saving,        setSaving]        = useState(false);
+  const [form, setForm] = useState({
+    tenant: '', plan: '', status: 'trial',
+    trial_start: '', trial_end: '',
+    billing_start: '', next_billing_date: '',
+    amount_per_cycle: '', currency: 'MXN', notes: '',
+  });
+
+  const f = k => e => setForm(p => ({ ...p, [k]: e.target.value }));
+  const inputCls = 'w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500';
+  const labelCls = 'block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider';
+
+  useEffect(() => {
+    Promise.all([
+      tenantsAPI.list(),
+      tenantSubscriptionsAPI.list(),
+    ]).then(([rT, rS]) => {
+      const tenants = rT.data.results || rT.data;
+      const subs    = rS.data.results || rS.data;
+      setAllTenants(tenants);
+      setExistingIds(new Set(subs.map(s => s.tenant)));
+    }).catch(() => toast.error('Error al cargar datos'))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const available = allTenants.filter(t => !existingIds.has(t.id));
+
+  // Auto-calculate trial_end when plan and trial_start change
+  useEffect(() => {
+    if (!form.trial_start || !form.plan) return;
+    const plan = plans.find(p => p.id === form.plan);
+    if (!plan?.trial_days) return;
+    const d = new Date(form.trial_start);
+    d.setDate(d.getDate() + Number(plan.trial_days));
+    setForm(p => ({ ...p, trial_end: d.toISOString().slice(0, 10) }));
+  }, [form.trial_start, form.plan, plans]);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!form.tenant) { toast.error('Selecciona un tenant'); return; }
+    setSaving(true);
+    try {
+      const payload = {
+        tenant:            form.tenant,
+        plan:              form.plan || null,
+        status:            form.status,
+        trial_start:       form.trial_start       || null,
+        trial_end:         form.trial_end         || null,
+        billing_start:     form.billing_start     || null,
+        next_billing_date: form.next_billing_date || null,
+        amount_per_cycle:  Number(form.amount_per_cycle) || 0,
+        currency:          form.currency,
+        notes:             form.notes,
+      };
+      const res = await tenantSubscriptionsAPI.create(payload);
+      if (res.data?.id) await tenantSubscriptionsAPI.syncStatus(res.data.id);
+      toast.success('Suscripción creada');
+      onDone();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || Object.values(e?.response?.data || {})[0]?.[0] || 'Error al crear suscripción');
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between p-5 border-b border-slate-100">
+          <div>
+            <h2 className="text-base font-bold text-slate-800">Nueva Suscripción</h2>
+            <p className="text-xs text-slate-500 mt-0.5">Asignar membresía manualmente a un tenant existente</p>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 transition-colors">
+            <X size={18} className="text-slate-500" />
+          </button>
+        </div>
+
+        {loading ? (
+          <div className="flex justify-center items-center py-16">
+            <div className="w-6 h-6 border-4 border-teal-600 border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="p-5 space-y-4">
+
+            {/* Tenant selector */}
+            <div>
+              <label className={labelCls}>Tenant *</label>
+              {available.length === 0 ? (
+                <p className="text-sm text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  Todos los tenants ya tienen una suscripción asignada.
+                </p>
+              ) : (
+                <select value={form.tenant} onChange={f('tenant')} required className={inputCls}>
+                  <option value="">Selecciona un tenant…</option>
+                  {available.map(t => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              {/* Plan */}
+              <div>
+                <label className={labelCls}>Plan</label>
+                <select value={form.plan} onChange={f('plan')} className={inputCls}>
+                  <option value="">Sin plan</option>
+                  {plans.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              </div>
+              {/* Estado */}
+              <div>
+                <label className={labelCls}>Estado</label>
+                <select value={form.status} onChange={f('status')} className={inputCls}>
+                  <option value="trial">Período de Prueba</option>
+                  <option value="active">Activa</option>
+                  <option value="past_due">Vencida</option>
+                  <option value="cancelled">Cancelada</option>
+                  <option value="expired">Expirada</option>
+                </select>
+              </div>
+              {/* Fechas */}
+              {[
+                { key: 'trial_start',       label: 'Inicio Prueba'      },
+                { key: 'trial_end',         label: 'Fin Prueba'         },
+                { key: 'billing_start',     label: 'Inicio Facturación' },
+                { key: 'next_billing_date', label: 'Próx. Cobro'        },
+              ].map(({ key, label }) => (
+                <div key={key}>
+                  <label className={labelCls}>{label}</label>
+                  <input type="date" value={form[key]} onChange={f(key)} className={inputCls} />
+                </div>
+              ))}
+              {/* Monto */}
+              <div>
+                <label className={labelCls}>Monto / Ciclo</label>
+                <input type="number" min="0" step="0.01" value={form.amount_per_cycle} onChange={f('amount_per_cycle')} placeholder="0.00" className={inputCls} />
+              </div>
+              {/* Moneda */}
+              <div>
+                <label className={labelCls}>Moneda</label>
+                <select value={form.currency} onChange={f('currency')} className={inputCls}>
+                  {['MXN','USD','EUR','COP'].map(c => <option key={c}>{c}</option>)}
+                </select>
+              </div>
+            </div>
+
+            {/* Notas */}
+            <div>
+              <label className={labelCls}>Notas internas</label>
+              <textarea value={form.notes} onChange={f('notes')} rows={2}
+                className={`${inputCls} resize-none`} placeholder="Notas opcionales…" />
+            </div>
+
+            <div className="flex justify-end gap-3 pt-2 border-t border-slate-100">
+              <button type="button" onClick={onClose}
+                className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">
+                Cancelar
+              </button>
+              <button type="submit" disabled={saving || available.length === 0}
+                className="px-5 py-2 bg-teal-600 text-white text-sm font-semibold rounded-lg hover:bg-teal-700 disabled:opacity-50 transition-colors">
+                {saving ? 'Creando…' : 'Crear Suscripción'}
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Tab: Suscripciones ───────────────────────────────────────────────────────
 
 function TabSuscripciones() {
-  const [subs, setSubs] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState('');
+  const [subs,          setSubs]          = useState([]);
+  const [plans,         setPlans]         = useState([]);
+  const [loading,       setLoading]       = useState(true);
+  const [statusFilter,  setStatusFilter]  = useState('');
+  const [expandedId,    setExpandedId]    = useState(null);
+  const [showNewModal,  setShowNewModal]  = useState(false);
 
   const load = useCallback(() => {
     setLoading(true);
-    tenantSubscriptionsAPI.list({ status: statusFilter || undefined })
-      .then(r => setSubs(r.data.results || r.data))
+    Promise.all([
+      tenantSubscriptionsAPI.list({ status: statusFilter || undefined }),
+      subscriptionPlansAPI.list({ active_only: 1 }),
+    ])
+      .then(([rSubs, rPlans]) => {
+        setSubs(rSubs.data.results || rSubs.data);
+        setPlans(rPlans.data.results || rPlans.data);
+      })
       .catch(() => toast.error('Error al cargar suscripciones'))
       .finally(() => setLoading(false));
   }, [statusFilter]);
@@ -883,8 +1204,8 @@ function TabSuscripciones() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h3 className="text-base font-bold text-slate-800">Suscripciones Activas</h3>
-          <p className="text-sm text-slate-500 mt-0.5">Estado de las membresías de todos los tenants</p>
+          <h3 className="text-base font-bold text-slate-800">Suscripciones</h3>
+          <p className="text-sm text-slate-500 mt-0.5">Gestiona las membresías de todos los tenants</p>
         </div>
         <div className="flex items-center gap-3">
           <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
@@ -900,20 +1221,24 @@ function TabSuscripciones() {
             className="p-2 text-slate-500 hover:bg-slate-100 rounded-xl transition-colors">
             <RefreshCw size={16} />
           </button>
+          <button onClick={() => setShowNewModal(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-teal-600 text-white text-sm font-semibold rounded-xl hover:bg-teal-700 transition-colors">
+            <Plus size={15} /> Nueva Suscripción
+          </button>
         </div>
       </div>
 
       {subs.length === 0 ? (
         <div className="text-center py-16 text-slate-400">
-          <Zap size={40} className="mx-auto mb-3 opacity-30" />
+          <CreditCard size={40} className="mx-auto mb-3 opacity-30" />
           <p className="font-medium">Sin suscripciones</p>
-          <p className="text-sm mt-1">Aquí aparecerán los tenants cuando tengan una membresía activa</p>
+          <p className="text-sm mt-1">Crea una suscripción o aprueba una solicitud de prueba</p>
         </div>
       ) : (
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto rounded-xl border border-slate-200">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-slate-100">
+              <tr className="bg-slate-50 border-b border-slate-200">
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Tenant</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Plan</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Estado</th>
@@ -921,43 +1246,68 @@ function TabSuscripciones() {
                 <th className="px-4 py-3 text-right text-xs font-semibold text-slate-400 uppercase tracking-wider">Monto/ciclo</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Prueba vence</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Próx. cobro</th>
+                <th className="px-4 py-3 w-10" />
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-50">
+            <tbody>
               {subs.map(sub => {
-                const st = STATUS_LABELS[sub.status] || { label: sub.status, color: 'bg-slate-100 text-slate-600' };
+                const st       = STATUS_LABELS[sub.status] || { label: sub.status, color: 'bg-slate-100 text-slate-600' };
+                const isOpen   = expandedId === sub.id;
                 return (
-                  <tr key={sub.id} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-4 py-3">
-                      <p className="font-semibold text-slate-800">{sub.tenant_name}</p>
-                    </td>
-                    <td className="px-4 py-3 text-slate-600">{sub.plan_name || '—'}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <Badge label={st.label} color={st.color} />
-                        {sub.status === 'trial' && sub.trial_days_remaining != null && (
-                          <span className="text-xs text-blue-600 font-medium">
-                            {sub.trial_days_remaining}d restantes
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-right font-medium text-slate-700">{sub.units_count}</td>
-                    <td className="px-4 py-3 text-right font-semibold text-teal-700">
-                      {sub.amount_per_cycle > 0 ? fmtAmt(sub.amount_per_cycle, sub.currency) : '—'}
-                    </td>
-                    <td className="px-4 py-3 text-slate-500 text-xs">
-                      {sub.trial_end ? new Date(sub.trial_end).toLocaleDateString('es-MX') : '—'}
-                    </td>
-                    <td className="px-4 py-3 text-slate-500 text-xs">
-                      {sub.next_billing_date ? new Date(sub.next_billing_date).toLocaleDateString('es-MX') : '—'}
-                    </td>
-                  </tr>
+                  <React.Fragment key={sub.id}>
+                    <tr
+                      className={`border-b border-slate-100 cursor-pointer transition-colors ${isOpen ? 'bg-teal-50' : 'hover:bg-slate-50'}`}
+                      onClick={() => setExpandedId(isOpen ? null : sub.id)}
+                    >
+                      <td className="px-4 py-3">
+                        <p className="font-semibold text-slate-800">{sub.tenant_name}</p>
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">{sub.plan_name || '—'}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <Badge label={st.label} color={st.color} />
+                          {sub.status === 'trial' && sub.trial_days_remaining != null && (
+                            <span className="text-xs text-blue-600 font-medium">
+                              {sub.trial_days_remaining}d restantes
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-right font-medium text-slate-700">{sub.units_count}</td>
+                      <td className="px-4 py-3 text-right font-semibold text-teal-700">
+                        {sub.amount_per_cycle > 0 ? fmtAmt(sub.amount_per_cycle, sub.currency) : '—'}
+                      </td>
+                      <td className="px-4 py-3 text-slate-500 text-xs">
+                        {sub.trial_end ? new Date(sub.trial_end).toLocaleDateString('es-MX') : '—'}
+                      </td>
+                      <td className="px-4 py-3 text-slate-500 text-xs">
+                        {sub.next_billing_date ? new Date(sub.next_billing_date).toLocaleDateString('es-MX') : '—'}
+                      </td>
+                      <td className="px-4 py-3 text-slate-400">
+                        {isOpen ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+                      </td>
+                    </tr>
+                    {isOpen && (
+                      <tr>
+                        <td colSpan="8" className="p-0">
+                          <RowPanel sub={sub} plans={plans} onRefresh={() => { setExpandedId(null); load(); }} />
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
                 );
               })}
             </tbody>
           </table>
         </div>
+      )}
+
+      {showNewModal && (
+        <NewSubModal
+          plans={plans}
+          onClose={() => setShowNewModal(false)}
+          onDone={() => { setShowNewModal(false); load(); }}
+        />
       )}
     </div>
   );
