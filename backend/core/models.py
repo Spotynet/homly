@@ -104,7 +104,12 @@ class Tenant(models.Model):
     maintenance_fee = models.DecimalField(max_digits=12, decimal_places=2, default=0,
                                           validators=[MinValueValidator(0)])
     currency = models.CharField(max_length=3, choices=CURRENCY_CHOICES, default='MXN')
-    logo = models.TextField(blank=True, default='', help_text='Base64-encoded logo image')
+    logo = models.TextField(blank=True, default='', help_text='Base64-encoded logo image (deprecado — usar logo_file)')
+    # MIGRACIÓN Base64→File: nuevo campo que reemplazará a `logo`
+    logo_file = models.ImageField(
+        upload_to='tenant_logos/', null=True, blank=True,
+        help_text='Logo almacenado como archivo. Reemplaza al campo logo (Base64).',
+    )
     operation_start_date = models.CharField(max_length=7, default='2024-01',
                                             help_text='Format: YYYY-MM')
     operation_type = models.CharField(max_length=10, choices=OPERATION_TYPE_CHOICES, default='fiscal')
@@ -289,7 +294,12 @@ class Unit(models.Model):
     previous_debt = models.DecimalField(max_digits=12, decimal_places=2, default=0,
                                         help_text='Adeudo anterior al inicio')
     previous_debt_evidence = models.TextField(blank=True, default='',
-                                             help_text='Base64 PDF evidencia del adeudo anterior')
+                                             help_text='Base64 PDF evidencia del adeudo anterior (deprecado — usar previous_debt_evidence_file)')
+    # MIGRACIÓN Base64→File: nuevo campo que reemplazará a `previous_debt_evidence`
+    previous_debt_evidence_file = models.FileField(
+        upload_to='unit_debt_evidences/', null=True, blank=True,
+        help_text='Evidencia de adeudo anterior como archivo. Reemplaza al campo previous_debt_evidence (Base64).',
+    )
     credit_balance = models.DecimalField(max_digits=12, decimal_places=2, default=0,
                                          help_text='Saldo a favor previo al inicio de operaciones')
     is_active = models.BooleanField(default=True,
@@ -389,7 +399,12 @@ class Payment(models.Model):
                                      blank=True, default='')
     payment_date = models.DateField(null=True, blank=True)
     notes = models.TextField(blank=True, default='')
-    evidence = models.TextField(blank=True, default='', help_text='Base64 evidence image')
+    evidence = models.TextField(blank=True, default='', help_text='Base64 evidence image (deprecado — usar evidence_file)')
+    # MIGRACIÓN Base64→File: nuevo campo que reemplazará a `evidence`
+    evidence_file = models.ImageField(
+        upload_to='payment_evidences/', null=True, blank=True,
+        help_text='Comprobante de pago como archivo. Reemplaza al campo evidence (Base64).',
+    )
     bank_reconciled = models.BooleanField(default=False)
     folio = models.CharField(max_length=50, blank=True, default='',
                              help_text='Folio / número de recibo asignado al pago')
@@ -476,7 +491,12 @@ class GastoEntry(models.Model):
     provider_invoice = models.CharField(max_length=100, blank=True, default='')
     bank_reconciled = models.BooleanField(default=False)
     notes = models.TextField(blank=True, default='')
-    evidence = models.TextField(blank=True, default='')
+    evidence = models.TextField(blank=True, default='', help_text='Base64 evidence (deprecado — usar evidence_file)')
+    # MIGRACIÓN Base64→File: nuevo campo que reemplazará a `evidence`
+    evidence_file = models.FileField(
+        upload_to='gasto_evidences/', null=True, blank=True,
+        help_text='Comprobante de gasto como archivo. Reemplaza al campo evidence (Base64).',
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -653,7 +673,12 @@ class BankStatement(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='bank_statements')
     period = models.CharField(max_length=7)
-    file_data = models.TextField(help_text='Base64 encoded PDF')
+    file_data = models.TextField(help_text='Base64 encoded PDF (deprecado — usar statement_file)')
+    # MIGRACIÓN Base64→File: nuevo campo que reemplazará a `file_data`
+    statement_file = models.FileField(
+        upload_to='bank_statements/', null=True, blank=True,
+        help_text='Estado bancario PDF como archivo. Reemplaza al campo file_data (Base64).',
+    )
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

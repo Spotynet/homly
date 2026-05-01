@@ -23,6 +23,38 @@ SECRET_KEY = config('SECRET_KEY', default='dev-secret-change-in-production-!@#$%
 DEBUG = config('DEBUG', default=True, cast=bool)
 ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1').split(',')
 
+# ─── Guardia de producción (riesgo ALTO corregido) ──────
+# Evita arrancar el servidor si la configuración es insegura para producción.
+_INSECURE_KEYS = {
+    'dev-secret-change-in-production-!@#$%',
+    'CAMBIA-ESTO-POR-UNA-CLAVE-ALEATORIA-DE-50-CARACTERES',
+    'JJDKSAJDKWFJ525353',  # clave original comprometida — nunca reutilizar
+}
+if not DEBUG:
+    # En producción: SECRET_KEY debe ser robusta (mínimo 50 caracteres y no default)
+    if SECRET_KEY in _INSECURE_KEYS or len(SECRET_KEY) < 50:
+        raise Exception(
+            '[HOMLY SECURITY] No se puede iniciar en producción: SECRET_KEY es insegura o '
+            'es el valor por defecto. Genera una clave de 50+ caracteres y configúrala '
+            'como variable de entorno del sistema (NO en el archivo .env).\n'
+            'Comando: python3 -c "import secrets,string; '
+            'print(\'\'.join(secrets.choice(string.ascii_letters+string.digits+\'!@#$%^&*(-_=+)\') '
+            'for _ in range(64)))"'
+        )
+    # En producción: ALLOWED_HOSTS no debe incluir * ni ser el valor local
+    if '*' in ALLOWED_HOSTS:
+        raise Exception(
+            '[HOMLY SECURITY] ALLOWED_HOSTS no puede contener "*" en producción. '
+            'Configura el dominio real, ej: homly.com.mx,www.homly.com.mx'
+        )
+    if set(ALLOWED_HOSTS) <= {'localhost', '127.0.0.1', ''}:
+        import warnings
+        warnings.warn(
+            '[HOMLY SECURITY] ALLOWED_HOSTS solo contiene localhost. '
+            'En producción configura el dominio real.',
+            stacklevel=2,
+        )
+
 # ─── Applications ───────────────────────────────────────
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -44,6 +76,9 @@ MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
     'corsheaders.middleware.CorsMiddleware',
+    # Rate limiting en endpoints de auth (riesgo ALTO corregido)
+    # Debe ir antes de SessionMiddleware y CommonMiddleware para bloquear antes de procesar
+    'core.middleware.AuthRateLimitMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -103,8 +138,24 @@ DATABASES = {
 AUTH_USER_MODEL = 'core.User'
 
 AUTH_PASSWORD_VALIDATORS = [
-    {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
-     'OPTIONS': {'min_length': 6}},
+    # Longitud mínima: 10 caracteres (antes era 6 — riesgo ALTO corregido)
+    {
+        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
+        'OPTIONS': {'min_length': 10},
+    },
+    # No puede ser demasiado similar al nombre o email del usuario
+    {
+        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
+        'OPTIONS': {'user_attributes': ('email', 'name'), 'max_similarity': 0.6},
+    },
+    # No puede ser una contraseña de la lista de las más comunes (ej. "password123")
+    {
+        'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
+    },
+    # No puede ser enteramente numérica (ej. "1234567890")
+    {
+        'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
+    },
 ]
 
 # ─── REST Framework ─────────────────────────────────────
@@ -165,14 +216,44 @@ STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
+# MEDIA — archivos subidos por usuarios (FileField / ImageField)
+# En producción reemplazar con almacenamiento externo (S3, DigitalOcean Spaces, etc.)
+# Para S3: pip install django-storages boto3
+#   DEFAULT_FILE_STORAGE = 'storages.backends.s3boto3.S3Boto3Storage'
+#   AWS_STORAGE_BUCKET_NAME = config('AWS_STORAGE_BUCKET_NAME', default='homly-media')
+#   AWS_S3_REGION_NAME = config('AWS_S3_REGION_NAME', default='us-east-1')
+#   AWS_ACCESS_KEY_ID = config('AWS_ACCESS_KEY_ID', default='')
+#   AWS_SECRET_ACCESS_KEY = config('AWS_SECRET_ACCESS_KEY', default='')
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
+
+# Asegurar que el directorio de media exista
+import os
+os.makedirs(BASE_DIR / 'media', exist_ok=True)
 
 # ─── Internationalization ──────────────────────────────
 LANGUAGE_CODE = 'es-mx'
 TIME_ZONE = 'America/Mexico_City'
 USE_I18N = True
 USE_TZ = True
+
+# ─── Cache (usado por AuthRateLimitMiddleware) ──────────
+# En desarrollo: LocMemCache (en memoria, no compartido entre workers)
+# En producción con múltiples workers Gunicorn: cambiar a Redis para que el
+# rate limiting sea efectivo entre todos los procesos.
+# Ejemplo Redis: pip install django-redis
+#   CACHES = {
+#       'default': {
+#           'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+#           'LOCATION': config('REDIS_URL', default='redis://127.0.0.1:6379/1'),
+#       }
+#   }
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'homly-rate-limit',
+    }
+}
 
 # ─── Defaults ──────────────────────────────────────────
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'

@@ -8,14 +8,14 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_DB: homly_db
-      POSTGRES_USER: homly_user
-      POSTGRES_PASSWORD: homly_pass
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: bsWkIbZQr5kKCQSC1sOfupBQIUaL
     ports:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U homly_user -d homly_db"]
+      test: ["CMD-SHELL", "pg_isready -U admin -d homly_db"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -33,10 +33,10 @@ services:
              python manage.py runserver 0.0.0.0:8000"
     environment:
       - DEBUG=True
-      - SECRET_KEY=dev-secret-change-in-production-!@#$%
+      - SECRET_KEY=%laplE@5&Q(P4jNIRM2qXmxKXucerq4y7bvSr+b%G8@C+!z5EnPp1dAmzn*-GcS*
       - DB_NAME=homly_db
-      - DB_USER=homly_user
-      - DB_PASSWORD=homly_pass
+      - DB_USER=admin
+      - DB_PASSWORD=bsWkIbZQr5kKCQSC1sOfupBQIUaL
       - DB_HOST=db
       - DB_PORT=5432
       - ALLOWED_HOSTS=localhost,127.0.0.1,backend
