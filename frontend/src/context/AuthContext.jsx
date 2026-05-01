@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { authAPI } from '../api/client';
+import { setAccessToken, clearAccessToken } from '../api/tokenStore';
 
 const AuthContext = createContext(null);
 
@@ -13,9 +14,13 @@ export function AuthProvider({ children }) {
   const [mustChangePassword, setMustChangePassword] = useState(false);
   const [profileId,          setProfileId]          = useState('');
 
-  // ── Restore session from localStorage ────────────────────────────────────
+  // ── Restore session on page load ─────────────────────────────────────────
+  // M-06: El access_token vive en memoria (se pierde al recargar).
+  // Al cargar la app, restauramos el access_token llamando al endpoint de refresh,
+  // que lee el refresh_token desde la HttpOnly cookie (nunca accesible por JS).
+  // Los datos de usuario (no sensibles) siguen en localStorage para restaurar la UI
+  // inmediatamente mientras el refresh se completa en segundo plano.
   useEffect(() => {
-    const token          = localStorage.getItem('access_token');
     const savedUser      = localStorage.getItem('user');
     const savedRole      = localStorage.getItem('role');
     const savedTenant    = localStorage.getItem('tenant_id');
@@ -23,25 +28,48 @@ export function AuthProvider({ children }) {
     const savedMustChange= localStorage.getItem('must_change_password');
     const savedProfileId = localStorage.getItem('profile_id');
 
-    if (token && savedUser) {
-      setUser(JSON.parse(savedUser));
-      setRole(savedRole);
-      setTenantId(savedTenant && savedTenant !== 'null' ? savedTenant : null);
-      setTenantName(savedTenantName && savedTenantName !== 'null' ? savedTenantName : null);
-      setMustChangePassword(savedMustChange === 'true');
-      setProfileId(savedProfileId || '');
-    }
-    setLoading(false);
+    const restoreSession = async () => {
+      try {
+        // Intentar renovar el access_token desde la HttpOnly cookie
+        const { data } = await authAPI.refreshToken();
+        setAccessToken(data.access);  // guardar en memoria, no en localStorage
+        // Restaurar estado de usuario desde localStorage (datos no sensibles)
+        if (savedUser) {
+          setUser(JSON.parse(savedUser));
+          setRole(savedRole);
+          setTenantId(savedTenant && savedTenant !== 'null' ? savedTenant : null);
+          setTenantName(savedTenantName && savedTenantName !== 'null' ? savedTenantName : null);
+          setMustChangePassword(savedMustChange === 'true');
+          setProfileId(savedProfileId || '');
+        }
+      } catch {
+        // Cookie expirada o no existe — limpiar estado local
+        clearAccessToken();
+        localStorage.removeItem('user');
+        localStorage.removeItem('role');
+        localStorage.removeItem('tenant_id');
+        localStorage.removeItem('tenant_name');
+        localStorage.removeItem('must_change_password');
+        localStorage.removeItem('profile_id');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    restoreSession();
   }, []);
 
-  // ── Persist auth data to localStorage ────────────────────────────────────
+  // ── Persist auth data ─────────────────────────────────────────────────────
+  // M-06: access_token → solo en memoria (tokenStore). NO en localStorage.
+  //       refresh_token → llega como HttpOnly cookie del backend. NO se toca desde JS.
+  //       Datos de usuario (no sensibles) → localStorage para restaurar la UI al recargar.
   const _persist = (data) => {
-    localStorage.setItem('access_token',  data.access);
-    localStorage.setItem('refresh_token', data.refresh);
-    localStorage.setItem('user',          JSON.stringify(data.user));
+    setAccessToken(data.access);  // M-06: memoria, no localStorage
+    // NO guardar refresh_token — viene como HttpOnly cookie del backend
+    localStorage.setItem('user',                JSON.stringify(data.user));
     localStorage.setItem('role',                data.role);
     localStorage.setItem('must_change_password', data.must_change_password ? 'true' : 'false');
-    localStorage.setItem('profile_id', data.profile_id || '');
+    localStorage.setItem('profile_id',          data.profile_id || '');
     if (data.tenant_id) {
       localStorage.setItem('tenant_id',   data.tenant_id);
       localStorage.setItem('tenant_name', data.tenant_name);
@@ -105,8 +133,16 @@ export function AuthProvider({ children }) {
   }, []);
 
   // ── Logout ────────────────────────────────────────────────────────────────
-  const logout = useCallback(() => {
-    localStorage.clear();
+  const logout = useCallback(async () => {
+    // M-06: Llamar al backend para blacklistear el refresh token y eliminar la cookie.
+    try { await authAPI.logout(); } catch { /* ignorar errores — cerrar sesión de todas formas */ }
+    clearAccessToken();  // limpiar access_token de memoria
+    localStorage.removeItem('user');
+    localStorage.removeItem('role');
+    localStorage.removeItem('tenant_id');
+    localStorage.removeItem('tenant_name');
+    localStorage.removeItem('must_change_password');
+    localStorage.removeItem('profile_id');
     setUser(null);
     setRole(null);
     setTenantId(null);

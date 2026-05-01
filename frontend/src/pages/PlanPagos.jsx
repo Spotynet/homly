@@ -326,8 +326,11 @@ export default function PlanPagos() {
 
   const handleDownloadPDF = async (plan) => {
     // Use native fetch to avoid any Axios blob-wrapping issues.
-    const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
-    const token = localStorage.getItem('access_token');
+    // B-04: REACT_APP_ → import.meta.env.VITE_ (migración CRA → Vite)
+    // M-06: access_token en memoria (tokenStore), no en localStorage
+    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+    const { getAccessToken } = await import('../api/tokenStore');
+    const token = getAccessToken();
     try {
       const response = await fetch(
         `${apiUrl}/tenants/${tenantId}/payment-plans/${plan.id}/pdf/`,

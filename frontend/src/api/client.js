@@ -1,41 +1,53 @@
 import axios from 'axios';
+import { getAccessToken, setAccessToken, clearAccessToken } from './tokenStore';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
+// B-04: REACT_APP_ → import.meta.env.VITE_ (migración CRA → Vite)
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
 const api = axios.create({
   baseURL: API_URL,
   headers: { 'Content-Type': 'application/json' },
+  // M-06: withCredentials=true para que el navegador envíe la HttpOnly cookie
+  // del refresh token en las peticiones cross-origin (desarrollo) y same-origin (producción).
+  withCredentials: true,
 });
 
-// Request interceptor: attach JWT
+// Request interceptor: attach JWT desde memoria (no localStorage)
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('access_token');
+  const token = getAccessToken();  // M-06: leer desde tokenStore (memoria)
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
 });
 
-// Response interceptor: handle 401 → refresh token
+// Response interceptor: handle 401 → refresh token via HttpOnly cookie
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const original = error.config;
     if (error.response?.status === 401 && !original._retry) {
       original._retry = true;
-      const refresh = localStorage.getItem('refresh_token');
-      if (refresh) {
-        try {
-          const { data } = await axios.post(`${API_URL}/auth/token/refresh/`, {
-            refresh,
-          });
-          localStorage.setItem('access_token', data.access);
-          original.headers.Authorization = `Bearer ${data.access}`;
-          return api(original);
-        } catch {
-          localStorage.clear();
-          window.location.href = '/login';
-        }
+      // M-06: No leer refresh_token de localStorage — viene desde la HttpOnly cookie.
+      // La cookie se envía automáticamente por el navegador (withCredentials: true).
+      try {
+        const { data } = await axios.post(
+          `${API_URL}/auth/token/refresh/`,
+          {},
+          { withCredentials: true },
+        );
+        setAccessToken(data.access);  // M-06: guardar en memoria, no localStorage
+        original.headers.Authorization = `Bearer ${data.access}`;
+        return api(original);
+      } catch {
+        clearAccessToken();
+        localStorage.removeItem('user');
+        localStorage.removeItem('role');
+        localStorage.removeItem('tenant_id');
+        localStorage.removeItem('tenant_name');
+        localStorage.removeItem('must_change_password');
+        localStorage.removeItem('profile_id');
+        window.location.href = '/login';
       }
     }
     return Promise.reject(error);
@@ -52,6 +64,9 @@ export const authAPI = {
   checkEmail:          (email)    => api.get('/auth/check-email/', { params: { email } }),
   getMyTenants:        ()         => api.get('/auth/my-tenants/'),
   switchTenant:        (tenantId) => api.post('/auth/switch-tenant/', { tenant_id: tenantId }),
+  // M-06: refresh desde HttpOnly cookie (no body) + logout que borra la cookie
+  refreshToken:        ()         => api.post('/auth/token/refresh/', {}),
+  logout:              ()         => api.post('/auth/logout/'),
 };
 
 // ─── Tenants ────────────────────────────────────

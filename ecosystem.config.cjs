@@ -12,7 +12,9 @@ module.exports = {
       name: 'homly-backend',
       cwd: './backend',
       script: './venv/bin/gunicorn',
-      args: 'homly_project.wsgi:application --bind 0.0.0.0:8000 --workers 2 --timeout 120',
+      // M-05: Bind solo a 127.0.0.1 — Gunicorn solo acepta conexiones desde localhost (Nginx).
+      // 0.0.0.0 exponía el puerto 8000 directamente a internet si el Security Group lo permitía.
+      args: 'homly_project.wsgi:application --bind 127.0.0.1:8000 --workers 2 --timeout 120',
       interpreter: 'none',
       env: { DJANGO_SETTINGS_MODULE: 'homly_project.settings' },
       autorestart: true,

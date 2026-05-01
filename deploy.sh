@@ -9,7 +9,10 @@ set -e  # Exit on any error
 
 PEM="$HOME/projects/pem/homly.pem"
 EC2_USER="ubuntu"
-EC2_HOST="34.200.72.248"
+# M-02: IP del servidor leída desde variable de entorno (nunca hardcodeada en el repo).
+# Definir en tu shell o en ~/.bashrc / ~/.zshrc:
+#   export HOMLY_EC2_HOST="<ip-o-dominio-del-servidor>"
+EC2_HOST="${HOMLY_EC2_HOST:?ERROR: Variable HOMLY_EC2_HOST no definida. Ejecuta: export HOMLY_EC2_HOST=<ip-del-servidor>}"
 EC2="$EC2_USER@$EC2_HOST"
 API_URL="https://homly.com.mx/api"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -25,7 +28,10 @@ echo ""
 # ── Step 1: Git push ─────────────────────────────────────────
 echo "▶ [1/5] Pushing changes to git..."
 cd "$PROJECT_DIR"
-git add -A
+# M-03: git add específico en lugar de 'git add -A' para evitar commit accidental
+# de .env, *.pem u otros archivos sensibles.
+git add backend/ frontend/src/ frontend/public/ frontend/package.json frontend/vite.config.js \
+        nginx-homly-ssl.conf nginx-rate-limit.conf ecosystem.config.cjs 2>/dev/null || true
 git diff --cached --quiet && echo "  No changes to commit, skipping." || git commit -m "deploy: $(date '+%Y-%m-%d %H:%M')"
 git pull --rebase origin main
 git push origin main

@@ -42,6 +42,12 @@ urlpatterns = [
     path('auth/check-email/', views.CheckEmailView.as_view(), name='check-email'),
     path('auth/my-tenants/', views.UserTenantsView.as_view(), name='my-tenants'),
     path('auth/switch-tenant/', views.SwitchTenantView.as_view(), name='switch-tenant'),
+    # M-06: refresh desde HttpOnly cookie (reemplaza el endpoint de simplejwt que lee del body)
+    path('auth/token/refresh/', views.CookieTokenRefreshView.as_view(), name='token-refresh-cookie'),
+    # M-06: logout que blacklistea el token y elimina la cookie
+    path('auth/logout/', views.LogoutView.as_view(), name='logout'),
+    # M-04: endpoint de media protegido (requiere autenticación, sirve via X-Accel-Redirect)
+    path('media/<path:media_path>', views.ProtectedMediaView.as_view(), name='protected-media'),
 
     # Users
     path('users/', views.UserCreateView.as_view(), name='user-create'),

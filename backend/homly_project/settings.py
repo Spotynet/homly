@@ -208,8 +208,9 @@ if not DEBUG:
     SECURE_CONTENT_TYPE_NOSNIFF = True
     SECURE_BROWSER_XSS_FILTER = True
     X_FRAME_OPTIONS = 'DENY'
-    SECURE_HSTS_SECONDS = 3600
+    SECURE_HSTS_SECONDS = 31_536_000   # B-02: 1 año (era 3600 — 1 hora)
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True         # Habilita pre-carga en navegadores
 
 # ─── Static / Media ────────────────────────────────────
 STATIC_URL = '/static/'
@@ -238,22 +239,27 @@ USE_I18N = True
 USE_TZ = True
 
 # ─── Cache (usado por AuthRateLimitMiddleware) ──────────
-# En desarrollo: LocMemCache (en memoria, no compartido entre workers)
-# En producción con múltiples workers Gunicorn: cambiar a Redis para que el
-# rate limiting sea efectivo entre todos los procesos.
-# Ejemplo Redis: pip install django-redis
-#   CACHES = {
-#       'default': {
-#           'BACKEND': 'django.core.cache.backends.redis.RedisCache',
-#           'LOCATION': config('REDIS_URL', default='redis://127.0.0.1:6379/1'),
-#       }
-#   }
-CACHES = {
-    'default': {
-        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
-        'LOCATION': 'homly-rate-limit',
+# M-08: Usa Redis si REDIS_URL está definida en .env (producción).
+# Redis comparte estado entre todos los workers Gunicorn → rate limiting efectivo.
+# En desarrollo sin REDIS_URL cae a LocMemCache (aceptable para 1 solo proceso).
+# Instalar: pip install django-redis
+_REDIS_URL = config('REDIS_URL', default='')
+if _REDIS_URL:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+            'LOCATION': _REDIS_URL,
+        }
     }
-}
+else:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+            'LOCATION': 'homly-rate-limit',
+            # ADVERTENCIA: LocMemCache no se comparte entre workers Gunicorn.
+            # Definir REDIS_URL en .env de producción para rate limiting efectivo.
+        }
+    }
 
 # ─── Defaults ──────────────────────────────────────────
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'

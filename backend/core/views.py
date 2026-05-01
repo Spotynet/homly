@@ -7,6 +7,7 @@ import json
 import threading
 from decimal import Decimal
 from django.db.models import Sum, Count, Q, F  # noqa: F401 - Q used in estado cuenta
+from django.conf import settings
 from django.http import HttpResponse
 from datetime import timedelta
 from django.utils import timezone
@@ -253,8 +254,101 @@ def _audit_log(request, module, action, description,
 
 
 # ═══════════════════════════════════════════════════════════
-#  AUTH
+#  AUTH — helpers y vistas de autenticación
 # ═══════════════════════════════════════════════════════════
+
+# ── Cookie helpers (M-06: JWT en HttpOnly cookie) ─────────────────────────────
+_REFRESH_COOKIE_NAME  = 'homly_refresh'
+_REFRESH_COOKIE_AGE   = 7 * 24 * 3600  # 7 días (igual que SIMPLE_JWT REFRESH_TOKEN_LIFETIME)
+
+
+def _set_refresh_cookie(response, refresh_token_str):
+    """
+    Agrega el refresh token como cookie HttpOnly al response.
+    HttpOnly → no accesible por JavaScript (protección XSS).
+    Secure  → solo enviada por HTTPS en producción.
+    SameSite=Strict → protección CSRF.
+    """
+    response.set_cookie(
+        _REFRESH_COOKIE_NAME,
+        str(refresh_token_str),
+        max_age=_REFRESH_COOKIE_AGE,
+        httponly=True,
+        secure=not getattr(settings, 'DEBUG', True),  # Secure solo en producción
+        samesite='Strict',
+        path='/api/auth/',  # Solo se envía a endpoints de auth
+    )
+    return response
+
+
+def _clear_refresh_cookie(response):
+    """Elimina la cookie del refresh token (logout)."""
+    response.delete_cookie(
+        _REFRESH_COOKIE_NAME,
+        path='/api/auth/',
+        samesite='Strict',
+    )
+    return response
+
+
+class CookieTokenRefreshView(APIView):
+    """
+    POST /api/auth/token/refresh/
+    Lee el refresh token desde la cookie HttpOnly (no desde el body).
+    Devuelve un nuevo access token y rota el refresh token en la cookie.
+    (M-06: sustituye el endpoint de simplejwt que lee del body)
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        refresh_str = request.COOKIES.get(_REFRESH_COOKIE_NAME)
+        if not refresh_str:
+            return Response(
+                {'detail': 'No hay sesión activa. Inicia sesión nuevamente.'},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+        try:
+            refresh = RefreshToken(refresh_str)
+            new_access = str(refresh.access_token)
+            # Rotación del refresh token
+            refresh.blacklist()
+            new_refresh = RefreshToken.for_user(
+                User.objects.get(id=refresh['user_id'])
+            )
+            # Copiar claims personalizados
+            for claim in ('role', 'tenant_id'):
+                if claim in refresh:
+                    new_refresh[claim] = refresh[claim]
+            response = Response({'access': new_access})
+            _set_refresh_cookie(response, new_refresh)
+            return response
+        except Exception:
+            response = Response(
+                {'detail': 'Sesión expirada. Inicia sesión nuevamente.'},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+            _clear_refresh_cookie(response)
+            return response
+
+
+class LogoutView(APIView):
+    """
+    POST /api/auth/logout/
+    Blacklistea el refresh token de la cookie y la elimina.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        refresh_str = request.COOKIES.get(_REFRESH_COOKIE_NAME)
+        if refresh_str:
+            try:
+                RefreshToken(refresh_str).blacklist()
+            except Exception:
+                pass  # Ya expirado o inválido; eliminar la cookie igualmente
+        response = Response({'detail': 'Sesión cerrada correctamente.'})
+        _clear_refresh_cookie(response)
+        return response
+
 
 class LoginView(APIView):
     """POST /api/auth/login/"""
@@ -277,7 +371,7 @@ class LoginView(APIView):
 
         response_data = {
             'access': str(refresh.access_token),
-            'refresh': str(refresh),
+            # 'refresh' omitido del body — se envía como HttpOnly cookie (M-06)
             'user': UserSerializer(user).data,
             'role': role,
             'tenant_id': str(tenant.id) if tenant else None,
@@ -295,7 +389,9 @@ class LoginView(APIView):
             object_repr=user.email,
             extra_data={'role': role},
         )
-        return Response(response_data)
+        response = Response(response_data)
+        _set_refresh_cookie(response, refresh)  # M-06: HttpOnly cookie
+        return response
 
 
 class RequestCodeView(APIView):
@@ -366,9 +462,9 @@ class LoginWithCodeView(APIView):
         if tenant:
             refresh['tenant_id'] = str(tenant.id)
 
-        return Response({
+        response = Response({
             'access': str(refresh.access_token),
-            'refresh': str(refresh),
+            # 'refresh' omitido del body — se envía como HttpOnly cookie (M-06)
             'user': UserSerializer(user).data,
             'role': role,
             'tenant_id': str(tenant.id) if tenant else None,
@@ -376,6 +472,8 @@ class LoginWithCodeView(APIView):
             'must_change_password': False,  # Code-only: never prompt for password
             'profile_id': profile_id or '',
         })
+        _set_refresh_cookie(response, refresh)  # M-06: HttpOnly cookie
+        return response
 
 
 class CheckEmailView(APIView):
@@ -393,7 +491,8 @@ class CheckEmailView(APIView):
             user = User.objects.get(email=email)
         except User.DoesNotExist:
             return Response({'exists': False})
-        return Response({'exists': True, 'id': str(user.id), 'name': user.name, 'email': user.email})
+        # B-01: Solo devolver boolean — no exponer id, name ni email del usuario encontrado.
+        return Response({'exists': True})
 
 
 class SwitchTenantView(APIView):
@@ -425,9 +524,9 @@ class SwitchTenantView(APIView):
         refresh = RefreshToken.for_user(user)
         refresh['role']      = role
         refresh['tenant_id'] = str(tenant.id)
-        return Response({
+        response = Response({
             'access':               str(refresh.access_token),
-            'refresh':              str(refresh),
+            # 'refresh' omitido del body — se envía como HttpOnly cookie (M-06)
             'user':                 UserSerializer(user).data,
             'role':                 role,
             'tenant_id':            str(tenant.id),
@@ -435,6 +534,8 @@ class SwitchTenantView(APIView):
             'must_change_password': user.must_change_password,
             'profile_id':           profile_id,
         })
+        _set_refresh_cookie(response, refresh)  # M-06: HttpOnly cookie
+        return response
 
 
 class UserTenantsView(APIView):
@@ -448,6 +549,39 @@ class UserTenantsView(APIView):
             return Response([{'id': str(t['id']), 'name': t['name']} for t in tenants])
         qs = TenantUser.objects.filter(user=user).select_related('tenant')
         return Response([{'id': str(tu.tenant.id), 'name': tu.tenant.name} for tu in qs])
+
+
+class ProtectedMediaView(APIView):
+    """
+    GET /api/media/<path>/
+    M-04: Sirve archivos de media solo a usuarios autenticados.
+    Delega la entrega real del archivo a Nginx via X-Accel-Redirect
+    (la respuesta real viene de Nginx desde el location /protected-media/ internal).
+    En desarrollo (DEBUG=True) sirve el archivo directamente desde MEDIA_ROOT.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, media_path):
+        import os
+        import mimetypes
+        full_path = os.path.join(str(settings.MEDIA_ROOT), media_path)
+        if not os.path.exists(full_path):
+            return Response({'detail': 'Archivo no encontrado.'}, status=404)
+
+        if settings.DEBUG:
+            # Desarrollo: servir directamente
+            with open(full_path, 'rb') as f:
+                content = f.read()
+            content_type, _ = mimetypes.guess_type(full_path)
+            resp = HttpResponse(content, content_type=content_type or 'application/octet-stream')
+            resp['Content-Disposition'] = f'inline; filename="{os.path.basename(full_path)}"'
+            return resp
+        else:
+            # Producción: X-Accel-Redirect — Nginx entrega el archivo desde /protected-media/
+            resp = HttpResponse()
+            resp['X-Accel-Redirect'] = f'/protected-media/{media_path}'
+            resp['Content-Type'] = ''  # Nginx infiere el Content-Type
+            return resp
 
 
 class TenantListForLoginView(APIView):
@@ -1257,6 +1391,28 @@ class PaymentViewSet(viewsets.ModelViewSet):
         qs = Payment.objects.filter(
             tenant_id=self.kwargs['tenant_id']
         ).select_related('unit').prefetch_related('field_payments')
+
+        # M-01: Restricción IDOR — vecino solo ve pagos de su propia unidad.
+        # Se aplica antes de cualquier filtro de query params para evitar bypass.
+        if not self.request.user.is_super_admin:
+            try:
+                tu = TenantUser.objects.get(
+                    user=self.request.user,
+                    tenant_id=self.kwargs['tenant_id'],
+                )
+                if tu.role == 'vecino':
+                    if tu.unit_id:
+                        qs = qs.filter(unit_id=tu.unit_id)
+                    else:
+                        return Payment.objects.none()
+                    # Para vecino: solo se aplica filtro de período; no se permite
+                    # sobreescribir unit_id desde query params (evita bypass del IDOR).
+                    period = self.request.query_params.get('period')
+                    if period:
+                        qs = qs.filter(period=period)
+                    return qs
+            except TenantUser.DoesNotExist:
+                return Payment.objects.none()
 
         period = self.request.query_params.get('period')
         if period:
