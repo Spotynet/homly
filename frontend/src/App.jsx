@@ -2,6 +2,7 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { ROLE_BASE_MODULES } from './constants/modulePermissions';
 
 // Pages
 import Landing from './pages/Landing';
@@ -49,6 +50,25 @@ function PrivateRoute({ children }) {
   return children;
 }
 
+// Role-based route guard — redirects to /app (index) if the current role
+// does not include the given module in ROLE_BASE_MODULES.
+// superadmin bypasses all checks. Loading state defers the check.
+function RoleRoute({ module: moduleKey, children }) {
+  const { role, isSuperAdmin, loading } = useAuth();
+
+  if (loading) return LOADER;
+
+  // Superadmin has unrestricted access
+  if (isSuperAdmin) return children;
+
+  const allowedModules = ROLE_BASE_MODULES[role] || [];
+  if (!allowedModules.includes(moduleKey)) {
+    return <Navigate to="/app" replace />;
+  }
+
+  return children;
+}
+
 function AppRoutes() {
   const { isAuthenticated, isVecino, isSuperAdmin, loading } = useAuth();
 
@@ -76,7 +96,7 @@ function AppRoutes() {
             />
           }
         />
-        <Route path="dashboard" element={<Dashboard />} />
+        <Route path="dashboard"      element={<RoleRoute module="dashboard">     <Dashboard />     </RoleRoute>} />
         {isSuperAdmin && (
           <Route path="sistema">
             <Route path="tenants"        element={<Tenants />} />
@@ -84,19 +104,19 @@ function AppRoutes() {
             <Route path="suscripciones"  element={<Suscripciones />} />
           </Route>
         )}
-        <Route path="cobranza" element={<Cobranza />} />
-        <Route path="gastos" element={<Gastos />} />
-        <Route path="estado-cuenta" element={<EstadoCuenta />} />
-        <Route path="config" element={<Config />} />
-        <Route path="units" element={<Units />} />
-        <Route path="users" element={<Users />} />
-        <Route path="my-unit" element={<MyUnit />} />
-        <Route path="reservas" element={<Reservas />} />
-        <Route path="notificaciones" element={<Notificaciones />} />
-        <Route path="cierre-periodo" element={<CierrePeriodo />} />
-        <Route path="plan-pagos" element={<PlanPagos />} />
-        <Route path="onboarding" element={<Onboarding />} />
-        <Route path="mi-membresia" element={<MiMembresia />} />
+        <Route path="cobranza"      element={<RoleRoute module="cobranza">      <Cobranza />      </RoleRoute>} />
+        <Route path="gastos"        element={<RoleRoute module="gastos">        <Gastos />        </RoleRoute>} />
+        <Route path="estado-cuenta" element={<RoleRoute module="estado_cuenta"> <EstadoCuenta />  </RoleRoute>} />
+        <Route path="config"        element={<RoleRoute module="config">        <Config />        </RoleRoute>} />
+        <Route path="units"         element={<RoleRoute module="config">        <Units />         </RoleRoute>} />
+        <Route path="users"         element={<RoleRoute module="config">        <Users />         </RoleRoute>} />
+        <Route path="my-unit"       element={<RoleRoute module="my_unit">       <MyUnit />        </RoleRoute>} />
+        <Route path="reservas"      element={<RoleRoute module="reservas">      <Reservas />      </RoleRoute>} />
+        <Route path="notificaciones" element={<RoleRoute module="notificaciones"><Notificaciones /></RoleRoute>} />
+        <Route path="cierre-periodo" element={<RoleRoute module="cierre_periodo"><CierrePeriodo /> </RoleRoute>} />
+        <Route path="plan-pagos"    element={<RoleRoute module="plan_pagos">    <PlanPagos />     </RoleRoute>} />
+        <Route path="onboarding"    element={<RoleRoute module="onboarding">    <Onboarding />    </RoleRoute>} />
+        <Route path="mi-membresia"  element={<RoleRoute module="mi_membresia">  <MiMembresia />   </RoleRoute>} />
       </Route>
 
       {/* Fallback */}

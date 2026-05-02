@@ -1730,17 +1730,27 @@ export default function Cobranza() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 8 }}>
                   <label className="btn btn-secondary btn-sm" style={{ cursor: 'pointer' }}>
                     <Upload size={14} style={{ display: 'inline', verticalAlign: -2 }} /> Adjuntar
-                    <input type="file" multiple style={{ display: 'none' }} onChange={handleEvidence} />
+                    <input
+                      type="file"
+                      multiple
+                      style={{ display: 'none' }}
+                      accept="image/*,application/pdf,.doc,.docx,.odt,.ods,.odp,.xls,.xlsx,.csv,.ppt,.pptx,.txt,.rtf"
+                      onChange={handleEvidence}
+                    />
                   </label>
                   {(captureForm.evidences || []).length === 0 && (
-                    <span style={{ fontSize: 12, color: 'var(--ink-300)' }}>Imagen, PDF u otro archivo — máx. 5 MB por archivo</span>
+                    <span style={{ fontSize: 12, color: 'var(--ink-300)' }}>Imágenes, PDF, Word, Excel, texto — máx. 5 MB por archivo</span>
                   )}
                 </div>
                 {(captureForm.evidences || []).length > 0 && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
-                    {(captureForm.evidences || []).map((ev, idx) => (
+                    {(captureForm.evidences || []).map((ev, idx) => {
+                      const isImg = ev.mime && ev.mime.startsWith('image/');
+                      const isPdfEv = ev.mime === 'application/pdf' || /\.pdf$/i.test(ev.name || '');
+                      const evIcon = isImg ? '🖼️' : isPdfEv ? '📄' : /\.(doc|docx|odt|rtf)$/i.test(ev.name || '') ? '📝' : /\.(xls|xlsx|ods|csv)$/i.test(ev.name || '') ? '📊' : /\.(ppt|pptx|odp)$/i.test(ev.name || '') ? '📑' : '📎';
+                      return (
                       <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--blue-50)', border: '1px solid var(--blue-100)', padding: '6px 12px', borderRadius: 'var(--radius-sm)' }}>
-                        <FileText size={14} style={{ flexShrink: 0 }} />
+                        <span style={{ flexShrink: 0, fontSize: 15 }}>{evIcon}</span>
                         <span style={{ fontSize: 12, color: 'var(--blue-600)', fontWeight: 600, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ev.name || `Evidencia ${idx + 1}`}</span>
                         <button type="button" className="btn btn-secondary btn-sm" style={{ padding: '3px 8px', fontSize: 11, flexShrink: 0 }}
                           onClick={() => setEvidencePopup({ b64: ev.data, mime: ev.mime || '', fileName: ev.name || `Evidencia ${idx + 1}` })}>
@@ -1749,7 +1759,8 @@ export default function Cobranza() {
                         <button type="button" className="btn-ghost" style={{ color: 'var(--coral-500)', padding: 0, marginLeft: 2, flexShrink: 0 }}
                           onClick={() => setCaptureForm(p => ({ ...p, evidences: p.evidences.filter((_, i) => i !== idx) }))}>✕</button>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>

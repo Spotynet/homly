@@ -29,6 +29,9 @@ export default function GuideModal({ open, onClose, onFinish, chapter }) {
   // ── Drag state ──────────────────────────────────────────────────
   const [pos, setPos] = useState(null); // { x, y } esquina superior-izquierda
   const drag = useRef({ active: false, ox: 0, oy: 0, sx: 0, sy: 0 });
+  // Tracks whether the mouse actually moved during the current drag.
+  // Used to prevent the backdrop onClick from firing after a drag ends.
+  const dragMoved = useRef(false);
 
   // Centrar el modal al abrirse
   useEffect(() => {
@@ -45,6 +48,7 @@ export default function GuideModal({ open, onClose, onFinish, chapter }) {
   useEffect(() => {
     const onMove = (e) => {
       if (!drag.current.active) return;
+      dragMoved.current = true; // mark that the mouse actually moved during drag
       const clientX = e.touches ? e.touches[0].clientX : e.clientX;
       const clientY = e.touches ? e.touches[0].clientY : e.clientY;
       const nx = drag.current.sx + clientX - drag.current.ox;
@@ -77,6 +81,7 @@ export default function GuideModal({ open, onClose, onFinish, chapter }) {
     drag.current.oy = clientY;
     drag.current.sx = pos?.x ?? 0;
     drag.current.sy = pos?.y ?? 0;
+    dragMoved.current = false; // reset at the start of each new drag
   }, [pos]);
 
   if (!open || !chapter) return null;
@@ -125,7 +130,12 @@ export default function GuideModal({ open, onClose, onFinish, chapter }) {
 
       {/* Backdrop — solo para blur, no intercepta drag */}
       <div
-        onClick={onClose}
+        onClick={() => {
+          // If the mouse moved during a drag that ended over the backdrop,
+          // swallow this click instead of closing the modal.
+          if (dragMoved.current) { dragMoved.current = false; return; }
+          onClose();
+        }}
         style={{
           position: 'fixed', inset: 0,
           background: 'rgba(26,22,18,0.40)',
