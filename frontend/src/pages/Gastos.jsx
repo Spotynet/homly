@@ -110,7 +110,7 @@ function _fmtShort(n, currency = 'MXN') {
   return new Intl.NumberFormat('es-MX', { style: 'currency', currency, minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n ?? 0);
 }
 
-function GastosTable({ rows, isReadOnly, onEdit, onDelete, showBadge, currency = 'MXN' }) {
+function GastosTable({ rows, isReadOnly, onEdit, onDelete, onViewEvidence, showBadge, currency = 'MXN' }) {
   const fmt = (n) => _fmt(n, currency);
   return (
     <div className="table-wrap">
@@ -123,11 +123,14 @@ function GastosTable({ rows, isReadOnly, onEdit, onDelete, showBadge, currency =
             <th>No. Doc</th>
             <th>Fecha</th>
             <th>Proveedor / Notas</th>
+            <th style={{ width: 52, textAlign: 'center' }}>Evidencia</th>
             {!isReadOnly && <th style={{ width: 70 }}>Acc.</th>}
           </tr>
         </thead>
         <tbody>
-          {rows.map(g => (
+          {rows.map(g => {
+            const evFiles = parseEvidence(g.evidence);
+            return (
             <tr key={g.id}>
               <td style={{ fontWeight: 600, fontSize: 13, color: 'var(--ink-700)' }}>
                 {g.field_label || '—'}
@@ -143,6 +146,23 @@ function GastosTable({ rows, isReadOnly, onEdit, onDelete, showBadge, currency =
                 <div>{g.provider_name || '—'}</div>
                 {g.notes && <div style={{ color: 'var(--ink-400)', fontStyle: 'italic', marginTop: 2 }}><AlertCircle size={10} style={{ display:'inline', verticalAlign: -1, marginRight: 3 }} />{g.notes}</div>}
               </td>
+              <td style={{ textAlign: 'center' }}>
+                {evFiles.length > 0 ? (
+                  <button
+                    className="btn-icon"
+                    title={`Ver ${evFiles.length} evidencia${evFiles.length > 1 ? 's' : ''}`}
+                    style={{ color: 'var(--teal-600)' }}
+                    onClick={() => onViewEvidence && onViewEvidence(evFiles)}
+                  >
+                    <Eye size={14} />
+                    {evFiles.length > 1 && (
+                      <span style={{ fontSize: 9, fontWeight: 800, marginLeft: 2 }}>{evFiles.length}</span>
+                    )}
+                  </button>
+                ) : (
+                  <span style={{ fontSize: 10, color: 'var(--ink-300)' }}>—</span>
+                )}
+              </td>
               {!isReadOnly && (
                 <td style={{ textAlign: 'center' }}>
                   <button className="btn-icon" onClick={() => onEdit(g)}><Edit size={13} /></button>
@@ -150,7 +170,8 @@ function GastosTable({ rows, isReadOnly, onEdit, onDelete, showBadge, currency =
                 </td>
               )}
             </tr>
-          ))}
+            );
+          })}
         </tbody>
       </table>
     </div>
@@ -448,8 +469,11 @@ export default function Gastos() {
   const [closedPeriods, setClosedPeriods] = useState([]);
   // Caja Chica evidence state
   const [cajaEvidence, setCajaEvidence] = useState([]);   // [{data, mime, name}] for current form
+  // Gasto evidence state
+  const [gastoEvidence, setGastoEvidence] = useState([]); // [{data, mime, name}] for gasto form
   const [viewerFiles, setViewerFiles] = useState(null);   // evidence to show in popup
   const fileInputRef = useRef(null);
+  const gastoFileInputRef = useRef(null);
 
   const load = async () => {
     if (!tenantId) return;
@@ -520,12 +544,14 @@ export default function Gastos() {
       provider_invoice: form.provider_invoice || '',
       bank_reconciled: !!form.bank_reconciled,
       notes: form.notes || '',
+      evidence: gastoEvidence.length > 0 ? JSON.stringify(gastoEvidence) : (form.evidence || ''),
     };
     setSaving(true);
     try {
       if (form.id) await gastosAPI.update(tenantId, form.id, payload);
       else await gastosAPI.create(tenantId, payload);
       toast.success('Gasto guardado');
+      setGastoEvidence([]);
       setModal(null); load();
     } catch (e) {
       const err = e.response?.data;
@@ -547,6 +573,18 @@ export default function Gastos() {
     try {
       const encoded = await Promise.all(arr.map(fileToBase64));
       setCajaEvidence(prev => [...prev, ...encoded]);
+    } catch { toast.error('Error al procesar el archivo'); }
+  };
+
+  const handleGastoFileAdd = async (files) => {
+    const arr = Array.from(files);
+    const invalid = arr.filter(f => !f.type.startsWith('image/') && f.type !== 'application/pdf');
+    if (invalid.length) { toast.error('Solo se permiten imágenes (PNG, JPG, GIF, WEBP) y PDF'); return; }
+    const tooBig = arr.filter(f => f.size > 10 * 1024 * 1024);
+    if (tooBig.length) { toast.error('Cada archivo debe ser menor a 10 MB'); return; }
+    try {
+      const encoded = await Promise.all(arr.map(fileToBase64));
+      setGastoEvidence(prev => [...prev, ...encoded]);
     } catch { toast.error('Error al procesar el archivo'); }
   };
 
@@ -622,6 +660,7 @@ export default function Gastos() {
             {!isReadOnly && !isPeriodClosed && (
               <button className="btn btn-primary btn-sm" onClick={() => {
                 setForm({ amount: '', field: '', payment_type: 'transferencia', doc_number: '', gasto_date: '', provider_name: '', provider_rfc: '', provider_invoice: '', bank_reconciled: false, notes: '' });
+                setGastoEvidence([]);
                 setModal('gasto');
               }}>
                 <Plus size={14} /> Nuevo Gasto
@@ -659,8 +698,9 @@ export default function Gastos() {
                 <GastosTable
                   rows={gastosConciliados}
                   isReadOnly={isReadOnly || isPeriodClosed}
-                  onEdit={g => { setForm(g); setModal('gasto'); }}
+                  onEdit={g => { setForm(g); setGastoEvidence(parseEvidence(g.evidence)); setModal('gasto'); }}
                   onDelete={handleDeleteGasto}
+                  onViewEvidence={evFiles => setViewerFiles(evFiles)}
                   showBadge={false}
                   currency={cur}
                 />
@@ -694,8 +734,9 @@ export default function Gastos() {
                 <GastosTable
                   rows={gastosNoConciliados}
                   isReadOnly={isReadOnly || isPeriodClosed}
-                  onEdit={g => { setForm(g); setModal('gasto'); }}
+                  onEdit={g => { setForm(g); setGastoEvidence(parseEvidence(g.evidence)); setModal('gasto'); }}
                   onDelete={handleDeleteGasto}
+                  onViewEvidence={evFiles => setViewerFiles(evFiles)}
                   showBadge={false}
                   currency={cur}
                 />
@@ -921,9 +962,95 @@ export default function Gastos() {
                   <input className="field-input" value={form.provider_invoice || ''} onChange={e => setForm(f => ({ ...f, provider_invoice: e.target.value }))} placeholder="Número de factura" />
                 </div>
               </div>
+
+              {/* ── Evidencia del gasto ── */}
+              <div style={{ marginTop: 16 }}>
+                <div style={{
+                  fontSize: 11, fontWeight: 700, color: 'var(--ink-500)',
+                  textTransform: 'uppercase', letterSpacing: '0.06em',
+                  borderBottom: '1px solid var(--sand-100)', paddingBottom: 6, marginBottom: 10,
+                  display: 'flex', alignItems: 'center', gap: 6,
+                }}>
+                  <Paperclip size={12} /> Evidencia del gasto
+                  <span style={{ fontSize: 10, fontWeight: 400, color: 'var(--ink-400)', textTransform: 'none', letterSpacing: 0, marginLeft: 4 }}>
+                    (imágenes o PDF, máx. 10 MB c/u)
+                  </span>
+                </div>
+
+                {/* Drop zone */}
+                <div
+                  style={{
+                    border: '2px dashed var(--sand-300)', borderRadius: 10,
+                    padding: '16px 20px', textAlign: 'center', cursor: 'pointer',
+                    background: 'var(--sand-50)', transition: 'border-color 0.15s',
+                    marginBottom: gastoEvidence.length > 0 ? 10 : 0,
+                  }}
+                  onClick={() => gastoFileInputRef.current?.click()}
+                  onDragOver={e => { e.preventDefault(); e.currentTarget.style.borderColor = 'var(--teal-400)'; }}
+                  onDragLeave={e => { e.currentTarget.style.borderColor = 'var(--sand-300)'; }}
+                  onDrop={e => {
+                    e.preventDefault();
+                    e.currentTarget.style.borderColor = 'var(--sand-300)';
+                    handleGastoFileAdd(e.dataTransfer.files);
+                  }}
+                >
+                  <Paperclip size={20} color="var(--ink-400)" style={{ display: 'block', margin: '0 auto 6px' }} />
+                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-500)' }}>
+                    Arrastra archivos aquí o <span style={{ color: 'var(--teal-600)', textDecoration: 'underline' }}>seleccionar</span>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 3 }}>PNG, JPG, GIF, WEBP, PDF</div>
+                  <input
+                    ref={gastoFileInputRef}
+                    type="file"
+                    accept={ACCEPTED_TYPES}
+                    multiple
+                    style={{ display: 'none' }}
+                    onChange={e => { handleGastoFileAdd(e.target.files); e.target.value = ''; }}
+                  />
+                </div>
+
+                {/* Archivos adjuntos */}
+                {gastoEvidence.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {gastoEvidence.map((ev, i) => {
+                      const isPdf = ev.mime === 'application/pdf' || /\.pdf$/i.test(ev.name || '');
+                      return (
+                        <div key={i} style={{
+                          display: 'flex', alignItems: 'center', gap: 10,
+                          padding: '8px 12px', background: 'var(--teal-50)',
+                          border: '1px solid var(--teal-100)', borderRadius: 8,
+                        }}>
+                          {isPdf
+                            ? <FileText size={16} color="var(--teal-600)" style={{ flexShrink: 0 }} />
+                            : <Image size={16} color="var(--teal-600)" style={{ flexShrink: 0 }} />
+                          }
+                          <span style={{ flex: 1, fontSize: 12, fontWeight: 600, color: 'var(--ink-700)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {ev.name || `Evidencia ${i + 1}`}
+                          </span>
+                          <button
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--teal-600)', padding: 2, flexShrink: 0 }}
+                            title="Ver"
+                            onClick={() => setViewerFiles([ev])}
+                          >
+                            <Eye size={14} />
+                          </button>
+                          <button
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--coral-500)', padding: 2, flexShrink: 0 }}
+                            title="Quitar"
+                            onClick={() => setGastoEvidence(prev => prev.filter((_, idx) => idx !== i))}
+                          >
+                            <X size={14} />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
             </div>
             <div className="modal-foot">
-              <button className="btn btn-secondary" onClick={() => setModal(null)} disabled={saving}>Cancelar</button>
+              <button className="btn btn-secondary" onClick={() => { setModal(null); setGastoEvidence([]); }} disabled={saving}>Cancelar</button>
               <button className="btn btn-primary" onClick={saveGasto} disabled={saving}>
                 <Check size={14} /> {saving ? 'Guardando…' : form.id ? 'Guardar' : 'Registrar'}
               </button>

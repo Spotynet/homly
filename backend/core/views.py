@@ -1951,10 +1951,10 @@ class GastoEntryViewSet(viewsets.ModelViewSet):
         instance = serializer.save(tenant_id=self.kwargs['tenant_id'])
         _audit_log(
             self.request, 'gastos', 'create',
-            f'Gasto registrado: {instance.field.name if instance.field else ""} — período {instance.period}',
+            f'Gasto registrado: {instance.field.label if instance.field else ""} — período {instance.period}',
             tenant_id=self.kwargs['tenant_id'],
             object_type='GastoEntry', object_id=str(instance.id),
-            object_repr=f'{instance.field.name if instance.field else ""} / {instance.period}',
+            object_repr=f'{instance.field.label if instance.field else ""} / {instance.period}',
         )
 
     def perform_update(self, serializer):
@@ -1963,15 +1963,15 @@ class GastoEntryViewSet(viewsets.ModelViewSet):
         instance = serializer.save()
         _audit_log(
             self.request, 'gastos', 'update',
-            f'Gasto actualizado: {instance.field.name if instance.field else ""} — período {instance.period}',
+            f'Gasto actualizado: {instance.field.label if instance.field else ""} — período {instance.period}',
             tenant_id=self.kwargs['tenant_id'],
             object_type='GastoEntry', object_id=str(instance.id),
-            object_repr=f'{instance.field.name if instance.field else ""} / {instance.period}',
+            object_repr=f'{instance.field.label if instance.field else ""} / {instance.period}',
         )
 
     def perform_destroy(self, instance):
         self._check_gasto_period_open(instance.period)
-        desc = f'{instance.field.name if instance.field else ""} / {instance.period}'
+        desc = f'{instance.field.label if instance.field else ""} / {instance.period}'
         obj_id = str(instance.id)
         instance.delete()
         _audit_log(
