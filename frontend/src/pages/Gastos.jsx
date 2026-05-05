@@ -477,19 +477,23 @@ export default function Gastos() {
 
   const load = async () => {
     if (!tenantId) return;
-    const [g, cc, ef, tn, cp] = await Promise.all([
-      gastosAPI.list(tenantId, { period, page_size: 9999 }),
-      cajaChicaAPI.list(tenantId, { period, page_size: 9999 }),
-      extraFieldsAPI.list(tenantId, { page_size: 9999 }),
-      tenantsAPI.get(tenantId).catch(() => ({ data: null })),
-      periodsAPI.closedList(tenantId).catch(() => ({ data: [] })),
-    ]);
-    setGastos(g.data.results || g.data);
-    setCajaChica(cc.data.results || cc.data);
-    setFields((ef.data.results || ef.data).filter(f => f.field_type === 'gastos' && f.enabled && f.show_in_gastos !== false));
-    setTenant(tn.data);
-    const cpList = Array.isArray(cp.data) ? cp.data : (cp.data?.results || []);
-    setClosedPeriods(cpList);
+    try {
+      const [g, cc, ef, tn, cp] = await Promise.all([
+        gastosAPI.list(tenantId, { period, page_size: 9999 }),
+        cajaChicaAPI.list(tenantId, { period, page_size: 9999 }),
+        extraFieldsAPI.list(tenantId, { page_size: 9999 }),
+        tenantsAPI.get(tenantId).catch(() => ({ data: null })),
+        periodsAPI.closedList(tenantId).catch(() => ({ data: [] })),
+      ]);
+      setGastos(g.data.results || g.data);
+      setCajaChica(cc.data.results || cc.data);
+      setFields((ef.data.results || ef.data).filter(f => f.field_type === 'gastos' && f.enabled && f.show_in_gastos !== false));
+      setTenant(tn.data);
+      const cpList = Array.isArray(cp.data) ? cp.data : (cp.data?.results || []);
+      setClosedPeriods(cpList);
+    } catch (e) {
+      console.error('Error al cargar datos de gastos:', e);
+    }
   };
 
   useEffect(() => { load(); }, [tenantId, period]);
@@ -544,7 +548,7 @@ export default function Gastos() {
       provider_invoice: form.provider_invoice || '',
       bank_reconciled: !!form.bank_reconciled,
       notes: form.notes || '',
-      evidence: gastoEvidence.length > 0 ? JSON.stringify(gastoEvidence) : (form.evidence || ''),
+      evidence: JSON.stringify(gastoEvidence),
     };
     setSaving(true);
     try {
@@ -844,7 +848,7 @@ export default function Gastos() {
                         <span style={{ fontSize: 10, fontWeight: 400, color: 'var(--ink-400)', marginLeft: 6 }}>(solo informativo)</span>
                       </td>
                       <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 800, color: 'var(--purple-800, #5B21B6)', fontSize: 15 }}>{fmt(totalCaja)}</td>
-                      <td colSpan={!isReadOnly ? 3 : 2}></td>
+                      <td colSpan={!isReadOnly ? 4 : 3}></td>
                     </tr>
                   </tbody>
                 </table>
