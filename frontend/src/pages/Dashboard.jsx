@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  Legend, ResponsiveContainer, Cell,
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
+  Legend, ResponsiveContainer, ReferenceLine,
 } from 'recharts';
 import { useAuth } from '../context/AuthContext';
 import { reportsAPI, tenantsAPI, assemblyAPI, reservationsAPI, periodsAPI } from '../api/client';
@@ -1556,11 +1556,9 @@ export default function Dashboard() {
                 </div>
               ) : (
                 <ResponsiveContainer width="100%" height={240}>
-                  <BarChart
+                  <LineChart
                     data={periodHistory}
-                    margin={{ top: 4, right: 8, left: 8, bottom: 0 }}
-                    barCategoryGap="28%"
-                    barGap={3}
+                    margin={{ top: 8, right: 16, left: 8, bottom: 0 }}
                   >
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--sand-100)" vertical={false} />
                     <XAxis
@@ -1577,6 +1575,7 @@ export default function Dashboard() {
                       tick={{ fontSize: 10, fill: 'var(--ink-400)' }}
                       axisLine={false} tickLine={false} width={52}
                     />
+                    <ReferenceLine y={0} stroke="var(--sand-300)" strokeDasharray="4 3" />
                     <Tooltip
                       formatter={(value, name) => [fmtDec(value), name]}
                       labelFormatter={label => {
@@ -1599,17 +1598,46 @@ export default function Dashboard() {
                         saldo:    'Saldo final',
                       }[value] || value)}
                     />
-                    <Bar dataKey="ingresos" name="ingresos" fill="var(--teal-400)"  radius={[4,4,0,0]} maxBarSize={40} />
-                    <Bar dataKey="gastos"   name="gastos"   fill="var(--coral-400)" radius={[4,4,0,0]} maxBarSize={40} />
-                    <Bar dataKey="saldo"    name="saldo"    fill="#6366f1"           radius={[4,4,0,0]} maxBarSize={40}>
-                      {periodHistory.map((entry, idx) => (
-                        <Cell
-                          key={`cell-saldo-${idx}`}
-                          fill={entry.saldo >= 0 ? '#6366f1' : 'var(--coral-600)'}
-                        />
-                      ))}
-                    </Bar>
-                  </BarChart>
+                    <Line
+                      type="monotone"
+                      dataKey="ingresos"
+                      name="ingresos"
+                      stroke="var(--teal-500)"
+                      strokeWidth={2.5}
+                      dot={{ r: 4, fill: 'var(--teal-400)', stroke: 'white', strokeWidth: 2 }}
+                      activeDot={{ r: 6 }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="gastos"
+                      name="gastos"
+                      stroke="var(--coral-500)"
+                      strokeWidth={2.5}
+                      dot={{ r: 4, fill: 'var(--coral-400)', stroke: 'white', strokeWidth: 2 }}
+                      activeDot={{ r: 6 }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="saldo"
+                      name="saldo"
+                      stroke="#6366f1"
+                      strokeWidth={2.5}
+                      dot={(props) => {
+                        const { cx, cy, payload, index } = props;
+                        const fill = payload.saldo >= 0 ? '#6366f1' : 'var(--coral-600)';
+                        return (
+                          <circle
+                            key={`dot-saldo-${index}`}
+                            cx={cx} cy={cy} r={4}
+                            fill={fill}
+                            stroke="white"
+                            strokeWidth={2}
+                          />
+                        );
+                      }}
+                      activeDot={{ r: 6 }}
+                    />
+                  </LineChart>
                 </ResponsiveContainer>
               )}
 
@@ -1617,19 +1645,19 @@ export default function Dashboard() {
               {!historyLoading && periodHistory.length > 0 && (
                 <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginTop: 6, fontSize: 11, color: 'var(--ink-400)' }}>
                   <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                    <span style={{ width: 10, height: 10, borderRadius: 3, background: 'var(--teal-400)', display: 'inline-block' }} />
+                    <span style={{ width: 10, height: 10, borderRadius: '50%', background: 'var(--teal-400)', display: 'inline-block' }} />
                     Ingresos conciliados
                   </span>
                   <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                    <span style={{ width: 10, height: 10, borderRadius: 3, background: 'var(--coral-400)', display: 'inline-block' }} />
+                    <span style={{ width: 10, height: 10, borderRadius: '50%', background: 'var(--coral-400)', display: 'inline-block' }} />
                     Gastos conciliados
                   </span>
                   <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                    <span style={{ width: 10, height: 10, borderRadius: 3, background: '#6366f1', display: 'inline-block' }} />
+                    <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#6366f1', display: 'inline-block' }} />
                     Saldo final positivo
                   </span>
                   <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                    <span style={{ width: 10, height: 10, borderRadius: 3, background: 'var(--coral-600)', display: 'inline-block' }} />
+                    <span style={{ width: 10, height: 10, borderRadius: '50%', background: 'var(--coral-600)', display: 'inline-block' }} />
                     Saldo final negativo
                   </span>
                 </div>
