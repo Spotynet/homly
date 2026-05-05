@@ -501,11 +501,17 @@ class GastoEntrySerializer(serializers.ModelSerializer):
 # ═══════════════════════════════════════════════════════════
 
 class CajaChicaEntrySerializer(serializers.ModelSerializer):
+    evidence_list = serializers.SerializerMethodField()
+
     class Meta:
         model = CajaChicaEntry
         fields = ['id', 'tenant', 'period', 'amount', 'description',
-                  'date', 'payment_type', 'created_at']
-        read_only_fields = ['id', 'tenant', 'created_at']
+                  'date', 'payment_type', 'evidence', 'evidence_list', 'created_at']
+        read_only_fields = ['id', 'tenant', 'created_at', 'evidence_list']
+
+    def get_evidence_list(self, obj):
+        """Normalise evidence TextField to a list of {data, mime, name} dicts."""
+        return _parse_evidence(obj.evidence)
 
 
 # ═══════════════════════════════════════════════════════════

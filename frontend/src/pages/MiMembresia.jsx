@@ -3,8 +3,9 @@ import { useAuth } from '../context/AuthContext';
 import { tenantsAPI } from '../api/client';
 import {
   CreditCard, AlertCircle, CheckCircle, Clock, XCircle, ShieldOff,
-  Calendar, DollarSign, RefreshCw, Building2,
+  Calendar, DollarSign, RefreshCw, Building2, Receipt, Eye,
 } from 'lucide-react';
+import SubscriptionReceiptModal from '../components/SubscriptionReceiptModal';
 
 // ─── Status config ────────────────────────────────────────────────────────────
 const SUB_STATUS = {
@@ -50,22 +51,37 @@ function InfoRow({ label, value, accent }) {
 export default function MiMembresia() {
   const { tenantId, tenantName } = useAuth();
 
-  const [sub,     setSub]     = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error,   setError]   = useState(null);
+  const [sub,            setSub]            = useState(null);
+  const [loading,        setLoading]        = useState(true);
+  const [error,          setError]          = useState(null);
+  // Payment history + receipt
+  const [payments,       setPayments]       = useState([]);
+  const [loadingPays,    setLoadingPays]    = useState(false);
+  const [tenantData,     setTenantData]     = useState(null);
+  const [receiptPayment, setReceiptPayment] = useState(null);
 
   const loadSub = useCallback(async () => {
     if (!tenantId) return;
     setLoading(true);
     setError(null);
     try {
-      const r = await tenantsAPI.getSubscription(tenantId);
-      setSub(r.data);
-    } catch (e) {
-      if (e?.response?.status === 404) {
-        setSub(null); // No subscription — not an error
+      const [subRes, paysRes, tenantRes] = await Promise.allSettled([
+        tenantsAPI.getSubscription(tenantId),
+        tenantsAPI.getSubscriptionPayments(tenantId),
+        tenantsAPI.get(tenantId),
+      ]);
+      if (subRes.status === 'fulfilled') {
+        setSub(subRes.value.data);
+      } else if (subRes.reason?.response?.status === 404) {
+        setSub(null);
       } else {
         setError('No se pudo cargar la información de la membresía.');
+      }
+      if (paysRes.status === 'fulfilled') {
+        setPayments(Array.isArray(paysRes.value.data) ? paysRes.value.data : []);
+      }
+      if (tenantRes.status === 'fulfilled') {
+        setTenantData(tenantRes.value.data || null);
       }
     } finally {
       setLoading(false);
@@ -132,6 +148,7 @@ export default function MiMembresia() {
   const Icon = s.icon;
 
   return (
+    <>
     <div className="content-fade">
 
       {/* Page header */}
@@ -291,7 +308,81 @@ export default function MiMembresia() {
           </a>
         </div>
 
+        {/* ── Historial de pagos ── */}
+        <div style={{
+          gridColumn: '1 / -1',
+          background: 'var(--white)', border: '1px solid var(--sand-200)', borderRadius: 16, padding: 20,
+        }}>
+          <div style={{
+            fontSize: 11, fontWeight: 800, color: 'var(--ink-400)', textTransform: 'uppercase',
+            letterSpacing: '0.07em', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 6,
+          }}>
+            <Receipt size={13} /> Historial de pagos
+          </div>
+
+          {loadingPays ? (
+            <div style={{ textAlign: 'center', color: 'var(--ink-400)', padding: '24px 0', fontSize: 13 }}>
+              <RefreshCw size={18} className="spin" style={{ display: 'block', margin: '0 auto 8px' }} />
+              Cargando pagos…
+            </div>
+          ) : payments.length === 0 ? (
+            <div style={{ textAlign: 'center', color: 'var(--ink-400)', padding: '20px 0', fontSize: 13 }}>
+              <CreditCard size={28} color="var(--sand-300)" style={{ display: 'block', margin: '0 auto 10px' }} />
+              No hay pagos registrados aún.
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {payments.map(p => (
+                <div key={p.id} style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '10px 14px', background: 'var(--sand-50)',
+                  border: '1px solid var(--sand-100)', borderRadius: 10, gap: 12,
+                }}>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--ink-800)' }}>
+                      {fmtAmt(p.amount, p.currency)}
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--ink-400)', marginTop: 2 }}>
+                      {p.period_label || '—'}
+                      {p.payment_method_label ? ` · ${p.payment_method_label}` : ''}
+                      {p.payment_date ? ` · ${fmtDate(p.payment_date)}` : ''}
+                    </div>
+                    {p.reference && (
+                      <div style={{ fontSize: 11, color: 'var(--ink-300)', marginTop: 1 }}>
+                        Ref: {p.reference}
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => setReceiptPayment(p)}
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 6,
+                      padding: '7px 14px', background: 'var(--teal-50)',
+                      border: '1.5px solid var(--teal-200)', borderRadius: 8,
+                      fontSize: 12, fontWeight: 700, color: 'var(--teal-700)',
+                      cursor: 'pointer', flexShrink: 0,
+                    }}
+                  >
+                    <Eye size={13} /> Ver recibo
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
       </div>
     </div>
+
+    {/* Receipt modal */}
+    {receiptPayment && (
+      <SubscriptionReceiptModal
+        payment={receiptPayment}
+        tenant={tenantData}
+        sub={sub}
+        onClose={() => setReceiptPayment(null)}
+      />
+    )}
+  </>
   );
 }

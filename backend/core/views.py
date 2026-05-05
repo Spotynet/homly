@@ -845,6 +845,25 @@ class TenantViewSet(viewsets.ModelViewSet):
         except Exception:
             return Response({'detail': 'Sin suscripción registrada.'}, status=404)
 
+    @action(detail=True, methods=['get'], url_path='subscription/payments', permission_classes=[permissions.IsAuthenticated])
+    def get_subscription_payments(self, request, pk=None):
+        """
+        GET /api/tenants/{id}/subscription/payments/
+        Returns the payment history for this tenant's subscription.
+        Accessible to the tenant's own admin and superadmins.
+        """
+        tenant = self.get_object()
+        # Non-superadmin must be a member of this tenant
+        if not request.user.is_super_admin:
+            if not TenantUser.objects.filter(user=request.user, tenant=tenant).exists():
+                return Response({'detail': 'No tienes acceso a este condominio.'}, status=403)
+        try:
+            sub = tenant.subscription
+            payments = sub.payments.select_related('recorded_by').all()
+            return Response(SubscriptionPaymentSerializer(payments, many=True).data)
+        except Exception:
+            return Response([], status=200)
+
     @action(detail=True, methods=['post'], url_path='onboarding/complete')
     def mark_onboarding_complete(self, request, pk=None):
         """Marca el tour de onboarding como completado para este tenant."""

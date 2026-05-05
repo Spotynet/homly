@@ -5,9 +5,10 @@ import {
   Plus, Edit, Trash2, Check, X, ChevronDown, ChevronUp,
   DollarSign, Users, Clock, Zap, Star, AlertCircle, RefreshCw,
   CheckCircle, XCircle, ShieldCheck, Building2, CreditCard,
-  Calculator, History, PowerOff,
+  Calculator, History, PowerOff, Receipt, Eye,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import SubscriptionReceiptModal from '../components/SubscriptionReceiptModal';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -915,6 +916,13 @@ function RowPanel({ sub, plans, onRefresh }) {
     payment_date: '', payment_method: 'transfer', reference: '', notes: '',
   });
 
+  // ── Payment history + receipt ─────────────────────────────────────────────
+  const [showPayments,    setShowPayments]    = useState(false);
+  const [paymentHistory,  setPaymentHistory]  = useState([]);
+  const [loadingPayments, setLoadingPayments] = useState(false);
+  const [receiptPayment,  setReceiptPayment]  = useState(null);  // payment to show in receipt
+  const [tenantData,      setTenantData]      = useState(null);  // full tenant info for receipt
+
   // ── Deactivate state ─────────────────────────────────────────────────────
   const [showDeactivate, setShowDeactivate] = useState(false);
   const [deactivateReason, setDeactivateReason] = useState('');
@@ -983,14 +991,56 @@ function RowPanel({ sub, plans, onRefresh }) {
     } finally { setRecalculating(false); }
   };
 
+  // Load tenant detail + payment history (for receipts)
+  const loadPaymentHistory = useCallback(async () => {
+    setLoadingPayments(true);
+    try {
+      const [paymentsRes, tenantRes] = await Promise.all([
+        tenantSubscriptionsAPI.payments(sub.id),
+        tenantsAPI.get(sub.tenant),
+      ]);
+      setPaymentHistory(Array.isArray(paymentsRes.data) ? paymentsRes.data : []);
+      setTenantData(tenantRes.data || null);
+    } catch {
+      setPaymentHistory([]);
+    } finally {
+      setLoadingPayments(false);
+    }
+  }, [sub.id, sub.tenant]);
+
+  const handleTogglePayments = () => {
+    if (!showPayments && paymentHistory.length === 0) loadPaymentHistory();
+    setShowPayments(p => !p);
+  };
+
+  const handleOpenReceipt = async (payment) => {
+    // Ensure we have tenant data
+    if (!tenantData) {
+      try {
+        const r = await tenantsAPI.get(sub.tenant);
+        setTenantData(r.data || null);
+      } catch { /* continue without logo */ }
+    }
+    setReceiptPayment(payment);
+  };
+
   const handleRecordPayment = async () => {
     if (!pay.amount || !pay.payment_date) { toast.error('Monto y fecha son obligatorios'); return; }
     setSaving(true);
     try {
-      await tenantSubscriptionsAPI.recordPayment(sub.id, { ...pay, amount: Number(pay.amount) });
+      const { data: newPayment } = await tenantSubscriptionsAPI.recordPayment(sub.id, { ...pay, amount: Number(pay.amount) });
       toast.success('Pago registrado');
+      // Fetch tenant data for receipt if not loaded yet
+      let td = tenantData;
+      if (!td) {
+        try { const r = await tenantsAPI.get(sub.tenant); td = r.data; setTenantData(r.data); } catch { /* ok */ }
+      }
       setPay({ amount: '', currency: sub.currency || 'MXN', period_label: '', payment_date: '', payment_method: 'transfer', reference: '', notes: '' });
       setShowPay(false);
+      // Refresh payment list if panel is open
+      setPaymentHistory(prev => [newPayment, ...prev]);
+      // Auto-open receipt for the newly recorded payment
+      setReceiptPayment(newPayment);
       onRefresh();
     } catch (e) {
       toast.error(e?.response?.data?.detail || 'Error al registrar pago');
@@ -1013,6 +1063,7 @@ function RowPanel({ sub, plans, onRefresh }) {
   const isAlreadyCancelled = sub.status === 'cancelled' || sub.status === 'expired';
 
   return (
+    <>
     <div className="bg-slate-50 border-t border-slate-100 px-4 py-5 space-y-5">
 
       {/* ── TOP ROW: Modificar membresía ──────────────────────────────────── */}
@@ -1167,6 +1218,47 @@ function RowPanel({ sub, plans, onRefresh }) {
         )}
       </div>
 
+      {/* ── PAGOS REGISTRADOS ─────────────────────────────────────────────── */}
+      <div className="border-t border-slate-200 pt-4">
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Pagos registrados</p>
+          <button onClick={handleTogglePayments}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-teal-700 bg-teal-50 border border-teal-200 rounded-lg hover:bg-teal-100 transition-colors">
+            <Receipt size={12} />
+            {showPayments ? 'Ocultar' : 'Ver pagos'}
+            {showPayments ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+          </button>
+        </div>
+        {showPayments && (
+          <div className="space-y-2">
+            {loadingPayments ? (
+              <div className="flex items-center gap-2 text-xs text-slate-400 py-3">
+                <RefreshCw size={13} className="animate-spin" /> Cargando pagos…
+              </div>
+            ) : paymentHistory.length === 0 ? (
+              <div className="text-xs text-slate-400 py-3 text-center bg-slate-50 rounded-lg border border-slate-100">
+                No hay pagos registrados para esta suscripción.
+              </div>
+            ) : (
+              paymentHistory.map(p => (
+                <div key={p.id} className="flex items-center justify-between bg-white border border-slate-100 rounded-lg px-3 py-2.5 text-xs">
+                  <div className="flex flex-col gap-0.5 min-w-0">
+                    <span className="font-bold text-slate-800">{fmtAmt(p.amount, p.currency)}</span>
+                    <span className="text-slate-500">{p.period_label || '—'} · {p.payment_method_label} · {p.payment_date}</span>
+                    {p.reference && <span className="text-slate-400">Ref: {p.reference}</span>}
+                  </div>
+                  <button
+                    onClick={() => handleOpenReceipt(p)}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 text-teal-700 bg-teal-50 border border-teal-200 rounded-lg hover:bg-teal-100 transition-colors font-bold ml-2 flex-shrink-0">
+                    <Eye size={12} /> Ver recibo
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+
       {/* ── BOTTOM ROW: Historial + Desactivar ───────────────────────────── */}
       <div className="border-t border-slate-200 pt-4 flex gap-3 flex-wrap">
 
@@ -1253,6 +1345,17 @@ function RowPanel({ sub, plans, onRefresh }) {
         </div>
       )}
     </div>
+
+    {/* ── Receipt modal ── */}
+    {receiptPayment && (
+      <SubscriptionReceiptModal
+        payment={receiptPayment}
+        tenant={tenantData}
+        sub={sub}
+        onClose={() => setReceiptPayment(null)}
+      />
+    )}
+    </>
   );
 }
 

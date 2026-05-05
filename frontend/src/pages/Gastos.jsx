@@ -1,9 +1,90 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { gastosAPI, cajaChicaAPI, extraFieldsAPI, tenantsAPI, periodsAPI } from '../api/client';
 import { todayPeriod, periodLabel, prevPeriod, nextPeriod, fmtDate, PAYMENT_TYPES } from '../utils/helpers';
-import { ChevronLeft, ChevronRight, Plus, Edit, Trash2, X, ShoppingBag, DollarSign, Printer, Check, AlertCircle, Lock } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Edit, Trash2, X, ShoppingBag, DollarSign, Printer, Check, AlertCircle, Lock, Paperclip, Eye, FileText, Image } from 'lucide-react';
 import toast from 'react-hot-toast';
+
+// ── Evidence helpers ───────────────────────────────────────────────────────────
+
+/** Convert a File object to a {data, mime, name} base64 dict */
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = reader.result.split(',')[1];
+      resolve({ data: base64, mime: file.type, name: file.name });
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+/** Parse raw evidence string → [{data, mime, name}] */
+function parseEvidence(raw) {
+  if (!raw) return [];
+  const s = String(raw).trim();
+  if (s.startsWith('[')) {
+    try { return JSON.parse(s); } catch { /* fall through */ }
+  }
+  return s ? [{ data: s, mime: '', name: 'Evidencia adjunta' }] : [];
+}
+
+const ACCEPTED_TYPES = 'image/png,image/jpeg,image/gif,image/webp,image/bmp,application/pdf';
+
+// ── EvidenceViewer popup ───────────────────────────────────────────────────────
+
+function EvidenceViewer({ files, onClose }) {
+  const [idx, setIdx] = useState(0);
+  if (!files || files.length === 0) return null;
+  const f = files[idx];
+  const isPdf = f.mime === 'application/pdf' || /\.pdf$/i.test(f.name || '');
+  const isImg = !isPdf && (f.mime?.startsWith('image/') || f.data?.startsWith('iVBOR') || f.data?.startsWith('/9j/'));
+  const src = `data:${f.mime || (isPdf ? 'application/pdf' : 'image/png')};base64,${f.data}`;
+
+  return (
+    <div className="modal-bg open" style={{ zIndex: 9999 }} onClick={onClose}>
+      <div className="modal lg" onClick={e => e.stopPropagation()} style={{ maxWidth: 840, width: '92vw' }}>
+        <div className="modal-head">
+          <h3 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {isPdf ? <FileText size={16} /> : <Image size={16} />}
+            {f.name || `Evidencia ${idx + 1}`}
+          </h3>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {files.length > 1 && (
+              <span style={{ fontSize: 12, color: 'var(--ink-400)', fontWeight: 600 }}>
+                {idx + 1} / {files.length}
+              </span>
+            )}
+            <button className="modal-close" onClick={onClose}><X size={16} /></button>
+          </div>
+        </div>
+        <div className="modal-body" style={{ padding: 16, minHeight: 300 }}>
+          {isPdf ? (
+            <div style={{ height: '70vh', border: '1px solid var(--sand-200)', borderRadius: 10, overflow: 'hidden' }}>
+              <iframe src={src} style={{ width: '100%', height: '100%', border: 'none' }} title={f.name} />
+            </div>
+          ) : isImg ? (
+            <div style={{ textAlign: 'center', background: 'var(--sand-50)', borderRadius: 10, padding: 8, maxHeight: '70vh', overflowY: 'auto' }}>
+              <img src={src} alt={f.name} style={{ maxWidth: '100%', borderRadius: 8, display: 'inline-block' }} />
+            </div>
+          ) : (
+            <div style={{ textAlign: 'center', padding: 48 }}>
+              <FileText size={48} color="var(--ink-300)" style={{ display: 'block', margin: '0 auto 12px' }} />
+              <a href={src} download={f.name || 'evidencia'} className="btn btn-primary">Descargar archivo</a>
+            </div>
+          )}
+        </div>
+        {files.length > 1 && (
+          <div className="modal-foot" style={{ justifyContent: 'center', gap: 12 }}>
+            <button className="btn btn-secondary" onClick={() => setIdx(i => Math.max(0, i - 1))} disabled={idx === 0}>← Anterior</button>
+            <button className="btn btn-secondary" onClick={() => setIdx(i => Math.min(files.length - 1, i + 1))} disabled={idx === files.length - 1}>Siguiente →</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 const GASTO_PAYMENT_TYPES = [
   { value: 'transferencia', label: '🏦 Transferencia', short: 'Transferencia' },
@@ -365,6 +446,10 @@ export default function Gastos() {
   const [gastosCollapsed, setGastosCollapsed] = useState(false);
   const [cajaCollapsed, setCajaCollapsed] = useState(false);
   const [closedPeriods, setClosedPeriods] = useState([]);
+  // Caja Chica evidence state
+  const [cajaEvidence, setCajaEvidence] = useState([]);   // [{data, mime, name}] for current form
+  const [viewerFiles, setViewerFiles] = useState(null);   // evidence to show in popup
+  const fileInputRef = useRef(null);
 
   const load = async () => {
     if (!tenantId) return;
@@ -453,11 +538,29 @@ export default function Gastos() {
     }
   };
 
+  const handleCajaFileAdd = async (files) => {
+    const arr = Array.from(files);
+    const invalid = arr.filter(f => !f.type.startsWith('image/') && f.type !== 'application/pdf');
+    if (invalid.length) { toast.error('Solo se permiten imágenes (PNG, JPG, GIF, WEBP) y PDF'); return; }
+    const tooBig = arr.filter(f => f.size > 10 * 1024 * 1024);
+    if (tooBig.length) { toast.error('Cada archivo debe ser menor a 10 MB'); return; }
+    try {
+      const encoded = await Promise.all(arr.map(fileToBase64));
+      setCajaEvidence(prev => [...prev, ...encoded]);
+    } catch { toast.error('Error al procesar el archivo'); }
+  };
+
   const saveCaja = async () => {
     try {
-      if (form.id) await cajaChicaAPI.update(tenantId, form.id, { ...form, period });
-      else await cajaChicaAPI.create(tenantId, { ...form, period });
+      const payload = {
+        ...form,
+        period,
+        evidence: cajaEvidence.length > 0 ? JSON.stringify(cajaEvidence) : (form.evidence || ''),
+      };
+      if (form.id) await cajaChicaAPI.update(tenantId, form.id, payload);
+      else await cajaChicaAPI.create(tenantId, payload);
       toast.success('Registro guardado');
+      setCajaEvidence([]);
       setModal(null); load();
     } catch { toast.error('Error al guardar'); }
   };
@@ -526,7 +629,7 @@ export default function Gastos() {
             )}
             {!isReadOnly && !isPeriodClosed && (
               <button className="btn btn-outline btn-sm" style={{ borderColor: 'var(--purple-200, var(--sand-200))', color: 'var(--purple-700, var(--ink-700))' }}
-                onClick={() => { setForm({ amount: '', description: '', payment_type: 'efectivo' }); setModal('caja'); }}>
+                onClick={() => { setForm({ amount: '', description: '', payment_type: 'efectivo' }); setCajaEvidence([]); setModal('caja'); }}>
                 <Plus size={14} /> Caja Chica
               </button>
             )}
@@ -636,16 +739,36 @@ export default function Gastos() {
                       <th style={{ textAlign: 'right' }}>Monto</th>
                       <th>Tipo</th>
                       <th>Fecha</th>
+                      <th style={{ width: 52, textAlign: 'center' }}>Evidencia</th>
                       {!isReadOnly && <th style={{ width: 70 }}>Acc.</th>}
                     </tr>
                   </thead>
                   <tbody>
-                    {cajaChica.map(c => (
+                    {cajaChica.map(c => {
+                      const evFiles = parseEvidence(c.evidence);
+                      return (
                       <tr key={c.id} style={{ borderBottom: '1px solid var(--sand-100)' }}>
                         <td style={{ fontWeight: 600, color: 'var(--purple-700, #6D28D9)', fontSize: 13 }}>{c.description}</td>
                         <td style={{ textAlign: 'right', fontWeight: 700, fontSize: 13, color: 'var(--purple-700, #6D28D9)' }}>{fmt(c.amount)}</td>
                         <td style={{ fontSize: 11 }}>{PAYMENT_TYPES[c.payment_type]?.short || c.payment_type || '—'}</td>
                         <td style={{ fontSize: 11, color: 'var(--ink-500)' }}>{fmtDate(c.date)}</td>
+                        <td style={{ textAlign: 'center' }}>
+                          {evFiles.length > 0 ? (
+                            <button
+                              className="btn-icon"
+                              title={`Ver ${evFiles.length} evidencia${evFiles.length > 1 ? 's' : ''}`}
+                              style={{ color: 'var(--purple-600, #7C3AED)' }}
+                              onClick={() => setViewerFiles(evFiles)}
+                            >
+                              <Eye size={14} />
+                              {evFiles.length > 1 && (
+                                <span style={{ fontSize: 9, fontWeight: 800, marginLeft: 2 }}>{evFiles.length}</span>
+                              )}
+                            </button>
+                          ) : (
+                            <span style={{ fontSize: 10, color: 'var(--ink-300)' }}>—</span>
+                          )}
+                        </td>
                         {!isReadOnly && (
                           <td style={{ textAlign: 'center' }}>
                             {isPeriodClosed ? (
@@ -655,7 +778,7 @@ export default function Gastos() {
                               </span>
                             ) : (
                               <>
-                                <button className="btn-icon" onClick={() => { setForm(c); setModal('caja'); }}>
+                                <button className="btn-icon" onClick={() => { setForm(c); setCajaEvidence(parseEvidence(c.evidence)); setModal('caja'); }}>
                                   <Edit size={13} />
                                 </button>
                                 <button className="btn-icon" style={{ color: 'var(--coral-500)' }} onClick={async () => {
@@ -672,7 +795,8 @@ export default function Gastos() {
                           </td>
                         )}
                       </tr>
-                    ))}
+                      );
+                    })}
                     <tr style={{ background: 'var(--purple-50)' }}>
                       <td style={{ padding: '10px 12px', fontWeight: 800, color: 'var(--purple-800, #5B21B6)' }}>
                         TOTAL CAJA CHICA
@@ -810,20 +934,20 @@ export default function Gastos() {
 
       {/* ── Caja Chica Modal (sin Transferencia) ── */}
       {modal === 'caja' && (
-        <div className="modal-bg open" onClick={() => setModal(null)}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-bg open" onClick={() => { setModal(null); setCajaEvidence([]); }}>
+          <div className="modal lg" onClick={e => e.stopPropagation()}>
             <div className="modal-head">
-              <h3>{form.id ? 'Editar' : 'Nuevo'} Registro de Caja Chica</h3>
-              <button className="modal-close" onClick={() => setModal(null)}><X size={16} /></button>
+              <h3><DollarSign size={16} style={{ display: 'inline', verticalAlign: -3, marginRight: 8 }} />{form.id ? 'Editar' : 'Nuevo'} Registro de Caja Chica</h3>
+              <button className="modal-close" onClick={() => { setModal(null); setCajaEvidence([]); }}><X size={16} /></button>
             </div>
             <div className="modal-body">
               <div className="form-grid">
                 <div className="field field-full">
-                  <label className="field-label">Descripción</label>
-                  <input className="field-input" value={form.description || ''} onChange={e => setForm({ ...form, description: e.target.value })} />
+                  <label className="field-label">Descripción <span style={{ color: 'var(--coral-500)' }}>*</span></label>
+                  <input className="field-input" value={form.description || ''} onChange={e => setForm({ ...form, description: e.target.value })} placeholder="Descripción del gasto de caja chica" />
                 </div>
                 <div className="field">
-                  <label className="field-label">Monto</label>
+                  <label className="field-label">Monto <span style={{ color: 'var(--coral-500)' }}>*</span></label>
                   <input type="number" className="field-input" step="0.01" min="0" value={form.amount || ''} onChange={e => setForm({ ...form, amount: e.target.value })} />
                 </div>
                 <div className="field">
@@ -839,14 +963,108 @@ export default function Gastos() {
                   <input type="date" className="field-input" value={form.date || ''} onChange={e => setForm({ ...form, date: e.target.value })} />
                 </div>
               </div>
+
+              {/* ── Evidencia del gasto ── */}
+              <div style={{ marginTop: 16 }}>
+                <div style={{
+                  fontSize: 11, fontWeight: 700, color: 'var(--ink-500)',
+                  textTransform: 'uppercase', letterSpacing: '0.06em',
+                  borderBottom: '1px solid var(--sand-100)', paddingBottom: 6, marginBottom: 10,
+                  display: 'flex', alignItems: 'center', gap: 6,
+                }}>
+                  <Paperclip size={12} /> Evidencia del gasto
+                  <span style={{ fontSize: 10, fontWeight: 400, color: 'var(--ink-400)', textTransform: 'none', letterSpacing: 0, marginLeft: 4 }}>
+                    (imágenes o PDF, máx. 10 MB c/u)
+                  </span>
+                </div>
+
+                {/* Drop zone */}
+                <div
+                  style={{
+                    border: '2px dashed var(--sand-300)', borderRadius: 10,
+                    padding: '16px 20px', textAlign: 'center', cursor: 'pointer',
+                    background: 'var(--sand-50)', transition: 'border-color 0.15s',
+                    marginBottom: cajaEvidence.length > 0 ? 10 : 0,
+                  }}
+                  onClick={() => fileInputRef.current?.click()}
+                  onDragOver={e => { e.preventDefault(); e.currentTarget.style.borderColor = 'var(--purple-400, #A78BFA)'; }}
+                  onDragLeave={e => { e.currentTarget.style.borderColor = 'var(--sand-300)'; }}
+                  onDrop={e => {
+                    e.preventDefault();
+                    e.currentTarget.style.borderColor = 'var(--sand-300)';
+                    handleCajaFileAdd(e.dataTransfer.files);
+                  }}
+                >
+                  <Paperclip size={20} color="var(--ink-400)" style={{ display: 'block', margin: '0 auto 6px' }} />
+                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-500)' }}>
+                    Arrastra archivos aquí o <span style={{ color: 'var(--purple-600, #7C3AED)', textDecoration: 'underline' }}>seleccionar</span>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 3 }}>PNG, JPG, GIF, WEBP, PDF</div>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept={ACCEPTED_TYPES}
+                    multiple
+                    style={{ display: 'none' }}
+                    onChange={e => { handleCajaFileAdd(e.target.files); e.target.value = ''; }}
+                  />
+                </div>
+
+                {/* Archivos adjuntos */}
+                {cajaEvidence.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {cajaEvidence.map((ev, i) => {
+                      const isPdf = ev.mime === 'application/pdf' || /\.pdf$/i.test(ev.name || '');
+                      return (
+                        <div key={i} style={{
+                          display: 'flex', alignItems: 'center', gap: 10,
+                          padding: '8px 12px', background: 'var(--purple-50, #F5F3FF)',
+                          border: '1px solid var(--purple-100, #EDE9FE)', borderRadius: 8,
+                        }}>
+                          {isPdf
+                            ? <FileText size={16} color="var(--purple-600, #7C3AED)" style={{ flexShrink: 0 }} />
+                            : <Image size={16} color="var(--purple-600, #7C3AED)" style={{ flexShrink: 0 }} />
+                          }
+                          <span style={{ flex: 1, fontSize: 12, fontWeight: 600, color: 'var(--ink-700)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {ev.name || `Evidencia ${i + 1}`}
+                          </span>
+                          <button
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--purple-600, #7C3AED)', padding: 2, flexShrink: 0 }}
+                            title="Ver"
+                            onClick={() => setViewerFiles([ev])}
+                          >
+                            <Eye size={14} />
+                          </button>
+                          <button
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--coral-500)', padding: 2, flexShrink: 0 }}
+                            title="Quitar"
+                            onClick={() => setCajaEvidence(prev => prev.filter((_, idx) => idx !== i))}
+                          >
+                            <X size={14} />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
             </div>
             <div className="modal-foot">
-              <button className="btn btn-outline" onClick={() => setModal(null)}>Cancelar</button>
-              <button className="btn btn-primary" onClick={saveCaja}>Guardar</button>
+              <button className="btn btn-outline" onClick={() => { setModal(null); setCajaEvidence([]); }}>Cancelar</button>
+              <button className="btn btn-primary" onClick={saveCaja} disabled={saving}>
+                <Check size={14} /> {saving ? 'Guardando…' : 'Guardar'}
+              </button>
             </div>
           </div>
         </div>
       )}
+
+      {/* ── Evidence Viewer popup ── */}
+      {viewerFiles && (
+        <EvidenceViewer files={viewerFiles} onClose={() => setViewerFiles(null)} />
+      )}
+
     </div>
   );
 }

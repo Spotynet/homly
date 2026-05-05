@@ -533,6 +533,10 @@ class CajaChicaEntry(models.Model):
     description = models.CharField(max_length=500)
     date = models.DateField(null=True, blank=True)
     payment_type = models.CharField(max_length=15, choices=PAYMENT_TYPE_CHOICES, default='efectivo')
+    evidence = models.TextField(
+        blank=True, default='',
+        help_text='JSON array of {data, mime, name} base64-encoded evidence files for this entry.',
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

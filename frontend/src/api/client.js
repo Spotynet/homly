@@ -107,6 +107,8 @@ export const tenantsAPI = {
   reactivate: (id) => api.post(`/tenants/${id}/reactivate/`),
   // Subscription info (accessible to tenant members)
   getSubscription: (id) => api.get(`/tenants/${id}/subscription/`),
+  // Subscription payment history (accessible to tenant admin and superadmin)
+  getSubscriptionPayments: (id) => api.get(`/tenants/${id}/subscription/payments/`),
   // Onboarding tour state
   onboardingComplete: (id) => api.post(`/tenants/${id}/onboarding/complete/`),
   onboardingDismiss: (id) => api.post(`/tenants/${id}/onboarding/dismiss/`),

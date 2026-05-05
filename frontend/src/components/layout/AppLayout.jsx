@@ -671,7 +671,13 @@ export default function AppLayout() {
           // ── Subscription plan filter ─────────────────────────────────────
           // If the tenant's subscription plan defines allowed_modules, only
           // show modules included in that list. Empty list = no restriction.
-          if (subscriptionAllowedModules.length > 0 && !subscriptionAllowedModules.includes(moduleKey)) {
+          // mi_membresia is always exempt: the admin must always be able to
+          // view their own membership details regardless of the plan.
+          if (
+            subscriptionAllowedModules.length > 0 &&
+            moduleKey !== 'mi_membresia' &&
+            !subscriptionAllowedModules.includes(moduleKey)
+          ) {
             return false;
           }
 
