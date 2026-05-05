@@ -12,6 +12,18 @@ const api = axios.create({
   withCredentials: true,
 });
 
+const isAuthEndpoint = (url = '') =>
+  url.includes('/auth/login/') ||
+  url.includes('/auth/login-with-code/') ||
+  url.includes('/auth/request-code/') ||
+  url.includes('/auth/check-email/') ||
+  url.includes('/auth/tenants-for-email/') ||
+  url.includes('/auth/token/refresh/') ||
+  url.includes('/auth/logout/') ||
+  url.includes('/auth/tenants/') ||
+  url.includes('/auth/my-tenants/') ||
+  url.includes('/auth/switch-tenant/');
+
 // Request interceptor: attach JWT desde memoria (no localStorage)
 api.interceptors.request.use((config) => {
   const token = getAccessToken();  // M-06: leer desde tokenStore (memoria)
@@ -26,6 +38,14 @@ api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const original = error.config;
+    const url = original?.url || '';
+
+    // No aplicar el flujo de refresh/redirect a endpoints de auth.
+    // Si un login falla con 401, debe regresar el error normal al formulario.
+    if (isAuthEndpoint(url)) {
+      return Promise.reject(error);
+    }
+
     if (error.response?.status === 401 && !original._retry) {
       original._retry = true;
       // M-06: No leer refresh_token de localStorage — viene desde la HttpOnly cookie.
@@ -47,7 +67,9 @@ api.interceptors.response.use(
         localStorage.removeItem('tenant_name');
         localStorage.removeItem('must_change_password');
         localStorage.removeItem('profile_id');
-        window.location.href = '/login';
+        if (window.location.pathname !== '/login') {
+          window.location.assign('/login');
+        }
       }
     }
     return Promise.reject(error);
@@ -65,7 +87,11 @@ export const authAPI = {
   getMyTenants:        ()         => api.get('/auth/my-tenants/'),
   switchTenant:        (tenantId) => api.post('/auth/switch-tenant/', { tenant_id: tenantId }),
   // M-06: refresh desde HttpOnly cookie (no body) + logout que borra la cookie
-  refreshToken:        ()         => api.post('/auth/token/refresh/', {}),
+  refreshToken:        ()         => axios.post(
+    `${API_URL}/auth/token/refresh/`,
+    {},
+    { withCredentials: true },
+  ),
   logout:              ()         => api.post('/auth/logout/'),
 };
 
