@@ -6575,6 +6575,118 @@ class TenantSubscriptionViewSet(viewsets.ModelViewSet):
         sub.sync_tenant_active()
         return Response({'detail': 'Sincronizado correctamente.', 'is_active': sub.tenant.is_active})
 
+    @action(detail=True, methods=['post'], url_path='calculate-amount')
+    def calculate_amount(self, request, pk=None):
+        """
+        POST /api/tenant-subscriptions/{id}/calculate-amount/
+        Recalculates amount_per_cycle from plan.price_for_units(units_count)
+        and saves the result. Returns the updated subscription.
+        Accepts optional body: { units_count: N } to override the stored count.
+        """
+        sub = self.get_object()
+        if not sub.plan:
+            return Response({'detail': 'Sin plan asignado. Selecciona un plan primero.'}, status=400)
+
+        # Allow caller to pass a units_count override (e.g. after editing)
+        units_override = request.data.get('units_count')
+        units = int(units_override) if units_override is not None else sub.units_count
+        if units < 0:
+            return Response({'detail': 'El número de unidades no puede ser negativo.'}, status=400)
+
+        annual = (sub.plan.billing_cycle == 'annual')
+        amount = sub.plan.price_for_units(units, annual=annual)
+
+        update_fields = ['amount_per_cycle', 'currency', 'updated_at']
+        sub.amount_per_cycle = amount
+        sub.currency = sub.plan.currency
+        if units_override is not None:
+            sub.units_count = units
+            update_fields.append('units_count')
+        sub.save(update_fields=update_fields)
+
+        return Response(TenantSubscriptionSerializer(sub).data)
+
+    @action(detail=True, methods=['post'], url_path='deactivate')
+    def deactivate(self, request, pk=None):
+        """
+        POST /api/tenant-subscriptions/{id}/deactivate/
+        Saves a snapshot of the current subscription state to subscription_history,
+        then sets status to 'cancelled' and clears active billing data.
+        This preserves the history while allowing a new subscription to be created
+        for the tenant via the standard create endpoint.
+        Body: { reason: "optional reason" }
+        """
+        from django.utils import timezone as tz
+        sub = self.get_object()
+
+        if sub.status in ('cancelled', 'expired'):
+            return Response(
+                {'detail': 'La suscripción ya está cancelada o expirada.'},
+                status=400,
+            )
+
+        reason = (request.data.get('reason') or '').strip()
+
+        # Build history snapshot from current state
+        snapshot = {
+            'plan_id':          str(sub.plan_id) if sub.plan_id else None,
+            'plan_name':        sub.plan.name if sub.plan else None,
+            'status':           sub.status,
+            'trial_start':      str(sub.trial_start)      if sub.trial_start      else None,
+            'trial_end':        str(sub.trial_end)        if sub.trial_end        else None,
+            'billing_start':    str(sub.billing_start)    if sub.billing_start    else None,
+            'next_billing_date': str(sub.next_billing_date) if sub.next_billing_date else None,
+            'amount_per_cycle': str(sub.amount_per_cycle),
+            'currency':         sub.currency,
+            'units_count':      sub.units_count,
+            'notes':            sub.notes,
+            'deactivated_at':   tz.now().isoformat(),
+            'reason':           reason,
+        }
+
+        history = list(sub.subscription_history or [])
+        history.append(snapshot)
+
+        sub.status              = 'cancelled'
+        sub.plan                = None
+        sub.billing_start       = None
+        sub.next_billing_date   = None
+        sub.amount_per_cycle    = 0
+        sub.subscription_history = history
+        if reason:
+            sub.notes = f'[Desactivada] {reason}'.strip()
+        sub.save()
+        sub.sync_tenant_active()
+
+        return Response(TenantSubscriptionSerializer(sub).data)
+
+    def create(self, request, *args, **kwargs):
+        """
+        Override create to support re-subscribing a tenant that has a cancelled
+        or expired subscription. Since TenantSubscription is OneToOne, we cannot
+        insert a second row — instead we update (reset) the existing record.
+        """
+        tenant_id = request.data.get('tenant')
+        if tenant_id:
+            try:
+                existing = TenantSubscription.objects.select_related('plan').get(tenant_id=tenant_id)
+                if existing.status in ('cancelled', 'expired'):
+                    # Reset the existing record with the new subscription data
+                    serializer = self.get_serializer(existing, data=request.data, partial=False)
+                    serializer.is_valid(raise_exception=True)
+                    instance = serializer.save()
+                    instance.sync_tenant_active()
+                    return Response(self.get_serializer(instance).data, status=201)
+                else:
+                    return Response(
+                        {'detail': 'Este tenant ya tiene una suscripción activa. '
+                                   'Desactívala antes de crear una nueva.'},
+                        status=400,
+                    )
+            except TenantSubscription.DoesNotExist:
+                pass  # Fall through to normal create
+        return super().create(request, *args, **kwargs)
+
     @action(detail=False, methods=['post'], url_path='initialize-all')
     def initialize_all(self, request):
         """

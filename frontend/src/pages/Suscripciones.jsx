@@ -5,6 +5,7 @@ import {
   Plus, Edit, Trash2, Check, X, ChevronDown, ChevronUp,
   DollarSign, Users, Clock, Zap, Star, AlertCircle, RefreshCw,
   CheckCircle, XCircle, ShieldCheck, Building2, CreditCard,
+  Calculator, History, PowerOff,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -862,31 +863,124 @@ function TabSolicitudes() {
   );
 }
 
-// ─── Row Panel (inline status edit + payment) ────────────────────────────────
+// ─── Helper: compute amount from plan + units (client-side preview) ─────────
+
+function computeAmountPreview(plan, units) {
+  if (!plan || !units) return null;
+  const n = Number(units);
+  if (!n || n < 0) return null;
+  let monthly = Number(plan.price_per_unit) * n;
+  if (Array.isArray(plan.volume_tiers) && plan.volume_tiers.length > 0) {
+    const sorted = [...plan.volume_tiers].sort((a, b) => (a.min_units || 0) - (b.min_units || 0));
+    for (const tier of sorted) {
+      const minU = tier.min_units || 0;
+      const maxU = tier.max_units ?? null;
+      if (n >= minU && (maxU === null || n <= maxU)) {
+        monthly = Number(tier.price_per_unit) * n;
+        break;
+      }
+    }
+  }
+  if (plan.billing_cycle === 'annual') {
+    const disc = Number(plan.annual_discount_percent || 0) / 100;
+    return monthly * 12 * (1 - disc);
+  }
+  return monthly;
+}
+
+// ─── Row Panel (inline status edit + payment + deactivate) ────────────────────
 
 function RowPanel({ sub, plans, onRefresh }) {
-  const [status, setStatus]   = useState(sub.status);
-  const [plan,   setPlan]     = useState(sub.plan || '');
-  const [saving, setSaving]   = useState(false);
+  const inputSt = { width: '100%', border: '1px solid #E2E8F0', borderRadius: 8, padding: '7px 10px', fontSize: 13, boxSizing: 'border-box' };
+  const labelSt = { display: 'block', fontSize: 11, fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 };
+
+  // ── Membership edit state ────────────────────────────────────────────────
+  const [status,          setStatus]          = useState(sub.status);
+  const [plan,            setPlan]            = useState(String(sub.plan || ''));
+  const [trialStart,      setTrialStart]      = useState(sub.trial_start      || '');
+  const [trialEnd,        setTrialEnd]        = useState(sub.trial_end        || '');
+  const [billingStart,    setBillingStart]    = useState(sub.billing_start    || '');
+  const [nextBilling,     setNextBilling]     = useState(sub.next_billing_date || '');
+  const [unitsCount,      setUnitsCount]      = useState(String(sub.units_count || 0));
+  const [amountPerCycle,  setAmountPerCycle]  = useState(String(sub.amount_per_cycle || 0));
+  const [currency,        setCurrency]        = useState(sub.currency || 'MXN');
+  const [notes,           setNotes]           = useState(sub.notes || '');
+  const [saving,          setSaving]          = useState(false);
+  const [recalculating,   setRecalculating]   = useState(false);
+
+  // ── Payment state ────────────────────────────────────────────────────────
   const [showPay, setShowPay] = useState(false);
   const [pay, setPay] = useState({
     amount: '', currency: sub.currency || 'MXN', period_label: '',
     payment_date: '', payment_method: 'transfer', reference: '', notes: '',
   });
 
-  const inputSt = { width: '100%', border: '1px solid #E2E8F0', borderRadius: 8, padding: '7px 10px', fontSize: 13, boxSizing: 'border-box' };
-  const labelSt = { display: 'block', fontSize: 11, fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 };
+  // ── Deactivate state ─────────────────────────────────────────────────────
+  const [showDeactivate, setShowDeactivate] = useState(false);
+  const [deactivateReason, setDeactivateReason] = useState('');
+  const [deactivating, setDeactivating] = useState(false);
 
-  const handleUpdateStatus = async () => {
+  // ── History panel ────────────────────────────────────────────────────────
+  const [showHistory, setShowHistory] = useState(false);
+
+  // Auto-calculate preview when plan or units change
+  const selectedPlanObj = plans.find(p => String(p.id) === String(plan));
+  const preview = computeAmountPreview(selectedPlanObj, unitsCount);
+
+  // When plan changes, auto-set currency and compute preview
+  const handlePlanChange = (newPlanId) => {
+    setPlan(newPlanId);
+    const p = plans.find(pl => String(pl.id) === String(newPlanId));
+    if (p) {
+      setCurrency(p.currency);
+      const calc = computeAmountPreview(p, unitsCount);
+      if (calc !== null) setAmountPerCycle(String(Math.round(calc * 100) / 100));
+    }
+  };
+
+  // When units change, recalc preview and update amount field
+  const handleUnitsChange = (val) => {
+    setUnitsCount(val);
+    const calc = computeAmountPreview(selectedPlanObj, val);
+    if (calc !== null) setAmountPerCycle(String(Math.round(calc * 100) / 100));
+  };
+
+  const handleUpdateMembership = async () => {
     setSaving(true);
     try {
-      await tenantSubscriptionsAPI.update(sub.id, { status, plan: plan || null });
+      await tenantSubscriptionsAPI.update(sub.id, {
+        status,
+        plan:              plan || null,
+        trial_start:       trialStart      || null,
+        trial_end:         trialEnd        || null,
+        billing_start:     billingStart    || null,
+        next_billing_date: nextBilling     || null,
+        units_count:       Number(unitsCount) || 0,
+        amount_per_cycle:  Number(amountPerCycle) || 0,
+        currency,
+        notes,
+      });
       await tenantSubscriptionsAPI.syncStatus(sub.id);
       toast.success('Membresía actualizada');
       onRefresh();
     } catch (e) {
       toast.error(e?.response?.data?.detail || 'Error al actualizar');
     } finally { setSaving(false); }
+  };
+
+  const handleRecalculate = async () => {
+    if (!plan) { toast.error('Selecciona un plan primero'); return; }
+    setRecalculating(true);
+    try {
+      const { data } = await tenantSubscriptionsAPI.calculateAmount(sub.id, {
+        units_count: Number(unitsCount) || sub.units_count,
+      });
+      setAmountPerCycle(String(data.amount_per_cycle));
+      setCurrency(data.currency);
+      toast.success(`Monto recalculado: ${fmtAmt(data.amount_per_cycle, data.currency)}`);
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || 'Error al recalcular');
+    } finally { setRecalculating(false); }
   };
 
   const handleRecordPayment = async () => {
@@ -903,97 +997,261 @@ function RowPanel({ sub, plans, onRefresh }) {
     } finally { setSaving(false); }
   };
 
-  return (
-    <div className="bg-slate-50 border-t border-slate-100 px-4 py-4">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+  const handleDeactivate = async () => {
+    if (!deactivateReason.trim()) { toast.error('Ingresa el motivo de desactivación'); return; }
+    setDeactivating(true);
+    try {
+      await tenantSubscriptionsAPI.deactivate(sub.id, { reason: deactivateReason });
+      toast.success('Suscripción desactivada — historial guardado');
+      onRefresh();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || 'Error al desactivar');
+    } finally { setDeactivating(false); }
+  };
 
-        {/* Left: status + plan edit */}
-        <div>
-          <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Modificar membresía</p>
-          <div className="grid grid-cols-2 gap-3 mb-3">
-            <div>
-              <label style={labelSt}>Estado</label>
-              <select value={status} onChange={e => setStatus(e.target.value)} style={inputSt}>
-                <option value="trial">Período de Prueba</option>
-                <option value="active">Activa</option>
-                <option value="past_due">Vencida</option>
-                <option value="cancelled">Cancelada</option>
-                <option value="expired">Expirada</option>
-              </select>
-            </div>
-            <div>
-              <label style={labelSt}>Plan</label>
-              <select value={plan} onChange={e => setPlan(e.target.value)} style={inputSt}>
-                <option value="">Sin plan</option>
-                {plans.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
-            </div>
+  const history = Array.isArray(sub.subscription_history) ? sub.subscription_history : [];
+  const isAlreadyCancelled = sub.status === 'cancelled' || sub.status === 'expired';
+
+  return (
+    <div className="bg-slate-50 border-t border-slate-100 px-4 py-5 space-y-5">
+
+      {/* ── TOP ROW: Modificar membresía ──────────────────────────────────── */}
+      <div>
+        <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Modificar membresía</p>
+
+        {/* Estado + Plan */}
+        <div className="grid grid-cols-2 gap-3 mb-3">
+          <div>
+            <label style={labelSt}>Estado</label>
+            <select value={status} onChange={e => setStatus(e.target.value)} style={inputSt}>
+              <option value="trial">Período de Prueba</option>
+              <option value="active">Activa</option>
+              <option value="past_due">Vencida</option>
+              <option value="cancelled">Cancelada</option>
+              <option value="expired">Expirada</option>
+            </select>
           </div>
-          {(status === 'cancelled' || status === 'expired') && (
-            <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
-              ⚠️ Cambiar a este estado desactivará el acceso del tenant.
-            </p>
-          )}
-          <button onClick={handleUpdateStatus} disabled={saving}
-            className="w-full py-2 bg-teal-600 text-white text-xs font-bold rounded-lg hover:bg-teal-700 disabled:opacity-50 transition-colors">
+          <div>
+            <label style={labelSt}>Plan</label>
+            <select value={plan} onChange={e => handlePlanChange(e.target.value)} style={inputSt}>
+              <option value="">Sin plan</option>
+              {plans.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </div>
+        </div>
+
+        {/* Fechas */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+          {[
+            { label: 'Inicio Prueba',    val: trialStart,   set: setTrialStart },
+            { label: 'Fin Prueba',       val: trialEnd,     set: setTrialEnd },
+            { label: 'Inicio Facturación', val: billingStart, set: setBillingStart },
+            { label: 'Próx. Cobro',      val: nextBilling,  set: setNextBilling },
+          ].map(({ label, val, set }) => (
+            <div key={label}>
+              <label style={labelSt}>{label}</label>
+              <input type="date" value={val} onChange={e => set(e.target.value)} style={inputSt} />
+            </div>
+          ))}
+        </div>
+
+        {/* Unidades + Monto + Moneda */}
+        <div className="grid grid-cols-3 gap-3 mb-3 items-end">
+          <div>
+            <label style={labelSt}>Unidades registradas</label>
+            <input type="number" min="0" value={unitsCount}
+              onChange={e => handleUnitsChange(e.target.value)} style={inputSt} />
+          </div>
+          <div>
+            <label style={labelSt}>
+              Monto / ciclo
+              {preview !== null && Math.abs(preview - Number(amountPerCycle)) > 0.01 && (
+                <span className="ml-2 text-amber-500 normal-case font-medium">
+                  (calculado: {fmtAmt(preview, currency)})
+                </span>
+              )}
+            </label>
+            <input type="number" min="0" step="0.01" value={amountPerCycle}
+              onChange={e => setAmountPerCycle(e.target.value)} style={inputSt} />
+          </div>
+          <div>
+            <label style={labelSt}>Moneda</label>
+            <select value={currency} onChange={e => setCurrency(e.target.value)} style={inputSt}>
+              {['MXN','USD','EUR','COP'].map(c => <option key={c}>{c}</option>)}
+            </select>
+          </div>
+        </div>
+
+        {/* Notas */}
+        <div className="mb-3">
+          <label style={labelSt}>Notas internas</label>
+          <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2}
+            style={{ ...inputSt, resize: 'vertical' }} placeholder="Observaciones sobre esta suscripción..." />
+        </div>
+
+        {/* Action buttons */}
+        <div className="flex gap-2 flex-wrap">
+          <button onClick={handleUpdateMembership} disabled={saving}
+            className="flex-1 py-2 bg-teal-600 text-white text-xs font-bold rounded-lg hover:bg-teal-700 disabled:opacity-50 transition-colors">
             {saving ? 'Guardando…' : 'Guardar Cambios'}
           </button>
+          <button onClick={handleRecalculate} disabled={recalculating || !plan}
+            title="Recalcular monto automáticamente según plan y número de unidades"
+            className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-teal-700 bg-teal-50 border border-teal-200 rounded-lg hover:bg-teal-100 disabled:opacity-50 transition-colors">
+            <Calculator size={13} />
+            {recalculating ? 'Calculando…' : 'Recalcular'}
+          </button>
         </div>
 
-        {/* Right: payment form */}
-        <div>
-          <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Confirmar pago</p>
-          <button onClick={() => setShowPay(p => !p)}
-            className="flex items-center gap-2 px-4 py-2 text-xs font-bold text-teal-700 bg-teal-50 border border-teal-200 rounded-lg hover:bg-teal-100 transition-colors mb-3">
-            <DollarSign size={13} />
-            {showPay ? 'Cancelar' : 'Registrar Pago'}
-            {showPay ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-          </button>
-          {showPay && (
-            <div className="space-y-2">
-              <div className="grid grid-cols-2 gap-2">
-                {[
-                  { key: 'amount',       label: 'Monto',             type: 'number', placeholder: '0.00' },
-                  { key: 'payment_date', label: 'Fecha',             type: 'date' },
-                  { key: 'period_label', label: 'Período cubierto',  type: 'text',   placeholder: 'Ej: Enero 2025' },
-                  { key: 'reference',    label: 'Referencia',        type: 'text',   placeholder: 'No. transacción' },
-                ].map(({ key, label, type, placeholder }) => (
-                  <div key={key}>
-                    <label style={labelSt}>{label}</label>
-                    <input type={type} value={pay[key]} placeholder={placeholder}
-                      onChange={e => setPay(p => ({ ...p, [key]: e.target.value }))}
-                      style={inputSt} />
-                  </div>
-                ))}
-                <div>
-                  <label style={labelSt}>Método</label>
-                  <select value={pay.payment_method} onChange={e => setPay(p => ({ ...p, payment_method: e.target.value }))} style={inputSt}>
-                    <option value="transfer">Transferencia</option>
-                    <option value="cash">Efectivo</option>
-                    <option value="card">Tarjeta</option>
-                    <option value="other">Otro</option>
-                  </select>
+        {preview !== null && (
+          <p className="text-xs text-teal-600 mt-2 font-medium">
+            <Calculator size={11} className="inline mr-1" />
+            Precio calculado por plan: <strong>{fmtAmt(preview, selectedPlanObj?.currency || currency)}</strong>
+            {' '} = {unitsCount} unidades × {fmtAmt(selectedPlanObj?.price_per_unit, selectedPlanObj?.currency || currency)}/u
+            {selectedPlanObj?.billing_cycle === 'annual' && ` × 12 meses − ${selectedPlanObj?.annual_discount_percent}% desc.`}
+          </p>
+        )}
+      </div>
+
+      {/* ── MIDDLE ROW: Registrar pago ────────────────────────────────────── */}
+      <div className="border-t border-slate-200 pt-4">
+        <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Confirmar pago</p>
+        <button onClick={() => setShowPay(p => !p)}
+          className="flex items-center gap-2 px-4 py-2 text-xs font-bold text-teal-700 bg-teal-50 border border-teal-200 rounded-lg hover:bg-teal-100 transition-colors mb-3">
+          <DollarSign size={13} />
+          {showPay ? 'Cancelar' : 'Registrar Pago'}
+          {showPay ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+        </button>
+        {showPay && (
+          <div className="space-y-2">
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { key: 'amount',       label: 'Monto',            type: 'number', placeholder: '0.00' },
+                { key: 'payment_date', label: 'Fecha',            type: 'date' },
+                { key: 'period_label', label: 'Período cubierto', type: 'text',   placeholder: 'Ej: Enero 2025' },
+                { key: 'reference',    label: 'Referencia',       type: 'text',   placeholder: 'No. transacción' },
+              ].map(({ key, label, type, placeholder }) => (
+                <div key={key}>
+                  <label style={labelSt}>{label}</label>
+                  <input type={type} value={pay[key]} placeholder={placeholder}
+                    onChange={e => setPay(p => ({ ...p, [key]: e.target.value }))}
+                    style={inputSt} />
                 </div>
-                <div>
-                  <label style={labelSt}>Moneda</label>
-                  <select value={pay.currency} onChange={e => setPay(p => ({ ...p, currency: e.target.value }))} style={inputSt}>
-                    {['MXN','USD','EUR','COP'].map(c => <option key={c}>{c}</option>)}
-                  </select>
-                </div>
+              ))}
+              <div>
+                <label style={labelSt}>Método</label>
+                <select value={pay.payment_method} onChange={e => setPay(p => ({ ...p, payment_method: e.target.value }))} style={inputSt}>
+                  <option value="transfer">Transferencia</option>
+                  <option value="cash">Efectivo</option>
+                  <option value="card">Tarjeta</option>
+                  <option value="other">Otro</option>
+                </select>
               </div>
               <div>
-                <label style={labelSt}>Notas</label>
-                <textarea value={pay.notes} onChange={e => setPay(p => ({ ...p, notes: e.target.value }))} rows={2}
-                  style={{ ...inputSt, resize: 'vertical' }} />
+                <label style={labelSt}>Moneda</label>
+                <select value={pay.currency} onChange={e => setPay(p => ({ ...p, currency: e.target.value }))} style={inputSt}>
+                  {['MXN','USD','EUR','COP'].map(c => <option key={c}>{c}</option>)}
+                </select>
               </div>
-              <button onClick={handleRecordPayment} disabled={saving}
-                className="w-full py-2 bg-teal-600 text-white text-xs font-bold rounded-lg hover:bg-teal-700 disabled:opacity-50 transition-colors">
-                {saving ? 'Guardando…' : 'Confirmar Pago'}
-              </button>
             </div>
-          )}
-        </div>
+            <div>
+              <label style={labelSt}>Notas</label>
+              <textarea value={pay.notes} onChange={e => setPay(p => ({ ...p, notes: e.target.value }))} rows={2}
+                style={{ ...inputSt, resize: 'vertical' }} />
+            </div>
+            <button onClick={handleRecordPayment} disabled={saving}
+              className="w-full py-2 bg-teal-600 text-white text-xs font-bold rounded-lg hover:bg-teal-700 disabled:opacity-50 transition-colors">
+              {saving ? 'Guardando…' : 'Confirmar Pago'}
+            </button>
+          </div>
+        )}
       </div>
+
+      {/* ── BOTTOM ROW: Historial + Desactivar ───────────────────────────── */}
+      <div className="border-t border-slate-200 pt-4 flex gap-3 flex-wrap">
+
+        {/* Historial de suscripciones anteriores */}
+        {history.length > 0 && (
+          <button onClick={() => setShowHistory(h => !h)}
+            className="flex items-center gap-2 px-4 py-2 text-xs font-bold text-slate-600 bg-slate-100 border border-slate-200 rounded-lg hover:bg-slate-200 transition-colors">
+            <History size={13} />
+            Historial ({history.length} período{history.length !== 1 ? 's' : ''})
+            {showHistory ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+          </button>
+        )}
+
+        {/* Desactivar suscripción — solo si no está ya cancelada/expirada */}
+        {!isAlreadyCancelled && (
+          <button onClick={() => setShowDeactivate(d => !d)}
+            className="flex items-center gap-2 px-4 py-2 text-xs font-bold text-red-600 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-colors">
+            <PowerOff size={13} />
+            Desactivar Suscripción
+            {showDeactivate ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+          </button>
+        )}
+      </div>
+
+      {/* History panel */}
+      {showHistory && history.length > 0 && (
+        <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
+          <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Historial de suscripciones anteriores</p>
+          {[...history].reverse().map((snap, i) => (
+            <div key={i} className="border border-slate-100 rounded-lg p-3 text-xs space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-slate-700">{snap.plan_name || 'Sin plan'}</span>
+                <span className="text-slate-400">{snap.deactivated_at ? new Date(snap.deactivated_at).toLocaleDateString('es-MX') : '—'}</span>
+              </div>
+              <div className="flex gap-4 text-slate-500">
+                <span>Estado: <strong>{snap.status}</strong></span>
+                <span>Monto: <strong>{fmtAmt(snap.amount_per_cycle, snap.currency)}</strong></span>
+                <span>Unidades: <strong>{snap.units_count}</strong></span>
+              </div>
+              {snap.trial_start && (
+                <div className="text-slate-400">
+                  Prueba: {snap.trial_start} → {snap.trial_end || '—'}
+                  {snap.billing_start && ` · Facturación: ${snap.billing_start}`}
+                </div>
+              )}
+              {snap.reason && (
+                <div className="text-red-500 font-medium">Motivo: {snap.reason}</div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Deactivate confirm panel */}
+      {showDeactivate && !isAlreadyCancelled && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 space-y-3">
+          <div className="flex items-start gap-2">
+            <AlertCircle size={16} className="text-red-600 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-bold text-red-700">Desactivar suscripción</p>
+              <p className="text-xs text-red-600 mt-0.5">
+                Se guardará un snapshot del estado actual en el historial y la suscripción quedará como <strong>Cancelada</strong>.
+                El acceso del tenant se desactivará. Podrás crear una nueva suscripción después.
+              </p>
+            </div>
+          </div>
+          <div>
+            <label style={{ ...labelSt, color: '#DC2626' }}>Motivo de desactivación *</label>
+            <textarea value={deactivateReason} onChange={e => setDeactivateReason(e.target.value)} rows={2}
+              style={{ ...inputSt, borderColor: '#FCA5A5', resize: 'vertical' }}
+              placeholder="Ej: Fin de contrato, cambio de plan, incumplimiento de pago…" />
+          </div>
+          <div className="flex gap-2 justify-end">
+            <button onClick={() => setShowDeactivate(false)}
+              className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">
+              Cancelar
+            </button>
+            <button onClick={handleDeactivate} disabled={deactivating || !deactivateReason.trim()}
+              className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors">
+              <PowerOff size={13} />
+              {deactivating ? 'Desactivando…' : 'Confirmar Desactivación'}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1016,6 +1274,9 @@ function NewSubModal({ plans, onClose, onDone }) {
   const inputCls = 'w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500';
   const labelCls = 'block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider';
 
+  // Track which tenant IDs have ACTIVE subscriptions (not cancelled/expired)
+  const [cancelledIds, setCancelledIds] = useState(new Set());
+
   useEffect(() => {
     Promise.all([
       tenantsAPI.list(),
@@ -1024,12 +1285,26 @@ function NewSubModal({ plans, onClose, onDone }) {
       const tenants = rT.data.results || rT.data;
       const subs    = rS.data.results || rS.data;
       setAllTenants(tenants);
-      setExistingIds(new Set(subs.map(s => s.tenant)));
+      // Exclude tenants that have an ACTIVE/trial/past_due subscription
+      const activeSubTenants = new Set(
+        subs
+          .filter(s => s.status !== 'cancelled' && s.status !== 'expired')
+          .map(s => s.tenant)
+      );
+      const cancelledSubTenants = new Set(
+        subs
+          .filter(s => s.status === 'cancelled' || s.status === 'expired')
+          .map(s => s.tenant)
+      );
+      setExistingIds(activeSubTenants);
+      setCancelledIds(cancelledSubTenants);
     }).catch(() => toast.error('Error al cargar datos'))
       .finally(() => setLoading(false));
   }, []);
 
+  // Tenants without any subscription + tenants with cancelled/expired (allow re-subscribe)
   const available = allTenants.filter(t => !existingIds.has(t.id));
+  const isResubscribe = (tenantId) => cancelledIds.has(tenantId);
 
   // Auto-calculate trial_end when plan and trial_start change
   useEffect(() => {
@@ -1092,15 +1367,24 @@ function NewSubModal({ plans, onClose, onDone }) {
               <label className={labelCls}>Tenant *</label>
               {available.length === 0 ? (
                 <p className="text-sm text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                  Todos los tenants ya tienen una suscripción asignada.
+                  Todos los tenants tienen una suscripción activa. Desactiva una suscripción existente antes de crear otra.
                 </p>
               ) : (
-                <select value={form.tenant} onChange={f('tenant')} required className={inputCls}>
-                  <option value="">Selecciona un tenant…</option>
-                  {available.map(t => (
-                    <option key={t.id} value={t.id}>{t.name}</option>
-                  ))}
-                </select>
+                <>
+                  <select value={form.tenant} onChange={f('tenant')} required className={inputCls}>
+                    <option value="">Selecciona un tenant…</option>
+                    {available.map(t => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}{isResubscribe(t.id) ? ' — Reactivar suscripción' : ''}
+                      </option>
+                    ))}
+                  </select>
+                  {form.tenant && isResubscribe(form.tenant) && (
+                    <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-2">
+                      ℹ️ Este tenant tiene una suscripción cancelada/expirada. Se creará una nueva suscripción conservando el historial anterior.
+                    </p>
+                  )}
+                </>
               )}
             </div>
 
@@ -1164,7 +1448,9 @@ function NewSubModal({ plans, onClose, onDone }) {
               </button>
               <button type="submit" disabled={saving || available.length === 0}
                 className="px-5 py-2 bg-teal-600 text-white text-sm font-semibold rounded-lg hover:bg-teal-700 disabled:opacity-50 transition-colors">
-                {saving ? 'Creando…' : 'Crear Suscripción'}
+                {saving
+                  ? (isResubscribe(form.tenant) ? 'Reactivando…' : 'Creando…')
+                  : (isResubscribe(form.tenant) ? 'Reactivar Suscripción' : 'Crear Suscripción')}
               </button>
             </div>
           </form>

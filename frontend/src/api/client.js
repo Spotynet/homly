@@ -282,11 +282,15 @@ export const tenantSubscriptionsAPI = {
   get:           (id)     => api.get(`/tenant-subscriptions/${id}/`),
   create:        (data)   => api.post('/tenant-subscriptions/', data),
   update:        (id, data) => api.patch(`/tenant-subscriptions/${id}/`, data),
-  recordPayment: (id, data) => api.post(`/tenant-subscriptions/${id}/record-payment/`, data),
-  payments:      (id)     => api.get(`/tenant-subscriptions/${id}/payments/`),
-  syncStatus:    (id)     => api.post(`/tenant-subscriptions/${id}/sync-status/`),
+  recordPayment:   (id, data) => api.post(`/tenant-subscriptions/${id}/record-payment/`, data),
+  payments:        (id)       => api.get(`/tenant-subscriptions/${id}/payments/`),
+  syncStatus:      (id)       => api.post(`/tenant-subscriptions/${id}/sync-status/`),
+  // Recalculate amount_per_cycle from plan × units. Accepts optional { units_count }.
+  calculateAmount: (id, data) => api.post(`/tenant-subscriptions/${id}/calculate-amount/`, data || {}),
+  // Save a history snapshot and mark subscription as cancelled so a new one can be created.
+  deactivate:      (id, data) => api.post(`/tenant-subscriptions/${id}/deactivate/`, data || {}),
   // Create trial subscriptions for ALL tenants that don't have one
-  initializeAll: ()       => api.post('/tenant-subscriptions/initialize-all/'),
+  initializeAll:   ()         => api.post('/tenant-subscriptions/initialize-all/'),
 };
 
 // ─── Super Admins ────────────────────────────────
