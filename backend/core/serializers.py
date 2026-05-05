@@ -839,9 +839,10 @@ class TenantSubscriptionSerializer(serializers.ModelSerializer):
             'billing_start', 'next_billing_date',
             'units_count', 'amount_per_cycle', 'currency',
             'notes',
+            'subscription_history',
             'created_at', 'updated_at',
         ]
-        read_only_fields = ['id', 'created_at', 'updated_at', 'trial_days_remaining', 'status_label']
+        read_only_fields = ['id', 'created_at', 'updated_at', 'trial_days_remaining', 'status_label', 'subscription_history']
 
     def get_tenant_name(self, obj):
         return obj.tenant.name if obj.tenant else None

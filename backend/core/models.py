@@ -1281,6 +1281,12 @@ class TenantSubscription(models.Model):
     currency         = models.CharField(max_length=3, default='MXN')
     next_billing_date = models.DateField(null=True, blank=True)
     notes            = models.TextField(blank=True, default='')
+    # Immutable log of past subscription periods.
+    # Each entry is a snapshot dict saved when the subscription is deactivated.
+    subscription_history = models.JSONField(
+        default=list, blank=True,
+        help_text='Historial de periodos anteriores de suscripción (snapshots al desactivar).'
+    )
     created_at       = models.DateTimeField(auto_now_add=True)
     updated_at       = models.DateTimeField(auto_now=True)
 

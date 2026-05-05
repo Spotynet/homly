@@ -9,10 +9,10 @@ set -e  # Exit on any error
 
 PEM="$HOME/projects/pem/homly.pem"
 EC2_USER="ubuntu"
-# M-02: IP del servidor leída desde variable de entorno (nunca hardcodeada en el repo).
-# Definir en tu shell o en ~/.bashrc / ~/.zshrc:
+# M-02: Preferir variable de entorno, pero conservar el host anterior como fallback
+# para no romper el flujo local. Si quieres sobrescribirlo:
 #   export HOMLY_EC2_HOST="<ip-o-dominio-del-servidor>"
-EC2_HOST="${HOMLY_EC2_HOST:?ERROR: Variable HOMLY_EC2_HOST no definida. Ejecuta: export HOMLY_EC2_HOST=<ip-del-servidor>}"
+EC2_HOST="${HOMLY_EC2_HOST:-34.200.72.248}"
 EC2="$EC2_USER@$EC2_HOST"
 API_URL="https://homly.com.mx/api"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -41,7 +41,10 @@ echo ""
 # ── Step 2: Build frontend ───────────────────────────────────
 echo "▶ [2/5] Building frontend (Mac)..."
 cd "$FRONTEND_DIR"
-REACT_APP_API_URL="$API_URL" GENERATE_SOURCEMAP=false npm run build
+# Vite necesita dependencias instaladas localmente para encontrar `vite`.
+# `npm ci` garantiza un árbol reproducible a partir de package-lock.json.
+npm ci
+VITE_API_URL="$API_URL" GENERATE_SOURCEMAP=false npm run build
 echo "  ✓ Build done."
 echo ""
 
