@@ -1,19 +1,44 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { usersAPI, unitsAPI, authAPI } from '../api/client';
+import { usersAPI, unitsAPI, tenantsAPI, authAPI } from '../api/client';
 import { ROLES } from '../utils/helpers';
-import { Plus, Trash2, X, Pencil, UserCheck, Loader, ShieldAlert, ToggleLeft, ToggleRight, Mail, UserX, UserCheck2 } from 'lucide-react';
+import {
+  Plus, Trash2, X, Pencil, UserCheck, Loader, ShieldAlert,
+  ToggleLeft, ToggleRight, Mail, UserX, UserCheck2, Shield,
+} from 'lucide-react';
 import toast from 'react-hot-toast';
+
+// ─── Selector value helpers ──────────────────────────────────────────────────
+// Encode a selection as a single string so a plain <select> can carry both
+// system roles and custom profile choices:
+//   system role  → "sys:admin"  "sys:tesorero" …
+//   custom profile → "prf:<profile_id>"
+const encodeRoleValue  = (role)      => `sys:${role}`;
+const encodeProfileValue = (id)      => `prf:${id}`;
+const isProfileValue   = (v)         => v?.startsWith('prf:');
+const decodeProfileId  = (v)         => v?.replace('prf:', '') ?? '';
+const decodeSystemRole = (v)         => v?.replace('sys:', '') ?? '';
+
+// Derive the effective system role from form state
+// (used for showing/hiding the unit selector)
+function effectiveRole(form, profiles) {
+  if (form.profile_id) {
+    const p = profiles.find(p => String(p.id) === String(form.profile_id));
+    return p?.base_role || form.role;
+  }
+  return form.role;
+}
 
 export default function Users() {
   const { tenantId, isAdmin } = useAuth();
   const [users,   setUsers]   = useState([]);
   const [units,   setUnits]   = useState([]);
+  const [profiles, setProfiles] = useState([]); // tenant custom_profiles
   const [loading, setLoading] = useState(true);
-  const [modal,   setModal]   = useState(false);   // 'edit' | false
+  const [modal,   setModal]   = useState(false);
   const [editId,  setEditId]  = useState(null);
   const [saving,   setSaving]   = useState(false);
-  const [sending,  setSending]  = useState(null); // tu.id del que está enviando invitación
+  const [sending,  setSending]  = useState(null);
   const [form,     setForm]     = useState({});
 
   // ── Email lookup (create mode) ──────────────────────────────────────────
@@ -24,12 +49,14 @@ export default function Users() {
   // ── Load ──────────────────────────────────────────────────────────────────
   const load = async () => {
     try {
-      const [uRes, unitRes] = await Promise.all([
+      const [uRes, unitRes, tenantRes] = await Promise.all([
         usersAPI.list(tenantId, { page_size: 9999 }),
         unitsAPI.list(tenantId, { page_size: 9999 }),
+        tenantsAPI.get(tenantId),
       ]);
       setUsers(uRes.data.results || uRes.data);
       setUnits(unitRes.data.results || unitRes.data);
+      setProfiles(Array.isArray(tenantRes.data?.custom_profiles) ? tenantRes.data.custom_profiles : []);
     } catch { toast.error('Error cargando usuarios'); }
     setLoading(false);
   };
@@ -40,7 +67,7 @@ export default function Users() {
   const openAdd = () => {
     setEditId(null);
     setExistingUser(null);
-    setForm({ name: '', email: '', password: '', role: 'vecino', unit_id: '' });
+    setForm({ name: '', email: '', password: '', role: 'vecino', profile_id: '', unit_id: '' });
     setModal('edit');
   };
 
@@ -48,17 +75,16 @@ export default function Users() {
     setEditId(tu.id);
     setExistingUser(null);
     setForm({
-      name:    tu.user_name  || '',
-      email:   tu.user_email || '',
-      role:    tu.role       || 'vecino',
-      unit_id: tu.unit       || '',
+      name:       tu.user_name   || '',
+      email:      tu.user_email  || '',
+      role:       tu.role        || 'vecino',
+      profile_id: tu.profile_id  || '',
+      unit_id:    tu.unit        || '',
     });
     setModal('edit');
   };
 
-  const closeModal = () => {
-    setModal(false);
-  };
+  const closeModal = () => setModal(false);
 
   // ── Email check (debounced) ───────────────────────────────────────────────
   const handleEmailChange = (val) => {
@@ -76,30 +102,61 @@ export default function Users() {
     }, 500);
   };
 
+  // ── Role selector onChange ────────────────────────────────────────────────
+  const handleRoleChange = (val) => {
+    if (isProfileValue(val)) {
+      const profileId = decodeProfileId(val);
+      const profile   = profiles.find(p => String(p.id) === String(profileId));
+      setForm(f => ({
+        ...f,
+        profile_id: profileId,
+        role:       profile?.base_role || f.role,
+        // Clear unit_id unless the profile's base_role is vecino
+        unit_id: profile?.base_role === 'vecino' ? f.unit_id : '',
+      }));
+    } else {
+      const role = decodeSystemRole(val);
+      setForm(f => ({
+        ...f,
+        role,
+        profile_id: '',
+        unit_id: role === 'vecino' ? f.unit_id : '',
+      }));
+    }
+  };
+
+  // Current encoded value for the <select>
+  const selectedRoleValue = form.profile_id
+    ? encodeProfileValue(form.profile_id)
+    : encodeRoleValue(form.role || 'vecino');
+
   // ── Save (create / edit) ──────────────────────────────────────────────────
   const handleSave = async () => {
     setSaving(true);
+    const effRole = effectiveRole(form, profiles);
     try {
       if (editId) {
         if (!form.name?.trim()) { toast.error('El nombre es obligatorio'); setSaving(false); return; }
-        if (form.role === 'vecino' && !form.unit_id) { toast.error('Seleccione una unidad para el vecino'); setSaving(false); return; }
+        if (effRole === 'vecino' && !form.unit_id) { toast.error('Seleccione una unidad para el vecino'); setSaving(false); return; }
         await usersAPI.update(tenantId, editId, {
-          name: form.name.trim(),
-          role: form.role,
-          unit: form.role === 'vecino' ? (form.unit_id || null) : null,
+          name:       form.name.trim(),
+          role:       form.role,
+          profile_id: form.profile_id || '',
+          unit:       effRole === 'vecino' ? (form.unit_id || null) : null,
         });
         toast.success('Usuario actualizado');
       } else {
         if (!form.email) { toast.error('El email es obligatorio'); setSaving(false); return; }
         if (existingUser === false && !form.name) { toast.error('El nombre es obligatorio'); setSaving(false); return; }
         if (existingUser === false && !form.password) { toast.error('La contraseña es obligatoria'); setSaving(false); return; }
-        if (form.role === 'vecino' && !form.unit_id) { toast.error('Seleccione una unidad para el vecino'); setSaving(false); return; }
+        if (effRole === 'vecino' && !form.unit_id) { toast.error('Seleccione una unidad para el vecino'); setSaving(false); return; }
 
         const payload = {
-          email:     form.email.trim(),
-          role:      form.role,
-          tenant_id: tenantId,
-          unit_id:   form.unit_id || null,
+          email:      form.email.trim(),
+          role:       form.role,
+          profile_id: form.profile_id || '',
+          tenant_id:  tenantId,
+          unit_id:    form.unit_id || null,
         };
         if (existingUser === false) {
           payload.name     = form.name.trim();
@@ -154,9 +211,23 @@ export default function Users() {
     } finally { setSending(null); }
   };
 
-  const setField    = (k, v) => setForm(f => ({ ...f, [k]: v }));
-  const unitLabel   = (u) => [u.unit_id_code, u.unit_name].filter(Boolean).join(' — ');
-  const unitById    = (id) => units.find(u => String(u.id) === String(id));
+  const setField  = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const unitLabel = (u) => [u.unit_id_code, u.unit_name].filter(Boolean).join(' — ');
+  const unitById  = (id) => units.find(u => String(u.id) === String(id));
+
+  // ── Badge info for the table ──────────────────────────────────────────────
+  const badgeInfo = (tu) => {
+    if (tu.profile_id && tu.profile_label) {
+      return {
+        label: tu.profile_label,
+        color: tu.profile_color || '#64748B',
+        bg:    `${tu.profile_color || '#64748B'}20`,
+        isCustom: true,
+      };
+    }
+    const ri = ROLES[tu.role] || { label: tu.role, color: '#64748B', bg: '#F1F5F9' };
+    return { ...ri, isCustom: false };
+  };
 
   if (loading) return (
     <div style={{ padding: 32, textAlign: 'center', color: 'var(--ink-400)' }}>Cargando usuarios...</div>
@@ -185,15 +256,15 @@ export default function Users() {
               <tr>
                 <th>Nombre</th>
                 <th>Email</th>
-                <th>Rol</th>
+                <th>Rol / Perfil</th>
                 <th>Unidad</th>
                 {isAdmin && <th style={{ width: 240, textAlign: 'center' }}>Acciones</th>}
               </tr>
             </thead>
             <tbody>
               {users.map(tu => {
-                const roleInfo = ROLES[tu.role] || { label: tu.role, color: '#64748B', bg: '#F1F5F9' };
-                const unit     = unitById(tu.unit);
+                const badge = badgeInfo(tu);
+                const unit  = unitById(tu.unit);
                 return (
                   <tr key={tu.id} style={{ opacity: tu.is_active === false ? 0.65 : 1 }}>
                     <td>
@@ -227,9 +298,18 @@ export default function Users() {
                     </td>
                     <td style={{ fontSize: 13, color: 'var(--ink-500)' }}>{tu.user_email}</td>
                     <td>
-                      <span className="badge" style={{ background: roleInfo.bg, color: roleInfo.color }}>
-                        {roleInfo.label}
-                      </span>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                        <span className="badge" style={{ background: badge.bg, color: badge.color }}>
+                          {badge.isCustom && <Shield size={10} style={{ marginRight: 3, verticalAlign: 'middle' }} />}
+                          {badge.label}
+                        </span>
+                        {/* Sub-label: base role when using a custom profile */}
+                        {badge.isCustom && ROLES[tu.role] && (
+                          <span style={{ fontSize: 10, color: 'var(--ink-400)' }}>
+                            Base: {ROLES[tu.role].label}
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td style={{ fontSize: 13 }}>
                       {unit ? unitLabel(unit) : (tu.unit_code || '—')}
@@ -339,7 +419,7 @@ export default function Users() {
                           Usuario existente: {existingUser.name}
                         </div>
                         <div style={{ fontSize: 12, color: 'var(--teal-600)', marginTop: 2 }}>
-                          Se agregará a este condominio con el rol y unidad que selecciones.
+                          Se agregará a este condominio con el rol o perfil que selecciones.
                         </div>
                       </div>
                     </div>
@@ -364,22 +444,64 @@ export default function Users() {
                   </div>
                 )}
 
-                {/* ROL */}
+                {/* ROL / PERFIL — selector combinado */}
                 <div className="field">
-                  <label className="field-label">Rol</label>
-                  <select className="field-select" value={form.role}
-                    onChange={e => {
-                      setField('role', e.target.value);
-                      if (e.target.value !== 'vecino') setField('unit_id', '');
-                    }}>
-                    {Object.entries(ROLES)
-                      .filter(([k]) => k !== 'superadmin')
-                      .map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                  <label className="field-label">Rol o Perfil</label>
+                  <select
+                    className="field-select"
+                    value={selectedRoleValue}
+                    onChange={e => handleRoleChange(e.target.value)}
+                  >
+                    {/* ── Roles predefinidos del sistema ── */}
+                    <optgroup label="Roles del sistema">
+                      {Object.entries(ROLES)
+                        .filter(([k]) => k !== 'superadmin')
+                        .map(([k, v]) => (
+                          <option key={k} value={encodeRoleValue(k)}>{v.label}</option>
+                        ))}
+                    </optgroup>
+
+                    {/* ── Perfiles personalizados del tenant ── */}
+                    {profiles.length > 0 && (
+                      <optgroup label="Perfiles personalizados">
+                        {profiles.map(p => (
+                          <option key={p.id} value={encodeProfileValue(p.id)}>
+                            {p.label}
+                            {p.base_role && ROLES[p.base_role]
+                              ? ` (base: ${ROLES[p.base_role].label})`
+                              : ''}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
                   </select>
+
+                  {/* Info del perfil seleccionado */}
+                  {form.profile_id && (() => {
+                    const p = profiles.find(pr => String(pr.id) === String(form.profile_id));
+                    if (!p) return null;
+                    return (
+                      <div style={{
+                        marginTop: 6, padding: '7px 10px',
+                        background: `${p.color || '#64748B'}14`,
+                        border: `1px solid ${p.color || '#64748B'}33`,
+                        borderRadius: 8, fontSize: 12, color: 'var(--ink-600)',
+                        display: 'flex', alignItems: 'center', gap: 6,
+                      }}>
+                        <Shield size={13} color={p.color || '#64748B'} style={{ flexShrink: 0 }} />
+                        <span>
+                          Perfil personalizado con los módulos y permisos configurados en
+                          <strong> Configuración → Roles y Perfiles</strong>.
+                          El rol base de permisos es{' '}
+                          <strong>{ROLES[p.base_role]?.label || p.base_role}</strong>.
+                        </span>
+                      </div>
+                    );
+                  })()}
                 </div>
 
-                {/* UNIDAD */}
-                {form.role === 'vecino' && (
+                {/* UNIDAD — visible si el rol efectivo es vecino */}
+                {effectiveRole(form, profiles) === 'vecino' && (
                   <div className="field field-full">
                     <label className="field-label">Unidad Asignada *</label>
                     <select className="field-select" value={form.unit_id}
@@ -400,7 +522,7 @@ export default function Users() {
                   </div>
                 )}
 
-                {/* Aviso de correo de bienvenida — solo en modo crear usuario nuevo */}
+                {/* Aviso de correo de bienvenida */}
                 {!editId && existingUser === false && (
                   <div className="field field-full">
                     <div style={{

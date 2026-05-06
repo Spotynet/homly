@@ -60,6 +60,7 @@ function SubscriptionModal({ tenant, onClose, onUpdated }) {
 
   // Update form state
   const [upd, setUpd] = useState({});
+  const [nextBillingUnlocked, setNextBillingUnlocked] = useState(false);
 
   // New payment form
   const [pay, setPay] = useState({
@@ -418,7 +419,6 @@ function SubscriptionModal({ tenant, onClose, onUpdated }) {
                       { key: 'trial_start', label: 'Inicio Prueba', type: 'date' },
                       { key: 'trial_end',   label: 'Fin Prueba',    type: 'date' },
                       { key: 'billing_start', label: 'Inicio Facturación', type: 'date' },
-                      { key: 'next_billing_date', label: 'Próx. Cobro', type: 'date' },
                       { key: 'amount_per_cycle', label: 'Monto/Ciclo', type: 'number' },
                       { key: 'currency', label: 'Moneda', type: 'select', options: ['MXN','USD','EUR','COP'] },
                     ].map(({ key, label, type, options }) => (
@@ -436,6 +436,52 @@ function SubscriptionModal({ tenant, onClose, onUpdated }) {
                         )}
                       </div>
                     ))}
+
+                    {/* Próx. Cobro — campo protegido */}
+                    <div style={{ gridColumn: '1 / -1', border: '1px solid #FDE68A', borderRadius: 10, padding: '10px 14px', background: nextBillingUnlocked ? '#FFFBEB' : '#F8FAFC' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: nextBillingUnlocked ? 8 : 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-500)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                            Próx. Cobro
+                          </span>
+                          <span style={{ fontSize: 11, background: '#FEF3C7', color: '#92400E', borderRadius: 4, padding: '1px 6px', fontWeight: 600 }}>
+                            Campo automático
+                          </span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          {!nextBillingUnlocked && (
+                            <span style={{ fontSize: 12, color: '#475569', fontWeight: 500 }}>
+                              {upd.next_billing_date ? new Date(upd.next_billing_date + 'T00:00:00').toLocaleDateString('es-MX') : '—'}
+                            </span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => setNextBillingUnlocked(v => !v)}
+                            style={{
+                              fontSize: 11, padding: '3px 10px', borderRadius: 6, cursor: 'pointer', fontWeight: 600,
+                              border: nextBillingUnlocked ? '1px solid #D1D5DB' : '1px solid #F59E0B',
+                              background: nextBillingUnlocked ? '#F1F5F9' : '#FEF3C7',
+                              color: nextBillingUnlocked ? '#475569' : '#B45309',
+                            }}
+                          >
+                            {nextBillingUnlocked ? '🔒 Bloquear' : '🔓 Editar manualmente'}
+                          </button>
+                        </div>
+                      </div>
+                      {nextBillingUnlocked && (
+                        <>
+                          <div style={{ fontSize: 12, color: '#92400E', background: '#FEF3C7', border: '1px solid #FDE68A', borderRadius: 7, padding: '7px 10px', marginBottom: 8 }}>
+                            ⚠️ <strong>Atención:</strong> Este campo se actualiza automáticamente al registrar pagos. Modificarlo manualmente puede afectar el ciclo de cobro y la detección de cuentas vencidas. Solo hazlo si estás seguro de lo que estás ajustando.
+                          </div>
+                          <input
+                            type="date"
+                            value={upd.next_billing_date || ''}
+                            onChange={e => setUpd(p => ({ ...p, next_billing_date: e.target.value }))}
+                            style={{ width: '100%', border: '1px solid var(--sand-200)', borderRadius: 8, padding: '8px 10px', fontSize: 13, boxSizing: 'border-box' }}
+                          />
+                        </>
+                      )}
+                    </div>
                   </div>
                   <div>
                     <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: 'var(--ink-500)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Notas Internas</label>

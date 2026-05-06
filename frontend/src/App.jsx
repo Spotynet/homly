@@ -13,6 +13,7 @@ import Dashboard from './pages/Dashboard';
 import Tenants from './pages/Tenants';
 import Cobranza from './pages/Cobranza';
 import Gastos from './pages/Gastos';
+import CajaChica from './pages/CajaChica';
 import EstadoCuenta from './pages/EstadoCuenta';
 import Config from './pages/Config';
 import Units from './pages/Units';
@@ -107,6 +108,7 @@ function AppRoutes() {
         )}
         <Route path="cobranza"      element={<RoleRoute module="cobranza">      <Cobranza />      </RoleRoute>} />
         <Route path="gastos"        element={<RoleRoute module="gastos">        <Gastos />        </RoleRoute>} />
+        <Route path="caja-chica"    element={<RoleRoute module="caja_chica">    <CajaChica />     </RoleRoute>} />
         <Route path="estado-cuenta" element={<RoleRoute module="estado_cuenta"> <EstadoCuenta />  </RoleRoute>} />
         <Route path="config"        element={<RoleRoute module="config">        <Config />        </RoleRoute>} />
         <Route path="units"         element={<RoleRoute module="config">        <Units />         </RoleRoute>} />

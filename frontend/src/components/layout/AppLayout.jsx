@@ -10,94 +10,127 @@ import {
   Home, Globe, FileText, ShoppingBag, Receipt, Settings,
   Users, Building, Shield, LogOut, Menu, X, Calendar,
   ChevronDown, Check, Building2, Bell, CheckCheck, Activity, Lock, TrendingDown,
-  Sparkles, CreditCard,
+  Sparkles, CreditCard, DollarSign,
 } from 'lucide-react';
 
 const NAV_ITEMS = {
   superadmin: [
     { section: 'system', label: 'Sistema', items: [
-      { path: '/app/dashboard',                icon: Home,       label: 'Dashboard'       },
-      { path: '/app/sistema/tenants',          icon: Globe,      label: 'Tenants'         },
-      { path: '/app/sistema/suscripciones',    icon: CreditCard, label: 'Suscripciones'   },
+      { path: '/app/sistema/tenants',          icon: Globe,      label: 'Tenants'          },
+      { path: '/app/sistema/suscripciones',    icon: CreditCard, label: 'Suscripciones'    },
       { path: '/app/sistema/logs',             icon: Activity,   label: 'Logs del Sistema' },
     ]},
-    { section: 'tenant', label: 'Tenant Actual', items: [
-      { path: '/app/reservas',         icon: Calendar,     label: 'Reservas'          },
-      { path: '/app/cobranza',         icon: Receipt,      label: 'Cobranza Mensual'  },
-      { path: '/app/gastos',           icon: ShoppingBag,  label: 'Gastos'            },
-      { path: '/app/estado-cuenta',    icon: FileText,     label: 'Estado de Cuenta'  },
-      { path: '/app/plan-pagos',       icon: TrendingDown, label: 'Plan de Pagos'     },
-      { path: '/app/cierre-periodo',   icon: Lock,         label: 'Cierre de Período' },
-      { path: '/app/notificaciones',   icon: Bell,         label: 'Notificaciones'    },
-      { path: '/app/onboarding',       icon: Sparkles,     label: 'Guía de Uso'    },
-      { path: '/app/config',           icon: Settings,     label: 'Configuración'     },
+    { section: 'tenant_general', label: 'General', items: [
+      { path: '/app/dashboard',      icon: Home,      label: 'Dashboard'     },
+      { path: '/app/reservas',       icon: Calendar,  label: 'Reservas'      },
+      { path: '/app/notificaciones', icon: Bell,      label: 'Notificaciones' },
+      { path: '/app/onboarding',     icon: Sparkles,  label: 'Guías de uso'  },
+    ]},
+    { section: 'tenant_finanzas', label: 'Finanzas', items: [
+      { path: '/app/cobranza',       icon: Receipt,      label: 'Cobranza'          },
+      { path: '/app/gastos',         icon: ShoppingBag,  label: 'Gastos'            },
+      { path: '/app/caja-chica',     icon: DollarSign,   label: 'Caja Chica'        },
+      { path: '/app/estado-cuenta',  icon: FileText,     label: 'Estado de Cuenta'  },
+      { path: '/app/plan-pagos',     icon: TrendingDown, label: 'Plan de Pagos'     },
+      { path: '/app/cierre-periodo', icon: Lock,         label: 'Cierre de Período' },
+    ]},
+    { section: 'tenant_ajustes', label: 'Ajustes', items: [
+      { path: '/app/config', icon: Settings, label: 'Configuración' },
     ]},
   ],
 
-  admin: [{ section: 'main', items: [
-    { path: '/app/dashboard',        icon: Home,          label: 'Dashboard'          },
-    { path: '/app/reservas',         icon: Calendar,      label: 'Reservas'           },
-    { path: '/app/cobranza',         icon: Receipt,       label: 'Cobranza Mensual'   },
-    { path: '/app/gastos',           icon: ShoppingBag,   label: 'Gastos'             },
-    { path: '/app/estado-cuenta',    icon: FileText,      label: 'Estado de Cuenta'   },
-    { path: '/app/plan-pagos',       icon: TrendingDown,  label: 'Plan de Pagos'      },
-    { path: '/app/cierre-periodo',   icon: Lock,          label: 'Cierre de Período'  },
-    { path: '/app/notificaciones',   icon: Bell,          label: 'Notificaciones'     },
-    { path: '/app/onboarding',       icon: Sparkles,      label: 'Guía de Uso'        },
-    { path: '/app/mi-membresia',     icon: CreditCard,    label: 'Mi Membresía'       },
-    { path: '/app/config',           icon: Settings,      label: 'Configuración'      },
-  ]}],
+  admin: [
+    { section: 'general', label: 'General', items: [
+      { path: '/app/dashboard',      icon: Home,      label: 'Dashboard'      },
+      { path: '/app/reservas',       icon: Calendar,  label: 'Reservas'       },
+      { path: '/app/notificaciones', icon: Bell,      label: 'Notificaciones' },
+      { path: '/app/onboarding',     icon: Sparkles,  label: 'Guías de uso'   },
+    ]},
+    { section: 'finanzas', label: 'Finanzas', items: [
+      { path: '/app/cobranza',       icon: Receipt,      label: 'Cobranza'          },
+      { path: '/app/gastos',         icon: ShoppingBag,  label: 'Gastos'            },
+      { path: '/app/caja-chica',     icon: DollarSign,   label: 'Caja Chica'        },
+      { path: '/app/estado-cuenta',  icon: FileText,     label: 'Estado de Cuenta'  },
+      { path: '/app/plan-pagos',     icon: TrendingDown, label: 'Plan de Pagos'     },
+      { path: '/app/cierre-periodo', icon: Lock,         label: 'Cierre de Período' },
+    ]},
+    { section: 'ajustes', label: 'Ajustes', items: [
+      { path: '/app/mi-membresia', icon: CreditCard, label: 'Mi Membresía'  },
+      { path: '/app/config',       icon: Settings,   label: 'Configuración' },
+    ]},
+  ],
 
-  tesorero: [{ section: 'main', items: [
-    { path: '/app/dashboard',        icon: Home,          label: 'Dashboard'          },
-    { path: '/app/reservas',         icon: Calendar,      label: 'Reservas'           },
-    { path: '/app/cobranza',         icon: Receipt,       label: 'Cobranza Mensual'   },
-    { path: '/app/gastos',           icon: ShoppingBag,   label: 'Gastos'             },
-    { path: '/app/estado-cuenta',    icon: FileText,      label: 'Estado de Cuenta'   },
-    { path: '/app/plan-pagos',       icon: TrendingDown,  label: 'Plan de Pagos'      },
-    { path: '/app/cierre-periodo',   icon: Lock,          label: 'Cierre de Período'  },
-    { path: '/app/notificaciones',   icon: Bell,          label: 'Notificaciones'     },
-    { path: '/app/onboarding',       icon: Sparkles,      label: 'Guía de Uso'        },
-  ]}],
+  tesorero: [
+    { section: 'general', label: 'General', items: [
+      { path: '/app/dashboard',      icon: Home,      label: 'Dashboard'      },
+      { path: '/app/reservas',       icon: Calendar,  label: 'Reservas'       },
+      { path: '/app/notificaciones', icon: Bell,      label: 'Notificaciones' },
+      { path: '/app/onboarding',     icon: Sparkles,  label: 'Guías de uso'   },
+    ]},
+    { section: 'finanzas', label: 'Finanzas', items: [
+      { path: '/app/cobranza',       icon: Receipt,      label: 'Cobranza'          },
+      { path: '/app/gastos',         icon: ShoppingBag,  label: 'Gastos'            },
+      { path: '/app/caja-chica',     icon: DollarSign,   label: 'Caja Chica'        },
+      { path: '/app/estado-cuenta',  icon: FileText,     label: 'Estado de Cuenta'  },
+      { path: '/app/plan-pagos',     icon: TrendingDown, label: 'Plan de Pagos'     },
+      { path: '/app/cierre-periodo', icon: Lock,         label: 'Cierre de Período' },
+    ]},
+  ],
 
-  contador: [{ section: 'main', items: [
-    { path: '/app/dashboard',       icon: Home,          label: 'Dashboard'         },
-    { path: '/app/reservas',        icon: Calendar,      label: 'Reservas'          },
-    { path: '/app/cobranza',        icon: Receipt,       label: 'Cobranza Mensual'  },
-    { path: '/app/gastos',          icon: ShoppingBag,   label: 'Gastos'            },
-    { path: '/app/estado-cuenta',   icon: FileText,      label: 'Estado de Cuenta'  },
-    { path: '/app/plan-pagos',      icon: TrendingDown,  label: 'Plan de Pagos'     },
-    { path: '/app/cierre-periodo',  icon: Lock,          label: 'Cierre de Período' },
-    { path: '/app/notificaciones',  icon: Bell,          label: 'Notificaciones'    },
-    { path: '/app/onboarding',      icon: Sparkles,      label: 'Guía de Uso'       },
-  ]}],
+  contador: [
+    { section: 'general', label: 'General', items: [
+      { path: '/app/dashboard',      icon: Home,      label: 'Dashboard'      },
+      { path: '/app/reservas',       icon: Calendar,  label: 'Reservas'       },
+      { path: '/app/notificaciones', icon: Bell,      label: 'Notificaciones' },
+      { path: '/app/onboarding',     icon: Sparkles,  label: 'Guías de uso'   },
+    ]},
+    { section: 'finanzas', label: 'Finanzas', items: [
+      { path: '/app/cobranza',       icon: Receipt,      label: 'Cobranza'          },
+      { path: '/app/gastos',         icon: ShoppingBag,  label: 'Gastos'            },
+      { path: '/app/caja-chica',     icon: DollarSign,   label: 'Caja Chica'        },
+      { path: '/app/estado-cuenta',  icon: FileText,     label: 'Estado de Cuenta'  },
+      { path: '/app/plan-pagos',     icon: TrendingDown, label: 'Plan de Pagos'     },
+      { path: '/app/cierre-periodo', icon: Lock,         label: 'Cierre de Período' },
+    ]},
+  ],
 
-  auditor: [{ section: 'main', items: [
-    { path: '/app/dashboard',       icon: Home,          label: 'Dashboard'         },
-    { path: '/app/cobranza',        icon: Receipt,       label: 'Cobranza Mensual'  },
-    { path: '/app/reservas',        icon: Calendar,      label: 'Reservas'          },
-    { path: '/app/gastos',          icon: ShoppingBag,   label: 'Gastos'            },
-    { path: '/app/estado-cuenta',   icon: FileText,      label: 'Estado de Cuenta'  },
-    { path: '/app/plan-pagos',      icon: TrendingDown,  label: 'Plan de Pagos'     },
-    { path: '/app/cierre-periodo',  icon: Lock,          label: 'Cierre de Período' },
-    { path: '/app/notificaciones',  icon: Bell,          label: 'Notificaciones'    },
-    { path: '/app/onboarding',      icon: Sparkles,      label: 'Guía de Uso'       },
-  ]}],
+  auditor: [
+    { section: 'general', label: 'General', items: [
+      { path: '/app/dashboard',      icon: Home,      label: 'Dashboard'      },
+      { path: '/app/reservas',       icon: Calendar,  label: 'Reservas'       },
+      { path: '/app/notificaciones', icon: Bell,      label: 'Notificaciones' },
+      { path: '/app/onboarding',     icon: Sparkles,  label: 'Guías de uso'   },
+    ]},
+    { section: 'finanzas', label: 'Finanzas', items: [
+      { path: '/app/cobranza',       icon: Receipt,      label: 'Cobranza'          },
+      { path: '/app/gastos',         icon: ShoppingBag,  label: 'Gastos'            },
+      { path: '/app/caja-chica',     icon: DollarSign,   label: 'Caja Chica'        },
+      { path: '/app/estado-cuenta',  icon: FileText,     label: 'Estado de Cuenta'  },
+      { path: '/app/plan-pagos',     icon: TrendingDown, label: 'Plan de Pagos'     },
+      { path: '/app/cierre-periodo', icon: Lock,         label: 'Cierre de Período' },
+    ]},
+  ],
 
-  vigilante: [{ section: 'main', items: [
-    { path: '/app/dashboard',       icon: Home,        label: 'Dashboard'        },
-    { path: '/app/reservas',        icon: Calendar,    label: 'Reservas'         },
-    { path: '/app/notificaciones',  icon: Bell,        label: 'Notificaciones'   },
-  ]}],
+  vigilante: [
+    { section: 'general', label: 'General', items: [
+      { path: '/app/dashboard',      icon: Home,     label: 'Dashboard'      },
+      { path: '/app/reservas',       icon: Calendar, label: 'Reservas'       },
+      { path: '/app/notificaciones', icon: Bell,     label: 'Notificaciones' },
+    ]},
+  ],
 
-  vecino: [{ section: 'main', items: [
-    { path: '/app/my-unit',         icon: Home,          label: 'Mi Unidad'        },
-    { path: '/app/reservas',        icon: Calendar,      label: 'Reservas'         },
-    { path: '/app/estado-cuenta',   icon: FileText,      label: 'Estado de Cuenta' },
-    { path: '/app/plan-pagos',      icon: TrendingDown,  label: 'Plan de Pagos'    },
-    { path: '/app/notificaciones',  icon: Bell,          label: 'Notificaciones'   },
-    { path: '/app/onboarding',      icon: Sparkles,      label: 'Guía de Uso'      },
-  ]}],
+  vecino: [
+    { section: 'general', label: 'General', items: [
+      { path: '/app/my-unit',        icon: Home,     label: 'Mi Unidad'      },
+      { path: '/app/reservas',       icon: Calendar, label: 'Reservas'       },
+      { path: '/app/notificaciones', icon: Bell,     label: 'Notificaciones' },
+      { path: '/app/onboarding',     icon: Sparkles, label: 'Guías de uso'   },
+    ]},
+    { section: 'finanzas', label: 'Finanzas', items: [
+      { path: '/app/estado-cuenta',  icon: FileText,     label: 'Estado de Cuenta' },
+      { path: '/app/plan-pagos',     icon: TrendingDown, label: 'Plan de Pagos'    },
+    ]},
+  ],
 };
 
 // Maps each nav path to its module key (for permission filtering)
@@ -106,6 +139,7 @@ const PATH_TO_MODULE = {
   '/app/reservas':        'reservas',
   '/app/cobranza':        'cobranza',
   '/app/gastos':          'gastos',
+  '/app/caja-chica':      'caja_chica',
   '/app/estado-cuenta':   'estado_cuenta',
   '/app/plan-pagos':      'plan_pagos',
   '/app/cierre-periodo':  'cierre_periodo',
@@ -121,8 +155,9 @@ const PAGE_TITLES = {
   'sistema/tenants': 'Gestión de Tenants',
   'sistema/suscripciones': 'Suscripciones',
   'sistema/logs': 'Logs del Sistema',
-  cobranza: 'Cobranza Mensual',
+  cobranza: 'Cobranza',
   gastos: 'Gastos del Condominio',
+  'caja-chica': 'Caja Chica',
   'estado-cuenta': 'Estado de Cuenta',
   'plan-pagos': 'Plan de Pagos',
   'cierre-periodo': 'Cierre de Período',
@@ -132,7 +167,7 @@ const PAGE_TITLES = {
   'my-unit': 'Mi Unidad',
   'reservas': 'Reservas de Áreas Comunes',
   'notificaciones': 'Notificaciones',
-  'onboarding': 'Guía de Uso',
+  'onboarding': 'Guías de uso',
   'mi-membresia': 'Mi Membresía',
 };
 

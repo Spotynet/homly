@@ -189,23 +189,44 @@ class UserSerializer(serializers.ModelSerializer):
 class UserCreateSerializer(serializers.ModelSerializer):
     # validators=[] removes the auto-generated UniqueValidator on email so we can
     # handle "existing user → just add to tenant" logic inside create().
-    email     = serializers.EmailField(validators=[])
-    role      = serializers.ChoiceField(choices=TenantUser.ROLE_CHOICES, write_only=True)
-    tenant_id = serializers.UUIDField(write_only=True)
-    unit_id   = serializers.UUIDField(required=False, allow_null=True, write_only=True)
+    email      = serializers.EmailField(validators=[])
+    role       = serializers.ChoiceField(choices=TenantUser.ROLE_CHOICES, write_only=True)
+    tenant_id  = serializers.UUIDField(write_only=True)
+    unit_id    = serializers.UUIDField(required=False, allow_null=True, write_only=True)
+    # profile_id references a custom profile in tenant.custom_profiles.
+    # When provided, the profile's base_role overrides the role field so the
+    # user gets both the correct Django permission role AND the custom module
+    # visibility configuration.
+    profile_id = serializers.CharField(required=False, allow_blank=True, write_only=True, default='')
 
     class Meta:
         model = User
-        fields = ['id', 'email', 'name', 'role', 'tenant_id', 'unit_id']
+        fields = ['id', 'email', 'name', 'role', 'tenant_id', 'unit_id', 'profile_id']
         read_only_fields = ['id']
         extra_kwargs = {'name': {'required': False, 'allow_blank': True}}
 
     def create(self, validated_data):
         import secrets
-        role      = validated_data.pop('role')
-        tenant_id = validated_data.pop('tenant_id')
-        unit_id   = validated_data.pop('unit_id', None)
-        email     = validated_data.get('email', '').lower()
+        role       = validated_data.pop('role')
+        tenant_id  = validated_data.pop('tenant_id')
+        unit_id    = validated_data.pop('unit_id', None)
+        profile_id = validated_data.pop('profile_id', '') or ''
+        email      = validated_data.get('email', '').lower()
+
+        # If a custom profile_id was provided, resolve its base_role so Django
+        # permission checks use the correct built-in role.
+        if profile_id:
+            try:
+                from .models import Tenant as _Tenant
+                tenant_obj = _Tenant.objects.get(id=tenant_id)
+                for p in (tenant_obj.custom_profiles or []):
+                    if str(p.get('id', '')) == str(profile_id):
+                        base = p.get('base_role')
+                        if base:
+                            role = base
+                        break
+            except Exception:
+                pass  # Fall back to the role provided by the caller
 
         # ── Existing user: just associate with the tenant ─────────────────
         try:
@@ -231,6 +252,7 @@ class UserCreateSerializer(serializers.ModelSerializer):
             tenant_id=tenant_id,
             role=role,
             unit_id=unit_id,
+            profile_id=profile_id,
         )
 
         # Enviar email de bienvenida al nuevo usuario (no bloquea si falla)

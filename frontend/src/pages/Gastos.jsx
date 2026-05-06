@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { gastosAPI, cajaChicaAPI, extraFieldsAPI, tenantsAPI, periodsAPI } from '../api/client';
+import { gastosAPI, extraFieldsAPI, tenantsAPI, periodsAPI } from '../api/client';
 import { todayPeriod, periodLabel, prevPeriod, nextPeriod, fmtDate, PAYMENT_TYPES } from '../utils/helpers';
-import { ChevronLeft, ChevronRight, Plus, Edit, Trash2, X, ShoppingBag, DollarSign, Printer, Check, AlertCircle, Lock, Paperclip, Eye, FileText, Image } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Edit, Trash2, X, ShoppingBag, Printer, Check, AlertCircle, Lock, Paperclip, Eye, FileText, Image } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 // ── Evidence helpers ───────────────────────────────────────────────────────────
@@ -93,10 +93,6 @@ const GASTO_PAYMENT_TYPES = [
 ];
 const gastoPaymentLabel = (v) => GASTO_PAYMENT_TYPES.find(p => p.value === v)?.short || v || '—';
 
-// Caja Chica NO tiene Transferencia
-const CAJA_PAYMENT_TYPES = Object.entries(PAYMENT_TYPES)
-  .filter(([k]) => k !== 'transferencia')
-  .map(([k, v]) => ({ value: k, ...v }));
 
 function _fmt(n, currency = 'MXN') {
   return new Intl.NumberFormat('es-MX', { style: 'currency', currency, minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n ?? 0);
@@ -458,35 +454,28 @@ export default function Gastos() {
   const { tenantId, isReadOnly } = useAuth();
   const [period, setPeriod] = useState(todayPeriod());
   const [gastos, setGastos] = useState([]);
-  const [cajaChica, setCajaChica] = useState([]);
   const [fields, setFields] = useState([]);
   const [tenant, setTenant] = useState(null);
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState({});
   const [saving, setSaving] = useState(false);
   const [gastosCollapsed, setGastosCollapsed] = useState(false);
-  const [cajaCollapsed, setCajaCollapsed] = useState(false);
   const [closedPeriods, setClosedPeriods] = useState([]);
-  // Caja Chica evidence state
-  const [cajaEvidence, setCajaEvidence] = useState([]);   // [{data, mime, name}] for current form
   // Gasto evidence state
   const [gastoEvidence, setGastoEvidence] = useState([]); // [{data, mime, name}] for gasto form
   const [viewerFiles, setViewerFiles] = useState(null);   // evidence to show in popup
-  const fileInputRef = useRef(null);
   const gastoFileInputRef = useRef(null);
 
   const load = async () => {
     if (!tenantId) return;
     try {
-      const [g, cc, ef, tn, cp] = await Promise.all([
+      const [g, ef, tn, cp] = await Promise.all([
         gastosAPI.list(tenantId, { period, page_size: 9999 }),
-        cajaChicaAPI.list(tenantId, { period, page_size: 9999 }),
         extraFieldsAPI.list(tenantId, { page_size: 9999 }),
         tenantsAPI.get(tenantId).catch(() => ({ data: null })),
         periodsAPI.closedList(tenantId).catch(() => ({ data: [] })),
       ]);
       setGastos(g.data.results || g.data);
-      setCajaChica(cc.data.results || cc.data);
       setFields((ef.data.results || ef.data).filter(f => f.field_type === 'gastos' && f.enabled && f.show_in_gastos !== false));
       setTenant(tn.data);
       const cpList = Array.isArray(cp.data) ? cp.data : (cp.data?.results || []);
@@ -505,10 +494,9 @@ export default function Gastos() {
   const gastosNoConciliados  = gastos.filter(g => !g.bank_reconciled);
   const totalGastosConciliados   = gastosConciliados.reduce((s, g) => s + parseFloat(g.amount || 0), 0);
   const totalGastosNoConciliados = gastosNoConciliados.reduce((s, g) => s + parseFloat(g.amount || 0), 0);
-  // Total de gastos = SOLO conciliados (caja chica es informativa)
+  // Total de gastos = SOLO conciliados
   const totalGastos = totalGastosConciliados;
-  const totalCaja   = cajaChica.reduce((s, c) => s + parseFloat(c.amount || 0), 0);
-  // Egresos del periodo = solo gastos conciliados (caja chica NO se suma)
+  // Egresos del periodo = solo gastos conciliados
   const totalEgresos = totalGastos;
   // Currency-aware formatters (shadow module-level _fmt/_fmtShort)
   const cur = tenant?.currency || 'MXN';
@@ -568,18 +556,6 @@ export default function Gastos() {
     }
   };
 
-  const handleCajaFileAdd = async (files) => {
-    const arr = Array.from(files);
-    const invalid = arr.filter(f => !f.type.startsWith('image/') && f.type !== 'application/pdf');
-    if (invalid.length) { toast.error('Solo se permiten imágenes (PNG, JPG, GIF, WEBP) y PDF'); return; }
-    const tooBig = arr.filter(f => f.size > 10 * 1024 * 1024);
-    if (tooBig.length) { toast.error('Cada archivo debe ser menor a 10 MB'); return; }
-    try {
-      const encoded = await Promise.all(arr.map(fileToBase64));
-      setCajaEvidence(prev => [...prev, ...encoded]);
-    } catch { toast.error('Error al procesar el archivo'); }
-  };
-
   const handleGastoFileAdd = async (files) => {
     const arr = Array.from(files);
     const invalid = arr.filter(f => !f.type.startsWith('image/') && f.type !== 'application/pdf');
@@ -590,21 +566,6 @@ export default function Gastos() {
       const encoded = await Promise.all(arr.map(fileToBase64));
       setGastoEvidence(prev => [...prev, ...encoded]);
     } catch { toast.error('Error al procesar el archivo'); }
-  };
-
-  const saveCaja = async () => {
-    try {
-      const payload = {
-        ...form,
-        period,
-        evidence: cajaEvidence.length > 0 ? JSON.stringify(cajaEvidence) : (form.evidence || ''),
-      };
-      if (form.id) await cajaChicaAPI.update(tenantId, form.id, payload);
-      else await cajaChicaAPI.create(tenantId, payload);
-      toast.success('Registro guardado');
-      setCajaEvidence([]);
-      setModal(null); load();
-    } catch { toast.error('Error al guardar'); }
   };
 
   const handleDeleteGasto = async (g) => {
@@ -627,10 +588,10 @@ export default function Gastos() {
         period={period}
         gastosConciliados={gastosConciliados}
         gastosNoConciliados={gastosNoConciliados}
-        cajaChica={cajaChica}
+        cajaChica={[]}
         totalGastosConciliados={totalGastosConciliados}
         totalGastosNoConciliados={totalGastosNoConciliados}
-        totalCaja={totalCaja}
+        totalCaja={0}
       />
 
       {/* ══════════════════════════════════════════════════════
@@ -668,12 +629,6 @@ export default function Gastos() {
                 setModal('gasto');
               }}>
                 <Plus size={14} /> Nuevo Gasto
-              </button>
-            )}
-            {!isReadOnly && !isPeriodClosed && (
-              <button className="btn btn-outline btn-sm" style={{ borderColor: 'var(--purple-200, var(--sand-200))', color: 'var(--purple-700, var(--ink-700))' }}
-                onClick={() => { setForm({ amount: '', description: '', payment_type: 'efectivo' }); setCajaEvidence([]); setModal('caja'); }}>
-                <Plus size={14} /> Caja Chica
               </button>
             )}
             <button className="btn btn-outline btn-sm" onClick={handlePrint}>
@@ -756,107 +711,6 @@ export default function Gastos() {
           )}
         </div>
 
-        {/* ── Caja Chica Collapsible Card (purple-themed) ── */}
-        <div className="card" style={{ marginTop: 4, border: '1.5px solid var(--purple-200, #DDD6FE)' }}>
-          <div className="card-head" style={{ background: 'var(--purple-50)', cursor: 'pointer' }}
-            onClick={() => setCajaCollapsed(!cajaCollapsed)}>
-            <h3 style={{ color: 'var(--purple-700, #6D28D9)', display: 'flex', alignItems: 'center', gap: 8 }}>
-              {cajaCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
-              <DollarSign size={16} />
-              Caja Chica — {periodLabel(period)}
-              <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--ink-400)', marginLeft: 4 }}>(informativo)</span>
-            </h3>
-            <span className="badge" style={{ background: 'var(--purple-100, #EDE9FE)', color: 'var(--purple-700, #6D28D9)' }}>
-              {cajaChica.length} reg. · {fmt(totalCaja)}
-            </span>
-          </div>
-          {!cajaCollapsed && (
-            cajaChica.length === 0 ? (
-              <div className="card-body" style={{ textAlign: 'center', padding: 24, color: 'var(--ink-400)', fontSize: 13 }}>
-                Sin registros de caja chica
-              </div>
-            ) : (
-              <div className="table-wrap">
-                <table>
-                  <thead>
-                    <tr style={{ background: 'var(--purple-50)' }}>
-                      <th>Descripción</th>
-                      <th style={{ textAlign: 'right' }}>Monto</th>
-                      <th>Tipo</th>
-                      <th>Fecha</th>
-                      <th style={{ width: 52, textAlign: 'center' }}>Evidencia</th>
-                      {!isReadOnly && <th style={{ width: 70 }}>Acc.</th>}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {cajaChica.map(c => {
-                      const evFiles = parseEvidence(c.evidence);
-                      return (
-                      <tr key={c.id} style={{ borderBottom: '1px solid var(--sand-100)' }}>
-                        <td style={{ fontWeight: 600, color: 'var(--purple-700, #6D28D9)', fontSize: 13 }}>{c.description}</td>
-                        <td style={{ textAlign: 'right', fontWeight: 700, fontSize: 13, color: 'var(--purple-700, #6D28D9)' }}>{fmt(c.amount)}</td>
-                        <td style={{ fontSize: 11 }}>{PAYMENT_TYPES[c.payment_type]?.short || c.payment_type || '—'}</td>
-                        <td style={{ fontSize: 11, color: 'var(--ink-500)' }}>{fmtDate(c.date)}</td>
-                        <td style={{ textAlign: 'center' }}>
-                          {evFiles.length > 0 ? (
-                            <button
-                              className="btn-icon"
-                              title={`Ver ${evFiles.length} evidencia${evFiles.length > 1 ? 's' : ''}`}
-                              style={{ color: 'var(--purple-600, #7C3AED)' }}
-                              onClick={() => setViewerFiles(evFiles)}
-                            >
-                              <Eye size={14} />
-                              {evFiles.length > 1 && (
-                                <span style={{ fontSize: 9, fontWeight: 800, marginLeft: 2 }}>{evFiles.length}</span>
-                              )}
-                            </button>
-                          ) : (
-                            <span style={{ fontSize: 10, color: 'var(--ink-300)' }}>—</span>
-                          )}
-                        </td>
-                        {!isReadOnly && (
-                          <td style={{ textAlign: 'center' }}>
-                            {isPeriodClosed ? (
-                              <span title="Período cerrado — solo lectura"
-                                style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--ink-400)', padding: '2px 6px' }}>
-                                <Lock size={12} /> Solo lectura
-                              </span>
-                            ) : (
-                              <>
-                                <button className="btn-icon" onClick={() => { setForm(c); setCajaEvidence(parseEvidence(c.evidence)); setModal('caja'); }}>
-                                  <Edit size={13} />
-                                </button>
-                                <button className="btn-icon" style={{ color: 'var(--coral-500)' }} onClick={async () => {
-                                  if (window.confirm('¿Eliminar este registro de caja chica?')) {
-                                    await cajaChicaAPI.delete(tenantId, c.id);
-                                    toast.success('Eliminado');
-                                    load();
-                                  }
-                                }}>
-                                  <Trash2 size={13} />
-                                </button>
-                              </>
-                            )}
-                          </td>
-                        )}
-                      </tr>
-                      );
-                    })}
-                    <tr style={{ background: 'var(--purple-50)' }}>
-                      <td style={{ padding: '10px 12px', fontWeight: 800, color: 'var(--purple-800, #5B21B6)' }}>
-                        TOTAL CAJA CHICA
-                        <span style={{ fontSize: 10, fontWeight: 400, color: 'var(--ink-400)', marginLeft: 6 }}>(solo informativo)</span>
-                      </td>
-                      <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 800, color: 'var(--purple-800, #5B21B6)', fontSize: 15 }}>{fmt(totalCaja)}</td>
-                      <td colSpan={!isReadOnly ? 4 : 3}></td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            )
-          )}
-        </div>
-
         {/* ── Total Egresos Banner ── */}
         <div style={{
           marginTop: 16, padding: 16,
@@ -872,19 +726,11 @@ export default function Gastos() {
             <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 4 }}>
               Gastos conciliados: {fmt(totalGastosConciliados)}
             </div>
-            <div style={{ fontSize: 10, color: 'var(--ink-300)', marginTop: 2 }}>
-              {totalGastosNoConciliados > 0 && (
-                <span style={{ color: 'var(--amber-600)' }}>
-                  En tránsito (ref.): {fmt(totalGastosNoConciliados)}
-                </span>
-              )}
-              {totalGastosNoConciliados > 0 && totalCaja > 0 && ' · '}
-              {totalCaja > 0 && (
-                <span style={{ color: 'var(--purple-600, #7C3AED)' }}>
-                  Caja chica (ref.): {fmt(totalCaja)}
-                </span>
-              )}
-            </div>
+            {totalGastosNoConciliados > 0 && (
+              <div style={{ fontSize: 10, color: 'var(--amber-600)', marginTop: 2 }}>
+                En tránsito (ref.): {fmt(totalGastosNoConciliados)}
+              </div>
+            )}
           </div>
           <span style={{ fontFamily: 'var(--font-display)', fontSize: 26, fontWeight: 700, color: 'var(--teal-700)' }}>
             {fmt(totalEgresos)}
@@ -1057,134 +903,6 @@ export default function Gastos() {
               <button className="btn btn-secondary" onClick={() => { setModal(null); setGastoEvidence([]); }} disabled={saving}>Cancelar</button>
               <button className="btn btn-primary" onClick={saveGasto} disabled={saving}>
                 <Check size={14} /> {saving ? 'Guardando…' : form.id ? 'Guardar' : 'Registrar'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Caja Chica Modal (sin Transferencia) ── */}
-      {modal === 'caja' && (
-        <div className="modal-bg open" onClick={() => { setModal(null); setCajaEvidence([]); }}>
-          <div className="modal lg" onClick={e => e.stopPropagation()}>
-            <div className="modal-head">
-              <h3><DollarSign size={16} style={{ display: 'inline', verticalAlign: -3, marginRight: 8 }} />{form.id ? 'Editar' : 'Nuevo'} Registro de Caja Chica</h3>
-              <button className="modal-close" onClick={() => { setModal(null); setCajaEvidence([]); }}><X size={16} /></button>
-            </div>
-            <div className="modal-body">
-              <div className="form-grid">
-                <div className="field field-full">
-                  <label className="field-label">Descripción <span style={{ color: 'var(--coral-500)' }}>*</span></label>
-                  <input className="field-input" value={form.description || ''} onChange={e => setForm({ ...form, description: e.target.value })} placeholder="Descripción del gasto de caja chica" />
-                </div>
-                <div className="field">
-                  <label className="field-label">Monto <span style={{ color: 'var(--coral-500)' }}>*</span></label>
-                  <input type="number" className="field-input" step="0.01" min="0" value={form.amount || ''} onChange={e => setForm({ ...form, amount: e.target.value })} />
-                </div>
-                <div className="field">
-                  <label className="field-label">Forma de Pago</label>
-                  <select className="field-select" value={form.payment_type || 'efectivo'} onChange={e => setForm({ ...form, payment_type: e.target.value })}>
-                    {CAJA_PAYMENT_TYPES.map(p => (
-                      <option key={p.value} value={p.value}>{p.short || p.label}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="field">
-                  <label className="field-label">Fecha</label>
-                  <input type="date" className="field-input" value={form.date || ''} onChange={e => setForm({ ...form, date: e.target.value })} />
-                </div>
-              </div>
-
-              {/* ── Evidencia del gasto ── */}
-              <div style={{ marginTop: 16 }}>
-                <div style={{
-                  fontSize: 11, fontWeight: 700, color: 'var(--ink-500)',
-                  textTransform: 'uppercase', letterSpacing: '0.06em',
-                  borderBottom: '1px solid var(--sand-100)', paddingBottom: 6, marginBottom: 10,
-                  display: 'flex', alignItems: 'center', gap: 6,
-                }}>
-                  <Paperclip size={12} /> Evidencia del gasto
-                  <span style={{ fontSize: 10, fontWeight: 400, color: 'var(--ink-400)', textTransform: 'none', letterSpacing: 0, marginLeft: 4 }}>
-                    (imágenes o PDF, máx. 10 MB c/u)
-                  </span>
-                </div>
-
-                {/* Drop zone */}
-                <div
-                  style={{
-                    border: '2px dashed var(--sand-300)', borderRadius: 10,
-                    padding: '16px 20px', textAlign: 'center', cursor: 'pointer',
-                    background: 'var(--sand-50)', transition: 'border-color 0.15s',
-                    marginBottom: cajaEvidence.length > 0 ? 10 : 0,
-                  }}
-                  onClick={() => fileInputRef.current?.click()}
-                  onDragOver={e => { e.preventDefault(); e.currentTarget.style.borderColor = 'var(--purple-400, #A78BFA)'; }}
-                  onDragLeave={e => { e.currentTarget.style.borderColor = 'var(--sand-300)'; }}
-                  onDrop={e => {
-                    e.preventDefault();
-                    e.currentTarget.style.borderColor = 'var(--sand-300)';
-                    handleCajaFileAdd(e.dataTransfer.files);
-                  }}
-                >
-                  <Paperclip size={20} color="var(--ink-400)" style={{ display: 'block', margin: '0 auto 6px' }} />
-                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-500)' }}>
-                    Arrastra archivos aquí o <span style={{ color: 'var(--purple-600, #7C3AED)', textDecoration: 'underline' }}>seleccionar</span>
-                  </div>
-                  <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 3 }}>PNG, JPG, GIF, WEBP, PDF</div>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept={ACCEPTED_TYPES}
-                    multiple
-                    style={{ display: 'none' }}
-                    onChange={e => { handleCajaFileAdd(e.target.files); e.target.value = ''; }}
-                  />
-                </div>
-
-                {/* Archivos adjuntos */}
-                {cajaEvidence.length > 0 && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    {cajaEvidence.map((ev, i) => {
-                      const isPdf = ev.mime === 'application/pdf' || /\.pdf$/i.test(ev.name || '');
-                      return (
-                        <div key={i} style={{
-                          display: 'flex', alignItems: 'center', gap: 10,
-                          padding: '8px 12px', background: 'var(--purple-50, #F5F3FF)',
-                          border: '1px solid var(--purple-100, #EDE9FE)', borderRadius: 8,
-                        }}>
-                          {isPdf
-                            ? <FileText size={16} color="var(--purple-600, #7C3AED)" style={{ flexShrink: 0 }} />
-                            : <Image size={16} color="var(--purple-600, #7C3AED)" style={{ flexShrink: 0 }} />
-                          }
-                          <span style={{ flex: 1, fontSize: 12, fontWeight: 600, color: 'var(--ink-700)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {ev.name || `Evidencia ${i + 1}`}
-                          </span>
-                          <button
-                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--purple-600, #7C3AED)', padding: 2, flexShrink: 0 }}
-                            title="Ver"
-                            onClick={() => setViewerFiles([ev])}
-                          >
-                            <Eye size={14} />
-                          </button>
-                          <button
-                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--coral-500)', padding: 2, flexShrink: 0 }}
-                            title="Quitar"
-                            onClick={() => setCajaEvidence(prev => prev.filter((_, idx) => idx !== i))}
-                          >
-                            <X size={14} />
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-
-            </div>
-            <div className="modal-foot">
-              <button className="btn btn-outline" onClick={() => { setModal(null); setCajaEvidence([]); }}>Cancelar</button>
-              <button className="btn btn-primary" onClick={saveCaja} disabled={saving}>
-                <Check size={14} /> {saving ? 'Guardando…' : 'Guardar'}
               </button>
             </div>
           </div>

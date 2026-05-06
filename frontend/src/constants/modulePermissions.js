@@ -11,10 +11,10 @@
  * array format (which acted as an explicit allowlist).
  */
 export const ROLE_BASE_MODULES = {
-  admin:     ['dashboard', 'reservas', 'cobranza', 'gastos', 'estado_cuenta', 'plan_pagos', 'cierre_periodo', 'notificaciones', 'onboarding', 'mi_membresia', 'config'],
-  tesorero:  ['dashboard', 'reservas', 'cobranza', 'gastos', 'estado_cuenta', 'plan_pagos', 'cierre_periodo', 'notificaciones', 'onboarding'],
-  contador:  ['dashboard', 'reservas', 'cobranza', 'gastos', 'estado_cuenta', 'plan_pagos', 'cierre_periodo', 'notificaciones', 'onboarding'],
-  auditor:   ['dashboard', 'cobranza', 'reservas', 'gastos', 'estado_cuenta', 'plan_pagos', 'cierre_periodo', 'notificaciones', 'onboarding'],
+  admin:     ['dashboard', 'reservas', 'cobranza', 'gastos', 'caja_chica', 'estado_cuenta', 'plan_pagos', 'cierre_periodo', 'notificaciones', 'onboarding', 'mi_membresia', 'config'],
+  tesorero:  ['dashboard', 'reservas', 'cobranza', 'gastos', 'caja_chica', 'estado_cuenta', 'plan_pagos', 'cierre_periodo', 'notificaciones', 'onboarding'],
+  contador:  ['dashboard', 'reservas', 'cobranza', 'gastos', 'caja_chica', 'estado_cuenta', 'plan_pagos', 'cierre_periodo', 'notificaciones', 'onboarding'],
+  auditor:   ['dashboard', 'cobranza', 'reservas', 'gastos', 'caja_chica', 'estado_cuenta', 'plan_pagos', 'cierre_periodo', 'notificaciones', 'onboarding'],
   vigilante: ['dashboard', 'reservas', 'notificaciones'],
   vecino:    ['my_unit', 'reservas', 'estado_cuenta', 'plan_pagos', 'notificaciones', 'onboarding'],
 };

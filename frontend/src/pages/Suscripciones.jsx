@@ -902,6 +902,7 @@ function RowPanel({ sub, plans, onRefresh }) {
   const [trialEnd,        setTrialEnd]        = useState(sub.trial_end        || '');
   const [billingStart,    setBillingStart]    = useState(sub.billing_start    || '');
   const [nextBilling,     setNextBilling]     = useState(sub.next_billing_date || '');
+  const [nextBillingUnlocked, setNextBillingUnlocked] = useState(false);
   const [unitsCount,      setUnitsCount]      = useState(String(sub.units_count || 0));
   const [amountPerCycle,  setAmountPerCycle]  = useState(String(sub.amount_per_cycle || 0));
   const [currency,        setCurrency]        = useState(sub.currency || 'MXN');
@@ -1131,18 +1132,63 @@ function RowPanel({ sub, plans, onRefresh }) {
         </div>
 
         {/* Fechas */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-3">
           {[
-            { label: 'Inicio Prueba',    val: trialStart,   set: setTrialStart },
-            { label: 'Fin Prueba',       val: trialEnd,     set: setTrialEnd },
+            { label: 'Inicio Prueba',      val: trialStart,   set: setTrialStart },
+            { label: 'Fin Prueba',         val: trialEnd,     set: setTrialEnd },
             { label: 'Inicio Facturación', val: billingStart, set: setBillingStart },
-            { label: 'Próx. Cobro',      val: nextBilling,  set: setNextBilling },
           ].map(({ label, val, set }) => (
             <div key={label}>
               <label style={labelSt}>{label}</label>
               <input type="date" value={val} onChange={e => set(e.target.value)} style={inputSt} />
             </div>
           ))}
+        </div>
+
+        {/* Próx. Cobro — campo protegido */}
+        <div className="mb-3" style={{ border: '1px solid #FDE68A', borderRadius: 10, padding: '10px 14px', background: nextBillingUnlocked ? '#FFFBEB' : '#F8FAFC' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: nextBillingUnlocked ? 8 : 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Próx. Cobro
+              </span>
+              <span style={{ fontSize: 11, background: '#FEF3C7', color: '#92400E', borderRadius: 4, padding: '1px 6px', fontWeight: 600 }}>
+                Campo automático
+              </span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {!nextBillingUnlocked && (
+                <span style={{ fontSize: 12, color: '#475569', fontWeight: 500 }}>
+                  {nextBilling ? new Date(nextBilling + 'T00:00:00').toLocaleDateString('es-MX') : '—'}
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => setNextBillingUnlocked(v => !v)}
+                style={{
+                  fontSize: 11, padding: '3px 10px', borderRadius: 6, cursor: 'pointer', fontWeight: 600,
+                  border: nextBillingUnlocked ? '1px solid #D1D5DB' : '1px solid #F59E0B',
+                  background: nextBillingUnlocked ? '#F1F5F9' : '#FEF3C7',
+                  color: nextBillingUnlocked ? '#475569' : '#B45309',
+                }}
+              >
+                {nextBillingUnlocked ? '🔒 Bloquear' : '🔓 Editar manualmente'}
+              </button>
+            </div>
+          </div>
+          {nextBillingUnlocked && (
+            <>
+              <div style={{ fontSize: 12, color: '#92400E', background: '#FEF3C7', border: '1px solid #FDE68A', borderRadius: 7, padding: '7px 10px', marginBottom: 8 }}>
+                ⚠️ <strong>Atención:</strong> Este campo se actualiza automáticamente al registrar pagos. Modificarlo manualmente puede afectar el ciclo de cobro y la detección de cuentas vencidas. Solo hazlo si estás seguro de lo que estás ajustando.
+              </div>
+              <input
+                type="date"
+                value={nextBilling}
+                onChange={e => setNextBilling(e.target.value)}
+                style={inputSt}
+              />
+            </>
+          )}
         </div>
 
         {/* Unidades + Monto + Moneda */}
