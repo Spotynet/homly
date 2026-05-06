@@ -4,10 +4,14 @@
  * - Managers (admin/tesorero/contador/auditor): seleccionan unidad, crean propuestas con hasta 3 opciones.
  * - Vecinos: ven las opciones que les enviaron y eligen una; la opción aceptada queda en firme.
  */
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
-import { reportsAPI, tenantsAPI, paymentPlansAPI, periodsAPI, unitsAPI } from '../api/client';
+import { reportsAPI, paymentPlansAPI, unitsAPI } from '../api/client';
+import { useTenantData }    from '../hooks/useTenantData';
+import { useClosedPeriods } from '../hooks/useClosedPeriods';
+import { queryKeys, STALE } from '../hooks/queryKeys';
 import { todayPeriod, periodLabel, prevPeriod } from '../utils/helpers';
 import {
   TrendingDown, Search, X, Send, Printer,
@@ -102,12 +106,16 @@ export default function PlanPagos() {
   // Tracks which unit_id we've already fetched via fallback to avoid repeated calls
   const fallbackFetchedRef = useRef(null);
 
+  const queryClient = useQueryClient();
+
   // ─── Periodo de corte ──────────────────────────────────────────────────────
   const [cutoff,        setCutoff]        = useState(todayPeriod());
-  const [closedPeriods, setClosedPeriods] = useState([]);
+
+  // ─── React Query: tenant y períodos cerrados ───────────────────────────────
+  const { data: tenantData }              = useTenantData(tenantId);
+  const { closedPeriods }                 = useClosedPeriods(tenantId);
 
   // ─── Tenant & units ────────────────────────────────────────────────────────
-  const [tenantData,    setTenantData]    = useState(null);
   const [adeudosItems,  setAdeudosItems]  = useState([]);
   const [adeudosLoading, setAdeudosLoading] = useState(false);
   const [unitSearch,    setUnitSearch]    = useState('');
@@ -118,9 +126,21 @@ export default function PlanPagos() {
   const [selectedDebt,       setSelectedDebt]       = useState(0);
   const [selectedAdeudoItem, setSelectedAdeudoItem] = useState(null);
 
-  // ─── Plans state ───────────────────────────────────────────────────────────
-  const [plans,        setPlans]        = useState([]);
-  const [plansLoading, setPlansLoading] = useState(false);
+  // ─── React Query: planes de pago ───────────────────────────────────────────
+  const plansParams = isVecino
+    ? { page_size: 1000 }
+    : (selectedUnit?.id ? { unit_id: selectedUnit.id, page_size: 1000 } : null);
+  const { data: plans = [], isLoading: plansLoading } = useQuery({
+    queryKey:  queryKeys.planPagos(tenantId, plansParams),
+    queryFn:   () => paymentPlansAPI.list(tenantId, plansParams).then(r => {
+      const data = r.data;
+      return Array.isArray(data) ? data : (data?.results || []);
+    }),
+    enabled:   !!tenantId && (isVecino || !!selectedUnit?.id),
+    staleTime: STALE.PERIOD_ACTIVE,
+    placeholderData: [],
+  });
+
   const [selectedPlan, setSelectedPlan] = useState(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [tab,          setTab]          = useState('list');   // 'list' | 'new'
@@ -150,22 +170,8 @@ export default function PlanPagos() {
   const cur = tenantData?.currency || 'MXN';
   const fmt = (n) => _fmt(n, cur);
 
-  // ─── Load tenant ───────────────────────────────────────────────────────────
+  // ─── Carga unidades con adeudos al cambiar cutoff ─────────────────────────
   useEffect(() => {
-    if (!tenantId) return;
-    tenantsAPI.get(tenantId).then(r => setTenantData(r.data)).catch(() => {});
-  }, [tenantId]);
-
-  // ─── Load closed periods for the cutoff selector ───────────────────────────
-  useEffect(() => {
-    if (!tenantId || isVecino) return;
-    periodsAPI.closedList(tenantId)
-      .then(r => setClosedPeriods(Array.isArray(r.data) ? r.data : (r.data?.results || [])))
-      .catch(() => setClosedPeriods([]));
-  }, [tenantId, isVecino]);
-
-  // ─── Load units with adeudos (managers) ────────────────────────────────────
-  const loadUnits = useCallback(() => {
     if (!tenantId || isVecino) return;
     setAdeudosLoading(true);
     setSelectedUnit(null);
@@ -176,8 +182,6 @@ export default function PlanPagos() {
       .catch(() => toast.error('No se pudieron cargar las unidades.'))
       .finally(() => setAdeudosLoading(false));
   }, [tenantId, isVecino, cutoff]);
-
-  useEffect(() => { loadUnits(); }, [loadUnits]);
 
   // ─── Auto-select unit from URL ?unit_id= ─────────────────────────────────
   useEffect(() => {
@@ -199,30 +203,11 @@ export default function PlanPagos() {
     }
   }, [adeudosItems, adeudosLoading, searchParams, tenantId, isVecino]);
 
-  // ─── Load plans for selected unit ─────────────────────────────────────────
-  const loadPlans = useCallback(async () => {
-    if (!tenantId) return;
-    const params = isVecino
-      ? { page_size: 1000 }
-      : { unit_id: selectedUnit?.id, page_size: 1000 };
-    if (!isVecino && !selectedUnit?.id) { setPlans([]); return; }
-    setPlansLoading(true);
-    try {
-      const res = await paymentPlansAPI.list(tenantId, params);
-      const data = res.data;
-      setPlans(Array.isArray(data) ? data : (data?.results || []));
-    } catch {
-      toast.error('No se pudieron cargar los planes de pago.');
-    } finally {
-      setPlansLoading(false);
-    }
-  }, [tenantId, selectedUnit?.id, isVecino]);
-
+  // Reset UI state cuando cambia la unidad seleccionada
   useEffect(() => {
-    loadPlans();
     setSelectedPlan(null);
     setTab('list');
-  }, [loadPlans]);
+  }, [selectedUnit?.id]);
 
   // ─── Period options for the cutoff selector ──────────────────────────────
   const periodOptions = useMemo(() => {
@@ -285,7 +270,7 @@ export default function PlanPagos() {
     try {
       await paymentPlansAPI.accept(tenantId, plan.id);
       toast.success('¡Plan aceptado! Se incluirá en tu cobranza mensual.');
-      await loadPlans();
+      queryClient.invalidateQueries({ queryKey: ['plan-pagos', tenantId] });
       setSelectedPlan(null);
     } catch (err) {
       toast.error(err?.response?.data?.detail || 'Error al aceptar el plan.');
@@ -297,7 +282,7 @@ export default function PlanPagos() {
     try {
       await paymentPlansAPI.reject(tenantId, plan.id);
       toast.success('Plan rechazado.');
-      await loadPlans();
+      queryClient.invalidateQueries({ queryKey: ['plan-pagos', tenantId] });
       setSelectedPlan(null);
     } catch (err) {
       toast.error(err?.response?.data?.detail || 'Error al rechazar el plan.');
@@ -317,7 +302,7 @@ export default function PlanPagos() {
       toast.success('Plan cancelado.');
       setCancelDialog(null);
       setCancelReason('');
-      await loadPlans();
+      queryClient.invalidateQueries({ queryKey: ['plan-pagos', tenantId] });
       setSelectedPlan(null);
     } catch (err) {
       toast.error(err?.response?.data?.detail || 'Error al cancelar el plan.');
@@ -418,7 +403,7 @@ export default function PlanPagos() {
         );
       }
 
-      await loadPlans();
+      queryClient.invalidateQueries({ queryKey: ['plan-pagos', tenantId] });
       setTab('list');
       setOptions([defaultOption()]);
       setSharedNotes('');

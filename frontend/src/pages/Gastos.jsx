@@ -1,6 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useRef } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
-import { gastosAPI, extraFieldsAPI, tenantsAPI, periodsAPI } from '../api/client';
+import { gastosAPI } from '../api/client';
+import { useGastosData } from '../hooks/useGastosData';
+import { queryKeys }     from '../hooks/queryKeys';
 import { todayPeriod, periodLabel, prevPeriod, nextPeriod, fmtDate, PAYMENT_TYPES } from '../utils/helpers';
 import { ChevronLeft, ChevronRight, Plus, Edit, Trash2, X, ShoppingBag, Printer, Check, AlertCircle, Lock, Paperclip, Eye, FileText, Image } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -451,42 +454,22 @@ function GastosPrintLayout({ tenant, period, gastosConciliados, gastosNoConcilia
 
 export default function Gastos() {
   const { tenantId, isReadOnly } = useAuth();
-  const [period, setPeriod] = useState(todayPeriod());
-  const [gastos, setGastos] = useState([]);
-  const [fields, setFields] = useState([]);
-  const [tenant, setTenant] = useState(null);
-  const [modal, setModal] = useState(null);
-  const [form, setForm] = useState({});
-  const [saving, setSaving] = useState(false);
+  const queryClient = useQueryClient();
+
+  // ── Estado de UI ────────────────────────────────────────────────────────────
+  const [period, setPeriod]               = useState(todayPeriod());
+  const [modal, setModal]                 = useState(null);
+  const [form, setForm]                   = useState({});
+  const [saving, setSaving]               = useState(false);
   const [gastosCollapsed, setGastosCollapsed] = useState(false);
-  const [closedPeriods, setClosedPeriods] = useState([]);
-  // Gasto evidence state
-  const [gastoEvidence, setGastoEvidence] = useState([]); // [{data, mime, name}] for gasto form
-  const [viewerFiles, setViewerFiles] = useState(null);   // evidence to show in popup
-  const gastoFileInputRef = useRef(null);
+  const [gastoEvidence, setGastoEvidence] = useState([]);
+  const [viewerFiles, setViewerFiles]     = useState(null);
+  const gastoFileInputRef                 = useRef(null);
 
-  const load = async () => {
-    if (!tenantId) return;
-    try {
-      const [g, ef, tn, cp] = await Promise.all([
-        gastosAPI.list(tenantId, { period, page_size: 9999 }),
-        extraFieldsAPI.list(tenantId, { page_size: 9999 }),
-        tenantsAPI.get(tenantId).catch(() => ({ data: null })),
-        periodsAPI.closedList(tenantId).catch(() => ({ data: [] })),
-      ]);
-      setGastos(g.data.results || g.data);
-      setFields((ef.data.results || ef.data).filter(f => f.field_type === 'gastos' && f.enabled && f.show_in_gastos !== false));
-      setTenant(tn.data);
-      const cpList = Array.isArray(cp.data) ? cp.data : (cp.data?.results || []);
-      setClosedPeriods(cpList);
-    } catch (e) {
-      console.error('Error al cargar datos de gastos:', e);
-    }
-  };
-
-  useEffect(() => { load(); }, [tenantId, period]);
-
-  const isPeriodClosed = closedPeriods.some(cp => cp.period === period);
+  // ── Datos del módulo vía React Query ────────────────────────────────────────
+  const {
+    gastos, fields, tenant, isPeriodClosed,
+  } = useGastosData(tenantId, period);
 
   // Separar conciliados y no conciliados
   const gastosConciliados    = gastos.filter(g => g.bank_reconciled);
@@ -543,7 +526,8 @@ export default function Gastos() {
       else await gastosAPI.create(tenantId, payload);
       toast.success('Gasto guardado');
       setGastoEvidence([]);
-      setModal(null); load();
+      setModal(null);
+      queryClient.invalidateQueries({ queryKey: queryKeys.gastos(tenantId, period) });
     } catch (e) {
       const err = e.response?.data;
       toast.error(
@@ -572,7 +556,7 @@ export default function Gastos() {
     try {
       await gastosAPI.delete(tenantId, g.id);
       toast.success('Gasto eliminado');
-      load();
+      queryClient.invalidateQueries({ queryKey: queryKeys.gastos(tenantId, period) });
     } catch (e) {
       toast.error(e.response?.data?.detail || 'No se pudo eliminar el gasto');
     }

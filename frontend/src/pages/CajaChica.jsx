@@ -1,6 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useRef } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
-import { cajaChicaAPI, periodsAPI, tenantsAPI } from '../api/client';
+import { cajaChicaAPI } from '../api/client';
+import { useCajaChicaData } from '../hooks/useCajaChicaData';
+import { queryKeys }        from '../hooks/queryKeys';
 import { todayPeriod, periodLabel, prevPeriod, nextPeriod, fmtDate, PAYMENT_TYPES } from '../utils/helpers';
 import { ChevronLeft, ChevronRight, Plus, Edit, Trash2, X, DollarSign, Check, Lock, Paperclip, Eye, FileText, Image, Printer } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -214,37 +217,21 @@ function CajaChicaPrintLayout({ tenant, period, cajaChica, totalCaja }) {
 
 export default function CajaChica() {
   const { tenantId, isReadOnly } = useAuth();
+  const queryClient = useQueryClient();
+
+  // ── Estado de UI (formulario, modales, navegación de período) ───────────────
   const [period, setPeriod]           = useState(todayPeriod());
-  const [cajaChica, setCajaChica]     = useState([]);
-  const [tenant, setTenant]           = useState(null);
   const [modal, setModal]             = useState(null);
   const [form, setForm]               = useState({});
   const [saving, setSaving]           = useState(false);
-  const [closedPeriods, setClosedPeriods] = useState([]);
   const [cajaEvidence, setCajaEvidence]   = useState([]);
   const [viewerFiles, setViewerFiles]     = useState(null);
   const fileInputRef = useRef(null);
 
-  const load = async () => {
-    if (!tenantId) return;
-    try {
-      const [cc, tn, cp] = await Promise.all([
-        cajaChicaAPI.list(tenantId, { period, page_size: 9999 }),
-        tenantsAPI.get(tenantId).catch(() => ({ data: null })),
-        periodsAPI.closedList(tenantId).catch(() => ({ data: [] })),
-      ]);
-      setCajaChica(cc.data.results || cc.data);
-      setTenant(tn.data);
-      const cpList = Array.isArray(cp.data) ? cp.data : (cp.data?.results || []);
-      setClosedPeriods(cpList);
-    } catch (e) {
-      console.error('Error al cargar caja chica:', e);
-    }
-  };
-
-  useEffect(() => { load(); }, [tenantId, period]);
-
-  const isPeriodClosed = closedPeriods.some(cp => cp.period === period);
+  // ── Datos del módulo vía React Query ────────────────────────────────────────
+  const {
+    cajaChica, tenant, isPeriodClosed,
+  } = useCajaChicaData(tenantId, period);
   const cur = tenant?.currency || 'MXN';
   const fmt = (n) => _fmt(n, cur);
   const totalCaja = cajaChica.reduce((s, c) => s + parseFloat(c.amount || 0), 0);
@@ -276,7 +263,7 @@ export default function CajaChica() {
       toast.success('Registro guardado');
       setCajaEvidence([]);
       setModal(null);
-      load();
+      queryClient.invalidateQueries({ queryKey: queryKeys.cajaChica(tenantId, period) });
     } catch { toast.error('Error al guardar'); }
     finally { setSaving(false); }
   };
@@ -297,7 +284,7 @@ export default function CajaChica() {
     try {
       await cajaChicaAPI.delete(tenantId, c.id);
       toast.success('Eliminado');
-      load();
+      queryClient.invalidateQueries({ queryKey: queryKeys.cajaChica(tenantId, period) });
     } catch { toast.error('No se pudo eliminar el registro'); }
   };
 

@@ -1,6 +1,9 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
-import { paymentsAPI, unitsAPI, extraFieldsAPI, tenantsAPI, unrecognizedIncomeAPI, reservationsAPI, reportsAPI, periodsAPI, paymentPlansAPI } from '../api/client';
+import { paymentsAPI, unrecognizedIncomeAPI, reservationsAPI, reportsAPI } from '../api/client';
+import { usePaymentsData } from '../hooks/usePaymentsData';
+import { queryKeys }        from '../hooks/queryKeys';
 import PaginationBar from '../components/PaginationBar';
 import PaymentReceiptModal from '../components/PaymentReceiptModal';
 import { todayPeriod, periodLabel, prevPeriod, nextPeriod, tenantStartPeriod, fmtCurrency, statusClass, statusLabel, PAYMENT_TYPES, fmtDate, ROLES, CURRENCIES, APP_VERSION } from '../utils/helpers';
@@ -117,65 +120,35 @@ function getUnitRecaudo(pay) {
 
 export default function Cobranza() {
   const { tenantId, isReadOnly, user } = useAuth();
-  const [period, setPeriod] = useState(todayPeriod());
-  const [units, setUnits] = useState([]);
-  const [payments, setPayments] = useState([]);
-  const [extraFields, setExtraFields] = useState([]);
-  const [tenantData, setTenantData] = useState(null);
-  const [filter, setFilter] = useState('');
-  const [page, setPage] = useState(1);
+  const queryClient = useQueryClient();
+
+  // ── Estado de UI ────────────────────────────────────────────────────────────
+  const [period, setPeriod]           = useState(todayPeriod());
+  const [filter, setFilter]           = useState('');
+  const [page, setPage]               = useState(1);
   const [showCapture, setShowCapture] = useState(null);
   const [captureForm, setCaptureForm] = useState({});
-  const [saving, setSaving] = useState(false);
-  const [showReceipt, setShowReceipt] = useState(null); // { unit, pay }
-  const [receiptReservations, setReceiptReservations] = useState([]); // approved reservations for receipt unit+period
-  const [unrecognizedIncome, setUnrecognizedIncome] = useState([]);
-  const [showUnidentModal, setShowUnidentModal] = useState(null); // { editId } or true for new
+  const [saving, setSaving]           = useState(false);
+  const [showReceipt, setShowReceipt] = useState(null);
+  const [receiptReservations, setReceiptReservations] = useState([]);
+  const [showUnidentModal, setShowUnidentModal]       = useState(null);
   const [unidentForm, setUnidentForm] = useState({ concept: '', amount: '', payment_type: '', payment_date: '', notes: '', bank_reconciled: false });
-  const [showAddPaymentModal, setShowAddPaymentModal] = useState(null); // { unit, pay }
-  const [addPaymentForm, setAddPaymentForm] = useState({ extraFieldPayments: {}, payment_type: '', payment_date: '', notes: '', bank_reconciled: false, applied_to_unit_id: null });
-  const [showAdditionalPaymentsModal, setShowAdditionalPaymentsModal] = useState(null); // { unit, pay }
-  const [editingAdditional, setEditingAdditional] = useState(null); // additional payment being edited
-  const [perPage, setPerPage] = useState(25);
+  const [showAddPaymentModal, setShowAddPaymentModal]             = useState(null);
+  const [addPaymentForm, setAddPaymentForm]                       = useState({ extraFieldPayments: {}, payment_type: '', payment_date: '', notes: '', bank_reconciled: false, applied_to_unit_id: null });
+  const [showAdditionalPaymentsModal, setShowAdditionalPaymentsModal] = useState(null);
+  const [editingAdditional, setEditingAdditional]     = useState(null);
+  const [perPage, setPerPage]                         = useState(25);
   const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
-  const [evidencePopup, setEvidencePopup] = useState(null); // { b64, mime, fileName }
-  const [addlExtraFields, setAddlExtraFields] = useState([]); // campos para pagos adicionales (sin adelanto)
-  const [allNormalFields, setAllNormalFields] = useState([]); // todos los campos normales habilitados (para recibo)
-  const [captureUnitPeriods, setCaptureUnitPeriods] = useState([]); // períodos con adeudo de la unidad en captura
+  const [evidencePopup, setEvidencePopup]             = useState(null);
+  const [captureUnitPeriods, setCaptureUnitPeriods]   = useState([]);
   const [captureUnitPeriodsLoading, setCaptureUnitPeriodsLoading] = useState(false);
-  const [closedPeriods, setClosedPeriods] = useState([]);
-  // activePlansMap: unit_id (string) → PaymentPlan object (for accepted plans)
-  const [activePlansMap, setActivePlansMap] = useState({});
-  const load = async () => {
-    if (!tenantId) return;
-    try {
-      const [uRes, pRes, efRes, tRes, uiRes, cpRes, plRes] = await Promise.all([
-        unitsAPI.list(tenantId, { page_size: 9999 }),
-        paymentsAPI.list(tenantId, { period, page_size: 9999 }),
-        extraFieldsAPI.list(tenantId, { page_size: 9999 }).catch(() => ({ data: [] })),
-        tenantsAPI.get(tenantId).catch(() => ({ data: null })),
-        unrecognizedIncomeAPI.list(tenantId, { period, page_size: 9999 }).catch(() => ({ data: [] })),
-        periodsAPI.closedList(tenantId).catch(() => ({ data: [] })),
-        paymentPlansAPI.list(tenantId, { status: 'accepted', page_size: 9999 }).catch(() => ({ data: [] })),
-      ]);
-      setUnits(uRes.data.results || uRes.data);
-      setPayments(pRes.data.results || pRes.data);
-      const rawEFs = Array.isArray(efRes.data) ? efRes.data : (efRes.data?.results || []);
-      setExtraFields(rawEFs.filter(f => f.enabled && (!f.field_type || f.field_type === 'normal') && f.show_in_normal !== false));
-      setAddlExtraFields(rawEFs.filter(f => f.enabled && (!f.field_type || f.field_type === 'normal') && f.show_in_additional !== false));
-      setAllNormalFields(rawEFs.filter(f => f.enabled && (!f.field_type || f.field_type === 'normal')));
-      setTenantData(tRes.data);
-      setUnrecognizedIncome(Array.isArray(uiRes.data) ? uiRes.data : (uiRes.data?.results || []));
-      setClosedPeriods(Array.isArray(cpRes.data) ? cpRes.data : (cpRes.data?.results || []));
-      // Build unit_id → plan map for accepted plans
-      const rawPlans = Array.isArray(plRes.data) ? plRes.data : (plRes.data?.results || []);
-      const planMap = {};
-      rawPlans.forEach(pl => { planMap[String(pl.unit)] = pl; });
-      setActivePlansMap(planMap);
-    } catch (err) { console.error(err); }
-  };
 
-  useEffect(() => { load(); }, [tenantId, period]);
+  // ── Datos del módulo vía React Query ────────────────────────────────────────
+  const {
+    payments, units, extraFields, addlExtraFields, allNormalFields,
+    tenantData, unrecognizedIncome, closedPeriods, activePlansMap,
+    isPeriodClosed,
+  } = usePaymentsData(tenantId, period);
 
   const isPeriodClosed = closedPeriods.some(cp => cp.period === period);
 
@@ -473,7 +446,7 @@ export default function Cobranza() {
       await paymentsAPI.capture(tenantId, buildCapturePayload());
       toast.success('Pago registrado');
       setShowCapture(null);
-      load();
+      queryClient.invalidateQueries({ queryKey: queryKeys.payments(tenantId, period) });
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Error al registrar pago');
     } finally {
@@ -720,7 +693,7 @@ export default function Cobranza() {
                             title="Eliminar cobro"
                             onClick={async () => {
                               if (window.confirm(`¿Eliminar el cobro de ${u.unit_id_code} — ${u.unit_name}? Esta acción no se puede deshacer.`)) {
-                                try { await paymentsAPI.clear(tenantId, pay.id); toast.success('Cobro eliminado'); load(); }
+                                try { await paymentsAPI.clear(tenantId, pay.id); toast.success('Cobro eliminado'); queryClient.invalidateQueries({ queryKey: queryKeys.payments(tenantId, period) }); }
                                 catch (e) { toast.error(e.response?.data?.detail || 'Error al eliminar'); }
                               }
                             }}
@@ -814,7 +787,7 @@ export default function Cobranza() {
                           <button className="btn-icon" title="Editar" onClick={() => { setUnidentForm({ editId: row.id, concept: row.description || '', amount: row.amount ?? '', payment_type: row.payment_type || '', payment_date: row.date || new Date().toISOString().slice(0, 10), notes: row.notes || '', bank_reconciled: !!row.bank_reconciled }); setShowUnidentModal({ edit: true }); }}>
                             <Edit2 size={13} />
                           </button>
-                          <button className="btn-icon" style={{ color: 'var(--coral-500)' }} title="Eliminar" onClick={() => { if (window.confirm('¿Eliminar este ingreso no identificado?')) unrecognizedIncomeAPI.delete(tenantId, row.id).then(() => load()).catch(e => toast.error(e.response?.data?.detail || 'Error')); }}>
+                          <button className="btn-icon" style={{ color: 'var(--coral-500)' }} title="Eliminar" onClick={() => { if (window.confirm('¿Eliminar este ingreso no identificado?')) unrecognizedIncomeAPI.delete(tenantId, row.id).then(() => queryClient.invalidateQueries({ queryKey: queryKeys.unrecognized(tenantId, period) })).catch(e => toast.error(e.response?.data?.detail || 'Error')); }}>
                             <Trash2 size={13} />
                           </button>
                         </div>
@@ -898,7 +871,7 @@ export default function Cobranza() {
                   }
                   toast.success('Ingreso guardado');
                   setShowUnidentModal(null);
-                  load();
+                  queryClient.invalidateQueries({ queryKey: queryKeys.unrecognized(tenantId, period) });
                 } catch (err) { toast.error(err.response?.data?.detail || 'Error al guardar'); }
                 finally { setSaving(false); }
               }} disabled={saving}>{saving ? 'Guardando…' : 'Guardar Ingreso'}</button>
@@ -1056,7 +1029,7 @@ export default function Cobranza() {
                     });
                     toast.success('Pago adicional registrado');
                     setShowAddPaymentModal(null);
-                    load();
+                    queryClient.invalidateQueries({ queryKey: queryKeys.payments(tenantId, period) });
                   } catch (err) { toast.error(err.response?.data?.detail || 'Error al registrar'); }
                   finally { setSaving(false); }
                 }} disabled={saving}>{saving ? 'Guardando…' : 'Guardar Pago Adicional'}</button>
@@ -1121,7 +1094,7 @@ export default function Cobranza() {
                                   setShowAdditionalPaymentsModal(prev => ({ ...prev, pay: res.data }));
                                   setEditingAdditional(null);
                                   toast.success('Pago adicional eliminado');
-                                  load();
+                                  queryClient.invalidateQueries({ queryKey: queryKeys.payments(tenantId, period) });
                                 } catch (e) { toast.error(e.response?.data?.detail || 'Error al eliminar'); }
                               }}>
                               <Trash2 size={12} /> Eliminar
@@ -1205,7 +1178,7 @@ export default function Cobranza() {
                               setShowAdditionalPaymentsModal(prev => ({ ...prev, pay: res.data }));
                               setEditingAdditional(null);
                               toast.success('Pago adicional actualizado');
-                              load();
+                              queryClient.invalidateQueries({ queryKey: queryKeys.payments(tenantId, period) });
                             } catch (e) { toast.error(e.response?.data?.detail || 'Error al actualizar'); }
                             finally { setSaving(false); }
                           }}><Check size={14} /> {saving ? 'Guardando…' : 'Guardar cambios'}</button>

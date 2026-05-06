@@ -1,6 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
-import { reservationsAPI, tenantsAPI, unitsAPI } from '../api/client';
+import { reservationsAPI } from '../api/client';
+import { useReservasData } from '../hooks/useReservasData';
+import { queryKeys }        from '../hooks/queryKeys';
 import {
   Calendar, ChevronLeft, ChevronRight, Plus, X, Check,
   Clock, CheckCircle, AlertCircle, Ban, RefreshCw, FileText,
@@ -104,26 +107,17 @@ const DEFAULT_ROLE_PERMS = {
 export default function Reservas() {
   const { tenantId, isVecino, role, user } = useAuth();
 
-  // Per-role reservation permissions loaded from tenant settings
-  const [rolePermissions, setRolePermissions] = useState({});
-
+  const queryClient = useQueryClient();
   const today = new Date();
   const [calYear,  setCalYear]  = useState(today.getFullYear());
   const [calMonth, setCalMonth] = useState(today.getMonth());
   const [selectedDay,  setSelectedDay]  = useState(null);
   const [selectedArea, setSelectedArea] = useState(null); // area.id | null
 
-  const [areas,        setAreas]        = useState([]);
-  const [units,        setUnits]        = useState([]);
-  const [reservations, setReservations] = useState([]);
-  const [loading,      setLoading]      = useState(false);
   const [resStatusFilter, setResStatusFilter] = useState('all');
 
   // Vecino view toggle: "mine" (only own reservations in list) vs "all" (calendar availability)
   const [myResOnly, setMyResOnly] = useState(true);
-
-  // Tenant reservation settings (approval mode)
-  const [approvalMode, setApprovalMode] = useState('require_vecinos'); // default
 
   // New reservation modal
   const [modalOpen,         setModalOpen]         = useState(false);
@@ -143,6 +137,23 @@ export default function Reservas() {
   const [rejectReason,  setRejectReason]  = useState('');
   const [rejectNotes,   setRejectNotes]   = useState('');
 
+  // ── React Query: reservas + áreas + unidades ─────────────────────────────
+  const resFirstDay  = `${calYear}-${pad(calMonth + 1)}-01`;
+  const resLastDate  = new Date(calYear, calMonth + 1, 0);
+  const resLastDay   = `${calYear}-${pad(calMonth + 1)}-${pad(resLastDate.getDate())}`;
+  const resParams    = { date_from: resFirstDay, date_to: resLastDay, ...(selectedArea ? { area_id: selectedArea } : {}) };
+
+  const { reservas: reservations, tenantData, units, isLoading: loading } = useReservasData(tenantId, resParams);
+
+  // ── Derivados del tenant ──────────────────────────────────────────────────
+  const tenantSettings  = tenantData?.reservation_settings || {};
+  const approvalMode    = tenantSettings.approval_mode    || 'require_vecinos';
+  const rolePermissions = tenantSettings.role_permissions || {};
+  const areasRaw = Array.isArray(tenantData?.common_areas)
+    ? tenantData.common_areas.filter(a => typeof a === 'object' && a !== null)
+    : [];
+  const areas = areasRaw.filter(a => a.active !== false && a.reservations_enabled);
+
   // ── Derived flags — computed from per-role settings ─────────────────────
   const _rolePerms = rolePermissions[role] ?? DEFAULT_ROLE_PERMS[role] ?? { can_request: false, can_approve: false };
   const canRequest        = role === 'superadmin' ? true : _rolePerms.can_request;
@@ -150,54 +161,6 @@ export default function Reservas() {
   const canCancelOwn      = !canManage && canRequest;   // requesters can cancel their own
   const showActionsCol    = canManage || canCancelOwn;
   const needsUnitSelector = !isVecino;                  // admins / managers pick unit manually
-
-  // ── Load tenant (areas + reservation_settings) ─────────────────────────
-  const loadAreas = useCallback(async () => {
-    if (!tenantId) return;
-    try {
-      const res = await tenantsAPI.get(tenantId);
-      const raw = res.data?.common_areas;
-      const all = Array.isArray(raw)
-        ? raw.filter(a => typeof a === 'object' && a !== null)
-        : [];
-      setAreas(all.filter(a => a.active !== false && a.reservations_enabled));
-      // Load reservation settings (approval mode + per-role permissions)
-      const settings = res.data?.reservation_settings || {};
-      setApprovalMode(settings.approval_mode || 'require_vecinos');
-      setRolePermissions(settings.role_permissions || {});
-    } catch { setAreas([]); }
-  }, [tenantId]);
-
-  // ── Load units (only for admin/tesorero) ───────────────────────────────
-  const loadUnits = useCallback(async () => {
-    if (!tenantId || isVecino) return;
-    try {
-      const res = await unitsAPI.list(tenantId, { page_size: 500 });
-      const d = res.data;
-      setUnits(Array.isArray(d) ? d : (d?.results || []));
-    } catch { setUnits([]); }
-  }, [tenantId, isVecino]);
-
-  // ── Load reservations ─────────────────────────────────────────────────
-  const loadReservations = useCallback(async () => {
-    if (!tenantId) return;
-    setLoading(true);
-    try {
-      const firstDay = `${calYear}-${pad(calMonth + 1)}-01`;
-      const lastDate = new Date(calYear, calMonth + 1, 0);
-      const lastDay  = `${calYear}-${pad(calMonth + 1)}-${pad(lastDate.getDate())}`;
-      const params   = { date_from: firstDay, date_to: lastDay };
-      if (selectedArea) params.area_id = selectedArea;
-      const res  = await reservationsAPI.list(tenantId, params);
-      const data = res.data;
-      setReservations(Array.isArray(data) ? data : (data?.results || []));
-    } catch { setReservations([]); }
-    finally  { setLoading(false); }
-  }, [tenantId, calYear, calMonth, selectedArea]);
-
-  useEffect(() => { loadAreas(); }, [loadAreas]);
-  useEffect(() => { loadUnits(); }, [loadUnits]);
-  useEffect(() => { loadReservations(); }, [loadReservations]);
 
   // ── Calendar ────────────────────────────────────────────────────────────
   const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
@@ -225,7 +188,7 @@ export default function Reservas() {
       await reservationsAPI.approve(tenantId, approveId, approveNotes);
       toast.success('Reserva aprobada');
       setApproveOpen(false);
-      loadReservations();
+      queryClient.invalidateQueries({ queryKey: ['reservas', tenantId] });
     } catch { toast.error('Error al aprobar'); }
   };
 
@@ -235,7 +198,7 @@ export default function Reservas() {
       await reservationsAPI.reject(tenantId, rejectId, rejectReason, rejectNotes || rejectReason);
       toast.success('Reserva rechazada');
       setRejectOpen(false);
-      loadReservations();
+      queryClient.invalidateQueries({ queryKey: ['reservas', tenantId] });
     } catch { toast.error('Error al rechazar'); }
   };
 
@@ -244,7 +207,7 @@ export default function Reservas() {
     try {
       await reservationsAPI.cancel(tenantId, id);
       toast.success('Reserva cancelada');
-      loadReservations();
+      queryClient.invalidateQueries({ queryKey: ['reservas', tenantId] });
     } catch { toast.error('Error al cancelar'); }
   };
 
@@ -286,7 +249,7 @@ export default function Reservas() {
       await reservationsAPI.create(tenantId, payload);
       toast.success(isAutoApprover ? 'Reserva aprobada' : 'Reserva solicitada');
       setModalOpen(false);
-      loadReservations();
+      queryClient.invalidateQueries({ queryKey: ['reservas', tenantId] });
     } catch (e) {
       toast.error(e.response?.data?.detail || 'Error al crear la reserva');
     } finally { setSaving(false); }
@@ -406,7 +369,8 @@ export default function Reservas() {
               </button>
             </div>
           )}
-          <button className="btn btn-secondary btn-sm" onClick={loadReservations}>
+          <button className="btn btn-secondary btn-sm"
+            onClick={() => queryClient.invalidateQueries({ queryKey: ['reservas', tenantId] })}>
             <RefreshCw size={14} style={loading ? { animation: 'spin 0.8s linear infinite' } : {}} />
             Actualizar
           </button>

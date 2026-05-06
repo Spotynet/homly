@@ -1,11 +1,14 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   Legend, ResponsiveContainer, ReferenceLine,
 } from 'recharts';
 import { useAuth } from '../context/AuthContext';
-import { reportsAPI, tenantsAPI, assemblyAPI, reservationsAPI, periodsAPI } from '../api/client';
+import { reportsAPI, reservationsAPI, tenantsAPI } from '../api/client';
+import { useDashboardData } from '../hooks/useDashboardData';
+import { queryKeys, STALE } from '../hooks/queryKeys';
 import {
   Globe, Building2, DollarSign, Receipt, ShoppingBag,
   ChevronLeft, ChevronRight, RefreshCw, TrendingDown, TrendingUp,
@@ -312,106 +315,58 @@ export default function Dashboard() {
   const { user, tenantId, tenantName, isSuperAdmin, isAdmin, role } = useAuth();
   const navigate = useNavigate();
 
+  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState('general');
   const [period, setPeriod] = useState(todayStr());
-  const [stats, setStats] = useState(null);
-  const [tenant, setTenant] = useState(null);
-  const [committees, setCommittees] = useState([]);
-  const [tenants, setTenants] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [generalReport, setGeneralReport] = useState(null);
-  const [closedPeriods, setClosedPeriods] = useState([]);
+
+  // ── React Query: datos principales del dashboard ───────────────────────
+  const {
+    stats, tenant, committees, generalReport, closedPeriods,
+    isPeriodClosed,
+    isLoading: loading, error, refetch,
+  } = useDashboardData(tenantId, period);
 
   // ── Period History (para gráfica comparativa en tab Económicos) ────────
   const [periodHistory,     setPeriodHistory]     = useState([]);
   const [historyLoading,    setHistoryLoading]    = useState(false);
 
-  // ── Reservas tab state ──────────────────────────────────
+  // ── Reservas tab state ──────────────────────────────────────────────────
   const today = new Date();
   const [calYear,  setCalYear]  = useState(today.getFullYear());
   const [calMonth, setCalMonth] = useState(today.getMonth()); // 0-indexed
   const [selectedDay,      setSelectedDay]      = useState(null); // 'YYYY-MM-DD' | null
-  const [reservations,     setReservations]     = useState([]);
-  const [resLoading,       setResLoading]       = useState(false);
   const [resStatusFilter,  setResStatusFilter]  = useState('all');
   const [rejectModalOpen,  setRejectModalOpen]  = useState(false);
   const [rejectReason,     setRejectReason]     = useState('');
   const [rejectTargetId,   setRejectTargetId]   = useState(null);
 
-  const loadReservations = useCallback(async () => {
-    if (!tenantId) return;
-    setResLoading(true);
-    try {
-      const firstDay = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-01`;
-      const lastDay  = new Date(calYear, calMonth + 1, 0);
-      const lastStr  = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(lastDay.getDate()).padStart(2, '0')}`;
-      const res = await reservationsAPI.list(tenantId, { date_from: firstDay, date_to: lastStr });
-      const data = res.data;
-      setReservations(Array.isArray(data) ? data : (data?.results || []));
-    } catch { setReservations([]); }
-    finally { setResLoading(false); }
-  }, [tenantId, calYear, calMonth]);
+  // ── React Query: reservas del mes del calendario ────────────────────────
+  const resFirstDay = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-01`;
+  const resLastDay  = new Date(calYear, calMonth + 1, 0);
+  const resLastStr  = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(resLastDay.getDate()).padStart(2, '0')}`;
+  const resParams   = { date_from: resFirstDay, date_to: resLastStr };
+  const { data: reservations = [], isLoading: resLoading } = useQuery({
+    queryKey:  queryKeys.reservas(tenantId, resParams),
+    queryFn:   () => reservationsAPI.list(tenantId, resParams).then(r => {
+      const d = r.data;
+      return Array.isArray(d) ? d : (d?.results || []);
+    }),
+    enabled:   !!tenantId,
+    staleTime: STALE.RESERVAS,
+    placeholderData: [],
+  });
 
-
-  const load = useCallback(async () => {
-    if (!tenantId) return;
-    setLoading(true);
-    setError(null);
-    try {
-      // Usamos allSettled para que UN solo endpoint lento o roto (p.ej. reporteGeneral
-      // en tenants con mucho historial) no tumbe toda la página.
-      const [dashRes, tenantRes, cmtRes, genRes, closedRes] = await Promise.allSettled([
-        reportsAPI.dashboard(tenantId, period),
-        tenantsAPI.get(tenantId),
-        assemblyAPI.committees(tenantId),
-        reportsAPI.reporteGeneral(tenantId, period),
-        periodsAPI.closedList(tenantId),
-      ]);
-
-      // Dashboard principal: único crítico. Si falla, mostramos error pero no lanzamos.
-      if (dashRes.status === 'fulfilled') {
-        setStats(dashRes.value.data);
-      } else {
-        setStats(null);
-        setError(dashRes.reason?.response?.data?.detail || 'Error al cargar el dashboard');
-      }
-
-      // Tenant metadata
-      if (tenantRes.status === 'fulfilled') {
-        setTenant(tenantRes.value.data);
-      } else {
-        setTenant(null);
-      }
-
-      // Comités (opcional)
-      if (cmtRes.status === 'fulfilled') {
-        const raw = cmtRes.value.data;
-        setCommittees(Array.isArray(raw) ? raw : (raw?.results || []));
-      } else {
-        setCommittees([]);
-      }
-
-      // Reporte general (pesado para tenants con mucho historial — no bloquea el dashboard)
-      setGeneralReport(genRes.status === 'fulfilled' ? genRes.value.data : null);
-
-      // Periodos cerrados (opcional)
-      if (closedRes.status === 'fulfilled') {
-        const closedRaw = closedRes.value.data;
-        setClosedPeriods(Array.isArray(closedRaw) ? closedRaw : (closedRaw?.results || []));
-      } else {
-        setClosedPeriods([]);
-      }
-    } catch (e) {
-      // Fallback — no debería dispararse con allSettled, pero por si acaso
-      setError(e.response?.data?.detail || 'Error al cargar el dashboard');
-    } finally {
-      setLoading(false);
-    }
-  }, [tenantId, period]);
-
-  useEffect(() => { load(); }, [load]);
-  useEffect(() => { if (activeTab === 'reservas') loadReservations(); }, [activeTab, loadReservations]);
+  // ── React Query: lista de tenants (solo superadmin) ─────────────────────
+  const { data: tenants = [] } = useQuery({
+    queryKey:  ['tenants-all'],
+    queryFn:   () => tenantsAPI.list().then(r => {
+      const d = r.data;
+      return Array.isArray(d) ? d : (d?.results || []);
+    }),
+    enabled:   isSuperAdmin,
+    staleTime: STALE.SHARED,
+    placeholderData: [],
+  });
 
   // Carga los últimos 6 períodos para la gráfica comparativa
   useEffect(() => {
@@ -459,15 +414,6 @@ export default function Dashboard() {
       })
       .finally(() => setHistoryLoading(false));
   }, [activeTab, tenantId, period]);
-
-  useEffect(() => {
-    if (isSuperAdmin) {
-      tenantsAPI.list().then(r => {
-        const d = r.data;
-        setTenants(Array.isArray(d) ? d : (d?.results || []));
-      }).catch(() => {});
-    }
-  }, [isSuperAdmin]);
 
   // ── Super admin sin tenant ──────────────────────────────────────────────
   if (isSuperAdmin && !tenantId) {
@@ -611,8 +557,8 @@ export default function Dashboard() {
           <TrendingDown size={22} color="var(--coral-500)" />
         </div>
         <p style={{ fontWeight: 700, color: 'var(--ink-800)' }}>No se pudo cargar</p>
-        <p style={{ color: 'var(--ink-400)', fontSize: 13, textAlign: 'center', maxWidth: 300 }}>{error}</p>
-        <button className="btn btn-outline btn-sm" onClick={load}><RefreshCw size={14} /> Reintentar</button>
+        <p style={{ color: 'var(--ink-400)', fontSize: 13, textAlign: 'center', maxWidth: 300 }}>{error?.response?.data?.detail || 'Error al cargar el dashboard'}</p>
+        <button className="btn btn-outline btn-sm" onClick={refetch}><RefreshCw size={14} /> Reintentar</button>
       </div>
     );
   }
@@ -681,8 +627,7 @@ export default function Dashboard() {
   const deudaTotal     = s.deuda_total ?? 0;
   const balanceNeto    = totalIngresos - gastos;
 
-  // Period open/closed status for the selected period
-  const isPeriodClosed     = closedPeriods.some(cp => cp.period === period);
+  // isPeriodClosed: provided directly by useDashboardData (computed from closedPeriods)
 
   // Total ingresos incluyendo no conciliados (para gauges y KPIs)
   const totalIngresosAll   = totalIngresos + ingNoConc;
@@ -1853,7 +1798,7 @@ export default function Dashboard() {
 
         const handleApprove = async (id) => {
           await reservationsAPI.approve(tenantId, id);
-          loadReservations();
+          queryClient.invalidateQueries({ queryKey: ['reservas', tenantId] });
         };
         const openReject = (id) => {
           setRejectTargetId(id); setRejectReason(''); setRejectModalOpen(true);
@@ -1861,12 +1806,12 @@ export default function Dashboard() {
         const confirmReject = async () => {
           await reservationsAPI.reject(tenantId, rejectTargetId, rejectReason);
           setRejectModalOpen(false);
-          loadReservations();
+          queryClient.invalidateQueries({ queryKey: ['reservas', tenantId] });
         };
         const handleCancel = async (id) => {
           if (!window.confirm('¿Cancelar esta reserva?')) return;
           await reservationsAPI.cancel(tenantId, id);
-          loadReservations();
+          queryClient.invalidateQueries({ queryKey: ['reservas', tenantId] });
         };
 
         // pending count badge

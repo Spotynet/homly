@@ -1,10 +1,14 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
-import { notificationsAPI, tenantsAPI } from '../api/client';
+import { notificationsAPI } from '../api/client';
 import { ROLE_BASE_MODULES } from '../constants/modulePermissions';
 import { Bell, CheckCheck, Calendar, Filter, Lock } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { useNotificacionesData } from '../hooks/useNotificacionesData';
+import { useTenantData }         from '../hooks/useTenantData';
+import { queryKeys }             from '../hooks/queryKeys';
 
 // Maps notification type → required module key (mirrors backend _NOTIF_MODULE_MAP)
 const NOTIF_MODULE_MAP = {
@@ -61,38 +65,17 @@ export default function Notificaciones() {
   const { tenantId, role, profileId } = useAuth();
   const navigate = useNavigate();
 
-  const [notifs,          setNotifs]          = useState([]);
-  const [loading,         setLoading]         = useState(true);
-  const [filter,          setFilter]          = useState('all'); // 'all' | 'unread'
-  const [typeFilter,      setTypeFilter]      = useState('all');
-  const [modulePerms,     setModulePerms]     = useState({});
-  const [customProfiles,  setCustomProfiles]  = useState([]);
+  const queryClient = useQueryClient();
+  const [filter,     setFilter]    = useState('all'); // 'all' | 'unread'
+  const [typeFilter, setTypeFilter] = useState('all');
 
-  const loadNotifs = useCallback(async () => {
-    if (!tenantId) return;
-    setLoading(true);
-    try {
-      const r = await notificationsAPI.list(tenantId, {});
-      setNotifs(r.data || []);
-    } catch {
-      toast.error('Error al cargar notificaciones');
-    } finally {
-      setLoading(false);
-    }
-  }, [tenantId]);
+  // ── React Query: notificaciones ──────────────────────────────────────────
+  const { notifications: notifs, isLoading: loading } = useNotificacionesData(tenantId);
 
-  useEffect(() => { loadNotifs(); }, [loadNotifs]);
-
-  // Load tenant module permissions so we can enforce access from notifications
-  useEffect(() => {
-    if (!tenantId || role === 'superadmin') { setModulePerms({}); setCustomProfiles([]); return; }
-    tenantsAPI.get(tenantId)
-      .then(r => {
-        setModulePerms(r.data?.module_permissions || {});
-        setCustomProfiles(Array.isArray(r.data?.custom_profiles) ? r.data.custom_profiles : []);
-      })
-      .catch(() => { setModulePerms({}); setCustomProfiles([]); });
-  }, [tenantId, role]);
+  // ── React Query: datos del tenant (para permisos de módulos) ─────────────
+  const { data: tenantData } = useTenantData(tenantId);
+  const modulePerms    = (role !== 'superadmin' ? tenantData?.module_permissions : null) || {};
+  const customProfiles = Array.isArray(tenantData?.custom_profiles) ? tenantData.custom_profiles : [];
 
   // Resolve active custom profile
   const activeProfile = profileId
@@ -123,14 +106,19 @@ export default function Notificaciones() {
 
   const handleMarkAll = async () => {
     await notificationsAPI.markAllRead(tenantId).catch(() => {});
-    setNotifs(prev => prev.map(n => ({ ...n, is_read: true })));
+    // Actualización optimista en caché: no hace falta un nuevo fetch
+    queryClient.setQueryData(queryKeys.notificaciones(tenantId),
+      (prev) => prev?.map(n => ({ ...n, is_read: true })) ?? []
+    );
     toast.success('Todas marcadas como leídas');
   };
 
   const handleClickNotif = async (n) => {
     if (!n.is_read) {
       await notificationsAPI.markRead(tenantId, n.id).catch(() => {});
-      setNotifs(prev => prev.map(x => x.id === n.id ? { ...x, is_read: true } : x));
+      queryClient.setQueryData(queryKeys.notificaciones(tenantId),
+        (prev) => prev?.map(x => x.id === n.id ? { ...x, is_read: true } : x) ?? []
+      );
     }
     if (!canNavigateNotif(n)) return; // no module access → mark read only, no navigation
     if (n.related_reservation_id) navigate('/app/reservas');

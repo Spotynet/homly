@@ -3,6 +3,7 @@
   "version": "10.1.0",
   "private": true,
   "dependencies": {
+    "@tanstack/react-query": "^5.56.0",
     "axios": "^1.7.0",
     "clsx": "^2.1.0",
     "date-fns": "^3.6.0",
