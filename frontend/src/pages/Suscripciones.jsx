@@ -928,6 +928,14 @@ function RowPanel({ sub, plans, onRefresh }) {
   const [deactivateReason, setDeactivateReason] = useState('');
   const [deactivating, setDeactivating] = useState(false);
 
+  // ── Force-activate / Force-deactivate state ───────────────────────────────
+  const [showForceActivate,   setShowForceActivate]   = useState(false);
+  const [forceActivateReason, setForceActivateReason] = useState('');
+  const [forceActivating,     setForceActivating]     = useState(false);
+  const [showForceDeactivate,   setShowForceDeactivate]   = useState(false);
+  const [forceDeactivateReason, setForceDeactivateReason] = useState('');
+  const [forceDeactivating,     setForceDeactivating]     = useState(false);
+
   // ── History panel ────────────────────────────────────────────────────────
   const [showHistory, setShowHistory] = useState(false);
 
@@ -1057,6 +1065,37 @@ function RowPanel({ sub, plans, onRefresh }) {
     } catch (e) {
       toast.error(e?.response?.data?.detail || 'Error al desactivar');
     } finally { setDeactivating(false); }
+  };
+
+  const handleForceActivate = async () => {
+    setForceActivating(true);
+    try {
+      const { data } = await tenantSubscriptionsAPI.forceActivate(sub.id, {
+        reason: forceActivateReason.trim() || undefined,
+        extend_billing: true,
+      });
+      toast.success(`Tenant activado manualmente. Estado: ${data.current_status}`);
+      setShowForceActivate(false);
+      setForceActivateReason('');
+      onRefresh();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || 'Error al activar manualmente');
+    } finally { setForceActivating(false); }
+  };
+
+  const handleForceDeactivate = async () => {
+    setForceDeactivating(true);
+    try {
+      await tenantSubscriptionsAPI.forceDeactivate(sub.id, {
+        reason: forceDeactivateReason.trim() || undefined,
+      });
+      toast.success('Tenant suspendido manualmente (pago vencido)');
+      setShowForceDeactivate(false);
+      setForceDeactivateReason('');
+      onRefresh();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || 'Error al suspender');
+    } finally { setForceDeactivating(false); }
   };
 
   const history = Array.isArray(sub.subscription_history) ? sub.subscription_history : [];
@@ -1272,12 +1311,32 @@ function RowPanel({ sub, plans, onRefresh }) {
           </button>
         )}
 
+        {/* Force-activate — visible when tenant is suspended/past_due/expired */}
+        {(sub.status === 'past_due' || sub.status === 'expired' || sub.status === 'cancelled') && (
+          <button onClick={() => { setShowForceActivate(v => !v); setShowForceDeactivate(false); setShowDeactivate(false); }}
+            className="flex items-center gap-2 px-4 py-2 text-xs font-bold text-green-700 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 transition-colors">
+            <CheckCircle size={13} />
+            Activar Manualmente
+            {showForceActivate ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+          </button>
+        )}
+
+        {/* Force-deactivate — visible when tenant is active or trial */}
+        {(sub.status === 'active' || sub.status === 'trial') && (
+          <button onClick={() => { setShowForceDeactivate(v => !v); setShowForceActivate(false); setShowDeactivate(false); }}
+            className="flex items-center gap-2 px-4 py-2 text-xs font-bold text-orange-600 bg-orange-50 border border-orange-200 rounded-lg hover:bg-orange-100 transition-colors">
+            <AlertCircle size={13} />
+            Suspender Manualmente
+            {showForceDeactivate ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+          </button>
+        )}
+
         {/* Desactivar suscripción — solo si no está ya cancelada/expirada */}
         {!isAlreadyCancelled && (
-          <button onClick={() => setShowDeactivate(d => !d)}
+          <button onClick={() => { setShowDeactivate(d => !d); setShowForceActivate(false); setShowForceDeactivate(false); }}
             className="flex items-center gap-2 px-4 py-2 text-xs font-bold text-red-600 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-colors">
             <PowerOff size={13} />
-            Desactivar Suscripción
+            Cancelar Suscripción
             {showDeactivate ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
           </button>
         )}
@@ -1312,13 +1371,79 @@ function RowPanel({ sub, plans, onRefresh }) {
         </div>
       )}
 
-      {/* Deactivate confirm panel */}
+      {/* Force-activate confirm panel */}
+      {showForceActivate && (
+        <div className="bg-green-50 border border-green-200 rounded-xl p-4 space-y-3">
+          <div className="flex items-start gap-2">
+            <CheckCircle size={16} className="text-green-600 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-bold text-green-700">Activar manualmente</p>
+              <p className="text-xs text-green-600 mt-0.5">
+                El estado pasará a <strong>Activa</strong> y se extenderá automáticamente la próxima fecha de cobro un ciclo.
+                Usa esta opción para regularizar cuentas sin esperar el pago automático.
+              </p>
+            </div>
+          </div>
+          <div>
+            <label style={labelSt}>Motivo (opcional)</label>
+            <textarea value={forceActivateReason} onChange={e => setForceActivateReason(e.target.value)} rows={2}
+              style={{ ...inputSt, resize: 'vertical' }}
+              placeholder="Ej: Pago acordado por vía telefónica, acuerdo especial…" />
+          </div>
+          <div className="flex gap-2 justify-end">
+            <button onClick={() => setShowForceActivate(false)}
+              className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">
+              Cancelar
+            </button>
+            <button onClick={handleForceActivate} disabled={forceActivating}
+              className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors">
+              <CheckCircle size={13} />
+              {forceActivating ? 'Activando…' : 'Confirmar Activación'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Force-deactivate confirm panel */}
+      {showForceDeactivate && (
+        <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 space-y-3">
+          <div className="flex items-start gap-2">
+            <AlertCircle size={16} className="text-orange-600 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-bold text-orange-700">Suspender manualmente</p>
+              <p className="text-xs text-orange-600 mt-0.5">
+                El estado pasará a <strong>Pago Vencido</strong> y el acceso del tenant se desactivará de inmediato.
+                El tenant puede ser reactivado cuando se registre el pago.
+              </p>
+            </div>
+          </div>
+          <div>
+            <label style={labelSt}>Motivo (opcional)</label>
+            <textarea value={forceDeactivateReason} onChange={e => setForceDeactivateReason(e.target.value)} rows={2}
+              style={{ ...inputSt, resize: 'vertical' }}
+              placeholder="Ej: Pago pendiente, incumplimiento de contrato…" />
+          </div>
+          <div className="flex gap-2 justify-end">
+            <button onClick={() => setShowForceDeactivate(false)}
+              className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">
+              Cancelar
+            </button>
+            <button onClick={handleForceDeactivate} disabled={forceDeactivating}
+              className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-orange-600 rounded-lg hover:bg-orange-700 disabled:opacity-50 transition-colors">
+              <AlertCircle size={13} />
+              {forceDeactivating ? 'Suspendiendo…' : 'Confirmar Suspensión'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Deactivate (cancel) confirm panel */}
       {showDeactivate && !isAlreadyCancelled && (
         <div className="bg-red-50 border border-red-200 rounded-xl p-4 space-y-3">
           <div className="flex items-start gap-2">
             <AlertCircle size={16} className="text-red-600 flex-shrink-0 mt-0.5" />
             <div>
-              <p className="text-sm font-bold text-red-700">Desactivar suscripción</p>
+              <p className="text-sm font-bold text-red-700">Cancelar suscripción</p>
               <p className="text-xs text-red-600 mt-0.5">
                 Se guardará un snapshot del estado actual en el historial y la suscripción quedará como <strong>Cancelada</strong>.
                 El acceso del tenant se desactivará. Podrás crear una nueva suscripción después.
@@ -1326,7 +1451,7 @@ function RowPanel({ sub, plans, onRefresh }) {
             </div>
           </div>
           <div>
-            <label style={{ ...labelSt, color: '#DC2626' }}>Motivo de desactivación *</label>
+            <label style={{ ...labelSt, color: '#DC2626' }}>Motivo de cancelación *</label>
             <textarea value={deactivateReason} onChange={e => setDeactivateReason(e.target.value)} rows={2}
               style={{ ...inputSt, borderColor: '#FCA5A5', resize: 'vertical' }}
               placeholder="Ej: Fin de contrato, cambio de plan, incumplimiento de pago…" />
@@ -1339,7 +1464,7 @@ function RowPanel({ sub, plans, onRefresh }) {
             <button onClick={handleDeactivate} disabled={deactivating || !deactivateReason.trim()}
               className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors">
               <PowerOff size={13} />
-              {deactivating ? 'Desactivando…' : 'Confirmar Desactivación'}
+              {deactivating ? 'Cancelando…' : 'Confirmar Cancelación'}
             </button>
           </div>
         </div>
@@ -1566,12 +1691,31 @@ function NewSubModal({ plans, onClose, onDone }) {
 // ─── Tab: Suscripciones ───────────────────────────────────────────────────────
 
 function TabSuscripciones() {
-  const [subs,          setSubs]          = useState([]);
-  const [plans,         setPlans]         = useState([]);
-  const [loading,       setLoading]       = useState(true);
-  const [statusFilter,  setStatusFilter]  = useState('');
-  const [expandedId,    setExpandedId]    = useState(null);
-  const [showNewModal,  setShowNewModal]  = useState(false);
+  const [subs,              setSubs]              = useState([]);
+  const [plans,             setPlans]             = useState([]);
+  const [loading,           setLoading]           = useState(true);
+  const [statusFilter,      setStatusFilter]      = useState('');
+  const [expandedId,        setExpandedId]        = useState(null);
+  const [showNewModal,      setShowNewModal]      = useState(false);
+  const [runningBillingCheck, setRunningBillingCheck] = useState(false);
+  const [billingCheckResult,  setBillingCheckResult]  = useState(null);
+
+  const handleRunBillingCheck = async () => {
+    setRunningBillingCheck(true);
+    setBillingCheckResult(null);
+    try {
+      const { data } = await tenantSubscriptionsAPI.runBillingCheck();
+      setBillingCheckResult(data);
+      if (data.marked_past_due > 0) {
+        toast.error(`Se marcaron ${data.marked_past_due} tenant${data.marked_past_due !== 1 ? 's' : ''} como vencidos`);
+      } else {
+        toast.success('Verificación de cobros completada. Sin nuevos vencimientos.');
+      }
+      load();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || 'Error al verificar cobros');
+    } finally { setRunningBillingCheck(false); }
+  };
 
   const load = useCallback(() => {
     setLoading(true);
@@ -1602,7 +1746,7 @@ function TabSuscripciones() {
           <h3 className="text-base font-bold text-slate-800">Suscripciones</h3>
           <p className="text-sm text-slate-500 mt-0.5">Gestiona las membresías de todos los tenants</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
             className="border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500">
             <option value="">Todos los estados</option>
@@ -1616,12 +1760,59 @@ function TabSuscripciones() {
             className="p-2 text-slate-500 hover:bg-slate-100 rounded-xl transition-colors">
             <RefreshCw size={16} />
           </button>
+          <button
+            onClick={handleRunBillingCheck}
+            disabled={runningBillingCheck}
+            title="Verifica todos los tenants activos y marca como vencidos los que no hayan pagado dentro del período de gracia de 5 días"
+            className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-orange-700 bg-orange-50 border border-orange-200 rounded-xl hover:bg-orange-100 disabled:opacity-50 transition-colors">
+            {runningBillingCheck
+              ? <><RefreshCw size={15} className="animate-spin" /> Verificando…</>
+              : <><AlertCircle size={15} /> Verificar Cobros</>
+            }
+          </button>
           <button onClick={() => setShowNewModal(true)}
             className="flex items-center gap-2 px-4 py-2 bg-teal-600 text-white text-sm font-semibold rounded-xl hover:bg-teal-700 transition-colors">
             <Plus size={15} /> Nueva Suscripción
           </button>
         </div>
       </div>
+
+      {/* Billing check result banner */}
+      {billingCheckResult && (
+        <div className={`mb-4 p-4 rounded-xl border text-sm flex items-start gap-3 ${
+          billingCheckResult.marked_past_due > 0
+            ? 'bg-orange-50 border-orange-200 text-orange-800'
+            : 'bg-green-50 border-green-200 text-green-800'
+        }`}>
+          {billingCheckResult.marked_past_due > 0
+            ? <AlertCircle size={16} className="flex-shrink-0 mt-0.5 text-orange-600" />
+            : <CheckCircle size={16} className="flex-shrink-0 mt-0.5 text-green-600" />
+          }
+          <div>
+            <p className="font-bold">
+              Verificación completada — {billingCheckResult.checked} suscripciones revisadas
+            </p>
+            <p className="mt-0.5">
+              {billingCheckResult.marked_past_due > 0
+                ? `${billingCheckResult.marked_past_due} tenant${billingCheckResult.marked_past_due !== 1 ? 's' : ''} marcado${billingCheckResult.marked_past_due !== 1 ? 's' : ''} como vencidos (superaron los ${billingCheckResult.grace_days} días de gracia). Total vencidos ahora: ${billingCheckResult.total_past_due_now}.`
+                : `Ningún tenant nuevo marcado como vencido. Todo en orden.`
+              }
+            </p>
+            {billingCheckResult.details?.length > 0 && (
+              <ul className="mt-2 space-y-0.5">
+                {billingCheckResult.details.map((d, i) => (
+                  <li key={i} className="text-xs">
+                    • <strong>{d.tenant_name}</strong> — vencido desde {d.next_billing_date} ({d.days_overdue} días)
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <button onClick={() => setBillingCheckResult(null)} className="ml-auto flex-shrink-0 text-slate-400 hover:text-slate-600">
+            <X size={14} />
+          </button>
+        </div>
+      )}
 
       {subs.length === 0 ? (
         <div className="text-center py-16 text-slate-400">

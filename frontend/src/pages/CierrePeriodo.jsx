@@ -279,8 +279,8 @@ export default function CierrePeriodo() {
     try {
       const [tenantRes, closedRes, reqsRes] = await Promise.all([
         tenantsAPI.get(tenantId),
-        periodsAPI.closedList(tenantId),
-        periodsAPI.closureList(tenantId),
+        periodsAPI.closedList(tenantId).catch(() => ({ data: [] })),
+        periodsAPI.closureList(tenantId).catch(() => ({ data: [] })),
       ]);
       setTenant(tenantRes.data);
       setClosedPeriods(Array.isArray(closedRes.data) ? closedRes.data : (closedRes.data?.results || []));

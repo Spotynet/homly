@@ -293,6 +293,12 @@ export const tenantSubscriptionsAPI = {
   deactivate:      (id, data) => api.post(`/tenant-subscriptions/${id}/deactivate/`, data || {}),
   // Create trial subscriptions for ALL tenants that don't have one
   initializeAll:   ()         => api.post('/tenant-subscriptions/initialize-all/'),
+  // Force-activate a tenant (superadmin manual control). Accepts { reason, extend_billing }
+  forceActivate:   (id, data) => api.post(`/tenant-subscriptions/${id}/force-activate/`, data || {}),
+  // Force-deactivate (suspend) a tenant. Accepts { reason }
+  forceDeactivate: (id, data) => api.post(`/tenant-subscriptions/${id}/force-deactivate/`, data || {}),
+  // Run the monthly billing check across all tenants (marks overdue as past_due)
+  runBillingCheck: ()         => api.post('/tenant-subscriptions/run-billing-check/'),
 };
 
 // ─── Super Admins ────────────────────────────────

@@ -2987,7 +2987,17 @@ class PaymentPlanViewSet(viewsets.ModelViewSet):
 
 class ClosedPeriodViewSet(viewsets.ModelViewSet):
     serializer_class = ClosedPeriodSerializer
-    permission_classes = [IsTenantAdmin]
+
+    def get_permissions(self):
+        """
+        Reads (list / retrieve) are visible to any authenticated tenant member
+        so that all roles can see which periods are closed (e.g. in Gastos,
+        Cobranza, CierrePeriodo, Dashboard).
+        Writes (create, destroy) remain restricted to tenant admins only.
+        """
+        if self.action in ('list', 'retrieve'):
+            return [IsTenantMember()]
+        return [IsTenantAdmin()]
 
     def get_queryset(self):
         return ClosedPeriod.objects.filter(tenant_id=self.kwargs['tenant_id'])
@@ -6563,7 +6573,8 @@ class TenantSubscriptionViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='record-payment')
     def record_payment(self, request, pk=None):
         """Record a manual payment for this subscription (superadmin only)."""
-        from datetime import date as _date
+        import datetime
+        from django.utils import timezone as tz
         sub = self.get_object()
         data = request.data.copy()
         data['subscription'] = str(sub.id)
@@ -6572,11 +6583,39 @@ class TenantSubscriptionViewSet(viewsets.ModelViewSet):
             return Response(ser.errors, status=400)
         payment = ser.save(recorded_by=request.user)
 
-        # After a payment is recorded, if subscription was past_due → activate
-        if sub.status == 'past_due':
+        # Activate if was past_due, and update next_billing_date
+        update_fields = ['updated_at']
+        if sub.status in ('past_due', 'expired'):
             sub.status = 'active'
-            sub.save(update_fields=['status', 'updated_at'])
-            sub.sync_tenant_active()
+            update_fields.append('status')
+
+        # Calculate next_billing_date based on billing cycle
+        today = tz.now().date()
+        if sub.plan:
+            if sub.plan.billing_cycle == 'annual':
+                # Annual: same day next year
+                base = sub.next_billing_date or today
+                try:
+                    sub.next_billing_date = base.replace(year=base.year + 1)
+                except ValueError:
+                    # Feb 29 edge case
+                    sub.next_billing_date = base.replace(year=base.year + 1, day=28)
+            else:
+                # Monthly: 1st of next month from today
+                if today.month == 12:
+                    sub.next_billing_date = today.replace(year=today.year + 1, month=1, day=1)
+                else:
+                    sub.next_billing_date = today.replace(month=today.month + 1, day=1)
+        else:
+            # No plan: default to 1st of next month
+            if today.month == 12:
+                sub.next_billing_date = today.replace(year=today.year + 1, month=1, day=1)
+            else:
+                sub.next_billing_date = today.replace(month=today.month + 1, day=1)
+
+        update_fields.append('next_billing_date')
+        sub.save(update_fields=update_fields)
+        sub.sync_tenant_active()
 
         return Response(SubscriptionPaymentSerializer(payment).data, status=201)
 
@@ -6678,6 +6717,144 @@ class TenantSubscriptionViewSet(viewsets.ModelViewSet):
         sub.sync_tenant_active()
 
         return Response(TenantSubscriptionSerializer(sub).data)
+
+    @action(detail=False, methods=['post'], url_path='run-billing-check')
+    def run_billing_check(self, request):
+        """
+        POST /api/tenant-subscriptions/run-billing-check/
+        Checks all active/trial subscriptions and marks as past_due any tenant
+        whose next_billing_date + 5-day grace period has elapsed without a payment
+        for the current cycle. Automatically syncs tenant.is_active.
+        Superadmin only.
+        Returns: { checked, marked_past_due, already_past_due, details }
+        """
+        import datetime
+        from django.utils import timezone as tz
+
+        today = tz.now().date()
+        grace_days = 5
+        grace_deadline = today - datetime.timedelta(days=grace_days)
+
+        # Only subscriptions that are active or trial and have a next_billing_date
+        candidates = TenantSubscription.objects.select_related('tenant', 'plan').filter(
+            status__in=['active', 'trial'],
+            next_billing_date__isnull=False,
+            next_billing_date__lte=grace_deadline,
+        )
+
+        marked_past_due = []
+        already_past_due = []
+
+        for sub in candidates:
+            # Check if there's a payment for the current cycle
+            # (payment_date >= next_billing_date means it covers this cycle)
+            has_payment = sub.payments.filter(
+                payment_date__gte=sub.next_billing_date
+            ).exists()
+
+            if not has_payment:
+                sub.status = 'past_due'
+                sub.save(update_fields=['status', 'updated_at'])
+                sub.sync_tenant_active()
+                marked_past_due.append({
+                    'tenant_id': str(sub.tenant_id),
+                    'tenant_name': sub.tenant.name,
+                    'next_billing_date': str(sub.next_billing_date),
+                    'days_overdue': (today - sub.next_billing_date).days,
+                })
+
+        # Also count existing past_due
+        existing_past_due = TenantSubscription.objects.filter(status='past_due').count()
+
+        return Response({
+            'checked': candidates.count() + len(marked_past_due),
+            'marked_past_due': len(marked_past_due),
+            'total_past_due_now': existing_past_due,
+            'grace_days': grace_days,
+            'details': marked_past_due,
+        })
+
+    @action(detail=True, methods=['post'], url_path='force-activate')
+    def force_activate(self, request, pk=None):
+        """
+        POST /api/tenant-subscriptions/{id}/force-activate/
+        Superadmin manually activates a tenant's subscription regardless of
+        billing status. Optionally extends next_billing_date.
+        Body: { reason: "...", extend_billing: true }
+        """
+        import datetime
+        from django.utils import timezone as tz
+
+        sub = self.get_object()
+        reason = (request.data.get('reason') or '').strip()
+        extend_billing = request.data.get('extend_billing', False)
+
+        previous_status = sub.status
+        sub.status = 'active'
+        update_fields = ['status', 'updated_at']
+
+        # Optionally push next_billing_date forward 1 cycle
+        if extend_billing and sub.plan:
+            today = tz.now().date()
+            if sub.plan.billing_cycle == 'annual':
+                base = sub.next_billing_date or today
+                try:
+                    sub.next_billing_date = base.replace(year=base.year + 1)
+                except ValueError:
+                    sub.next_billing_date = base.replace(year=base.year + 1, day=28)
+            else:
+                if today.month == 12:
+                    sub.next_billing_date = today.replace(year=today.year + 1, month=1, day=1)
+                else:
+                    sub.next_billing_date = today.replace(month=today.month + 1, day=1)
+            update_fields.append('next_billing_date')
+
+        if reason:
+            sub.notes = f'[Activado manualmente] {reason}'.strip()
+            update_fields.append('notes')
+
+        sub.save(update_fields=update_fields)
+        sub.sync_tenant_active()
+
+        return Response({
+            'detail': 'Tenant activado manualmente.',
+            'previous_status': previous_status,
+            'current_status': sub.status,
+            'tenant_is_active': sub.tenant.is_active,
+            'next_billing_date': str(sub.next_billing_date) if sub.next_billing_date else None,
+        })
+
+    @action(detail=True, methods=['post'], url_path='force-deactivate')
+    def force_deactivate(self, request, pk=None):
+        """
+        POST /api/tenant-subscriptions/{id}/force-deactivate/
+        Superadmin manually deactivates a tenant (sets to past_due + inactivates).
+        Different from /deactivate/ which cancels — this just suspends billing.
+        Body: { reason: "..." }
+        """
+        sub = self.get_object()
+        reason = (request.data.get('reason') or '').strip()
+
+        if sub.status in ('cancelled', 'expired'):
+            return Response({'detail': 'La suscripción ya está cancelada o expirada.'}, status=400)
+
+        previous_status = sub.status
+        sub.status = 'past_due'
+        update_fields = ['status', 'updated_at']
+
+        if reason:
+            sub.notes = f'[Desactivado manualmente] {reason}'.strip()
+            update_fields.append('notes')
+
+        sub.save(update_fields=update_fields)
+        sub.sync_tenant_active()
+
+        return Response({
+            'detail': 'Tenant desactivado manualmente.',
+            'previous_status': previous_status,
+            'current_status': sub.status,
+            'tenant_is_active': sub.tenant.is_active,
+        })
 
     def create(self, request, *args, **kwargs):
         """
