@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { cajaChicaAPI, periodsAPI, tenantsAPI } from '../api/client';
 import { todayPeriod, periodLabel, prevPeriod, nextPeriod, fmtDate, PAYMENT_TYPES } from '../utils/helpers';
-import { ChevronLeft, ChevronRight, Plus, Edit, Trash2, X, DollarSign, Check, Lock, Paperclip, Eye, FileText, Image } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Edit, Trash2, X, DollarSign, Check, Lock, Paperclip, Eye, FileText, Image, Printer } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 // ── Evidence helpers ────────────────────────────────────────────────────────
@@ -93,6 +93,123 @@ function _fmt(n, currency = 'MXN') {
   return new Intl.NumberFormat('es-MX', { style: 'currency', currency, minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n ?? 0);
 }
 
+// ── Helpers ─────────────────────────────────────────────────────────────────
+
+function pdfTitle(report, period, tenant) {
+  return `${(report || '').trim()} — ${(period || '').trim()} — ${(tenant || '').trim()}`;
+}
+
+// ── Print Layout ─────────────────────────────────────────────────────────────
+// Oculto en pantalla; visible solo al imprimir con body.printing-caja-chica
+
+function CajaChicaPrintLayout({ tenant, period, cajaChica, totalCaja }) {
+  const cur      = tenant?.currency || 'MXN';
+  const fmt      = (n) => _fmt(n, cur);
+  const genDate  = new Date().toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric' });
+  const periodStr = periodLabel(period);
+
+  const tenantName = tenant?.razon_social || tenant?.name || 'Condominio';
+  const tenantRFC  = tenant?.rfc || '';
+  const tenantAddr = [tenant?.info_calle, tenant?.info_num_externo, tenant?.info_colonia, tenant?.info_ciudad]
+    .filter(Boolean).join(', ');
+  const tenantLogo = tenant?.logo || null;
+
+  const thStyle = {
+    background: '#4C1D95', color: '#fff', fontSize: 9,
+    fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em',
+    padding: '6px 8px', textAlign: 'left', borderRight: '1px solid rgba(255,255,255,0.15)',
+  };
+  const tdStyle = (extra = {}) => ({
+    fontSize: 11, padding: '6px 8px', borderBottom: '1px solid #EEE',
+    verticalAlign: 'top', ...extra,
+  });
+
+  return (
+    <div className="caja-chica-print-layout" style={{ fontFamily: 'Arial, Helvetica, sans-serif', color: '#1A1612', fontSize: 12 }}>
+
+      {/* ── MEMBRETE ── */}
+      <div style={{
+        display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+        borderBottom: '3px solid #4C1D95', paddingBottom: 14, marginBottom: 20,
+      }}>
+        <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
+          {tenantLogo && (
+            <img src={tenantLogo} alt="Logo" style={{ width: 64, height: 64, objectFit: 'contain', borderRadius: 8 }} />
+          )}
+          <div>
+            <div style={{ fontSize: 17, fontWeight: 700, color: '#4C1D95', lineHeight: 1.2 }}>{tenantName}</div>
+            {tenantRFC  && <div style={{ fontSize: 10, color: '#555', marginTop: 3 }}>RFC: <strong>{tenantRFC}</strong></div>}
+            {tenantAddr && <div style={{ fontSize: 10, color: '#666', marginTop: 2 }}>{tenantAddr}</div>}
+            {tenant?.phone && <div style={{ fontSize: 10, color: '#666', marginTop: 1 }}>Tel: {tenant.phone}</div>}
+          </div>
+        </div>
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ fontSize: 20, fontWeight: 700, color: '#4C1D95', letterSpacing: '-0.02em' }}>REPORTE DE CAJA CHICA</div>
+          <div style={{ fontSize: 13, color: '#666', marginTop: 4 }}>Período: <strong style={{ color: '#4C1D95' }}>{periodStr}</strong></div>
+          <div style={{
+            marginTop: 8, display: 'inline-block', padding: '4px 12px',
+            background: '#4C1D95', color: '#fff', borderRadius: 4, fontSize: 10,
+            fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em',
+          }}>
+            Gastos Menores
+          </div>
+        </div>
+      </div>
+
+      {/* ── TABLA DE REGISTROS ── */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#F5F3FF', borderLeft: '4px solid #5B21B6', padding: '7px 12px', marginBottom: 0 }}>
+        <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#5B21B6', flexShrink: 0 }} />
+        <span style={{ fontSize: 11, fontWeight: 800, color: '#5B21B6', textTransform: 'uppercase', letterSpacing: '0.07em', flex: 1 }}>
+          Registros de Caja Chica
+        </span>
+        <span style={{ fontSize: 10, color: '#555' }}>{cajaChica.length} registro(s)</span>
+      </div>
+
+      {cajaChica.length === 0 ? (
+        <div style={{ padding: '10px 12px', fontSize: 11, color: '#999', fontStyle: 'italic', borderBottom: '1px solid #EEE' }}>
+          Sin registros de caja chica en este período
+        </div>
+      ) : (
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead>
+            <tr>
+              <th style={{ ...thStyle, width: '44%' }}>Descripción</th>
+              <th style={{ ...thStyle, width: '22%' }}>Forma de Pago</th>
+              <th style={{ ...thStyle, width: '16%' }}>Fecha</th>
+              <th style={{ ...thStyle, width: '18%', textAlign: 'right' }}>Monto</th>
+            </tr>
+          </thead>
+          <tbody>
+            {cajaChica.map((c, i) => (
+              <tr key={c.id} style={{ background: i % 2 === 0 ? '#FAF5FF' : '#F3E8FF' }}>
+                <td style={tdStyle({ fontWeight: 600, color: '#5B21B6' })}>{c.description}</td>
+                <td style={tdStyle()}>{PAYMENT_TYPES[c.payment_type]?.short || c.payment_type || '—'}</td>
+                <td style={tdStyle({ fontSize: 10 })}>{fmtDate(c.date)}</td>
+                <td style={tdStyle({ textAlign: 'right', fontWeight: 700, color: '#5B21B6' })}>{fmt(c.amount)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      {/* ── TOTAL ── */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
+        <div style={{ background: '#4C1D95', color: '#fff', padding: '12px 22px', borderRadius: 6, textAlign: 'right', minWidth: 200 }}>
+          <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em', opacity: 0.75, marginBottom: 4 }}>Total Caja Chica</div>
+          <div style={{ fontSize: 24, fontWeight: 700 }}>{fmt(totalCaja)}</div>
+          <div style={{ fontSize: 9, opacity: 0.6, marginTop: 4 }}>Período {periodStr}</div>
+        </div>
+      </div>
+
+      {/* ── PIE DE PÁGINA ── */}
+      <div style={{ marginTop: 18, paddingTop: 10, borderTop: '1px solid #DDD', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 9, color: '#999' }}>
+        <span>Generado el {genDate} · Sistema Homly</span>
+        <span style={{ fontStyle: 'italic' }}>Documento de uso interno — Caja Chica</span>
+      </div>
+    </div>
+  );
+}
+
 // ── Main component ──────────────────────────────────────────────────────────
 
 export default function CajaChica() {
@@ -164,6 +281,17 @@ export default function CajaChica() {
     finally { setSaving(false); }
   };
 
+  const handlePrint = () => {
+    const prev = document.title;
+    document.title = pdfTitle('Reporte de Caja Chica', period, tenant?.name);
+    document.body.classList.add('printing-caja-chica');
+    window.print();
+    setTimeout(() => {
+      document.body.classList.remove('printing-caja-chica');
+      document.title = prev;
+    }, 1500);
+  };
+
   const handleDelete = async (c) => {
     if (!window.confirm('¿Eliminar este registro de caja chica?')) return;
     try {
@@ -175,6 +303,14 @@ export default function CajaChica() {
 
   return (
     <div className="content-fade">
+
+      {/* ── PDF ejecutivo (oculto en pantalla, visible solo al imprimir con body.printing-caja-chica) ── */}
+      <CajaChicaPrintLayout
+        tenant={tenant}
+        period={period}
+        cajaChica={cajaChica}
+        totalCaja={totalCaja}
+      />
 
       {/* ── Period nav + action ── */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 20 }}>
@@ -213,6 +349,9 @@ export default function CajaChica() {
               <Plus size={14} /> Nuevo Registro
             </button>
           )}
+          <button className="btn btn-outline btn-sm" onClick={handlePrint}>
+            <Printer size={14} /> Descargar PDF
+          </button>
         </div>
       </div>
 
