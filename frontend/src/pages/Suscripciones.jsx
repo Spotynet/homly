@@ -1495,10 +1495,33 @@ function NewSubModal({ plans, onClose, onDone }) {
     tenant: '', plan: '', status: 'trial',
     trial_start: '', trial_end: '',
     billing_start: '', next_billing_date: '',
-    amount_per_cycle: '', currency: 'MXN', notes: '',
+    units_count: '', amount_per_cycle: '', currency: 'MXN', notes: '',
   });
 
   const f = k => e => setForm(p => ({ ...p, [k]: e.target.value }));
+
+  // Auto-calculate amount_per_cycle whenever plan or units_count change
+  const handleNewPlanChange = (newPlanId) => {
+    const p = plans.find(pl => String(pl.id) === String(newPlanId));
+    const units = form.units_count;
+    const calc = p ? computeAmountPreview(p, units) : null;
+    setForm(prev => ({
+      ...prev,
+      plan: newPlanId,
+      currency: p ? p.currency : prev.currency,
+      amount_per_cycle: calc !== null ? String(Math.round(calc * 100) / 100) : prev.amount_per_cycle,
+    }));
+  };
+
+  const handleNewUnitsChange = (val) => {
+    const p = plans.find(pl => String(pl.id) === String(form.plan));
+    const calc = p ? computeAmountPreview(p, val) : null;
+    setForm(prev => ({
+      ...prev,
+      units_count: val,
+      amount_per_cycle: calc !== null ? String(Math.round(calc * 100) / 100) : prev.amount_per_cycle,
+    }));
+  };
   const inputCls = 'w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500';
   const labelCls = 'block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider';
 
@@ -1557,6 +1580,7 @@ function NewSubModal({ plans, onClose, onDone }) {
         trial_end:         form.trial_end         || null,
         billing_start:     form.billing_start     || null,
         next_billing_date: form.next_billing_date || null,
+        units_count:       Number(form.units_count) || 0,
         amount_per_cycle:  Number(form.amount_per_cycle) || 0,
         currency:          form.currency,
         notes:             form.notes,
@@ -1620,7 +1644,7 @@ function NewSubModal({ plans, onClose, onDone }) {
               {/* Plan */}
               <div>
                 <label className={labelCls}>Plan</label>
-                <select value={form.plan} onChange={f('plan')} className={inputCls}>
+                <select value={form.plan} onChange={e => handleNewPlanChange(e.target.value)} className={inputCls}>
                   <option value="">Sin plan</option>
                   {plans.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
@@ -1636,6 +1660,44 @@ function NewSubModal({ plans, onClose, onDone }) {
                   <option value="expired">Expirada</option>
                 </select>
               </div>
+              {/* Unidades */}
+              <div>
+                <label className={labelCls}>Unidades</label>
+                <input
+                  type="number" min="0" step="1"
+                  value={form.units_count}
+                  onChange={e => handleNewUnitsChange(e.target.value)}
+                  placeholder="0"
+                  className={inputCls}
+                />
+              </div>
+              {/* Monto / Ciclo — auto-calculado, editable manualmente */}
+              <div>
+                <label className={labelCls}>
+                  Monto / Ciclo
+                  {form.plan && (() => {
+                    const p = plans.find(pl => String(pl.id) === String(form.plan));
+                    return p ? (
+                      <span style={{ fontWeight: 400, color: '#64748b', textTransform: 'none', marginLeft: 4 }}>
+                        ({p.billing_cycle === 'annual' ? 'anual' : 'mensual'})
+                      </span>
+                    ) : null;
+                  })()}
+                </label>
+                <input type="number" min="0" step="0.01" value={form.amount_per_cycle} onChange={f('amount_per_cycle')} placeholder="0.00" className={inputCls} />
+                {/* Show tier info when a plan is selected */}
+                {form.plan && form.units_count && (() => {
+                  const p = plans.find(pl => String(pl.id) === String(form.plan));
+                  const calc = computeAmountPreview(p, form.units_count);
+                  if (calc === null) return null;
+                  return (
+                    <p style={{ fontSize: 11, color: '#0d9488', marginTop: 3 }}>
+                      Precio calculado por tier: {fmtAmt(calc, p.currency)}
+                      {p.billing_cycle === 'annual' && p.annual_discount_percent > 0 && ` (−${p.annual_discount_percent}% anual)`}
+                    </p>
+                  );
+                })()}
+              </div>
               {/* Fechas */}
               {[
                 { key: 'trial_start',       label: 'Inicio Prueba'      },
@@ -1648,11 +1710,6 @@ function NewSubModal({ plans, onClose, onDone }) {
                   <input type="date" value={form[key]} onChange={f(key)} className={inputCls} />
                 </div>
               ))}
-              {/* Monto */}
-              <div>
-                <label className={labelCls}>Monto / Ciclo</label>
-                <input type="number" min="0" step="0.01" value={form.amount_per_cycle} onChange={f('amount_per_cycle')} placeholder="0.00" className={inputCls} />
-              </div>
               {/* Moneda */}
               <div>
                 <label className={labelCls}>Moneda</label>

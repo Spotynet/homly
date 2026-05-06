@@ -6466,7 +6466,13 @@ class TrialRequestViewSet(viewsets.ModelViewSet):
         trial_start = date.today()
         trial_end   = trial_start + timedelta(days=trial_days)
         units_count = trial_req.condominio_unidades or 0
-        amount = plan.price_for_units(units_count) if plan else 0
+        if plan:
+            # Respect the plan's billing cycle — annual plans must multiply by 12
+            # and apply the annual discount before storing amount_per_cycle.
+            annual = (plan.billing_cycle == 'annual')
+            amount = plan.price_for_units(units_count, annual=annual)
+        else:
+            amount = 0
         TenantSubscription.objects.create(
             tenant=tenant,
             plan=plan,

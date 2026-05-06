@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { useGuide } from '../../context/GuideContext';
 import { HomlyBrand, APP_VERSION, ROLES } from '../../utils/helpers';
 import { notificationsAPI, tenantsAPI, paymentPlansAPI } from '../../api/client';
 import { ROLE_BASE_MODULES } from '../../constants/modulePermissions';
+import GuideModal from '../onboarding/GuideModal';
 import {
   Home, Globe, FileText, ShoppingBag, Receipt, Settings,
   Users, Building, Shield, LogOut, Menu, X, Calendar,
@@ -577,6 +579,9 @@ export default function AppLayout() {
     logout, isSuperAdmin, profileId,
   } = useAuth();
 
+  // ── Guía interactiva flotante ────────────────────────────────────
+  const { activeChapter, closeGuide } = useGuide();
+
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [tenantModulePerms,          setTenantModulePerms]          = useState({});
   const [customProfiles,             setCustomProfiles]             = useState([]);
@@ -916,6 +921,16 @@ export default function AppLayout() {
           <Outlet />
         </div>
       </main>
+
+      {/* ── Guía interactiva flotante ──────────────────────────────
+          Renderizada aquí (fuera del <main>) para persistir durante
+          la navegación entre módulos mientras la guía está abierta. */}
+      <GuideModal
+        key={activeChapter?.id ?? '__none__'}
+        open={!!activeChapter}
+        chapter={activeChapter}
+        onClose={closeGuide}
+      />
     </div>
   );
 }

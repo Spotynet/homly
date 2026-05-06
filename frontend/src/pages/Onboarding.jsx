@@ -7,9 +7,9 @@ import {
   BookMarked,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useGuide } from '../context/GuideContext';
 import { tenantsAPI } from '../api/client';
 import GUIDE_ROLES from '../constants/guideCatalog';
-import GuideModal from '../components/onboarding/GuideModal';
 
 /**
  * Onboarding.jsx
@@ -42,6 +42,7 @@ function visibleSections(roleKey, isAdmin, isSuperAdmin) {
 
 export default function Onboarding() {
   const { tenantId, role, isAdmin, isSuperAdmin } = useAuth();
+  const { launchGuide } = useGuide();
   const navigate = useNavigate();
 
   const [tenant, setTenant] = useState(null);
@@ -53,9 +54,6 @@ export default function Onboarding() {
 
   // Secciones colapsables por rol — autoexpandir la del usuario
   const [expanded, setExpanded] = useState(() => ({ [userRoleKey]: true }));
-
-  // Capítulo que se está viendo en modal (null = cerrado)
-  const [activeChapter, setActiveChapter] = useState(null);
 
   useEffect(() => {
     // Al cambiar el rol del usuario, abrir automáticamente su sección
@@ -94,10 +92,12 @@ export default function Onboarding() {
 
   const launchChapter = (chapter) => {
     if (chapter.kind === 'interactive') {
+      // Tour interactivo (AdminConfigTour) — navega a la ruta y lanza el tour en-página
       navigate(chapter.launchRoute || '/app/config?tour=1');
       return;
     }
-    setActiveChapter(chapter);
+    // Guía modal interactiva: el GuideModal vive en AppLayout y persiste durante la navegación
+    launchGuide(chapter);
   };
 
   if (loading) {
@@ -227,21 +227,15 @@ export default function Onboarding() {
       >
         <Sparkles size={20} color="var(--teal-500)" style={{ flexShrink: 0, marginTop: 2 }} />
         <div style={{ fontSize: 13, color: 'var(--ink-600)', lineHeight: 1.55 }}>
-          <strong>Tip:</strong> Puedes cerrar cualquier guía y retomarla cuando quieras.
+          <strong>Tip:</strong> La guía flota sobre la pantalla real para que puedas
+          practicar mientras lees. Arrástrala, avanza paso a paso y trabaja con el
+          sistema al mismo tiempo — sin que te bloquee nada.
           {(isSuperAdmin || isAdmin)
-            ? ' Como administrador puedes ver las guías de todos los roles y lanzar el tour interactivo de configuración sobre la pantalla real.'
-            : ' Aquí encontrarás los capítulos operativos que corresponden a tu perfil.'}
+            ? ' Como administrador puedes ver las guías de todos los roles.'
+            : ''}
         </div>
       </div>
-
-      {/* ── Modal activo ─────────────────────────────────────────── */}
-      {/* key={id} remonta el componente en cada capítulo para resetear step */}
-      <GuideModal
-        key={activeChapter?.id ?? '__none__'}
-        open={!!activeChapter}
-        chapter={activeChapter}
-        onClose={() => setActiveChapter(null)}
-      />
+      {/* GuideModal se renderiza en AppLayout para persistir durante la navegación */}
     </div>
   );
 }

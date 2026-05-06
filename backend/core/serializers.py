@@ -877,6 +877,36 @@ class TenantSubscriptionSerializer(serializers.ModelSerializer):
     def get_status_label(self, obj):
         return obj.get_status_display()
 
+    def validate(self, data):
+        """
+        On CREATE only: if a plan and units_count are provided but amount_per_cycle
+        is absent or zero, auto-calculate it respecting the plan's billing cycle
+        (monthly vs annual with discount) and volume tiers.
+        This prevents amount_per_cycle from defaulting to 0 when the caller
+        (e.g. the new-subscription form) does not compute it explicitly.
+        On UPDATE (self.instance exists) we trust the caller's explicit value so
+        that superadmins can store negotiated/custom amounts.
+        """
+        if self.instance:
+            # UPDATE — do not override an explicitly provided amount
+            return data
+
+        # CREATE path
+        plan = data.get('plan')
+        units = data.get('units_count', 0) or 0
+        amount = data.get('amount_per_cycle', None)
+
+        # Auto-compute only when plan is known, units > 0, and amount was not explicitly set
+        if plan and units > 0 and not amount:
+            annual = (plan.billing_cycle == 'annual')
+            computed = plan.price_for_units(units, annual=annual)
+            data['amount_per_cycle'] = computed
+            # Also carry over the plan's currency if not explicitly provided
+            if not data.get('currency'):
+                data['currency'] = plan.currency
+
+        return data
+
 
 class SubscriptionPaymentSerializer(serializers.ModelSerializer):
     recorded_by_name = serializers.SerializerMethodField()
