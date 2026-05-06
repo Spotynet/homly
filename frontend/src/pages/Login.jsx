@@ -203,7 +203,10 @@ export default function Login() {
                   type="button"
                   onClick={handleRequestCode}
                   disabled={sendingCode}
-                  className="w-full btn btn-coral justify-center py-3 text-base"
+                  className="w-full justify-center py-3 text-base"
+                  style={{ background: '#1D4ED8', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700, fontSize: 15, cursor: sendingCode ? 'default' : 'pointer', opacity: sendingCode ? 0.7 : 1, display: 'flex', alignItems: 'center', gap: 8, transition: 'background 0.15s' }}
+                  onMouseEnter={e => { if (!sendingCode) e.currentTarget.style.background = '#1E40AF'; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = '#1D4ED8'; }}
                 >
                   {sendingCode ? 'Enviando código…' : 'Enviar código por correo'}
                 </button>
