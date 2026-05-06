@@ -6736,18 +6736,21 @@ class TenantSubscriptionViewSet(viewsets.ModelViewSet):
         grace_deadline = today - datetime.timedelta(days=grace_days)
 
         # Only subscriptions that are active or trial and have a next_billing_date
-        candidates = TenantSubscription.objects.select_related('tenant', 'plan').filter(
-            status__in=['active', 'trial'],
-            next_billing_date__isnull=False,
-            next_billing_date__lte=grace_deadline,
+        # Evaluate to a list immediately so the count is captured BEFORE modifying records
+        candidates = list(
+            TenantSubscription.objects.select_related('tenant', 'plan').filter(
+                status__in=['active', 'trial'],
+                next_billing_date__isnull=False,
+                next_billing_date__lte=grace_deadline,
+            )
         )
+        total_checked = len(candidates)
 
         marked_past_due = []
-        already_past_due = []
 
         for sub in candidates:
             # Check if there's a payment for the current cycle
-            # (payment_date >= next_billing_date means it covers this cycle)
+            # A payment counts if its date is >= the billing date being checked
             has_payment = sub.payments.filter(
                 payment_date__gte=sub.next_billing_date
             ).exists()
@@ -6763,13 +6766,13 @@ class TenantSubscriptionViewSet(viewsets.ModelViewSet):
                     'days_overdue': (today - sub.next_billing_date).days,
                 })
 
-        # Also count existing past_due
-        existing_past_due = TenantSubscription.objects.filter(status='past_due').count()
+        # Count all past_due subscriptions after this run
+        total_past_due_now = TenantSubscription.objects.filter(status='past_due').count()
 
         return Response({
-            'checked': candidates.count() + len(marked_past_due),
+            'checked': total_checked,
             'marked_past_due': len(marked_past_due),
-            'total_past_due_now': existing_past_due,
+            'total_past_due_now': total_past_due_now,
             'grace_days': grace_days,
             'details': marked_past_due,
         })

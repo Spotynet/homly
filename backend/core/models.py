@@ -1312,9 +1312,14 @@ class TenantSubscription(models.Model):
     def sync_tenant_active(self):
         """
         Keep Tenant.is_active in sync with subscription status.
-        Active statuses → tenant active; cancelled/expired → tenant inactive.
+        - trial / active  → tenant active (can use the platform)
+        - past_due        → tenant INACTIVE (suspended until payment is registered)
+        - cancelled / expired → tenant inactive
+        The grace period (5 days from next_billing_date) is enforced by the
+        billing-check job BEFORE setting status to past_due, so by the time
+        a subscription is past_due the grace has already elapsed.
         """
-        active_statuses = {'trial', 'active', 'past_due'}
+        active_statuses = {'trial', 'active'}
         should_be_active = self.status in active_statuses
         if self.tenant.is_active != should_be_active:
             Tenant.objects.filter(pk=self.tenant_id).update(is_active=should_be_active)

@@ -191,8 +191,10 @@ export default function MiMembresia() {
     );
     const lastPayment = sortedPays[0] || null;
 
-    // Billing cycle label
-    const cycleLabel = sub.plan_billing_cycle === 'annual' ? 'Anual' : 'Mensual';
+    // Billing cycle label — plan_billing_cycle comes from TenantSubscriptionSerializer
+    const cycleLabel = sub.plan_billing_cycle
+      ? (sub.plan_billing_cycle === 'annual' ? 'Anual' : 'Mensual')
+      : null;
 
     // Grace period: 5 days from next_billing_date
     const graceEnd = sub.next_billing_date

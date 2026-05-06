@@ -578,9 +578,10 @@ export default function AppLayout() {
   } = useAuth();
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [tenantModulePerms,        setTenantModulePerms]        = useState({});
-  const [customProfiles,           setCustomProfiles]           = useState([]);
+  const [tenantModulePerms,          setTenantModulePerms]          = useState({});
+  const [customProfiles,             setCustomProfiles]             = useState([]);
   const [subscriptionAllowedModules, setSubscriptionAllowedModules] = useState([]);
+  const [subscriptionStatus,         setSubscriptionStatus]         = useState(null);
   // For vecino: only show Plan de Pagos if they have at least one plan (any status)
   const [vecHasPlan, setVecHasPlan] = useState(false);
   const navigate  = useNavigate();
@@ -594,6 +595,7 @@ export default function AppLayout() {
       setTenantModulePerms({});
       setCustomProfiles([]);
       setSubscriptionAllowedModules([]);
+      setSubscriptionStatus(null);
       return;
     }
     tenantsAPI.get(tenantId)
@@ -603,11 +605,13 @@ export default function AppLayout() {
         setSubscriptionAllowedModules(
           Array.isArray(r.data?.subscription_allowed_modules) ? r.data.subscription_allowed_modules : []
         );
+        setSubscriptionStatus(r.data?.subscription_status || null);
       })
       .catch(() => {
         setTenantModulePerms({});
         setCustomProfiles([]);
         setSubscriptionAllowedModules([]);
+        setSubscriptionStatus(null);
       });
   }, [tenantId, role]);
 
@@ -842,6 +846,70 @@ export default function AppLayout() {
             ) && <NotificationBell tenantId={tenantId} role={role} tenantModulePerms={tenantModulePerms} activeProfile={activeProfile} />}
           </div>
         </header>
+
+        {/* ── Subscription suspension banner ────────────────────────────── */}
+        {/* Shown to all tenant roles (not superadmin) when the subscription
+            is past_due, expired or cancelled. Admin gets a direct link to
+            Mi Membresía; other roles are told to contact the admin.       */}
+        {tenantId && role !== 'superadmin' && (() => {
+          const SUSPENDED_STATUSES = ['past_due', 'expired', 'cancelled'];
+          if (!subscriptionStatus || !SUSPENDED_STATUSES.includes(subscriptionStatus)) return null;
+
+          const isAdmin = role === 'admin';
+          const statusMessages = {
+            past_due:  'La membresía de este condominio está vencida por falta de pago.',
+            expired:   'La membresía de este condominio ha expirado.',
+            cancelled: 'La membresía de este condominio ha sido cancelada.',
+          };
+          const msg = statusMessages[subscriptionStatus] || 'La membresía de este condominio está inactiva.';
+
+          return (
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              gap: 12, flexWrap: 'wrap',
+              padding: '10px 20px',
+              background: 'var(--coral-50, #fff1f0)',
+              borderBottom: '2px solid var(--coral-300, #fca5a5)',
+              color: 'var(--coral-700, #b91c1c)',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {/* Warning icon */}
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                  style={{ flexShrink: 0 }}>
+                  <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                  <line x1="12" y1="9" x2="12" y2="13"/>
+                  <line x1="12" y1="17" x2="12.01" y2="17"/>
+                </svg>
+                <span style={{ fontSize: 13, fontWeight: 600 }}>
+                  {msg}{' '}
+                  {isAdmin
+                    ? 'Regulariza el pago para restaurar el acceso.'
+                    : 'Contacta al administrador del condominio para regularizar el pago.'}
+                </span>
+              </div>
+              {isAdmin && (
+                <button
+                  onClick={() => navigate('/app/mi-membresia')}
+                  style={{
+                    flexShrink: 0,
+                    padding: '5px 14px',
+                    borderRadius: 7,
+                    border: '1.5px solid var(--coral-400, #f87171)',
+                    background: 'white',
+                    color: 'var(--coral-700, #b91c1c)',
+                    fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                    transition: 'background 0.15s',
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'var(--coral-50, #fff1f0)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'white'}
+                >
+                  Ver Mi Membresía →
+                </button>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Content */}
         <div className="content">

@@ -298,6 +298,7 @@ class TenantListSerializer(serializers.ModelSerializer):
 
 class TenantDetailSerializer(serializers.ModelSerializer):
     subscription_allowed_modules = serializers.SerializerMethodField()
+    subscription_status          = serializers.SerializerMethodField()
 
     class Meta:
         model = Tenant
@@ -312,6 +313,14 @@ class TenantDetailSerializer(serializers.ModelSerializer):
         except Exception:
             pass
         return []  # empty = all modules allowed
+
+    def get_subscription_status(self, obj):
+        """Expose the subscription status so the frontend can show
+        account-suspended banners without a separate API call."""
+        try:
+            return obj.subscription.status
+        except Exception:
+            return None
 
 
 class TenantUserSerializer(serializers.ModelSerializer):
@@ -830,16 +839,17 @@ class SubscriptionPlanSerializer(serializers.ModelSerializer):
 
 
 class TenantSubscriptionSerializer(serializers.ModelSerializer):
-    tenant_name = serializers.SerializerMethodField()
-    plan_name   = serializers.SerializerMethodField()
+    tenant_name          = serializers.SerializerMethodField()
+    plan_name            = serializers.SerializerMethodField()
+    plan_billing_cycle   = serializers.SerializerMethodField()
     trial_days_remaining = serializers.SerializerMethodField()
-    status_label = serializers.SerializerMethodField()
+    status_label         = serializers.SerializerMethodField()
 
     class Meta:
         model = TenantSubscription
         fields = [
             'id', 'tenant', 'tenant_name',
-            'plan', 'plan_name',
+            'plan', 'plan_name', 'plan_billing_cycle',
             'status', 'status_label',
             'trial_start', 'trial_end', 'trial_days_remaining',
             'billing_start', 'next_billing_date',
@@ -848,13 +858,18 @@ class TenantSubscriptionSerializer(serializers.ModelSerializer):
             'subscription_history',
             'created_at', 'updated_at',
         ]
-        read_only_fields = ['id', 'created_at', 'updated_at', 'trial_days_remaining', 'status_label', 'subscription_history']
+        read_only_fields = ['id', 'created_at', 'updated_at', 'trial_days_remaining', 'status_label', 'subscription_history', 'plan_billing_cycle']
 
     def get_tenant_name(self, obj):
         return obj.tenant.name if obj.tenant else None
 
     def get_plan_name(self, obj):
         return obj.plan.name if obj.plan else None
+
+    def get_plan_billing_cycle(self, obj):
+        """Expose plan.billing_cycle ('monthly'/'annual') so the frontend
+        can render the correct cycle label without needing a separate plan request."""
+        return obj.plan.billing_cycle if obj.plan else None
 
     def get_trial_days_remaining(self, obj):
         return obj.trial_days_remaining
