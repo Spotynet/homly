@@ -403,7 +403,9 @@ export default function CajaChica() {
                 </thead>
                 <tbody>
                   {cajaChica.map(c => {
-                    const evFiles = parseEvidence(c.evidence);
+                    // has_evidence viene del serializer ligero (bool). Si el campo
+                    // evidence llegara con datos (vista de detalle), también lo usamos.
+                    const hasEv = c.has_evidence || (c.evidence && parseEvidence(c.evidence).length > 0);
                     return (
                       <tr key={c.id} style={{ borderBottom: '1px solid var(--sand-100)' }}>
                         <td style={{ fontWeight: 600, color: 'var(--purple-700, #6D28D9)', fontSize: 13 }}>{c.description}</td>
@@ -411,17 +413,22 @@ export default function CajaChica() {
                         <td style={{ fontSize: 11 }}>{PAYMENT_TYPES[c.payment_type]?.short || c.payment_type || '—'}</td>
                         <td style={{ fontSize: 11, color: 'var(--ink-500)' }}>{fmtDate(c.date)}</td>
                         <td style={{ textAlign: 'center' }}>
-                          {evFiles.length > 0 ? (
+                          {hasEv ? (
                             <button
                               className="btn-icon"
-                              title={`Ver ${evFiles.length} evidencia${evFiles.length > 1 ? 's' : ''}`}
+                              title="Ver evidencia adjunta"
                               style={{ color: 'var(--purple-600, #7C3AED)' }}
-                              onClick={() => setViewerFiles(evFiles)}
+                              onClick={() => {
+                                if (c.evidence) {
+                                  setViewerFiles(parseEvidence(c.evidence));
+                                } else {
+                                  cajaChicaAPI.get(tenantId, c.id)
+                                    .then(({ data }) => setViewerFiles(parseEvidence(data.evidence)))
+                                    .catch(() => {});
+                                }
+                              }}
                             >
                               <Eye size={14} />
-                              {evFiles.length > 1 && (
-                                <span style={{ fontSize: 9, fontWeight: 800, marginLeft: 2 }}>{evFiles.length}</span>
-                              )}
                             </button>
                           ) : (
                             <span style={{ fontSize: 10, color: 'var(--ink-300)' }}>—</span>
@@ -437,9 +444,15 @@ export default function CajaChica() {
                             ) : (
                               <>
                                 <button className="btn-icon" onClick={() => {
+                                  // Abre el modal inmediatamente con los datos del listado.
+                                  // La evidence (Base64) se carga lazy desde el endpoint de
+                                  // detalle para no bloquear la apertura del modal.
                                   setForm(c);
-                                  setCajaEvidence(parseEvidence(c.evidence));
+                                  setCajaEvidence([]);
                                   setModal('caja');
+                                  cajaChicaAPI.get(tenantId, c.id)
+                                    .then(({ data }) => setCajaEvidence(parseEvidence(data.evidence)))
+                                    .catch(() => {});
                                 }}>
                                   <Edit size={13} />
                                 </button>

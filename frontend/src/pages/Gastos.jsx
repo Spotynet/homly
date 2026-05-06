@@ -125,7 +125,9 @@ function GastosTable({ rows, isReadOnly, onEdit, onDelete, onViewEvidence, showB
         </thead>
         <tbody>
           {rows.map(g => {
-            const evFiles = parseEvidence(g.evidence);
+            // has_evidence viene del serializer ligero (bool). Si el campo legacy
+            // evidence llegara con datos (vista de detalle), lo usamos directamente.
+            const hasEv = g.has_evidence || (g.evidence && parseEvidence(g.evidence).length > 0);
             return (
             <tr key={g.id}>
               <td style={{ fontWeight: 600, fontSize: 13, color: 'var(--ink-700)' }}>
@@ -143,17 +145,14 @@ function GastosTable({ rows, isReadOnly, onEdit, onDelete, onViewEvidence, showB
                 {g.notes && <div style={{ color: 'var(--ink-400)', fontStyle: 'italic', marginTop: 2 }}><AlertCircle size={10} style={{ display:'inline', verticalAlign: -1, marginRight: 3 }} />{g.notes}</div>}
               </td>
               <td style={{ textAlign: 'center' }}>
-                {evFiles.length > 0 ? (
+                {hasEv ? (
                   <button
                     className="btn-icon"
-                    title={`Ver ${evFiles.length} evidencia${evFiles.length > 1 ? 's' : ''}`}
+                    title="Ver evidencia adjunta"
                     style={{ color: 'var(--teal-600)' }}
-                    onClick={() => onViewEvidence && onViewEvidence(evFiles)}
+                    onClick={() => onViewEvidence && onViewEvidence(g.id, g.evidence)}
                   >
                     <Eye size={14} />
-                    {evFiles.length > 1 && (
-                      <span style={{ fontSize: 9, fontWeight: 800, marginLeft: 2 }}>{evFiles.length}</span>
-                    )}
                   </button>
                 ) : (
                   <span style={{ fontSize: 10, color: 'var(--ink-300)' }}>—</span>
@@ -657,9 +656,29 @@ export default function Gastos() {
                 <GastosTable
                   rows={gastosConciliados}
                   isReadOnly={isReadOnly || isPeriodClosed}
-                  onEdit={g => { setForm(g); setGastoEvidence(parseEvidence(g.evidence)); setModal('gasto'); }}
+                  onEdit={g => {
+                  // Abre el modal inmediatamente con los datos del listado (sin evidence).
+                  // La evidence (Base64) se carga lazy desde el endpoint de detalle
+                  // para no bloquear la apertura del modal.
+                  setForm(g);
+                  setGastoEvidence([]);
+                  setModal('gasto');
+                  gastosAPI.get(tenantId, g.id)
+                    .then(({ data }) => setGastoEvidence(parseEvidence(data.evidence)))
+                    .catch(() => {});
+                }}
                   onDelete={handleDeleteGasto}
-                  onViewEvidence={evFiles => setViewerFiles(evFiles)}
+                  onViewEvidence={(gastoId, rawEvidence) => {
+                    // Si ya tenemos los datos de evidencia (vista de detalle), mostrar directamente.
+                    // Si no (listado ligero), fetch bajo demanda.
+                    if (rawEvidence) {
+                      setViewerFiles(parseEvidence(rawEvidence));
+                    } else {
+                      gastosAPI.get(tenantId, gastoId)
+                        .then(({ data }) => setViewerFiles(parseEvidence(data.evidence)))
+                        .catch(() => {});
+                    }
+                  }}
                   showBadge={false}
                   currency={cur}
                 />
@@ -693,9 +712,29 @@ export default function Gastos() {
                 <GastosTable
                   rows={gastosNoConciliados}
                   isReadOnly={isReadOnly || isPeriodClosed}
-                  onEdit={g => { setForm(g); setGastoEvidence(parseEvidence(g.evidence)); setModal('gasto'); }}
+                  onEdit={g => {
+                  // Abre el modal inmediatamente con los datos del listado (sin evidence).
+                  // La evidence (Base64) se carga lazy desde el endpoint de detalle
+                  // para no bloquear la apertura del modal.
+                  setForm(g);
+                  setGastoEvidence([]);
+                  setModal('gasto');
+                  gastosAPI.get(tenantId, g.id)
+                    .then(({ data }) => setGastoEvidence(parseEvidence(data.evidence)))
+                    .catch(() => {});
+                }}
                   onDelete={handleDeleteGasto}
-                  onViewEvidence={evFiles => setViewerFiles(evFiles)}
+                  onViewEvidence={(gastoId, rawEvidence) => {
+                    // Si ya tenemos los datos de evidencia (vista de detalle), mostrar directamente.
+                    // Si no (listado ligero), fetch bajo demanda.
+                    if (rawEvidence) {
+                      setViewerFiles(parseEvidence(rawEvidence));
+                    } else {
+                      gastosAPI.get(tenantId, gastoId)
+                        .then(({ data }) => setViewerFiles(parseEvidence(data.evidence)))
+                        .catch(() => {});
+                    }
+                  }}
                   showBadge={false}
                   currency={cur}
                 />

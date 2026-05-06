@@ -142,6 +142,7 @@ export const usersAPI = {
 // ─── Payments ───────────────────────────────────
 export const paymentsAPI = {
   list: (tenantId, params) => api.get(`/tenants/${tenantId}/payments/`, { params }),
+  get:  (tenantId, id)     => api.get(`/tenants/${tenantId}/payments/${id}/`),
   capture: (tenantId, data) => api.post(`/tenants/${tenantId}/payments/capture/`, data),
   addAdditional: (tenantId, paymentId, data) => api.post(`/tenants/${tenantId}/payments/${paymentId}/add-additional/`, data),
   deleteAdditional: (tenantId, paymentId, additionalId) => api.delete(`/tenants/${tenantId}/payments/${paymentId}/delete-additional/${additionalId}/`),
@@ -161,10 +162,11 @@ export const extraFieldsAPI = {
 
 // ─── Gastos ─────────────────────────────────────
 export const gastosAPI = {
-  list: (tenantId, params) => api.get(`/tenants/${tenantId}/gasto-entries/`, { params }),
-  create: (tenantId, data) => api.post(`/tenants/${tenantId}/gasto-entries/`, data),
-  update: (tenantId, id, data) => api.patch(`/tenants/${tenantId}/gasto-entries/${id}/`, data),
-  delete: (tenantId, id) => api.delete(`/tenants/${tenantId}/gasto-entries/${id}/`),
+  list:   (tenantId, params)       => api.get(`/tenants/${tenantId}/gasto-entries/`, { params }),
+  get:    (tenantId, id)           => api.get(`/tenants/${tenantId}/gasto-entries/${id}/`),
+  create: (tenantId, data)         => api.post(`/tenants/${tenantId}/gasto-entries/`, data),
+  update: (tenantId, id, data)     => api.patch(`/tenants/${tenantId}/gasto-entries/${id}/`, data),
+  delete: (tenantId, id)           => api.delete(`/tenants/${tenantId}/gasto-entries/${id}/`),
 };
 
 // ─── Unrecognized Income ────────────────────────
@@ -177,10 +179,11 @@ export const unrecognizedIncomeAPI = {
 
 // ─── Caja Chica ─────────────────────────────────
 export const cajaChicaAPI = {
-  list: (tenantId, params) => api.get(`/tenants/${tenantId}/caja-chica/`, { params }),
-  create: (tenantId, data) => api.post(`/tenants/${tenantId}/caja-chica/`, data),
-  update: (tenantId, id, data) => api.patch(`/tenants/${tenantId}/caja-chica/${id}/`, data),
-  delete: (tenantId, id) => api.delete(`/tenants/${tenantId}/caja-chica/${id}/`),
+  list:   (tenantId, params)       => api.get(`/tenants/${tenantId}/caja-chica/`, { params }),
+  get:    (tenantId, id)           => api.get(`/tenants/${tenantId}/caja-chica/${id}/`),
+  create: (tenantId, data)         => api.post(`/tenants/${tenantId}/caja-chica/`, data),
+  update: (tenantId, id, data)     => api.patch(`/tenants/${tenantId}/caja-chica/${id}/`, data),
+  delete: (tenantId, id)           => api.delete(`/tenants/${tenantId}/caja-chica/${id}/`),
 };
 
 // ─── Periods ────────────────────────────────────

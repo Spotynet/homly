@@ -319,7 +319,9 @@ export default function Cobranza() {
       payment_date: existing?.payment_date || new Date().toISOString().slice(0, 10),
       notes: existing?.notes || '',
       folio: existing?.folio || '',
-      evidences: Array.isArray(existing?.evidence) ? existing.evidence : [],
+      // La evidence no viene en el listado (se omite para ahorrar tráfico).
+      // Se inicializa vacía y se carga lazy desde el endpoint de detalle.
+      evidences: [],
       bank_reconciled: !!existing?.bank_reconciled,
       field_payments: fieldPayments,
       adeudo_payments: existingAp,
@@ -329,6 +331,16 @@ export default function Cobranza() {
       showPreview: false,
     });
     setShowCapture(unit);
+
+    // Si hay un pago registrado, cargar su evidence en segundo plano
+    if (existing?.id) {
+      paymentsAPI.get(tenantId, existing.id)
+        .then(({ data }) => {
+          const evList = Array.isArray(data.evidence) ? data.evidence : [];
+          setCaptureForm(prev => ({ ...prev, evidences: evList }));
+        })
+        .catch(() => {});
+    }
   };
 
   const setReceived = (key, val) => {

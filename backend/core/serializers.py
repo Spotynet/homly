@@ -486,6 +486,37 @@ class PaymentSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at', 'updated_at']
 
 
+class PaymentListSerializer(serializers.ModelSerializer):
+    """Serializer ligero para listados de Cobranza.
+
+    Excluye el campo ``evidence`` (texto Base64) que puede pesar varios MB por
+    período. En su lugar expone ``has_evidence`` (bool) para que el frontend
+    muestre el ícono de adjunto sin transmitir los datos completos.
+    La evidencia real se obtiene bajo demanda en GET /payments/{id}/.
+    """
+    field_payments = FieldPaymentSerializer(many=True, read_only=True)
+    additional_payments = serializers.JSONField(read_only=True)
+    unit_code = serializers.CharField(source='unit.unit_id_code', read_only=True)
+    unit_name = serializers.CharField(source='unit.unit_name', read_only=True)
+    responsible = serializers.CharField(source='unit.responsible_name', read_only=True)
+    has_evidence = serializers.SerializerMethodField()
+    applied_to_unit_id   = serializers.UUIDField(source='applied_to_unit.id',          read_only=True, allow_null=True, default=None)
+    applied_to_unit_code = serializers.CharField(source='applied_to_unit.unit_id_code', read_only=True, allow_null=True, default=None)
+    applied_to_unit_name = serializers.CharField(source='applied_to_unit.unit_name',    read_only=True, allow_null=True, default=None)
+
+    def get_has_evidence(self, obj):
+        return bool(obj.evidence)
+
+    class Meta:
+        model = Payment
+        fields = ['id', 'tenant', 'unit', 'unit_code', 'unit_name', 'responsible',
+                  'period', 'status', 'payment_type', 'payment_date', 'notes', 'folio',
+                  'has_evidence', 'bank_reconciled', 'adeudo_payments', 'field_payments',
+                  'additional_payments', 'applied_to_unit_id', 'applied_to_unit_code',
+                  'applied_to_unit_name', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+
 class PaymentCaptureSerializer(serializers.Serializer):
     """Serializer for capturing/updating a payment with field payments."""
     unit_id = serializers.UUIDField()
@@ -527,6 +558,27 @@ class GastoEntrySerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'tenant', 'created_at', 'updated_at']
 
 
+class GastoListSerializer(serializers.ModelSerializer):
+    """Serializer ligero para listados de Gastos.
+
+    Excluye el campo ``evidence`` (Base64). Expone ``has_evidence`` (bool) para
+    el ícono de adjunto. La evidencia completa se obtiene en GET /gasto-entries/{id}/.
+    """
+    field_label = serializers.CharField(source='field.label', read_only=True, default='')
+    has_evidence = serializers.SerializerMethodField()
+
+    def get_has_evidence(self, obj):
+        return bool(obj.evidence)
+
+    class Meta:
+        model = GastoEntry
+        fields = ['id', 'tenant', 'period', 'field', 'field_label', 'amount',
+                  'payment_type', 'doc_number', 'gasto_date', 'provider_name',
+                  'provider_rfc', 'provider_invoice', 'bank_reconciled', 'notes',
+                  'has_evidence', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'tenant', 'created_at', 'updated_at']
+
+
 # ═══════════════════════════════════════════════════════════
 #  CAJA CHICA
 # ═══════════════════════════════════════════════════════════
@@ -543,6 +595,25 @@ class CajaChicaEntrySerializer(serializers.ModelSerializer):
     def get_evidence_list(self, obj):
         """Normalise evidence TextField to a list of {data, mime, name} dicts."""
         return _parse_evidence(obj.evidence)
+
+
+class CajaChicaListSerializer(serializers.ModelSerializer):
+    """Serializer ligero para listados de Caja Chica.
+
+    Excluye ``evidence`` y ``evidence_list`` (ambos contienen Base64). Expone
+    ``has_evidence`` (bool) para el ícono de adjunto. La evidencia completa se
+    obtiene bajo demanda en GET /caja-chica/{id}/.
+    """
+    has_evidence = serializers.SerializerMethodField()
+
+    def get_has_evidence(self, obj):
+        return bool(obj.evidence)
+
+    class Meta:
+        model = CajaChicaEntry
+        fields = ['id', 'tenant', 'period', 'amount', 'description',
+                  'date', 'payment_type', 'has_evidence', 'created_at']
+        read_only_fields = ['id', 'tenant', 'created_at']
 
 
 # ═══════════════════════════════════════════════════════════

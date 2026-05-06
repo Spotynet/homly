@@ -37,8 +37,8 @@ from .serializers import (
     UserSerializer, UserCreateSerializer,
     TenantListSerializer, TenantDetailSerializer, TenantUserSerializer,
     UnitSerializer, UnitListSerializer, ExtraFieldSerializer,
-    PaymentSerializer, PaymentCaptureSerializer, AddAdditionalPaymentSerializer, FieldPaymentSerializer,
-    GastoEntrySerializer, CajaChicaEntrySerializer,
+    PaymentSerializer, PaymentListSerializer, PaymentCaptureSerializer, AddAdditionalPaymentSerializer, FieldPaymentSerializer,
+    GastoEntrySerializer, GastoListSerializer, CajaChicaEntrySerializer, CajaChicaListSerializer,
     BankStatementSerializer, ClosedPeriodSerializer, ReopenRequestSerializer,
     PeriodClosureRequestSerializer,
     AssemblyPositionSerializer, CommitteeSerializer, UnrecognizedIncomeSerializer,
@@ -204,53 +204,61 @@ def _get_client_ip(request):
 def _audit_log(request, module, action, description,
                tenant_id=None, object_type='', object_id='',
                object_repr='', extra_data=None):
-    """Create an AuditLog entry. Always wrapped in try/except so it
-    never interrupts the main request flow."""
-    try:
-        user    = getattr(request, 'user', None)
-        ip      = _get_client_ip(request)
+    """Registra un AuditLog en un hilo de fondo (daemon) para no añadir latencia
+    al response del usuario. Todos los datos del request se extraen en el hilo
+    principal antes de hacer spawn, ya que el objeto request no es thread-safe.
+    El bloque try/except garantiza que nunca interrumpa el flujo principal."""
 
-        # Resolve tenant snapshot
-        tenant      = None
-        tenant_name = ''
-        if tenant_id:
-            try:
-                tenant      = Tenant.objects.get(id=tenant_id)
-                tenant_name = tenant.name
-            except Tenant.DoesNotExist:
-                pass
+    # ── Extraer datos del request en el hilo principal ──────────────────────
+    user           = getattr(request, 'user', None)
+    ip             = _get_client_ip(request)
+    is_authed      = bool(user and getattr(user, 'is_authenticated', False))
+    user_pk        = user.pk        if is_authed else None
+    user_name      = (getattr(user, 'name', '') or getattr(user, 'email', '')) if is_authed else ''
+    user_email     = getattr(user, 'email', '')  if is_authed else ''
+    is_super_admin = getattr(user, 'is_super_admin', False) if is_authed else False
 
-        # Resolve user snapshot
-        user_name  = ''
-        user_email = ''
-        user_role  = ''
-        if user and getattr(user, 'is_authenticated', False):
-            user_name  = getattr(user, 'name', '') or getattr(user, 'email', '')
-            user_email = getattr(user, 'email', '')
+    def _run():
+        try:
+            # Resolver tenant snapshot
+            tenant_obj  = None
+            tenant_name = ''
             if tenant_id:
-                tu = TenantUser.objects.filter(tenant_id=tenant_id, user=user).first()
-                user_role = tu.role if tu else ('superadmin' if getattr(user, 'is_super_admin', False) else '')
-            elif getattr(user, 'is_super_admin', False):
-                user_role = 'superadmin'
+                try:
+                    tenant_obj  = Tenant.objects.get(id=tenant_id)
+                    tenant_name = tenant_obj.name
+                except Tenant.DoesNotExist:
+                    pass
 
-        AuditLog.objects.create(
-            tenant      = tenant,
-            tenant_name = tenant_name,
-            user        = user if user and getattr(user, 'is_authenticated', False) else None,
-            user_name   = user_name,
-            user_email  = user_email,
-            user_role   = user_role,
-            module      = module,
-            action      = action,
-            description = description,
-            object_type = object_type,
-            object_id   = str(object_id) if object_id else '',
-            object_repr = object_repr or '',
-            ip_address  = ip,
-            extra_data  = extra_data or {},
-        )
-    except Exception:
-        pass  # audit logs must never break the main flow
+            # Resolver rol del usuario en el tenant
+            user_role = ''
+            if is_authed:
+                if tenant_id:
+                    tu = TenantUser.objects.filter(tenant_id=tenant_id, user_id=user_pk).first()
+                    user_role = tu.role if tu else ('superadmin' if is_super_admin else '')
+                elif is_super_admin:
+                    user_role = 'superadmin'
+
+            AuditLog.objects.create(
+                tenant      = tenant_obj,
+                tenant_name = tenant_name,
+                user_id     = user_pk,
+                user_name   = user_name,
+                user_email  = user_email,
+                user_role   = user_role,
+                module      = module,
+                action      = action,
+                description = description,
+                object_type = object_type,
+                object_id   = str(object_id) if object_id else '',
+                object_repr = object_repr or '',
+                ip_address  = ip,
+                extra_data  = extra_data or {},
+            )
+        except Exception:
+            pass  # los audit logs nunca deben cortar el flujo principal
+
+    threading.Thread(target=_run, daemon=True).start()
 
 
 # ═══════════════════════════════════════════════════════════
@@ -1406,6 +1414,13 @@ class PaymentViewSet(viewsets.ModelViewSet):
     serializer_class = PaymentSerializer
     permission_classes = [IsTenantMember]
 
+    def get_serializer_class(self):
+        """Usa el serializer ligero (sin Base64) para el listado.
+        El retrieve/create/update devuelve el serializer completo con evidence."""
+        if self.action == 'list':
+            return PaymentListSerializer
+        return PaymentSerializer
+
     def get_queryset(self):
         qs = Payment.objects.filter(
             tenant_id=self.kwargs['tenant_id']
@@ -1930,6 +1945,13 @@ class GastoEntryViewSet(viewsets.ModelViewSet):
     serializer_class = GastoEntrySerializer
     permission_classes = [IsAdminOrTesOrAuditor]
 
+    def get_serializer_class(self):
+        """Usa el serializer ligero (sin Base64) para el listado.
+        El retrieve/create/update devuelve el serializer completo con evidence."""
+        if self.action == 'list':
+            return GastoListSerializer
+        return GastoEntrySerializer
+
     def get_queryset(self):
         qs = GastoEntry.objects.filter(
             tenant_id=self.kwargs['tenant_id']
@@ -1991,6 +2013,13 @@ class CajaChicaViewSet(viewsets.ModelViewSet):
     """CRUD /api/tenants/{tenant_id}/caja-chica/"""
     serializer_class = CajaChicaEntrySerializer
     permission_classes = [IsAdminOrTesOrAuditor]
+
+    def get_serializer_class(self):
+        """Usa el serializer ligero (sin Base64) para el listado.
+        El retrieve/create/update devuelve el serializer completo con evidence."""
+        if self.action == 'list':
+            return CajaChicaListSerializer
+        return CajaChicaEntrySerializer
 
     def get_queryset(self):
         qs = CajaChicaEntry.objects.filter(tenant_id=self.kwargs['tenant_id'])
