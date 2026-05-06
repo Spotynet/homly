@@ -60,18 +60,20 @@ function Modal({ title, onClose, children, wide = false }) {
 // ─── Plan Form ───────────────────────────────────────────────────────────────
 
 // All modules available in Homly. Key must match PATH_TO_MODULE in AppLayout.jsx.
+// NOTE: mi_membresia is always exempt from plan restrictions — not listed here.
 const SYSTEM_MODULES = [
   { key: 'dashboard',       label: 'Dashboard',              desc: 'Vista general del condominio' },
-  { key: 'cobranza',        label: 'Cobranza Mensual',       desc: 'Registro y seguimiento de cuotas' },
-  { key: 'gastos',          label: 'Gastos',                 desc: 'Control de egresos y caja chica' },
+  { key: 'reservas',        label: 'Reservas',               desc: 'Reservas de áreas comunes' },
+  { key: 'notificaciones',  label: 'Notificaciones',         desc: 'Avisos y alertas internos' },
+  { key: 'onboarding',      label: 'Guías de uso',           desc: 'Tutoriales y guía de inicio' },
+  { key: 'cobranza',        label: 'Cobranza',               desc: 'Registro y seguimiento de cuotas' },
+  { key: 'gastos',          label: 'Gastos',                 desc: 'Control de egresos conciliados y en tránsito' },
+  { key: 'caja_chica',      label: 'Caja Chica',             desc: 'Registro de gastos menores de caja chica' },
   { key: 'estado_cuenta',   label: 'Estado de Cuenta',       desc: 'Resumen financiero por unidad' },
   { key: 'plan_pagos',      label: 'Plan de Pagos',          desc: 'Acuerdos de pago diferido' },
   { key: 'cierre_periodo',  label: 'Cierre de Período',      desc: 'Cierre y reapertura de períodos' },
-  { key: 'reservas',        label: 'Reservas',               desc: 'Reservas de áreas comunes' },
-  { key: 'notificaciones',  label: 'Notificaciones',         desc: 'Avisos y alertas internos' },
   { key: 'config',          label: 'Configuración',          desc: 'Ajustes generales del condominio' },
   { key: 'my_unit',         label: 'Mi Unidad',              desc: 'Vista individual para vecinos' },
-  { key: 'onboarding',      label: 'Guía de Uso',            desc: 'Tutoriales y guía de inicio' },
 ];
 
 const EMPTY_PLAN = {

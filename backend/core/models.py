@@ -1211,8 +1211,10 @@ class SubscriptionPlan(models.Model):
     # Features list: ["Cobranza mensual", "Estado de cuenta", ...]  (marketing copy)
     features         = models.JSONField(default=list, blank=True)
     # Module keys included in this plan. Empty list = all modules allowed.
-    # Keys: dashboard, reservas, cobranza, gastos, estado_cuenta, plan_pagos,
-    #       cierre_periodo, notificaciones, config, my_unit, onboarding
+    # Keys: dashboard, reservas, notificaciones, onboarding,
+    #       cobranza, gastos, caja_chica, estado_cuenta, plan_pagos,
+    #       cierre_periodo, config, my_unit
+    # Note: mi_membresia is always exempt from plan restrictions.
     allowed_modules  = models.JSONField(
         default=list, blank=True,
         help_text='Module keys visible to tenants on this plan. Empty = all modules.',
