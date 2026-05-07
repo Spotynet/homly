@@ -13,6 +13,13 @@ router.register(r'subscription-plans', views.SubscriptionPlanViewSet, basename='
 router.register(r'trial-requests', views.TrialRequestViewSet, basename='trial-requests')
 router.register(r'tenant-subscriptions', views.TenantSubscriptionViewSet, basename='tenant-subscriptions')
 
+# CRM routes (superadmin only)
+router.register(r'crm/contacts', views.CRMContactViewSet, basename='crm-contacts')
+router.register(r'crm/opportunities', views.CRMOpportunityViewSet, basename='crm-opportunities')
+router.register(r'crm/activities', views.CRMActivityViewSet, basename='crm-activities')
+router.register(r'crm/campaigns', views.CRMCampaignViewSet, basename='crm-campaigns')
+router.register(r'crm/tickets', views.CRMTicketViewSet, basename='crm-tickets')
+
 # Nested routes under tenant
 tenant_router = DefaultRouter()
 tenant_router.register(r'units', views.UnitViewSet, basename='tenant-units')
@@ -72,6 +79,9 @@ urlpatterns = [
          views.ReporteAdeudosView.as_view(), name='reporte-adeudos'),
     path('tenants/<uuid:tenant_id>/estado-cuenta-pdf/',
          views.EstadoPorUnidadPDFView.as_view(), name='estado-cuenta-pdf'),
+
+    # CRM Dashboard (aggregate stats)
+    path('crm/dashboard/', views.CRMDashboardView.as_view(), name='crm-dashboard'),
 
     # Email endpoints
     path('tenants/<uuid:tenant_id>/send-unit-statement-email/',

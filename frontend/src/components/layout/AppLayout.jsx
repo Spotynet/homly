@@ -10,7 +10,7 @@ import {
   Home, Globe, FileText, ShoppingBag, Receipt, Settings,
   Users, Building, Shield, LogOut, Menu, X, Calendar,
   ChevronDown, Check, Building2, Bell, CheckCheck, Activity, Lock, TrendingDown,
-  Sparkles, CreditCard, DollarSign,
+  Sparkles, CreditCard, DollarSign, Target,
 } from 'lucide-react';
 
 const NAV_ITEMS = {
@@ -18,6 +18,7 @@ const NAV_ITEMS = {
     { section: 'system', label: 'Sistema', items: [
       { path: '/app/sistema/tenants',          icon: Globe,      label: 'Tenants'          },
       { path: '/app/sistema/suscripciones',    icon: CreditCard, label: 'Suscripciones'    },
+      { path: '/app/sistema/crm',              icon: Target,     label: 'CRM Comercial'    },
       { path: '/app/sistema/logs',             icon: Activity,   label: 'Logs del Sistema' },
     ]},
     { section: 'tenant_general', label: 'General', items: [

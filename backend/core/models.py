@@ -1374,3 +1374,327 @@ class SubscriptionPayment(models.Model):
     def __str__(self):
         return f'{self.subscription.tenant.name} — {self.amount} {self.currency} ({self.payment_date})'
 
+
+# ═══════════════════════════════════════════════════════════
+#  CRM — Commercial Management Module (SuperAdmin only)
+# ═══════════════════════════════════════════════════════════
+
+class CRMContact(models.Model):
+    """
+    CRM Contact: prospect or customer in the Homly commercial pipeline.
+    Can be created from a CondominioRequest (landing page lead) or manually.
+    """
+    SOURCE_CHOICES = [
+        ('landing_form', 'Formulario Landing Page'),
+        ('manual',       'Ingreso Manual'),
+        ('referral',     'Referido'),
+        ('import',       'Importación'),
+        ('cold_outreach','Prospección Directa'),
+        ('social_media', 'Redes Sociales'),
+        ('event',        'Evento / Expo'),
+        ('other',        'Otro'),
+    ]
+    STATUS_CHOICES = [
+        ('lead',        'Lead'),
+        ('prospect',    'Prospecto'),
+        ('qualified',   'Calificado'),
+        ('customer',    'Cliente Activo'),
+        ('churned',     'Cliente Perdido'),
+        ('lost',        'Perdido'),
+    ]
+
+    id              = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    # Link to landing page request
+    condominio_request = models.OneToOneField(
+        CondominioRequest, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='crm_contact',
+    )
+    # Link to tenant if already enrolled
+    tenant          = models.OneToOneField(
+        Tenant, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='crm_contact',
+    )
+
+    # Contact info
+    first_name      = models.CharField(max_length=200)
+    last_name       = models.CharField(max_length=200, blank=True, default='')
+    email           = models.EmailField(db_index=True)
+    phone           = models.CharField(max_length=50, blank=True, default='')
+    company         = models.CharField(max_length=300, blank=True, default='',
+                                        help_text='Nombre del condominio / empresa')
+    cargo           = models.CharField(max_length=200, blank=True, default='')
+    country         = models.CharField(max_length=100, blank=True, default='')
+    state           = models.CharField(max_length=100, blank=True, default='')
+    city            = models.CharField(max_length=200, blank=True, default='')
+    units_count     = models.PositiveIntegerField(default=0,
+                                                   help_text='Número de unidades del condominio')
+
+    # Pipeline
+    source          = models.CharField(max_length=20, choices=SOURCE_CHOICES, default='manual', db_index=True)
+    status          = models.CharField(max_length=20, choices=STATUS_CHOICES, default='lead', db_index=True)
+    lead_score      = models.PositiveSmallIntegerField(default=0,
+                                                        help_text='Score 0-100 de calidad del lead')
+
+    # Assignment
+    assigned_to     = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='crm_contacts_assigned',
+    )
+
+    # Meta
+    tags            = models.JSONField(default=list, blank=True)
+    notes           = models.TextField(blank=True, default='')
+    last_activity_at = models.DateTimeField(null=True, blank=True)
+    created_at      = models.DateTimeField(auto_now_add=True)
+    updated_at      = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'crm_contacts'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.first_name} {self.last_name} <{self.email}>'
+
+    @property
+    def full_name(self):
+        return f'{self.first_name} {self.last_name}'.strip()
+
+
+class CRMOpportunity(models.Model):
+    """
+    Sales opportunity linked to a CRM contact. Visualized as a kanban pipeline.
+    """
+    STAGE_CHOICES = [
+        ('new',          'Nuevo'),
+        ('contacted',    'Contactado'),
+        ('qualified',    'Calificado'),
+        ('demo',         'Demo / Presentación'),
+        ('proposal',     'Propuesta Enviada'),
+        ('negotiation',  'Negociación'),
+        ('won',          'Ganado'),
+        ('lost',         'Perdido'),
+    ]
+    CURRENCY_CHOICES = [
+        ('MXN', 'Peso Mexicano'), ('USD', 'US Dollar'),
+        ('EUR', 'Euro'), ('COP', 'Peso Colombiano'),
+    ]
+
+    id              = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    contact         = models.ForeignKey(
+        CRMContact, on_delete=models.CASCADE, related_name='opportunities',
+    )
+    title           = models.CharField(max_length=300)
+    stage           = models.CharField(max_length=20, choices=STAGE_CHOICES, default='new', db_index=True)
+    stage_order     = models.PositiveSmallIntegerField(default=0,
+                                                        help_text='Ordering within the stage column')
+    value           = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    currency        = models.CharField(max_length=3, choices=CURRENCY_CHOICES, default='MXN')
+    probability     = models.PositiveSmallIntegerField(default=50,
+                                                        help_text='Probabilidad de cierre 0-100%')
+    expected_close  = models.DateField(null=True, blank=True)
+    actual_close    = models.DateField(null=True, blank=True)
+    won_at          = models.DateTimeField(null=True, blank=True)
+    lost_at         = models.DateTimeField(null=True, blank=True)
+    lost_reason     = models.TextField(blank=True, default='')
+    assigned_to     = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='crm_opportunities_assigned',
+    )
+    notes           = models.TextField(blank=True, default='')
+    created_at      = models.DateTimeField(auto_now_add=True)
+    updated_at      = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'crm_opportunities'
+        ordering = ['stage_order', '-created_at']
+
+    def __str__(self):
+        return f'{self.title} ({self.contact.full_name}) — {self.stage}'
+
+
+class CRMActivity(models.Model):
+    """
+    Activity / interaction log entry for a contact or opportunity.
+    Tracks calls, emails, meetings, demos, tasks, notes, etc.
+    """
+    TYPE_CHOICES = [
+        ('call',      'Llamada'),
+        ('email',     'Email'),
+        ('whatsapp',  'WhatsApp'),
+        ('meeting',   'Reunión'),
+        ('demo',      'Demo'),
+        ('note',      'Nota Interna'),
+        ('task',      'Tarea'),
+        ('follow_up', 'Seguimiento'),
+    ]
+
+    id          = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    contact     = models.ForeignKey(
+        CRMContact, on_delete=models.CASCADE, related_name='activities',
+        null=True, blank=True,
+    )
+    opportunity = models.ForeignKey(
+        CRMOpportunity, on_delete=models.CASCADE, related_name='activities',
+        null=True, blank=True,
+    )
+    type        = models.CharField(max_length=20, choices=TYPE_CHOICES, default='note')
+    title       = models.CharField(max_length=300)
+    description = models.TextField(blank=True, default='')
+    outcome     = models.TextField(blank=True, default='',
+                                    help_text='Result / next step from this activity')
+    scheduled_at  = models.DateTimeField(null=True, blank=True)
+    completed_at  = models.DateTimeField(null=True, blank=True)
+    is_completed  = models.BooleanField(default=False)
+    created_by    = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='crm_activities_created',
+    )
+    created_at  = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'crm_activities'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'[{self.type}] {self.title}'
+
+
+class CRMCampaign(models.Model):
+    """
+    Marketing campaign targeting CRM contacts.
+    """
+    TYPE_CHOICES = [
+        ('email',     'Email Marketing'),
+        ('whatsapp',  'WhatsApp Masivo'),
+        ('sms',       'SMS'),
+        ('social',    'Redes Sociales'),
+    ]
+    STATUS_CHOICES = [
+        ('draft',     'Borrador'),
+        ('scheduled', 'Programada'),
+        ('active',    'Activa'),
+        ('paused',    'Pausada'),
+        ('completed', 'Completada'),
+        ('cancelled', 'Cancelada'),
+    ]
+
+    id              = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name            = models.CharField(max_length=300)
+    type            = models.CharField(max_length=20, choices=TYPE_CHOICES, default='email')
+    status          = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft', db_index=True)
+    subject         = models.CharField(max_length=300, blank=True, default='',
+                                        help_text='Email subject line')
+    body_text       = models.TextField(blank=True, default='')
+    body_html       = models.TextField(blank=True, default='')
+    target_filters  = models.JSONField(default=dict, blank=True,
+                                        help_text='Audience filter criteria: {status, source, tags, ...}')
+    scheduled_at    = models.DateTimeField(null=True, blank=True)
+    sent_at         = models.DateTimeField(null=True, blank=True)
+    stats           = models.JSONField(default=dict, blank=True,
+                                        help_text='{sent, opened, clicked, converted, bounced}')
+    created_by      = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='crm_campaigns_created',
+    )
+    created_at      = models.DateTimeField(auto_now_add=True)
+    updated_at      = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'crm_campaigns'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.name} [{self.type} — {self.status}]'
+
+
+class CRMCampaignContact(models.Model):
+    """
+    Many-to-many: Campaign ↔ Contact with delivery status tracking.
+    """
+    DELIVERY_STATUS_CHOICES = [
+        ('pending',       'Pendiente'),
+        ('sent',          'Enviado'),
+        ('opened',        'Abierto'),
+        ('clicked',       'Clic'),
+        ('converted',     'Convertido'),
+        ('bounced',       'Rebotado'),
+        ('unsubscribed',  'Desuscrito'),
+    ]
+
+    id              = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    campaign        = models.ForeignKey(CRMCampaign, on_delete=models.CASCADE, related_name='recipients')
+    contact         = models.ForeignKey(CRMContact, on_delete=models.CASCADE, related_name='campaign_entries')
+    delivery_status = models.CharField(max_length=20, choices=DELIVERY_STATUS_CHOICES, default='pending')
+    sent_at         = models.DateTimeField(null=True, blank=True)
+    opened_at       = models.DateTimeField(null=True, blank=True)
+    clicked_at      = models.DateTimeField(null=True, blank=True)
+    converted_at    = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = 'crm_campaign_contacts'
+        unique_together = [('campaign', 'contact')]
+        ordering = ['-sent_at']
+
+    def __str__(self):
+        return f'{self.campaign.name} → {self.contact.email} [{self.delivery_status}]'
+
+
+class CRMTicket(models.Model):
+    """
+    Support / service ticket linked to a contact or an existing tenant.
+    """
+    TYPE_CHOICES = [
+        ('support',         'Soporte Técnico'),
+        ('billing',         'Facturación / Cobro'),
+        ('onboarding',      'Onboarding'),
+        ('feature_request', 'Solicitud de Función'),
+        ('complaint',       'Reclamo'),
+        ('other',           'Otro'),
+    ]
+    PRIORITY_CHOICES = [
+        ('low',    'Baja'),
+        ('normal', 'Normal'),
+        ('high',   'Alta'),
+        ('urgent', 'Urgente'),
+    ]
+    STATUS_CHOICES = [
+        ('open',        'Abierto'),
+        ('in_progress', 'En Progreso'),
+        ('waiting',     'Esperando Cliente'),
+        ('resolved',    'Resuelto'),
+        ('closed',      'Cerrado'),
+    ]
+
+    id                  = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    contact             = models.ForeignKey(
+        CRMContact, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='tickets',
+    )
+    tenant              = models.ForeignKey(
+        Tenant, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='crm_tickets',
+    )
+    subject             = models.CharField(max_length=400)
+    description         = models.TextField(blank=True, default='')
+    type                = models.CharField(max_length=20, choices=TYPE_CHOICES, default='support')
+    priority            = models.CharField(max_length=10, choices=PRIORITY_CHOICES, default='normal', db_index=True)
+    status              = models.CharField(max_length=20, choices=STATUS_CHOICES, default='open', db_index=True)
+    assigned_to         = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='crm_tickets_assigned',
+    )
+    tags                = models.JSONField(default=list, blank=True)
+    resolution_notes    = models.TextField(blank=True, default='')
+    first_response_at   = models.DateTimeField(null=True, blank=True)
+    resolved_at         = models.DateTimeField(null=True, blank=True)
+    created_at          = models.DateTimeField(auto_now_add=True)
+    updated_at          = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'crm_tickets'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'[{self.priority.upper()}] {self.subject} — {self.status}'
+

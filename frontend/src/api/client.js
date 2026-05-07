@@ -327,4 +327,63 @@ export const reportsAPI = {
   sendVecinoStatementEmail: (tenantId, data) => api.post(`/tenants/${tenantId}/send-vecino-statement-email/`, data),
 };
 
+// ─── CRM (SuperAdmin only) ──────────────────────
+export const crmAPI = {
+  // Dashboard aggregate stats
+  dashboard: () => api.get('/crm/dashboard/'),
+
+  // Contacts
+  contacts: {
+    list:   (params) => api.get('/crm/contacts/', { params }),
+    get:    (id)     => api.get(`/crm/contacts/${id}/`),
+    create: (data)   => api.post('/crm/contacts/', data),
+    update: (id, data) => api.patch(`/crm/contacts/${id}/`, data),
+    delete: (id)     => api.delete(`/crm/contacts/${id}/`),
+    importFromRequests: () => api.post('/crm/contacts/import-from-requests/'),
+    updateScore: (id, score) => api.patch(`/crm/contacts/${id}/update-score/`, { lead_score: score }),
+  },
+
+  // Opportunities / Pipeline
+  opportunities: {
+    list:   (params) => api.get('/crm/opportunities/', { params }),
+    get:    (id)     => api.get(`/crm/opportunities/${id}/`),
+    create: (data)   => api.post('/crm/opportunities/', data),
+    update: (id, data) => api.patch(`/crm/opportunities/${id}/`, data),
+    delete: (id)     => api.delete(`/crm/opportunities/${id}/`),
+    moveStage: (id, stage, lostReason = '') =>
+      api.patch(`/crm/opportunities/${id}/move-stage/`, { stage, lost_reason: lostReason }),
+  },
+
+  // Activities
+  activities: {
+    list:     (params) => api.get('/crm/activities/', { params }),
+    create:   (data)   => api.post('/crm/activities/', data),
+    update:   (id, data) => api.patch(`/crm/activities/${id}/`, data),
+    delete:   (id)     => api.delete(`/crm/activities/${id}/`),
+    complete: (id, outcome = '') => api.patch(`/crm/activities/${id}/complete/`, { outcome }),
+  },
+
+  // Campaigns
+  campaigns: {
+    list:   (params) => api.get('/crm/campaigns/', { params }),
+    get:    (id)     => api.get(`/crm/campaigns/${id}/`),
+    create: (data)   => api.post('/crm/campaigns/', data),
+    update: (id, data) => api.patch(`/crm/campaigns/${id}/`, data),
+    delete: (id)     => api.delete(`/crm/campaigns/${id}/`),
+    addRecipients: (id, data) => api.post(`/crm/campaigns/${id}/add-recipients/`, data),
+    launch: (id)     => api.post(`/crm/campaigns/${id}/launch/`),
+  },
+
+  // Tickets
+  tickets: {
+    list:   (params) => api.get('/crm/tickets/', { params }),
+    get:    (id)     => api.get(`/crm/tickets/${id}/`),
+    create: (data)   => api.post('/crm/tickets/', data),
+    update: (id, data) => api.patch(`/crm/tickets/${id}/`, data),
+    delete: (id)     => api.delete(`/crm/tickets/${id}/`),
+    resolve: (id, resolutionNotes) => api.patch(`/crm/tickets/${id}/resolve/`, { resolution_notes: resolutionNotes }),
+    assign: (id, assignedTo) => api.patch(`/crm/tickets/${id}/assign/`, { assigned_to: assignedTo }),
+  },
+};
+
 export default api;

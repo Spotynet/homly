@@ -868,22 +868,35 @@ function TabSolicitudes() {
 
 // ─── Helper: compute amount from plan + units (client-side preview) ─────────
 
+/**
+ * Devuelve el precio por unidad efectivo según los tiers del plan.
+ * Si hay tiers y uno coincide con `units`, retorna su price_per_unit.
+ * Si no hay tiers o ninguno aplica, usa plan.price_per_unit como fallback.
+ * También retorna el tier coincidente (o null) para mostrarlo en la UI.
+ */
+function getEffectivePricePerUnit(plan, units) {
+  if (!plan) return { pricePerUnit: 0, tier: null };
+  const n = Number(units) || 0;
+  const base = Number(plan.price_per_unit) || 0;
+  if (Array.isArray(plan.volume_tiers) && plan.volume_tiers.length > 0) {
+    const sorted = [...plan.volume_tiers].sort((a, b) => (a.min_units || 0) - (b.min_units || 0));
+    for (const t of sorted) {
+      const minU = t.min_units || 0;
+      const maxU = t.max_units ?? null;
+      if (n >= minU && (maxU === null || n <= maxU)) {
+        return { pricePerUnit: Number(t.price_per_unit), tier: t };
+      }
+    }
+  }
+  return { pricePerUnit: base, tier: null };
+}
+
 function computeAmountPreview(plan, units) {
   if (!plan || !units) return null;
   const n = Number(units);
   if (!n || n < 0) return null;
-  let monthly = Number(plan.price_per_unit) * n;
-  if (Array.isArray(plan.volume_tiers) && plan.volume_tiers.length > 0) {
-    const sorted = [...plan.volume_tiers].sort((a, b) => (a.min_units || 0) - (b.min_units || 0));
-    for (const tier of sorted) {
-      const minU = tier.min_units || 0;
-      const maxU = tier.max_units ?? null;
-      if (n >= minU && (maxU === null || n <= maxU)) {
-        monthly = Number(tier.price_per_unit) * n;
-        break;
-      }
-    }
-  }
+  const { pricePerUnit } = getEffectivePricePerUnit(plan, n);
+  const monthly = pricePerUnit * n;
   if (plan.billing_cycle === 'annual') {
     const disc = Number(plan.annual_discount_percent || 0) / 100;
     return monthly * 12 * (1 - disc);
@@ -1241,14 +1254,26 @@ function RowPanel({ sub, plans, onRefresh }) {
           </button>
         </div>
 
-        {preview !== null && (
-          <p className="text-xs text-teal-600 mt-2 font-medium">
-            <Calculator size={11} className="inline mr-1" />
-            Precio calculado por plan: <strong>{fmtAmt(preview, selectedPlanObj?.currency || currency)}</strong>
-            {' '} = {unitsCount} unidades × {fmtAmt(selectedPlanObj?.price_per_unit, selectedPlanObj?.currency || currency)}/u
-            {selectedPlanObj?.billing_cycle === 'annual' && ` × 12 meses − ${selectedPlanObj?.annual_discount_percent}% desc.`}
-          </p>
-        )}
+        {preview !== null && (() => {
+          const cur = selectedPlanObj?.currency || currency;
+          const { pricePerUnit, tier } = getEffectivePricePerUnit(selectedPlanObj, unitsCount);
+          const isAnnual = selectedPlanObj?.billing_cycle === 'annual';
+          return (
+            <p className="text-xs text-teal-600 mt-2 font-medium">
+              <Calculator size={11} className="inline mr-1" />
+              Precio calculado por plan:{' '}
+              <strong>{fmtAmt(preview, cur)}</strong>
+              {' = '}
+              {unitsCount} u × {fmtAmt(pricePerUnit, cur)}/u
+              {tier && (
+                <span className="text-slate-400 ml-1 font-normal">
+                  (tier {tier.min_units}–{tier.max_units ?? '∞'} u)
+                </span>
+              )}
+              {isAnnual && ` × 12 meses − ${selectedPlanObj.annual_discount_percent}% desc.`}
+            </p>
+          );
+        })()}
       </div>
 
       {/* ── MIDDLE ROW: Registrar pago ────────────────────────────────────── */}
@@ -1733,15 +1758,28 @@ function NewSubModal({ plans, onClose, onDone }) {
                   })()}
                 </label>
                 <input type="number" min="0" step="0.01" value={form.amount_per_cycle} onChange={f('amount_per_cycle')} placeholder="0.00" className={inputCls} />
-                {/* Show tier info when a plan is selected */}
+                {/* Desglose precio por tier */}
                 {form.plan && form.units_count && (() => {
                   const p = plans.find(pl => String(pl.id) === String(form.plan));
                   const calc = computeAmountPreview(p, form.units_count);
                   if (calc === null) return null;
+                  const { pricePerUnit, tier } = getEffectivePricePerUnit(p, form.units_count);
+                  const isAnnual = p.billing_cycle === 'annual';
                   return (
-                    <p style={{ fontSize: 11, color: '#0d9488', marginTop: 3 }}>
-                      Precio calculado por tier: {fmtAmt(calc, p.currency)}
-                      {p.billing_cycle === 'annual' && p.annual_discount_percent > 0 && ` (−${p.annual_discount_percent}% anual)`}
+                    <p style={{ fontSize: 11, color: '#0d9488', marginTop: 3, lineHeight: 1.5 }}>
+                      <strong>{fmtAmt(calc, p.currency)}</strong>
+                      {' = '}
+                      {form.units_count} u × {fmtAmt(pricePerUnit, p.currency)}/u
+                      {tier && (
+                        <span style={{ color: '#64748b', marginLeft: 4 }}>
+                          (tier {tier.min_units}–{tier.max_units ?? '∞'} u)
+                        </span>
+                      )}
+                      {isAnnual && p.annual_discount_percent > 0 && (
+                        <span style={{ color: '#64748b', marginLeft: 4 }}>
+                          × 12 − {p.annual_discount_percent}% anual
+                        </span>
+                      )}
                     </p>
                   );
                 })()}
@@ -1965,8 +2003,25 @@ function TabSuscripciones() {
                         </div>
                       </td>
                       <td className="px-4 py-3 text-right font-medium text-slate-700">{sub.units_count}</td>
-                      <td className="px-4 py-3 text-right font-semibold text-teal-700">
-                        {sub.amount_per_cycle > 0 ? fmtAmt(sub.amount_per_cycle, sub.currency) : '—'}
+                      <td className="px-4 py-3 text-right">
+                        <div className="font-semibold text-teal-700">
+                          {sub.amount_per_cycle > 0 ? fmtAmt(sub.amount_per_cycle, sub.currency) : '—'}
+                        </div>
+                        {sub.amount_per_cycle > 0 && sub.units_count > 0 && (() => {
+                          const planObj = plans.find(p => String(p.id) === String(sub.plan));
+                          if (!planObj) return null;
+                          const { pricePerUnit, tier } = getEffectivePricePerUnit(planObj, sub.units_count);
+                          return (
+                            <div className="text-xs text-slate-400 mt-0.5">
+                              {fmtAmt(pricePerUnit, sub.currency)}/u
+                              {tier && (
+                                <span className="ml-1">
+                                  · tier {tier.min_units}–{tier.max_units ?? '∞'}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </td>
                       <td className="px-4 py-3 text-slate-500 text-xs">
                         {sub.trial_end ? new Date(sub.trial_end + 'T00:00:00').toLocaleDateString('es-MX') : '—'}

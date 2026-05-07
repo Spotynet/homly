@@ -26,6 +26,7 @@ import Notificaciones from './pages/Notificaciones';
 import CierrePeriodo from './pages/CierrePeriodo';
 import Logs from './pages/Logs';
 import Suscripciones from './pages/Suscripciones';
+import CRM from './pages/CRM';
 import Registro from './pages/Registro';
 import PlanPagos from './pages/PlanPagos';
 import Onboarding from './pages/Onboarding';
@@ -106,6 +107,7 @@ function AppRoutes() {
             <Route path="tenants"        element={<Tenants />} />
             <Route path="logs"           element={<Logs />} />
             <Route path="suscripciones"  element={<Suscripciones />} />
+            <Route path="crm"            element={<CRM />} />
           </Route>
         )}
         <Route path="cobranza"      element={<RoleRoute module="cobranza">      <Cobranza />      </RoleRoute>} />

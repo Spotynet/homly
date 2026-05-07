@@ -1,0 +1,65 @@
+==============================================================
+  HOMLY — Verificación Diaria de Facturación
+  Fecha: 2026-05-07  |  Hora programada: 08:00
+==============================================================
+
+RESULTADO: NO EJECUTADO — Error de conectividad al entorno de ejecución
+
+------------------------------------------------------------------
+DIAGNÓSTICO TÉCNICO
+------------------------------------------------------------------
+
+La tarea programada intentó ejecutar la verificación de vencimientos
+mediante dos métodos, ambos sin éxito:
+
+1. API REST (POST /api/tenant-subscriptions/run-billing-check/)
+   → Falló con código 7 (connection refused).
+     El servidor Django no estaba corriendo en el sandbox.
+
+2. Django management shell (python manage.py shell)
+   → El entorno virtual del proyecto usa Python 3.14
+     (compilado para macOS/local), pero el sandbox ejecuta
+     Python 3.10 en Linux. El módulo psycopg2 compilado para
+     Python 3.14 no es compatible y falló al importarse.
+
+3. Conexión directa a PostgreSQL (puerto 5432)
+   → Rechazada. La base de datos corre en la máquina local
+     del usuario y no es accesible desde el sandbox aislado.
+
+------------------------------------------------------------------
+CAUSA RAÍZ
+------------------------------------------------------------------
+
+Las tareas programadas de Homly se ejecutan en un sandbox Linux
+aislado (Claude Cowork), que NO tiene acceso a:
+  - El servidor Django local (localhost:8000)
+  - La base de datos PostgreSQL local (localhost:5432)
+
+El entorno virtual del proyecto (Python 3.14/macOS) es
+incompatible con el runtime del sandbox (Python 3.10/Linux).
+
+------------------------------------------------------------------
+ACCION RECOMENDADA
+------------------------------------------------------------------
+
+Para que esta tarea programada funcione correctamente, se
+requiere UNA de las siguientes soluciones:
+
+  Opcion A (Recomendada):
+    Ejecutar la tarea localmente en la maquina donde corre
+    el backend de Homly, usando un script cron o el
+    scheduler incorporado (Celery, APScheduler, etc.).
+
+  Opcion B:
+    Desplegar el backend de Homly en un servidor accesible
+    desde internet (e.g., Railway, Render, VPS) y apuntar
+    esta tarea al endpoint publico.
+
+  Opcion C:
+    Instalar un cliente PostgreSQL compatible (psql o
+    psycopg2 para Python 3.10) en el sandbox y configurar
+    acceso de red al host de la base de datos.
+
+------------------------------------------------------------------
+PROXIMA EJECUCION PROGRAMADA: 2026-05-08 08:00
+==============================================================

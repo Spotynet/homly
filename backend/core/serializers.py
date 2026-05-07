@@ -13,6 +13,8 @@ from .models import (
     AmenityReservation, CondominioRequest, Notification,
     AuditLog, PaymentPlan, SubscriptionPlan, TenantSubscription,
     SubscriptionPayment,
+    CRMContact, CRMOpportunity, CRMActivity,
+    CRMCampaign, CRMCampaignContact, CRMTicket,
 )
 
 
@@ -1022,4 +1024,252 @@ class SubscriptionPaymentSerializer(serializers.ModelSerializer):
 
     def get_payment_method_label(self, obj):
         return obj.get_payment_method_display()
+
+
+# ═══════════════════════════════════════════════════════════
+#  CRM SERIALIZERS
+# ═══════════════════════════════════════════════════════════
+
+class CRMContactSerializer(serializers.ModelSerializer):
+    full_name               = serializers.SerializerMethodField()
+    assigned_to_name        = serializers.SerializerMethodField()
+    status_label            = serializers.SerializerMethodField()
+    source_label            = serializers.SerializerMethodField()
+    open_opportunities      = serializers.SerializerMethodField()
+    open_tickets            = serializers.SerializerMethodField()
+    condominio_request_data = serializers.SerializerMethodField()
+
+    class Meta:
+        model = CRMContact
+        fields = [
+            'id', 'full_name', 'first_name', 'last_name', 'email', 'phone',
+            'company', 'cargo', 'country', 'state', 'city', 'units_count',
+            'source', 'source_label', 'status', 'status_label',
+            'lead_score', 'assigned_to', 'assigned_to_name',
+            'tags', 'notes', 'last_activity_at',
+            'condominio_request', 'condominio_request_data',
+            'tenant',
+            'open_opportunities', 'open_tickets',
+            'created_at', 'updated_at',
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at',
+                            'full_name', 'assigned_to_name', 'status_label',
+                            'source_label', 'open_opportunities', 'open_tickets',
+                            'condominio_request_data']
+
+    def get_full_name(self, obj):
+        return obj.full_name
+
+    def get_assigned_to_name(self, obj):
+        return obj.assigned_to.name if obj.assigned_to else None
+
+    def get_status_label(self, obj):
+        return obj.get_status_display()
+
+    def get_source_label(self, obj):
+        return obj.get_source_display()
+
+    def get_open_opportunities(self, obj):
+        return obj.opportunities.exclude(stage__in=['won', 'lost']).count()
+
+    def get_open_tickets(self, obj):
+        return obj.tickets.exclude(status__in=['resolved', 'closed']).count()
+
+    def get_condominio_request_data(self, obj):
+        if not obj.condominio_request:
+            return None
+        req = obj.condominio_request
+        return {
+            'id': str(req.id),
+            'condominio_nombre': req.condominio_nombre,
+            'status': req.status,
+            'condominio_unidades': req.condominio_unidades,
+            'created_at': req.created_at,
+        }
+
+
+class CRMOpportunitySerializer(serializers.ModelSerializer):
+    stage_label       = serializers.SerializerMethodField()
+    assigned_to_name  = serializers.SerializerMethodField()
+    contact_name      = serializers.SerializerMethodField()
+    contact_company   = serializers.SerializerMethodField()
+    weighted_value    = serializers.SerializerMethodField()
+
+    class Meta:
+        model = CRMOpportunity
+        fields = [
+            'id', 'contact', 'contact_name', 'contact_company',
+            'title', 'stage', 'stage_label', 'stage_order',
+            'value', 'currency', 'probability', 'weighted_value',
+            'expected_close', 'actual_close',
+            'won_at', 'lost_at', 'lost_reason',
+            'assigned_to', 'assigned_to_name',
+            'notes', 'created_at', 'updated_at',
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at', 'won_at', 'lost_at',
+                            'stage_label', 'assigned_to_name', 'contact_name',
+                            'contact_company', 'weighted_value']
+
+    def get_stage_label(self, obj):
+        return obj.get_stage_display()
+
+    def get_assigned_to_name(self, obj):
+        return obj.assigned_to.name if obj.assigned_to else None
+
+    def get_contact_name(self, obj):
+        return obj.contact.full_name if obj.contact else None
+
+    def get_contact_company(self, obj):
+        return obj.contact.company if obj.contact else None
+
+    def get_weighted_value(self, obj):
+        return float(obj.value) * obj.probability / 100
+
+
+class CRMActivitySerializer(serializers.ModelSerializer):
+    type_label       = serializers.SerializerMethodField()
+    created_by_name  = serializers.SerializerMethodField()
+
+    class Meta:
+        model = CRMActivity
+        fields = [
+            'id', 'contact', 'opportunity',
+            'type', 'type_label', 'title', 'description', 'outcome',
+            'scheduled_at', 'completed_at', 'is_completed',
+            'created_by', 'created_by_name', 'created_at',
+        ]
+        read_only_fields = ['id', 'created_at', 'type_label', 'created_by_name', 'created_by']
+
+    def get_type_label(self, obj):
+        return obj.get_type_display()
+
+    def get_created_by_name(self, obj):
+        return obj.created_by.name if obj.created_by else None
+
+    def create(self, validated_data):
+        request = self.context.get('request')
+        if request and hasattr(request, 'user'):
+            validated_data['created_by'] = request.user
+        return super().create(validated_data)
+
+
+class CRMCampaignContactSerializer(serializers.ModelSerializer):
+    contact_name  = serializers.SerializerMethodField()
+    contact_email = serializers.SerializerMethodField()
+    status_label  = serializers.SerializerMethodField()
+
+    class Meta:
+        model = CRMCampaignContact
+        fields = [
+            'id', 'campaign', 'contact', 'contact_name', 'contact_email',
+            'delivery_status', 'status_label',
+            'sent_at', 'opened_at', 'clicked_at', 'converted_at',
+        ]
+        read_only_fields = ['id', 'contact_name', 'contact_email', 'status_label']
+
+    def get_contact_name(self, obj):
+        return obj.contact.full_name if obj.contact else None
+
+    def get_contact_email(self, obj):
+        return obj.contact.email if obj.contact else None
+
+    def get_status_label(self, obj):
+        return obj.get_delivery_status_display()
+
+
+class CRMCampaignSerializer(serializers.ModelSerializer):
+    type_label       = serializers.SerializerMethodField()
+    status_label     = serializers.SerializerMethodField()
+    created_by_name  = serializers.SerializerMethodField()
+    recipient_count  = serializers.SerializerMethodField()
+
+    class Meta:
+        model = CRMCampaign
+        fields = [
+            'id', 'name', 'type', 'type_label', 'status', 'status_label',
+            'subject', 'body_text', 'body_html',
+            'target_filters', 'scheduled_at', 'sent_at', 'stats',
+            'created_by', 'created_by_name', 'recipient_count',
+            'created_at', 'updated_at',
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at', 'sent_at',
+                            'type_label', 'status_label', 'created_by_name',
+                            'recipient_count', 'created_by']
+
+    def get_type_label(self, obj):
+        return obj.get_type_display()
+
+    def get_status_label(self, obj):
+        return obj.get_status_display()
+
+    def get_created_by_name(self, obj):
+        return obj.created_by.name if obj.created_by else None
+
+    def get_recipient_count(self, obj):
+        return obj.recipients.count()
+
+    def create(self, validated_data):
+        request = self.context.get('request')
+        if request and hasattr(request, 'user'):
+            validated_data['created_by'] = request.user
+        return super().create(validated_data)
+
+
+class CRMTicketSerializer(serializers.ModelSerializer):
+    type_label       = serializers.SerializerMethodField()
+    priority_label   = serializers.SerializerMethodField()
+    status_label     = serializers.SerializerMethodField()
+    assigned_to_name = serializers.SerializerMethodField()
+    contact_name     = serializers.SerializerMethodField()
+    tenant_name      = serializers.SerializerMethodField()
+
+    class Meta:
+        model = CRMTicket
+        fields = [
+            'id', 'contact', 'contact_name', 'tenant', 'tenant_name',
+            'subject', 'description',
+            'type', 'type_label', 'priority', 'priority_label',
+            'status', 'status_label',
+            'assigned_to', 'assigned_to_name',
+            'tags', 'resolution_notes',
+            'first_response_at', 'resolved_at',
+            'created_at', 'updated_at',
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at',
+                            'type_label', 'priority_label', 'status_label',
+                            'assigned_to_name', 'contact_name', 'tenant_name']
+
+    def get_type_label(self, obj):
+        return obj.get_type_display()
+
+    def get_priority_label(self, obj):
+        return obj.get_priority_display()
+
+    def get_status_label(self, obj):
+        return obj.get_status_display()
+
+    def get_assigned_to_name(self, obj):
+        return obj.assigned_to.name if obj.assigned_to else None
+
+    def get_contact_name(self, obj):
+        return obj.contact.full_name if obj.contact else None
+
+    def get_tenant_name(self, obj):
+        return obj.tenant.name if obj.tenant else None
+
+
+class CRMDashboardSerializer(serializers.Serializer):
+    """Read-only aggregate stats for the CRM dashboard."""
+    total_contacts    = serializers.IntegerField()
+    contacts_by_status = serializers.DictField(child=serializers.IntegerField())
+    total_opportunities  = serializers.IntegerField()
+    pipeline_value       = serializers.FloatField()
+    weighted_pipeline    = serializers.FloatField()
+    opportunities_by_stage = serializers.DictField(child=serializers.IntegerField())
+    won_this_month       = serializers.IntegerField()
+    lost_this_month      = serializers.IntegerField()
+    total_tickets        = serializers.IntegerField()
+    open_tickets         = serializers.IntegerField()
+    tickets_by_priority  = serializers.DictField(child=serializers.IntegerField())
+    recent_activities    = serializers.ListField(child=serializers.DictField())
 
