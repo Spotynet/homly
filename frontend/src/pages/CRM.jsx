@@ -196,7 +196,7 @@ function ContactForm({ initial = {}, onSave, onClose, loading }) {
     first_name: '', last_name: '', email: '', phone: '',
     company: '', cargo: '', country: '', state: '', city: '',
     units_count: 0, source: 'manual', status: 'lead',
-    lead_score: 50, notes: '', tags: '',
+    lead_score: 50, notes: '',
     ...initial,
     tags: Array.isArray(initial.tags) ? initial.tags.join(', ') : (initial.tags || ''),
   });

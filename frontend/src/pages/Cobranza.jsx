@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
 import { paymentsAPI, unrecognizedIncomeAPI, reservationsAPI, reportsAPI } from '../api/client';
@@ -149,8 +149,6 @@ export default function Cobranza() {
     tenantData, unrecognizedIncome, closedPeriods, activePlansMap,
     isPeriodClosed,
   } = usePaymentsData(tenantId, period);
-
-  const isPeriodClosed = closedPeriods.some(cp => cp.period === period);
 
   // Load approved reservations with charge when receipt opens
   useEffect(() => {
