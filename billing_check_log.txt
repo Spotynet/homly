@@ -63,3 +63,49 @@ requiere UNA de las siguientes soluciones:
 ------------------------------------------------------------------
 PROXIMA EJECUCION PROGRAMADA: 2026-05-08 08:00
 ==============================================================
+
+==============================================================
+EJECUCION: 2026-05-08 08:00 (tarea programada diaria)
+==============================================================
+RESULTADO: ERROR — No se pudo ejecutar la verificacion
+
+CAUSA:
+  El sandbox de Claude (Linux/Python 3.10) no puede acceder a:
+  - El endpoint API local (http://localhost:8000) — bloqueado
+  - La base de datos PostgreSQL local (localhost:5432) — no accesible
+  - El entorno virtual del proyecto (Python 3.14/macOS) — binarios incompatibles
+
+ESTADO: Sin cambios en la base de datos. Ninguna suscripcion fue marcada.
+
+ACCION REQUERIDA:
+  Ejecutar la verificacion manualmente desde la maquina donde
+  corre el backend de Homly:
+
+    cd ~/Documents/Homly/backend
+    source venv/bin/activate
+    python manage.py shell -c "
+    import datetime
+    from django.utils import timezone
+    from core.models import TenantSubscription
+    today = timezone.now().date()
+    grace_deadline = today - datetime.timedelta(days=5)
+    candidates = TenantSubscription.objects.select_related('tenant','plan').filter(
+        status__in=['active','trial'],
+        next_billing_date__isnull=False,
+        next_billing_date__lte=grace_deadline,
+    )
+    marked = 0
+    for sub in candidates:
+        has_payment = sub.payments.filter(payment_date__gte=sub.next_billing_date).exists()
+        if not has_payment:
+            sub.status = 'past_due'
+            sub.save(update_fields=['status','updated_at'])
+            sub.sync_tenant_active()
+            marked += 1
+            print(f'VENCIDO: {sub.tenant.name} - next_billing_date={sub.next_billing_date}')
+    total = TenantSubscription.objects.filter(status='past_due').count()
+    print(f'Completado: {marked} nuevos vencimientos, {total} total vencidos')
+    "
+
+PROXIMA EJECUCION PROGRAMADA: 2026-05-09 08:00
+==============================================================

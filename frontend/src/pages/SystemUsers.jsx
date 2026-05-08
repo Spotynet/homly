@@ -165,7 +165,7 @@ function Btn({ onClick, disabled, variant = 'primary', size = 'md', children, ty
 
 // ─── Role Card (compact selector) ─────────────────────────────────────────────
 
-function RoleCard({ roleKey, selected, onSelect, isSuperAdmin, currentUserRole }) {
+function RoleCard({ roleKey, selected, onSelect, currentUserRole }) {
   const p = ROLE_PROFILES[roleKey];
   const Icon = p.icon;
   // Restrict: only full super_admins can create another super_admin
@@ -486,8 +486,19 @@ export default function SystemUsers({ currentUserRole }) {
         });
         toast.success('Usuario actualizado');
       } else {
-        await systemUsersAPI.create(data);
-        toast.success('Usuario del sistema creado');
+        const res = await systemUsersAPI.create(data);
+        // If the backend auto-generated a temp password, show it so the admin
+        // can communicate it to the new user (same dialog as reset-password).
+        if (res.data?.temp_password) {
+          setTempPwd({
+            name: data.name,
+            email: data.email,
+            pwd: res.data.temp_password,
+            isNew: true,
+          });
+        } else {
+          toast.success('Usuario del sistema creado');
+        }
       }
       setUserModal(null);
       invalidate();
@@ -783,11 +794,14 @@ export default function SystemUsers({ currentUserRole }) {
 
       {/* Temp password dialog */}
       {tempPwd && (
-        <Modal title="Contraseña restablecida" onClose={() => setTempPwd(null)}>
+        <Modal title={tempPwd.isNew ? 'Usuario creado — contraseña inicial' : 'Contraseña restablecida'} onClose={() => setTempPwd(null)}>
           <div className="space-y-4 text-center">
             <div className="p-4 bg-amber-50 border border-amber-100 rounded-2xl">
               <KeyRound size={28} className="text-amber-500 mx-auto mb-2" />
-              <p className="text-sm text-slate-700 font-medium">Contraseña temporal para <strong>{tempPwd.name}</strong></p>
+              <p className="text-sm text-slate-700 font-medium">
+                {tempPwd.isNew ? 'Contraseña inicial para ' : 'Contraseña temporal para '}
+                <strong>{tempPwd.name}</strong>
+              </p>
               <p className="text-xs text-slate-500 mt-0.5">{tempPwd.email}</p>
               <div className="mt-3 bg-white border border-amber-200 rounded-xl px-4 py-3 flex items-center justify-between gap-2">
                 <code className="text-lg font-mono font-bold text-slate-800 tracking-wider">{tempPwd.pwd}</code>

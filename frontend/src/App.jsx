@@ -76,7 +76,7 @@ function RoleRoute({ module: moduleKey, children }) {
 }
 
 function AppRoutes() {
-  const { isAuthenticated, isVecino, isSuperAdmin, loading } = useAuth();
+  const { isAuthenticated, isVecino, isSuperAdmin, systemRole, loading } = useAuth();
 
   // Wait for auth to be restored from localStorage before rendering routes.
   // Without this, super admins get flashed to /app/dashboard (no tenantId) on refresh.
@@ -109,7 +109,7 @@ function AppRoutes() {
             <Route path="logs"           element={<Logs />} />
             <Route path="suscripciones"  element={<Suscripciones />} />
             <Route path="crm"            element={<CRM />} />
-            <Route path="usuarios"       element={<SystemUsers />} />
+            <Route path="usuarios"       element={<SystemUsers currentUserRole={systemRole} />} />
           </Route>
         )}
         <Route path="cobranza"      element={<RoleRoute module="cobranza">      <Cobranza />      </RoleRoute>} />

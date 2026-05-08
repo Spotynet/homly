@@ -7424,22 +7424,24 @@ class SystemUserViewSet(viewsets.ModelViewSet):
         return SystemUserSerializer
 
     def get_queryset(self):
-        """Return all system users (those with a system_role set)."""
-        qs = User.objects.filter(
-            is_super_admin=True,
-            system_role__isnull=False,
-        ).order_by('name')
+        """Return all system users (is_super_admin=True), including legacy ones
+        whose system_role was never set before the field was introduced."""
+        from django.db.models import Q as DQ
+        qs = User.objects.filter(is_super_admin=True).order_by('name')
 
-        role_f  = self.request.query_params.get('system_role')
-        search  = self.request.query_params.get('search', '').strip()
+        role_f   = self.request.query_params.get('system_role')
+        search   = self.request.query_params.get('search', '').strip()
         active_f = self.request.query_params.get('is_active')
 
         if role_f:
-            qs = qs.filter(system_role=role_f)
+            if role_f == 'super_admin':
+                # Include both explicit super_admin role AND legacy (no system_role)
+                qs = qs.filter(DQ(system_role='super_admin') | DQ(system_role__isnull=True))
+            else:
+                qs = qs.filter(system_role=role_f)
         if active_f is not None:
             qs = qs.filter(is_active=active_f in ('true', '1', 'True'))
         if search:
-            from django.db.models import Q as DQ
             qs = qs.filter(DQ(name__icontains=search) | DQ(email__icontains=search))
         return qs
 
@@ -7463,7 +7465,12 @@ class SystemUserViewSet(viewsets.ModelViewSet):
         serializer = SystemUserCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
-        return Response(SystemUserSerializer(user).data, status=status.HTTP_201_CREATED)
+        response_data = dict(SystemUserSerializer(user).data)
+        # Include the auto-generated temp password so the admin can share it with
+        # the new user. Only present when no explicit password was supplied.
+        if getattr(user, '_temp_password', None):
+            response_data['temp_password'] = user._temp_password
+        return Response(response_data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['patch'], url_path='update-permissions')
     def update_permissions(self, request, pk=None):

@@ -440,11 +440,18 @@ export default function Cobranza() {
       toast.error('La forma de pago es obligatoria'); return;
     }
     setSaving(true);
+    // Keep a ref to the unit before closing the capture modal
+    const capturedUnit = showCapture;
     try {
-      await paymentsAPI.capture(tenantId, buildCapturePayload());
+      const res = await paymentsAPI.capture(tenantId, buildCapturePayload());
       toast.success('Pago registrado');
       setShowCapture(null);
       queryClient.invalidateQueries({ queryKey: queryKeys.payments(tenantId, period) });
+      // Automatically open the receipt so the admin can verify the captured data
+      // and decide whether to send an email or print.
+      if (res?.data) {
+        setShowReceipt({ unit: capturedUnit, pay: res.data });
+      }
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Error al registrar pago');
     } finally {

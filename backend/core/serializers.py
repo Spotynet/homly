@@ -207,9 +207,19 @@ class SystemUserSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at', 'updated_at', 'system_role_label', 'allowed_tenants_data']
 
     def get_system_role_label(self, obj):
+        # Legacy super admins (created before the system_role field was introduced)
+        # have system_role=None but are full super admins — surface them as such.
         if not obj.system_role:
-            return None
+            return 'Super Administrador'
         return obj.get_system_role_display()
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        # Normalise legacy super admins: treat system_role=None as 'super_admin'
+        # so the frontend renders their role card and permissions correctly.
+        if not data.get('system_role') and instance.is_super_admin:
+            data['system_role'] = 'super_admin'
+        return data
 
     def get_allowed_tenants_data(self, obj):
         if not obj.allowed_tenant_ids:
@@ -242,7 +252,11 @@ class SystemUserCreateSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         import secrets
-        password = validated_data.pop('password', None) or secrets.token_urlsafe(12)
+        raw_password = validated_data.pop('password', None)
+        # If no password was provided, generate a secure temporary one and flag
+        # the user so they are forced to change it on first login.
+        auto_generated = not raw_password
+        password = raw_password or secrets.token_urlsafe(12)
         email = validated_data.get('email', '').lower()
         validated_data['email'] = email
         # System staff users get is_super_admin=True so they can log in and
@@ -250,9 +264,13 @@ class SystemUserCreateSerializer(serializers.ModelSerializer):
         # and system_permissions in the frontend and permission classes.
         validated_data['is_super_admin'] = True
         validated_data['is_staff'] = True
+        # Force password change on first login when the password was auto-generated.
+        validated_data['must_change_password'] = auto_generated
         user = User(**validated_data)
         user.set_password(password)
         user.save()
+        # Expose the generated password so the viewset can return it to the caller.
+        user._temp_password = password if auto_generated else None
         return user
 
 

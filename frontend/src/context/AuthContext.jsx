@@ -13,6 +13,8 @@ export function AuthProvider({ children }) {
   const [loading,            setLoading]            = useState(true);
   const [mustChangePassword, setMustChangePassword] = useState(false);
   const [profileId,          setProfileId]          = useState('');
+  // system_role for Homly internal staff (null for regular tenant users)
+  const [systemRole,         setSystemRole]         = useState(null);
 
   // ── Restore session on page load ─────────────────────────────────────────
   // M-06: El access_token vive en memoria (se pierde al recargar).
@@ -21,12 +23,13 @@ export function AuthProvider({ children }) {
   // Los datos de usuario (no sensibles) siguen en localStorage para restaurar la UI
   // inmediatamente mientras el refresh se completa en segundo plano.
   useEffect(() => {
-    const savedUser      = localStorage.getItem('user');
-    const savedRole      = localStorage.getItem('role');
-    const savedTenant    = localStorage.getItem('tenant_id');
-    const savedTenantName= localStorage.getItem('tenant_name');
-    const savedMustChange= localStorage.getItem('must_change_password');
-    const savedProfileId = localStorage.getItem('profile_id');
+    const savedUser       = localStorage.getItem('user');
+    const savedRole       = localStorage.getItem('role');
+    const savedTenant     = localStorage.getItem('tenant_id');
+    const savedTenantName = localStorage.getItem('tenant_name');
+    const savedMustChange = localStorage.getItem('must_change_password');
+    const savedProfileId  = localStorage.getItem('profile_id');
+    const savedSystemRole = localStorage.getItem('system_role');
 
     const restoreSession = async () => {
       try {
@@ -41,6 +44,7 @@ export function AuthProvider({ children }) {
           setTenantName(savedTenantName && savedTenantName !== 'null' ? savedTenantName : null);
           setMustChangePassword(savedMustChange === 'true');
           setProfileId(savedProfileId || '');
+          setSystemRole(savedSystemRole && savedSystemRole !== 'null' ? savedSystemRole : null);
         }
       } catch {
         // Cookie expirada o no existe — limpiar estado local
@@ -70,6 +74,7 @@ export function AuthProvider({ children }) {
     localStorage.setItem('role',                data.role);
     localStorage.setItem('must_change_password', data.must_change_password ? 'true' : 'false');
     localStorage.setItem('profile_id',          data.profile_id || '');
+    localStorage.setItem('system_role',         data.system_role || '');
     if (data.tenant_id) {
       localStorage.setItem('tenant_id',   data.tenant_id);
       localStorage.setItem('tenant_name', data.tenant_name);
@@ -91,6 +96,7 @@ export function AuthProvider({ children }) {
     setTenantName(data.tenant_name);
     setMustChangePassword(data.must_change_password);
     setProfileId(data.profile_id || '');
+    setSystemRole(data.system_role || null);
     return data;
   }, []);
 
@@ -106,6 +112,7 @@ export function AuthProvider({ children }) {
     setTenantName(data.tenant_name);
     setMustChangePassword(data.must_change_password);
     setProfileId(data.profile_id || '');
+    setSystemRole(data.system_role || null);
     return data;
   }, []);
 
@@ -129,6 +136,7 @@ export function AuthProvider({ children }) {
     setTenantName(data.tenant_name);
     setMustChangePassword(data.must_change_password);
     setProfileId(data.profile_id || '');
+    setSystemRole(data.system_role || null);
     return data;
   }, []);
 
@@ -143,6 +151,7 @@ export function AuthProvider({ children }) {
     localStorage.removeItem('tenant_name');
     localStorage.removeItem('must_change_password');
     localStorage.removeItem('profile_id');
+    localStorage.removeItem('system_role');
     setUser(null);
     setRole(null);
     setTenantId(null);
@@ -150,12 +159,14 @@ export function AuthProvider({ children }) {
     setUserTenants([]);
     setMustChangePassword(false);
     setProfileId('');
+    setSystemRole(null);
   }, []);
 
   const value = {
     user, role, tenantId, tenantName, userTenants, loading,
     mustChangePassword, setMustChangePassword,
     profileId, setProfileId,
+    systemRole,
     login, loginWithCode, logout, switchTenant, loadUserTenants,
     isAuthenticated: !!user,
     isSuperAdmin: role === 'superadmin',
