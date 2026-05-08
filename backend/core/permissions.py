@@ -7,13 +7,27 @@ from .models import TenantUser
 
 
 class IsSuperAdmin(BasePermission):
-    """Only super admins (system-level)."""
+    """Any system staff user (is_super_admin=True), regardless of system_role."""
     def has_permission(self, request, view):
         return (
             request.user
             and request.user.is_authenticated
             and request.user.is_super_admin
         )
+
+
+class IsFullSuperAdmin(BasePermission):
+    """
+    Only full super admins: system_role == 'super_admin' OR system_role is None (legacy).
+    Restricted staff (ventas, marketing, etc.) are NOT granted access.
+    """
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        if not request.user.is_super_admin:
+            return False
+        # Full super admin: legacy (no system_role) or explicitly 'super_admin'
+        return not request.user.system_role or request.user.system_role == 'super_admin'
 
 
 class IsTenantMember(BasePermission):

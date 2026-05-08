@@ -52,7 +52,7 @@ from .serializers import (
     CRMCampaignSerializer, CRMCampaignContactSerializer, CRMTicketSerializer,
     SystemUserSerializer, SystemUserCreateSerializer,
 )
-from .permissions import IsSuperAdmin, IsTenantAdmin, IsTenantMember, IsAdminOrTesorero, IsAdminOrTesOrAuditor, CanApproveReservation
+from .permissions import IsSuperAdmin, IsFullSuperAdmin, IsTenantAdmin, IsTenantMember, IsAdminOrTesorero, IsAdminOrTesOrAuditor, CanApproveReservation
 
 
 # ═══════════════════════════════════════════════════════════
@@ -553,6 +553,10 @@ class SwitchTenantView(APIView):
             'tenant_name':          tenant.name,
             'must_change_password': user.must_change_password,
             'profile_id':           profile_id,
+            # System staff fields — null for regular tenant users
+            'system_role':          user.system_role,
+            'system_permissions':   user.system_permissions if user.system_role else {},
+            'allowed_tenant_ids':   user.allowed_tenant_ids if user.system_role else [],
         })
         _set_refresh_cookie(response, refresh)  # M-06: HttpOnly cookie
         return response
@@ -637,12 +641,23 @@ class TenantsForEmailView(APIView):
         if not user.is_active:
             return Response({'is_super_admin': False, 'tenants': []})
 
-        # Super admin — can access every tenant in the system
+        # Super admin — full super admins see all tenants; restricted staff see only allowed ones
         if user.is_super_admin:
             try:
-                tenants = list(
-                    Tenant.objects.all().order_by('name').values('id', 'name')
-                )
+                is_full_admin = (not user.system_role or user.system_role == 'super_admin')
+                allowed_ids   = user.allowed_tenant_ids or []
+
+                if is_full_admin or not allowed_ids:
+                    # Full super admin (or restricted staff with no restriction): all tenants
+                    tenants = list(
+                        Tenant.objects.all().order_by('name').values('id', 'name')
+                    )
+                else:
+                    # Restricted staff: only tenants in allowed_tenant_ids
+                    tenants = list(
+                        Tenant.objects.filter(id__in=allowed_ids).order_by('name').values('id', 'name')
+                    )
+
                 return Response({
                     'is_super_admin': True,
                     'tenants': [{'id': str(t['id']), 'name': t['name']} for t in tenants],
@@ -7415,7 +7430,7 @@ class SystemUserViewSet(viewsets.ModelViewSet):
     without system_role) can create other super_admin users.
     All system users can be managed by super_admin only.
     """
-    permission_classes = [IsSuperAdmin]
+    permission_classes = [IsFullSuperAdmin]
     http_method_names  = ['get', 'post', 'patch', 'delete', 'head', 'options']
 
     def get_serializer_class(self):

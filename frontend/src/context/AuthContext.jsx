@@ -15,6 +15,10 @@ export function AuthProvider({ children }) {
   const [profileId,          setProfileId]          = useState('');
   // system_role for Homly internal staff (null for regular tenant users)
   const [systemRole,         setSystemRole]         = useState(null);
+  // system_permissions: {crm, tenants, billing, support, ...} — only for system_staff users
+  const [systemPermissions,  setSystemPermissions]  = useState({});
+  // allowed_tenant_ids: [] means all tenants; non-empty means restricted to those IDs
+  const [allowedTenantIds,   setAllowedTenantIds]   = useState([]);
 
   // ── Restore session on page load ─────────────────────────────────────────
   // M-06: El access_token vive en memoria (se pierde al recargar).
@@ -30,6 +34,8 @@ export function AuthProvider({ children }) {
     const savedMustChange = localStorage.getItem('must_change_password');
     const savedProfileId  = localStorage.getItem('profile_id');
     const savedSystemRole = localStorage.getItem('system_role');
+    const savedSystemPerms = localStorage.getItem('system_permissions');
+    const savedAllowedIds  = localStorage.getItem('allowed_tenant_ids');
 
     const restoreSession = async () => {
       try {
@@ -45,6 +51,12 @@ export function AuthProvider({ children }) {
           setMustChangePassword(savedMustChange === 'true');
           setProfileId(savedProfileId || '');
           setSystemRole(savedSystemRole && savedSystemRole !== 'null' ? savedSystemRole : null);
+          try {
+            setSystemPermissions(savedSystemPerms ? JSON.parse(savedSystemPerms) : {});
+          } catch { setSystemPermissions({}); }
+          try {
+            setAllowedTenantIds(savedAllowedIds ? JSON.parse(savedAllowedIds) : []);
+          } catch { setAllowedTenantIds([]); }
         }
       } catch {
         // Cookie expirada o no existe — limpiar estado local
@@ -55,6 +67,9 @@ export function AuthProvider({ children }) {
         localStorage.removeItem('tenant_name');
         localStorage.removeItem('must_change_password');
         localStorage.removeItem('profile_id');
+        localStorage.removeItem('system_role');
+        localStorage.removeItem('system_permissions');
+        localStorage.removeItem('allowed_tenant_ids');
       } finally {
         setLoading(false);
       }
@@ -75,6 +90,8 @@ export function AuthProvider({ children }) {
     localStorage.setItem('must_change_password', data.must_change_password ? 'true' : 'false');
     localStorage.setItem('profile_id',          data.profile_id || '');
     localStorage.setItem('system_role',         data.system_role || '');
+    localStorage.setItem('system_permissions',  JSON.stringify(data.system_permissions || {}));
+    localStorage.setItem('allowed_tenant_ids',  JSON.stringify(data.allowed_tenant_ids || []));
     if (data.tenant_id) {
       localStorage.setItem('tenant_id',   data.tenant_id);
       localStorage.setItem('tenant_name', data.tenant_name);
@@ -97,6 +114,8 @@ export function AuthProvider({ children }) {
     setMustChangePassword(data.must_change_password);
     setProfileId(data.profile_id || '');
     setSystemRole(data.system_role || null);
+    setSystemPermissions(data.system_permissions || {});
+    setAllowedTenantIds(data.allowed_tenant_ids || []);
     return data;
   }, []);
 
@@ -113,6 +132,8 @@ export function AuthProvider({ children }) {
     setMustChangePassword(data.must_change_password);
     setProfileId(data.profile_id || '');
     setSystemRole(data.system_role || null);
+    setSystemPermissions(data.system_permissions || {});
+    setAllowedTenantIds(data.allowed_tenant_ids || []);
     return data;
   }, []);
 
@@ -137,6 +158,8 @@ export function AuthProvider({ children }) {
     setMustChangePassword(data.must_change_password);
     setProfileId(data.profile_id || '');
     setSystemRole(data.system_role || null);
+    setSystemPermissions(data.system_permissions || {});
+    setAllowedTenantIds(data.allowed_tenant_ids || []);
     return data;
   }, []);
 
@@ -152,6 +175,8 @@ export function AuthProvider({ children }) {
     localStorage.removeItem('must_change_password');
     localStorage.removeItem('profile_id');
     localStorage.removeItem('system_role');
+    localStorage.removeItem('system_permissions');
+    localStorage.removeItem('allowed_tenant_ids');
     setUser(null);
     setRole(null);
     setTenantId(null);
@@ -160,16 +185,30 @@ export function AuthProvider({ children }) {
     setMustChangePassword(false);
     setProfileId('');
     setSystemRole(null);
+    setSystemPermissions({});
+    setAllowedTenantIds([]);
   }, []);
+
+  // ── Helper: check if system staff has a specific permission ──────────────
+  const hasSystemPermission = useCallback((permKey) => {
+    if (role === 'superadmin') return true;  // full super admins have everything
+    if (role !== 'system_staff') return false;
+    return !!(systemPermissions && systemPermissions[permKey]);
+  }, [role, systemPermissions]);
 
   const value = {
     user, role, tenantId, tenantName, userTenants, loading,
     mustChangePassword, setMustChangePassword,
     profileId, setProfileId,
     systemRole,
+    systemPermissions,
+    allowedTenantIds,
     login, loginWithCode, logout, switchTenant, loadUserTenants,
+    hasSystemPermission,
     isAuthenticated: !!user,
     isSuperAdmin: role === 'superadmin',
+    isSystemStaff: role === 'system_staff',
+    isAnySystemUser: role === 'superadmin' || role === 'system_staff',
     isAdmin: role === 'admin' || role === 'superadmin',
     isTesorero: role === 'tesorero',
     isVecino: role === 'vecino',

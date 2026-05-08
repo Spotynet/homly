@@ -51,9 +51,15 @@ class LoginSerializer(serializers.Serializer):
                     tenant = Tenant.objects.get(id=str(tenant_id))
                 except Tenant.DoesNotExist:
                     raise serializers.ValidationError('Condominio no encontrado.')
-            data['user']   = user
-            data['role']   = 'superadmin'
-            data['tenant'] = tenant
+            # Full super admin: no system_role OR system_role == 'super_admin'
+            # Restricted staff: any other system_role (ventas, marketing, etc.)
+            is_full_admin = (not user.system_role or user.system_role == 'super_admin')
+            data['user']        = user
+            data['role']        = 'superadmin' if is_full_admin else 'system_staff'
+            data['tenant']      = tenant
+            data['system_role'] = user.system_role or 'super_admin'
+            data['system_permissions'] = user.system_permissions or {}
+            data['allowed_tenant_ids'] = user.allowed_tenant_ids or []
             return data
 
         # Regular user — use the selected tenant_id, or fall back to first assigned
@@ -151,9 +157,15 @@ class LoginWithCodeSerializer(serializers.Serializer):
                     raise serializers.ValidationError(
                         {'tenant_id': 'Condominio no encontrado.'}
                     )
-            data['user']   = user
-            data['role']   = 'superadmin'
-            data['tenant'] = tenant
+            # Full super admin: no system_role OR system_role == 'super_admin'
+            # Restricted staff: any other system_role (ventas, marketing, etc.)
+            is_full_admin = (not user.system_role or user.system_role == 'super_admin')
+            data['user']        = user
+            data['role']        = 'superadmin' if is_full_admin else 'system_staff'
+            data['tenant']      = tenant
+            data['system_role'] = user.system_role or 'super_admin'
+            data['system_permissions'] = user.system_permissions or {}
+            data['allowed_tenant_ids'] = user.allowed_tenant_ids or []
             return data
 
         user_tenants = TenantUser.objects.select_related('tenant').filter(user=user)
