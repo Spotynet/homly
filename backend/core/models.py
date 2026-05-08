@@ -50,6 +50,14 @@ class User(AbstractBaseUser, PermissionsMixin):
     Custom user model. Supports both super-admins and tenant-scoped users.
     Maps from: S.superAdmins + tenant.users[]
     """
+    SYSTEM_ROLE_CHOICES = [
+        ('super_admin',        'Super Administrador'),
+        ('ventas',             'Revenue Growth Strategist'),
+        ('marketing',          'Content Strategist Lead'),
+        ('atencion_cliente',   'Customer Success Hero'),
+        ('soporte_tecnico',    'Systems Reliability Engineer'),
+    ]
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     email = models.EmailField(unique=True, db_index=True)
     name = models.CharField(max_length=200)
@@ -57,6 +65,25 @@ class User(AbstractBaseUser, PermissionsMixin):
     is_staff = models.BooleanField(default=False)
     is_super_admin = models.BooleanField(default=False)
     must_change_password = models.BooleanField(default=False)
+
+    # System staff role (null = regular tenant user)
+    system_role = models.CharField(
+        max_length=20, choices=SYSTEM_ROLE_CHOICES,
+        null=True, blank=True, db_index=True,
+        help_text='Role within the Homly internal team. Null = not a system user.',
+    )
+    # Granular module access for system staff (not for super_admin — they have all)
+    # Keys: 'crm', 'tenants', 'suscripciones', 'logs', 'system_users'
+    system_permissions = models.JSONField(
+        default=dict, blank=True,
+        help_text='Module-level access flags for non-superadmin system users.',
+    )
+    # Restrict which tenants a staff user can see (empty = all visible tenants)
+    allowed_tenant_ids = models.JSONField(
+        default=list, blank=True,
+        help_text='UUIDs of tenants this system user may access. Empty = all.',
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

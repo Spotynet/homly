@@ -16,10 +16,11 @@ import {
 const NAV_ITEMS = {
   superadmin: [
     { section: 'system', label: 'Sistema', items: [
-      { path: '/app/sistema/tenants',          icon: Globe,      label: 'Tenants'          },
-      { path: '/app/sistema/suscripciones',    icon: CreditCard, label: 'Suscripciones'    },
-      { path: '/app/sistema/crm',              icon: Target,     label: 'CRM Comercial'    },
-      { path: '/app/sistema/logs',             icon: Activity,   label: 'Logs del Sistema' },
+      { path: '/app/sistema/tenants',          icon: Globe,      label: 'Tenants'           },
+      { path: '/app/sistema/suscripciones',    icon: CreditCard, label: 'Suscripciones'     },
+      { path: '/app/sistema/crm',              icon: Target,     label: 'CRM Comercial'     },
+      { path: '/app/sistema/usuarios',         icon: Users,      label: 'Usuarios Sistema'  },
+      { path: '/app/sistema/logs',             icon: Activity,   label: 'Logs del Sistema'  },
     ]},
     { section: 'tenant_general', label: 'General', items: [
       { path: '/app/dashboard',      icon: Home,      label: 'Dashboard'     },
@@ -619,6 +620,10 @@ export default function AppLayout() {
   const { activeChapter, closeGuide } = useGuide();
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  // Collapsible sidebar sections — default: all open
+  const [collapsedSections, setCollapsedSections] = useState({});
+  const toggleSection = (key) =>
+    setCollapsedSections(prev => ({ ...prev, [key]: !prev[key] }));
   const [tenantModulePerms,          setTenantModulePerms]          = useState({});
   const [customProfiles,             setCustomProfiles]             = useState([]);
   const [subscriptionAllowedModules, setSubscriptionAllowedModules] = useState([]);
@@ -809,27 +814,62 @@ export default function AppLayout() {
 
         {/* Navigation */}
         <nav className="sidebar-nav">
-          {effectiveNav.map((group, gi) => (
-            <div key={gi}>
-              {group.label && (
-                <div className="nav-group-label">{group.label}</div>
-              )}
-              {group.items.map(item => {
-                const active = location.pathname === item.path;
-                const Icon   = item.icon;
-                return (
+          {effectiveNav.map((group, gi) => {
+            const sectionKey = group.section || `section-${gi}`;
+            const isCollapsed = !!collapsedSections[sectionKey];
+            const hasActiveItem = group.items.some(item => location.pathname === item.path);
+            return (
+              <div key={gi}>
+                {group.label && (
                   <button
-                    key={item.path}
-                    onClick={() => { navigate(item.path); setSidebarOpen(false); }}
-                    className={`nav-item${active ? ' active' : ''}`}
+                    onClick={() => toggleSection(sectionKey)}
+                    className="nav-group-label"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      width: '100%',
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      padding: '0',
+                      userSelect: 'none',
+                    }}
                   >
-                    <Icon size={18} />
-                    {item.label}
+                    <span style={{ fontWeight: hasActiveItem && isCollapsed ? 700 : undefined }}>
+                      {group.label}
+                      {hasActiveItem && isCollapsed && (
+                        <span style={{ display: 'inline-block', width: 5, height: 5, borderRadius: '50%', background: 'var(--teal-500, #0d9488)', marginLeft: 5, verticalAlign: 'middle' }} />
+                      )}
+                    </span>
+                    <ChevronDown
+                      size={12}
+                      style={{
+                        flexShrink: 0,
+                        transition: 'transform 0.2s',
+                        transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)',
+                        opacity: 0.5,
+                      }}
+                    />
                   </button>
-                );
-              })}
-            </div>
-          ))}
+                )}
+                {!isCollapsed && group.items.map(item => {
+                  const active = location.pathname === item.path;
+                  const Icon   = item.icon;
+                  return (
+                    <button
+                      key={item.path}
+                      onClick={() => { navigate(item.path); setSidebarOpen(false); }}
+                      className={`nav-item${active ? ' active' : ''}`}
+                    >
+                      <Icon size={18} />
+                      {item.label}
+                    </button>
+                  );
+                })}
+              </div>
+            );
+          })}
         </nav>
 
         {/* Footer */}

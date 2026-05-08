@@ -27,6 +27,7 @@ import CierrePeriodo from './pages/CierrePeriodo';
 import Logs from './pages/Logs';
 import Suscripciones from './pages/Suscripciones';
 import CRM from './pages/CRM';
+import SystemUsers from './pages/SystemUsers';
 import Registro from './pages/Registro';
 import PlanPagos from './pages/PlanPagos';
 import Onboarding from './pages/Onboarding';
@@ -108,6 +109,7 @@ function AppRoutes() {
             <Route path="logs"           element={<Logs />} />
             <Route path="suscripciones"  element={<Suscripciones />} />
             <Route path="crm"            element={<CRM />} />
+            <Route path="usuarios"       element={<SystemUsers />} />
           </Route>
         )}
         <Route path="cobranza"      element={<RoleRoute module="cobranza">      <Cobranza />      </RoleRoute>} />

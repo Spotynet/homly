@@ -204,9 +204,9 @@ export default function Login() {
                   onClick={handleRequestCode}
                   disabled={sendingCode}
                   className="w-full justify-center py-3 text-base"
-                  style={{ background: '#1D4ED8', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700, fontSize: 15, cursor: sendingCode ? 'default' : 'pointer', opacity: sendingCode ? 0.7 : 1, display: 'flex', alignItems: 'center', gap: 8, transition: 'background 0.15s' }}
-                  onMouseEnter={e => { if (!sendingCode) e.currentTarget.style.background = '#1E40AF'; }}
-                  onMouseLeave={e => { e.currentTarget.style.background = '#1D4ED8'; }}
+                  style={{ background: 'linear-gradient(135deg, #0d9488, #059669)', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700, fontSize: 15, cursor: sendingCode ? 'default' : 'pointer', opacity: sendingCode ? 0.7 : 1, display: 'flex', alignItems: 'center', gap: 8, transition: 'all 0.15s', boxShadow: sendingCode ? 'none' : '0 2px 8px rgba(13,148,136,0.3)' }}
+                  onMouseEnter={e => { if (!sendingCode) e.currentTarget.style.background = 'linear-gradient(135deg, #0f766e, #047857)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'linear-gradient(135deg, #0d9488, #059669)'; }}
                 >
                   {sendingCode ? 'Enviando código…' : 'Enviar código por correo'}
                 </button>

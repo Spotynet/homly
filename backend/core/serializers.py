@@ -188,6 +188,74 @@ class UserSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at']
 
 
+class SystemUserSerializer(serializers.ModelSerializer):
+    """
+    Serializer for Homly internal system staff users.
+    Used by SystemUserViewSet (SuperAdmin only).
+    """
+    system_role_label = serializers.SerializerMethodField()
+    allowed_tenants_data = serializers.SerializerMethodField()
+
+    class Meta:
+        model = User
+        fields = [
+            'id', 'email', 'name', 'is_active',
+            'system_role', 'system_role_label',
+            'system_permissions', 'allowed_tenant_ids', 'allowed_tenants_data',
+            'created_at', 'updated_at',
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at', 'system_role_label', 'allowed_tenants_data']
+
+    def get_system_role_label(self, obj):
+        if not obj.system_role:
+            return None
+        return obj.get_system_role_display()
+
+    def get_allowed_tenants_data(self, obj):
+        if not obj.allowed_tenant_ids:
+            return []
+        from .models import Tenant as _Tenant
+        tenants = _Tenant.objects.filter(id__in=obj.allowed_tenant_ids).values('id', 'name')
+        return [{'id': str(t['id']), 'name': t['name']} for t in tenants]
+
+
+class SystemUserCreateSerializer(serializers.ModelSerializer):
+    """
+    Creates a new Homly internal staff user with system_role.
+    Automatically sets is_super_admin=True so they can authenticate.
+    """
+    password = serializers.CharField(write_only=True, required=False, allow_blank=True)
+
+    class Meta:
+        model = User
+        fields = [
+            'id', 'email', 'name',
+            'system_role', 'system_permissions', 'allowed_tenant_ids',
+            'password',
+        ]
+        read_only_fields = ['id']
+
+    def validate_system_role(self, value):
+        if not value:
+            raise serializers.ValidationError('El rol de sistema es requerido.')
+        return value
+
+    def create(self, validated_data):
+        import secrets
+        password = validated_data.pop('password', None) or secrets.token_urlsafe(12)
+        email = validated_data.get('email', '').lower()
+        validated_data['email'] = email
+        # System staff users get is_super_admin=True so they can log in and
+        # access the sistema section. Their actual access is gated by system_role
+        # and system_permissions in the frontend and permission classes.
+        validated_data['is_super_admin'] = True
+        validated_data['is_staff'] = True
+        user = User(**validated_data)
+        user.set_password(password)
+        user.save()
+        return user
+
+
 class UserCreateSerializer(serializers.ModelSerializer):
     # validators=[] removes the auto-generated UniqueValidator on email so we can
     # handle "existing user → just add to tenant" logic inside create().

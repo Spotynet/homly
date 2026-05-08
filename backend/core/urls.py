@@ -13,6 +13,9 @@ router.register(r'subscription-plans', views.SubscriptionPlanViewSet, basename='
 router.register(r'trial-requests', views.TrialRequestViewSet, basename='trial-requests')
 router.register(r'tenant-subscriptions', views.TenantSubscriptionViewSet, basename='tenant-subscriptions')
 
+# System staff users (superadmin only)
+router.register(r'system-users', views.SystemUserViewSet, basename='system-users')
+
 # CRM routes (superadmin only)
 router.register(r'crm/contacts', views.CRMContactViewSet, basename='crm-contacts')
 router.register(r'crm/opportunities', views.CRMOpportunityViewSet, basename='crm-opportunities')

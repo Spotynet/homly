@@ -679,6 +679,16 @@ function HibernateModal({ tenant, onClose, onConfirm, loading }) {
   );
 }
 
+// ─── Status filter tabs config ────────────────────────────────────────────────
+
+const STATUS_FILTERS = [
+  { id: 'all',        label: 'Todos',      dot: null },
+  { id: 'active',     label: 'Activos',    dot: '#16A34A' },
+  { id: 'trial',      label: 'En Prueba',  dot: '#2563EB' },
+  { id: 'past_due',   label: 'Vencida',    dot: '#D97706' },
+  { id: 'hibernated', label: 'Hibernados', dot: '#7C3AED' },
+];
+
 // ─── Main Tenants page ────────────────────────────────────────────────────────
 
 export default function Tenants() {
@@ -699,6 +709,7 @@ export default function Tenants() {
   const [hibernateModal, setHibernateModal] = useState(null); // tenant object
   const [hibernating,    setHibernating]    = useState(false);
   const [reactivating,   setReactivating]   = useState(null); // tenant id
+  const [statusFilter,   setStatusFilter]   = useState('all');
 
   const load = useCallback(() => {
     setLoading(true);
@@ -725,10 +736,18 @@ export default function Tenants() {
       .catch(() => {});
   }, []);
 
-  // Filter by search term
-  const filtered = search.trim()
-    ? tenants.filter(t => t.name?.toLowerCase().includes(search.trim().toLowerCase()))
+  // Filter by status tab
+  const statusFiltered =
+    statusFilter === 'active'     ? tenants.filter(t => !t.hibernated && t.subscription_status === 'active')
+    : statusFilter === 'trial'    ? tenants.filter(t => !t.hibernated && t.subscription_status === 'trial')
+    : statusFilter === 'past_due' ? tenants.filter(t => !t.hibernated && t.subscription_status === 'past_due')
+    : statusFilter === 'hibernated' ? tenants.filter(t => !!t.hibernated)
     : tenants;
+
+  // Further filter by search term
+  const filtered = search.trim()
+    ? statusFiltered.filter(t => t.name?.toLowerCase().includes(search.trim().toLowerCase()))
+    : statusFiltered;
 
   const handleEnter = async (t) => {
     if (entering) return;
@@ -866,20 +885,73 @@ export default function Tenants() {
     </div>
   );
 
+  // KPI counts (always from full tenants list, not filtered)
+  const kpiCounts = {
+    total:      tenants.length,
+    active:     tenants.filter(t => !t.hibernated && t.subscription_status === 'active').length,
+    trial:      tenants.filter(t => !t.hibernated && t.subscription_status === 'trial').length,
+    pastDue:    tenants.filter(t => !t.hibernated && t.subscription_status === 'past_due').length,
+    hibernated: tenants.filter(t => !!t.hibernated).length,
+  };
+
   return (
     <div className="content-fade">
 
-      {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <span className="badge badge-teal">{tenants.length} condominios</span>
-          {search && filtered.length !== tenants.length && (
-            <span className="badge badge-gray">{filtered.length} resultado{filtered.length !== 1 ? 's' : ''}</span>
-          )}
-          {activeTenantId && <span className="badge badge-gray">Activo seleccionado</span>}
+      {/* ── KPI Strip ──────────────────────────────────────────────────────── */}
+      <div style={{ display: 'flex', gap: 10, marginBottom: 20, flexWrap: 'wrap' }}>
+        {[
+          { label: 'Total',      value: kpiCounts.total,      color: 'var(--ink-800)', bg: 'var(--white)',  border: 'var(--sand-200)', onClick: () => setStatusFilter('all') },
+          { label: 'Activos',    value: kpiCounts.active,     color: '#16A34A',        bg: '#F0FDF4',       border: '#BBF7D0',        onClick: () => setStatusFilter('active') },
+          { label: 'En Prueba',  value: kpiCounts.trial,      color: '#2563EB',        bg: '#EFF6FF',       border: '#BFDBFE',        onClick: () => setStatusFilter('trial') },
+          { label: 'Vencidos',   value: kpiCounts.pastDue,    color: '#D97706',        bg: '#FFFBEB',       border: '#FDE68A',        onClick: () => setStatusFilter('past_due') },
+          { label: 'Hibernados', value: kpiCounts.hibernated, color: '#7C3AED',        bg: '#F5F3FF',       border: '#DDD6FE',        onClick: () => setStatusFilter('hibernated') },
+        ].map(k => (
+          <button key={k.label} onClick={k.onClick} style={{
+            flex: '1 1 110px', background: k.bg,
+            border: `1.5px solid ${k.border}`,
+            borderRadius: 14, padding: '12px 16px',
+            display: 'flex', flexDirection: 'column', gap: 3,
+            cursor: 'pointer', textAlign: 'left',
+            transition: 'box-shadow 0.15s, transform 0.1s',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+          }}
+            onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
+            onMouseLeave={e => { e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.04)'; e.currentTarget.style.transform = 'translateY(0)'; }}
+          >
+            <span style={{ fontSize: 26, fontWeight: 800, color: k.color, lineHeight: 1 }}>{k.value}</span>
+            <span style={{ fontSize: 11, color: 'var(--ink-500)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{k.label}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* ── Toolbar ────────────────────────────────────────────────────────── */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
+
+        {/* Status filter tabs */}
+        <div style={{
+          display: 'flex', gap: 2,
+          background: 'var(--sand-50)', border: '1px solid var(--sand-200)',
+          borderRadius: 12, padding: 3,
+        }}>
+          {STATUS_FILTERS.map(f => (
+            <button key={f.id} onClick={() => setStatusFilter(f.id)} style={{
+              display: 'flex', alignItems: 'center', gap: 5,
+              padding: '5px 12px', fontSize: 12, fontWeight: 600,
+              background: statusFilter === f.id ? 'var(--white)' : 'transparent',
+              color: statusFilter === f.id ? 'var(--ink-800)' : 'var(--ink-400)',
+              border: statusFilter === f.id ? '1px solid var(--sand-200)' : '1px solid transparent',
+              borderRadius: 9, cursor: 'pointer',
+              boxShadow: statusFilter === f.id ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+              transition: 'all 0.15s',
+            }}>
+              {f.dot && <span style={{ width: 6, height: 6, borderRadius: '50%', background: f.dot, flexShrink: 0 }} />}
+              {f.label}
+            </button>
+          ))}
         </div>
+
+        {/* Search + action buttons */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {/* Search input */}
           <div style={{ position: 'relative' }}>
             <input
               value={search}
@@ -902,7 +974,6 @@ export default function Tenants() {
               </button>
             )}
           </div>
-          {/* Refresh button */}
           <button onClick={load} title="Actualizar lista" style={{
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             width: 34, height: 34, background: 'var(--sand-50)',
@@ -940,10 +1011,10 @@ export default function Tenants() {
         </div>
       </div>
 
-      {/* Tenant cards */}
+      {/* ── Tenant List ─────────────────────────────────────────────────────── */}
       {filtered.length === 0 ? (
         <div className="card" style={{ padding: '48px 20px', textAlign: 'center', color: 'var(--ink-400)' }}>
-          <Building2 size={40} style={{ opacity: 0.3, marginBottom: 12, display: 'block', margin: '0 auto 12px' }} />
+          <Building2 size={40} style={{ opacity: 0.3, display: 'block', margin: '0 auto 12px' }} />
           {search ? (
             <>
               <p style={{ fontWeight: 600 }}>Sin resultados para "{search}"</p>
@@ -952,6 +1023,15 @@ export default function Tenants() {
                 <button onClick={() => setSearch('')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--teal-600)', fontWeight: 700, fontSize: 13, padding: 0 }}>
                   ver todos
                 </button>.
+              </p>
+            </>
+          ) : statusFilter !== 'all' ? (
+            <>
+              <p style={{ fontWeight: 600 }}>No hay condominios en esta categoría.</p>
+              <p style={{ fontSize: 13, marginTop: 4 }}>
+                <button onClick={() => setStatusFilter('all')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--teal-600)', fontWeight: 700, fontSize: 13, padding: 0 }}>
+                  Ver todos los condominios
+                </button>
               </p>
             </>
           ) : (
@@ -963,219 +1043,225 @@ export default function Tenants() {
         </div>
       ) : (
         <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
-          gap: 16,
+          border: '1px solid var(--sand-200)',
+          borderRadius: 16, overflow: 'hidden',
+          background: 'var(--white)',
+          boxShadow: '0 1px 6px rgba(0,0,0,0.05)',
         }}>
-          {filtered.map(t => {
-            const isActive    = t.id === activeTenantId;
-            const isLoading   = entering === t.id;
-            const isHibernated = !!t.hibernated;
-            const subStatus   = t.subscription_status;
+          {/* Table header */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 72px 190px 110px 188px',
+            alignItems: 'center',
+            padding: '9px 16px 9px 22px',
+            background: 'var(--sand-50)',
+            borderBottom: '1px solid var(--sand-200)',
+            fontSize: 11, fontWeight: 700, color: 'var(--ink-400)',
+            textTransform: 'uppercase', letterSpacing: '0.05em',
+          }}>
+            <span>Condominio</span>
+            <span style={{ textAlign: 'center' }}>Unidades</span>
+            <span>Membresía</span>
+            <span style={{ textAlign: 'right', paddingRight: 8 }}>Cuota / mes</span>
+            <span style={{ textAlign: 'right' }}>Acciones</span>
+          </div>
 
-            // Card border: purple for hibernated, teal for current, red for inactive, default otherwise
-            const cardBorder = isHibernated
-              ? '2px solid #DDD6FE'
-              : isActive
-                ? '2px solid var(--teal-400)'
-                : t.is_active === false ? '2px solid #FECACA' : '2px solid var(--sand-100)';
-            const cardShadow = isHibernated
-              ? '0 2px 10px rgba(124,58,237,0.08)'
-              : isActive
-                ? '0 0 0 3px rgba(20,184,166,0.12)'
-                : t.is_active === false ? '0 2px 8px rgba(220,38,38,0.08)' : '0 1px 4px rgba(0,0,0,0.06)';
+          {/* Rows */}
+          {filtered.map((t, idx) => {
+            const isActive     = t.id === activeTenantId;
+            const isLoading    = entering === t.id;
+            const isHibernated = !!t.hibernated;
+            const subStatus    = t.subscription_status;
+            const isLast       = idx === filtered.length - 1;
+
+            const accentColor = isHibernated ? '#7C3AED'
+              : isActive ? 'var(--teal-500)'
+              : t.is_active === false ? '#DC2626'
+              : 'transparent';
+
+            const rowBg = isHibernated ? '#FAFAFA'
+              : isActive ? 'rgba(20,184,166,0.03)'
+              : 'var(--white)';
 
             return (
-              <div key={t.id} style={{
-                background: isHibernated ? '#FAFAFA' : 'var(--white)',
-                border: cardBorder,
-                borderRadius: 16, padding: 20,
-                display: 'flex', flexDirection: 'column', gap: 14,
-                transition: 'box-shadow 0.15s, border-color 0.15s',
-                boxShadow: cardShadow,
-                opacity: isHibernated ? 0.85 : 1,
-              }}>
-                {/* Top row */}
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+              <div key={t.id}
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 72px 190px 110px 188px',
+                  alignItems: 'center',
+                  padding: '11px 16px 11px 19px',
+                  background: rowBg,
+                  borderBottom: isLast ? 'none' : '1px solid var(--sand-50)',
+                  borderLeft: `3px solid ${accentColor}`,
+                  opacity: isHibernated ? 0.92 : 1,
+                  transition: 'background 0.12s',
+                }}
+                onMouseEnter={e => { if (!isHibernated) e.currentTarget.style.background = isActive ? 'rgba(20,184,166,0.05)' : 'var(--sand-50)'; }}
+                onMouseLeave={e => { e.currentTarget.style.background = rowBg; }}
+              >
+                {/* ── Col 1: Avatar + Name + Location ─────────────────── */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
                   <div style={{
-                    width: 44, height: 44, borderRadius: 12, flexShrink: 0,
+                    width: 38, height: 38, borderRadius: 10, flexShrink: 0,
                     background: isHibernated ? '#EDE9FE'
                       : t.is_active === false ? '#FEE2E2'
                       : isActive ? 'var(--teal-500)' : 'var(--sand-100)',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: 18, fontWeight: 800,
+                    fontSize: 15, fontWeight: 800,
                     color: isHibernated ? '#7C3AED'
                       : t.is_active === false ? '#DC2626'
                       : isActive ? 'white' : 'var(--ink-500)',
                   }}>
-                    {isHibernated ? <Moon size={20} /> : t.name?.[0]?.toUpperCase()}
+                    {isHibernated ? <Moon size={16} /> : t.name?.[0]?.toUpperCase()}
                   </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 15, fontWeight: 700, color: isHibernated ? 'var(--ink-500)' : 'var(--ink-800)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {t.name}
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{
+                      display: 'flex', alignItems: 'center', gap: 6,
+                      fontSize: 14, fontWeight: 700,
+                      color: isHibernated ? 'var(--ink-500)' : 'var(--ink-800)',
+                    }}>
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {t.name}
+                      </span>
+                      {isActive && (
+                        <span style={{
+                          flexShrink: 0, fontSize: 9, fontWeight: 700,
+                          color: 'var(--teal-600)', background: 'var(--teal-50)',
+                          border: '1px solid var(--teal-200)', borderRadius: 10,
+                          padding: '1px 7px', textTransform: 'uppercase', letterSpacing: '0.04em',
+                        }}>Activo</span>
+                      )}
+                      {isHibernated && (
+                        <span style={{
+                          flexShrink: 0, fontSize: 9, fontWeight: 700,
+                          color: '#7C3AED', background: '#EDE9FE',
+                          border: '1px solid #DDD6FE', borderRadius: 10,
+                          padding: '1px 7px', textTransform: 'uppercase', letterSpacing: '0.04em',
+                        }}>Hibernado</span>
+                      )}
                     </div>
-                    {t.country && (
-                      <div style={{ fontSize: 12, color: 'var(--ink-400)', marginTop: 2 }}>
-                        {t.state ? `${t.state}, ` : ''}{t.country}
-                      </div>
-                    )}
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
-                    {isHibernated && (
-                      <span style={{
-                        display: 'flex', alignItems: 'center', gap: 4,
-                        fontSize: 10, fontWeight: 700, color: '#7C3AED',
-                        background: '#EDE9FE', border: '1px solid #DDD6FE',
-                        borderRadius: 20, padding: '2px 8px',
-                        textTransform: 'uppercase', letterSpacing: '0.05em', flexShrink: 0,
-                      }}>
-                        <Moon size={9} /> Hibernado
-                      </span>
-                    )}
-                    {!isHibernated && isActive && (
-                      <span style={{
-                        display: 'flex', alignItems: 'center', gap: 4,
-                        fontSize: 10, fontWeight: 700, color: 'var(--teal-600)',
-                        background: 'var(--teal-50)', border: '1px solid var(--teal-200)',
-                        borderRadius: 20, padding: '2px 8px',
-                        textTransform: 'uppercase', letterSpacing: '0.05em', flexShrink: 0,
-                      }}>
-                        <Check size={10} /> Activo
-                      </span>
-                    )}
-                    {!isHibernated && t.is_active === false && (
-                      <span style={{
-                        fontSize: 10, fontWeight: 700, color: '#DC2626',
-                        background: '#FEE2E2', borderRadius: 20, padding: '2px 8px',
-                        textTransform: 'uppercase',
-                      }}>Inactivo</span>
-                    )}
+                    <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 1, display: 'flex', alignItems: 'center', gap: 4 }}>
+                      {(t.state || t.country) && (
+                        <span>{[t.state, t.country].filter(Boolean).join(', ')}</span>
+                      )}
+                      {isHibernated && t.hibernation_reason && (
+                        <>
+                          {(t.state || t.country) && <span style={{ color: 'var(--sand-300)' }}>·</span>}
+                          <span style={{ color: '#9F7AEA', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 220 }}>
+                            <Lock size={9} style={{ display: 'inline', marginRight: 3, verticalAlign: 'middle' }} />
+                            {t.hibernation_reason}
+                          </span>
+                        </>
+                      )}
+                    </div>
                   </div>
                 </div>
 
-                {/* Hibernation reason banner */}
-                {isHibernated && t.hibernation_reason && (
-                  <div style={{
-                    display: 'flex', alignItems: 'flex-start', gap: 8,
-                    background: '#F5F3FF', border: '1px solid #DDD6FE',
-                    borderRadius: 9, padding: '8px 11px',
+                {/* ── Col 2: Units ─────────────────────────────────────── */}
+                <div style={{ textAlign: 'center' }}>
+                  <span style={{
+                    display: 'inline-block', fontSize: 14, fontWeight: 800,
+                    color: 'var(--ink-700)', background: 'var(--sand-50)',
+                    border: '1px solid var(--sand-200)', borderRadius: 8,
+                    padding: '3px 10px', minWidth: 34,
                   }}>
-                    <Lock size={12} color="#7C3AED" style={{ flexShrink: 0, marginTop: 1 }} />
-                    <span style={{ fontSize: 12, color: '#5B21B6', lineHeight: 1.4 }}>
-                      {t.hibernation_reason}
-                    </span>
-                  </div>
-                )}
+                    {t.units_actual ?? t.units_count ?? 0}
+                  </span>
+                </div>
 
-                {/* Subscription status row */}
-                <div style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  background: 'var(--sand-50)', borderRadius: 10, padding: '8px 12px',
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <CreditCard size={13} color="var(--ink-400)" />
-                    <span style={{ fontSize: 12, color: 'var(--ink-500)', fontWeight: 600 }}>
-                      {t.subscription_plan_name || 'Sin plan'}
-                    </span>
-                  </div>
+                {/* ── Col 3: Membership ────────────────────────────────── */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-600)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {t.subscription_plan_name
+                      ? t.subscription_plan_name
+                      : <span style={{ color: 'var(--ink-300)', fontStyle: 'italic', fontWeight: 400 }}>Sin plan</span>
+                    }
+                  </span>
                   <SubBadge status={subStatus} />
                 </div>
 
-                {/* Stats row */}
-                <div style={{ display: 'flex', gap: 8, padding: '10px 12px', background: 'var(--sand-50)', borderRadius: 10 }}>
-                  <div style={{ flex: 1, textAlign: 'center' }}>
-                    <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--ink-800)' }}>
-                      {t.units_actual ?? t.units_count ?? 0}
-                    </div>
-                    <div style={{ fontSize: 11, color: 'var(--ink-400)', fontWeight: 600 }}>Unidades</div>
+                {/* ── Col 4: Fee ───────────────────────────────────────── */}
+                <div style={{ textAlign: 'right', paddingRight: 8 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--teal-700)' }}>
+                    {fmtCurrency(t.maintenance_fee, t.currency)}
                   </div>
-                  <div style={{ width: 1, background: 'var(--sand-100)' }} />
-                  <div style={{ flex: 1, textAlign: 'center' }}>
-                    <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--teal-700)' }}>
-                      {fmtCurrency(t.maintenance_fee, t.currency)}
-                    </div>
-                    <div style={{ fontSize: 11, color: 'var(--ink-400)', fontWeight: 600 }}>Mantenimiento</div>
-                  </div>
-                  <div style={{ width: 1, background: 'var(--sand-100)' }} />
-                  <div style={{ flex: 1, textAlign: 'center' }}>
-                    <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--ink-700)' }}>
-                      {t.currency || 'MXN'}
-                    </div>
-                    <div style={{ fontSize: 11, color: 'var(--ink-400)', fontWeight: 600 }}>Moneda</div>
-                  </div>
+                  <div style={{ fontSize: 10, color: 'var(--ink-400)', marginTop: 1 }}>{t.currency || 'MXN'}</div>
                 </div>
 
-                {/* Actions */}
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                {/* ── Col 5: Actions ───────────────────────────────────── */}
+                <div style={{ display: 'flex', gap: 5, alignItems: 'center', justifyContent: 'flex-end' }}>
                   {isHibernated ? (
-                    /* Hibernated: show read-only lock + reactivate button */
                     <>
-                      <div style={{
-                        flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        gap: 6, padding: '8px 14px',
+                      <span style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 4,
+                        fontSize: 11, fontWeight: 600, color: '#7C3AED',
                         background: '#F5F3FF', border: '1px solid #DDD6FE',
-                        borderRadius: 10, fontSize: 13, fontWeight: 600, color: '#7C3AED',
+                        borderRadius: 8, padding: '5px 9px',
                       }}>
-                        <Lock size={13} /> Solo lectura
-                      </div>
+                        <Lock size={11} /> Solo lectura
+                      </span>
                       {isSuperAdmin && (
                         <button
                           title="Reactivar condominio"
                           disabled={reactivating === t.id}
                           onClick={() => handleReactivate(t)}
                           style={{
-                            display: 'flex', alignItems: 'center', gap: 6,
-                            padding: '8px 14px',
+                            display: 'flex', alignItems: 'center', gap: 5,
+                            padding: '5px 10px', fontSize: 11, fontWeight: 700,
                             background: reactivating === t.id ? 'var(--sand-100)' : '#ECFDF5',
                             color: reactivating === t.id ? 'var(--ink-400)' : '#065F46',
-                            border: '1px solid #A7F3D0', borderRadius: 10,
-                            fontSize: 13, fontWeight: 700,
+                            border: '1px solid #A7F3D0', borderRadius: 8,
                             cursor: reactivating === t.id ? 'default' : 'pointer',
                           }}>
-                          <RotateCcw size={13} />
+                          <RotateCcw size={11} />
                           {reactivating === t.id ? 'Reactivando…' : 'Reactivar'}
                         </button>
                       )}
                     </>
                   ) : (
-                    /* Normal: enter button */
-                    <button onClick={() => handleEnter(t)} disabled={!!entering}
+                    <button
+                      onClick={() => handleEnter(t)}
+                      disabled={!!entering}
                       style={{
-                        flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        gap: 6, padding: '8px 14px',
+                        display: 'flex', alignItems: 'center', gap: 5,
+                        padding: '5px 12px', fontSize: 12, fontWeight: 700,
                         background: isActive ? 'var(--teal-500)' : 'var(--teal-600)',
-                        color: 'white', border: 'none', borderRadius: 10,
-                        fontSize: 13, fontWeight: 700, cursor: entering ? 'default' : 'pointer',
+                        color: 'white', border: 'none', borderRadius: 8,
+                        cursor: entering ? 'default' : 'pointer',
                         opacity: entering && !isLoading ? 0.5 : 1,
+                        transition: 'opacity 0.15s',
                       }}>
-                      {isLoading ? 'Entrando…' : isActive ? <><Check size={14} /> Activo</> : <><LogIn size={14} /> Entrar</>}
+                      {isLoading ? 'Entrando…' : <><LogIn size={12} /> Entrar</>}
                     </button>
                   )}
 
-                  {/* Subscription */}
-                  <button title="Gestionar Membresía"
+                  <button
+                    title="Gestionar Membresía"
                     onClick={() => setSubModal(t)}
                     style={{
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      width: 36, height: 36, background: '#EFF6FF',
-                      border: '1px solid #BFDBFE', borderRadius: 10, cursor: 'pointer',
+                      width: 30, height: 30, background: '#EFF6FF',
+                      border: '1px solid #BFDBFE', borderRadius: 8, cursor: 'pointer',
                       color: '#2563EB',
                     }}>
-                    <CreditCard size={14} />
+                    <CreditCard size={13} />
                   </button>
 
-                  <button className="btn-icon" onClick={() => { setForm(t); setShowModal(true); }} title="Editar">
-                    <Edit size={14} />
+                  <button
+                    className="btn-icon"
+                    onClick={() => { setForm(t); setShowModal(true); }}
+                    title="Editar"
+                    style={{ width: 30, height: 30, borderRadius: 8 }}>
+                    <Edit size={13} />
                   </button>
 
                   {isSuperAdmin && !isHibernated && (
                     <button
                       className="btn-icon"
                       title="Hibernar condominio"
-                      style={{ color: '#7C3AED' }}
                       onClick={() => setHibernateModal(t)}
-                    >
-                      <Moon size={14} />
+                      style={{ width: 30, height: 30, borderRadius: 8, color: '#7C3AED' }}>
+                      <Moon size={13} />
                     </button>
                   )}
                 </div>
