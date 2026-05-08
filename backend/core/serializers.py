@@ -231,19 +231,32 @@ class SystemUserSerializer(serializers.ModelSerializer):
 
 class SystemUserCreateSerializer(serializers.ModelSerializer):
     """
-    Creates a new Homly internal staff user with system_role.
-    Automatically sets is_super_admin=True so they can authenticate.
+    Creates — or upgrades — a Homly internal staff user with a system_role.
+
+    Two cases:
+    • New email  → creates a fresh User with is_super_admin=True.
+    • Email already exists (e.g. a tenant resident or existing staff) → updates
+      the existing User in-place: sets is_super_admin=True and assigns the
+      requested system_role / permissions without touching the tenant memberships.
+
+    Authentication is always via email-verification-code (passwordless); no
+    password is ever set or returned.
     """
-    password = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    # validators=[] removes the auto-generated UniqueValidator on email so the
+    # serializer does not reject addresses that already belong to another User.
+    # The duplicate-email case is handled explicitly inside create().
+    email = serializers.EmailField(validators=[])
 
     class Meta:
         model = User
         fields = [
             'id', 'email', 'name',
             'system_role', 'system_permissions', 'allowed_tenant_ids',
-            'password',
         ]
         read_only_fields = ['id']
+        extra_kwargs = {
+            'name': {'required': False, 'allow_blank': True},
+        }
 
     def validate_system_role(self, value):
         if not value:
@@ -252,25 +265,52 @@ class SystemUserCreateSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         import secrets
-        raw_password = validated_data.pop('password', None)
-        # If no password was provided, generate a secure temporary one and flag
-        # the user so they are forced to change it on first login.
-        auto_generated = not raw_password
-        password = raw_password or secrets.token_urlsafe(12)
-        email = validated_data.get('email', '').lower()
+        email = validated_data.get('email', '').strip().lower()
         validated_data['email'] = email
-        # System staff users get is_super_admin=True so they can log in and
-        # access the sistema section. Their actual access is gated by system_role
-        # and system_permissions in the frontend and permission classes.
-        validated_data['is_super_admin'] = True
-        validated_data['is_staff'] = True
-        # Force password change on first login when the password was auto-generated.
-        validated_data['must_change_password'] = auto_generated
-        user = User(**validated_data)
-        user.set_password(password)
-        user.save()
-        # Expose the generated password so the viewset can return it to the caller.
-        user._temp_password = password if auto_generated else None
+
+        system_role        = validated_data.get('system_role')
+        system_permissions = validated_data.get('system_permissions', {})
+        allowed_tenant_ids = validated_data.get('allowed_tenant_ids', [])
+
+        try:
+            # ── Existing user: elevate to system staff without losing data ──
+            user = User.objects.get(email=email)
+            user.is_super_admin     = True
+            user.is_staff           = True
+            user.system_role        = system_role
+            user.system_permissions = system_permissions
+            user.allowed_tenant_ids = allowed_tenant_ids
+            # Keep the user's current name unless a non-empty name was supplied
+            if validated_data.get('name', '').strip():
+                user.name = validated_data['name'].strip()
+            user.save(update_fields=[
+                'is_super_admin', 'is_staff',
+                'system_role', 'system_permissions', 'allowed_tenant_ids',
+                'name', 'updated_at',
+            ])
+            user._was_existing = True
+        except User.DoesNotExist:
+            # ── New user: create with a random unguessable password ──────────
+            # Login is via email-verification-code; the password is never shown
+            # or prompted.  must_change_password stays False for the same reason.
+            if not validated_data.get('name', '').strip():
+                raise serializers.ValidationError(
+                    {'name': 'El nombre es obligatorio para nuevos usuarios.'}
+                )
+            auto_password = secrets.token_urlsafe(24)
+            user = User(
+                email=email,
+                name=validated_data['name'].strip(),
+                system_role=system_role,
+                system_permissions=system_permissions,
+                allowed_tenant_ids=allowed_tenant_ids,
+                is_super_admin=True,
+                is_staff=True,
+                must_change_password=False,
+            )
+            user.set_password(auto_password)
+            user.save()
+
         return user
 
 

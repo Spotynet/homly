@@ -7447,9 +7447,16 @@ class SystemUserViewSet(viewsets.ModelViewSet):
 
     def create(self, request, *args, **kwargs):
         """
-        Create a new system staff user.
-        Creating a 'super_admin' role user is restricted to existing super_admins
-        whose own system_role is 'super_admin' (or legacy users with no system_role).
+        Create — or upgrade — a system staff user.
+
+        • New email  → a fresh User is created.
+        • Existing email → the existing User is elevated to system staff
+          (is_super_admin=True) and assigned the requested role/permissions,
+          preserving any tenant memberships.
+
+        Creating a 'super_admin' role is restricted to full super_admins.
+        Authentication is passwordless (email-verification-code); no password
+        is generated or returned.
         """
         target_role = request.data.get('system_role')
         requester   = request.user
@@ -7465,12 +7472,10 @@ class SystemUserViewSet(viewsets.ModelViewSet):
         serializer = SystemUserCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
-        response_data = dict(SystemUserSerializer(user).data)
-        # Include the auto-generated temp password so the admin can share it with
-        # the new user. Only present when no explicit password was supplied.
-        if getattr(user, '_temp_password', None):
-            response_data['temp_password'] = user._temp_password
-        return Response(response_data, status=status.HTTP_201_CREATED)
+        # Determine HTTP status: 200 if existing user was upgraded, 201 if created.
+        was_existing = getattr(user, '_was_existing', False)
+        http_status = status.HTTP_200_OK if was_existing else status.HTTP_201_CREATED
+        return Response(SystemUserSerializer(user).data, status=http_status)
 
     @action(detail=True, methods=['patch'], url_path='update-permissions')
     def update_permissions(self, request, pk=None):

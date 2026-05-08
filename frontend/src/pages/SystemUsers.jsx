@@ -245,8 +245,14 @@ function UserForm({ initial = {}, onSave, onClose, loading, tenants = [], curren
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!form.name.trim() || !form.email.trim() || !form.system_role) {
-      toast.error('Nombre, email y rol son requeridos');
+    if (!form.email.trim() || !form.system_role) {
+      toast.error('Email y rol son requeridos');
+      return;
+    }
+    // Name is required for brand-new users; for an existing email the backend
+    // keeps the user's current name when this field is left blank.
+    if (!initial.id && !form.name.trim()) {
+      toast.error('El nombre es obligatorio para usuarios nuevos (déjalo en blanco si el correo ya existe en el sistema)');
       return;
     }
     onSave(form);
@@ -257,8 +263,17 @@ function UserForm({ initial = {}, onSave, onClose, loading, tenants = [], curren
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       {/* Basic info */}
+      {!initial.id && (
+        <div className="flex items-start gap-2.5 px-3 py-2.5 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-700">
+          <AlertCircle size={14} className="flex-shrink-0 mt-0.5" />
+          <span>
+            Si el correo ya pertenece a un residente o admin de condominio, se le asignará el perfil de sistema
+            sin crear una cuenta nueva. El acceso es siempre mediante <strong>código de verificación por email</strong>.
+          </span>
+        </div>
+      )}
       <div className="grid grid-cols-2 gap-4">
-        <Field label="Nombre completo" required>
+        <Field label="Nombre completo" required={!initial.id} hint={!initial.id ? 'Opcional si el correo ya existe en el sistema' : undefined}>
           <input className={inputCls} value={form.name} onChange={set('name')} placeholder="Ana García" />
         </Field>
         <Field label="Email" required>
@@ -474,6 +489,17 @@ export default function SystemUsers({ currentUserRole }) {
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['system-users'] });
 
   // ── Save user ─────────────────────────────────────────────────────
+  // Helper: extract the most useful validation message from an API error response.
+  const apiErrMsg = (e, fallback = 'Error al guardar usuario') => {
+    const d = e?.response?.data;
+    if (!d) return fallback;
+    // DRF field errors come as { field: ['msg', …] } or { detail: 'msg' }
+    if (typeof d === 'string') return d;
+    if (d.detail) return d.detail;
+    const firstField = Object.values(d).find(v => Array.isArray(v) && v.length);
+    return firstField ? firstField[0] : fallback;
+  };
+
   const handleSave = async (data) => {
     setLoading(true);
     try {
@@ -486,24 +512,22 @@ export default function SystemUsers({ currentUserRole }) {
         });
         toast.success('Usuario actualizado');
       } else {
+        // Authentication is via email-verification-code (passwordless).
+        // The backend either creates a new user (HTTP 201) or elevates an
+        // existing tenant user to system staff (HTTP 200) — no password is
+        // generated or returned in either case.
         const res = await systemUsersAPI.create(data);
-        // If the backend auto-generated a temp password, show it so the admin
-        // can communicate it to the new user (same dialog as reset-password).
-        if (res.data?.temp_password) {
-          setTempPwd({
-            name: data.name,
-            email: data.email,
-            pwd: res.data.temp_password,
-            isNew: true,
-          });
-        } else {
-          toast.success('Usuario del sistema creado');
-        }
+        const wasExisting = res.status === 200;
+        toast.success(
+          wasExisting
+            ? `${data.email} ya tenía cuenta — ahora tiene acceso como usuario del sistema`
+            : 'Usuario del sistema creado. Puede iniciar sesión con su código de verificación por email.'
+        );
       }
       setUserModal(null);
       invalidate();
     } catch (e) {
-      toast.error(e.response?.data?.detail || 'Error al guardar usuario');
+      toast.error(apiErrMsg(e));
     } finally { setLoading(false); }
   };
 
@@ -792,15 +816,14 @@ export default function SystemUsers({ currentUserRole }) {
         </Modal>
       )}
 
-      {/* Temp password dialog */}
+      {/* Temp password dialog — only used for manual password resets */}
       {tempPwd && (
-        <Modal title={tempPwd.isNew ? 'Usuario creado — contraseña inicial' : 'Contraseña restablecida'} onClose={() => setTempPwd(null)}>
+        <Modal title="Contraseña restablecida" onClose={() => setTempPwd(null)}>
           <div className="space-y-4 text-center">
             <div className="p-4 bg-amber-50 border border-amber-100 rounded-2xl">
               <KeyRound size={28} className="text-amber-500 mx-auto mb-2" />
               <p className="text-sm text-slate-700 font-medium">
-                {tempPwd.isNew ? 'Contraseña inicial para ' : 'Contraseña temporal para '}
-                <strong>{tempPwd.name}</strong>
+                Contraseña temporal para <strong>{tempPwd.name}</strong>
               </p>
               <p className="text-xs text-slate-500 mt-0.5">{tempPwd.email}</p>
               <div className="mt-3 bg-white border border-amber-200 rounded-xl px-4 py-3 flex items-center justify-between gap-2">
