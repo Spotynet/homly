@@ -243,21 +243,18 @@ class SystemUserSerializer(serializers.ModelSerializer):
 
 class SystemUserCreateSerializer(serializers.ModelSerializer):
     """
-    Creates — or upgrades — a Homly internal staff user with a system_role.
+    Creates a new Homly internal staff user with a system_role.
 
-    Two cases:
-    • New email  → creates a fresh User with is_super_admin=True.
-    • Email already exists (e.g. a tenant resident or existing staff) → updates
-      the existing User in-place: sets is_super_admin=True and assigns the
-      requested system_role / permissions without touching the tenant memberships.
+    Rules:
+    • The email must be unique across ALL users (system and tenant profiles).
+      A system user cannot share an email with any existing tenant user.
+    • Tenant users CAN coexist across multiple tenants (different rule).
+    • If system_permissions is empty, the role's default permissions are applied.
 
     Authentication is always via email-verification-code (passwordless); no
     password is ever set or returned.
     """
-    # validators=[] removes the auto-generated UniqueValidator on email so the
-    # serializer does not reject addresses that already belong to another User.
-    # The duplicate-email case is handled explicitly inside create().
-    email = serializers.EmailField(validators=[])
+    email = serializers.EmailField()
 
     class Meta:
         model = User
@@ -267,7 +264,7 @@ class SystemUserCreateSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id']
         extra_kwargs = {
-            'name': {'required': False, 'allow_blank': True},
+            'name': {'required': True},
         }
 
     def validate_system_role(self, value):
@@ -275,54 +272,58 @@ class SystemUserCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError('El rol de sistema es requerido.')
         return value
 
+    def validate_email(self, value):
+        email = value.strip().lower()
+        # System users must have a completely unique email — no sharing with any
+        # existing profile (tenant user OR another system user).
+        if User.objects.filter(email=email).exists():
+            raise serializers.ValidationError(
+                'Este correo ya existe en otro perfil. '
+                'Los usuarios del sistema deben tener un correo exclusivo que no esté '
+                'registrado en ningún otro perfil del sistema o de condominio.'
+            )
+        return email
+
     def create(self, validated_data):
         import secrets
-        email = validated_data.get('email', '').strip().lower()
-        validated_data['email'] = email
 
+        # Default permissions per role — mirrors ROLE_PROFILES.modules on the frontend
+        ROLE_DEFAULTS = {
+            'ventas':           {'crm': True, 'tenants': True},
+            'marketing':        {'crm': True},
+            'atencion_cliente': {'crm': True, 'tenants': True},
+            'soporte_tecnico':  {'logs': True, 'tenants': True},
+        }
+
+        email              = validated_data['email']  # already normalised by validate_email
         system_role        = validated_data.get('system_role')
-        system_permissions = validated_data.get('system_permissions', {})
-        allowed_tenant_ids = validated_data.get('allowed_tenant_ids', [])
+        system_permissions = validated_data.get('system_permissions') or {}
+        allowed_tenant_ids = validated_data.get('allowed_tenant_ids') or []
 
-        try:
-            # ── Existing user: elevate to system staff without losing data ──
-            user = User.objects.get(email=email)
-            user.is_super_admin     = True
-            user.is_staff           = True
-            user.system_role        = system_role
-            user.system_permissions = system_permissions
-            user.allowed_tenant_ids = allowed_tenant_ids
-            # Keep the user's current name unless a non-empty name was supplied
-            if validated_data.get('name', '').strip():
-                user.name = validated_data['name'].strip()
-            user.save(update_fields=[
-                'is_super_admin', 'is_staff',
-                'system_role', 'system_permissions', 'allowed_tenant_ids',
-                'name', 'updated_at',
-            ])
-            user._was_existing = True
-        except User.DoesNotExist:
-            # ── New user: create with a random unguessable password ──────────
-            # Login is via email-verification-code; the password is never shown
-            # or prompted.  must_change_password stays False for the same reason.
-            if not validated_data.get('name', '').strip():
-                raise serializers.ValidationError(
-                    {'name': 'El nombre es obligatorio para nuevos usuarios.'}
-                )
-            auto_password = secrets.token_urlsafe(24)
-            user = User(
-                email=email,
-                name=validated_data['name'].strip(),
-                system_role=system_role,
-                system_permissions=system_permissions,
-                allowed_tenant_ids=allowed_tenant_ids,
-                is_super_admin=True,
-                is_staff=True,
-                must_change_password=False,
-            )
-            user.set_password(auto_password)
-            user.save()
+        # If no permissions were sent (or an empty dict), fall back to role defaults.
+        # This ensures the predefined role permissions are always applied.
+        if not system_permissions and system_role and system_role != 'super_admin':
+            system_permissions = ROLE_DEFAULTS.get(system_role, {})
 
+        name = validated_data.get('name', '').strip()
+        if not name:
+            raise serializers.ValidationError({'name': 'El nombre es obligatorio.'})
+
+        # Login is via email-verification-code; the password is never shown
+        # or prompted.  must_change_password stays False for the same reason.
+        auto_password = secrets.token_urlsafe(24)
+        user = User(
+            email=email,
+            name=name,
+            system_role=system_role,
+            system_permissions=system_permissions,
+            allowed_tenant_ids=allowed_tenant_ids,
+            is_super_admin=True,
+            is_staff=True,
+            must_change_password=False,
+        )
+        user.set_password(auto_password)
+        user.save()
         return user
 
 

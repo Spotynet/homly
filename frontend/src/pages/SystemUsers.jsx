@@ -210,9 +210,21 @@ function RoleCard({ roleKey, selected, onSelect, currentUserRole }) {
 // ─── User Form ────────────────────────────────────────────────────────────────
 
 function UserForm({ initial = {}, onSave, onClose, loading, tenants = [], currentUserRole }) {
-  const [form, setForm] = useState({
-    name: '', email: '', system_role: 'ventas',
-    system_permissions: {}, allowed_tenant_ids: [], ...initial,
+  const [form, setForm] = useState(() => {
+    const base = {
+      name: '', email: '', system_role: 'ventas',
+      allowed_tenant_ids: [], ...initial,
+    };
+    // Always pre-populate permissions from the role defaults so the checkboxes
+    // show the correct initial state. The user can then add or remove modules.
+    // For editing (initial.id exists) keep whatever permissions are already saved,
+    // but also fall back to role defaults if saved permissions happen to be empty.
+    const roleForDefaults = base.system_role;
+    const hasPerms = initial.system_permissions && Object.keys(initial.system_permissions).length > 0;
+    base.system_permissions = hasPerms
+      ? { ...initial.system_permissions }
+      : (roleForDefaults !== 'super_admin' ? DEFAULT_PERMISSIONS(roleForDefaults) : {});
+    return base;
   });
   const [showRoles, setShowRoles] = useState(true);
   const set = (k) => (e) => setForm(p => ({ ...p, [k]: e.target.value }));
@@ -221,6 +233,8 @@ function UserForm({ initial = {}, onSave, onClose, loading, tenants = [], curren
     setForm(p => ({
       ...p,
       system_role: role,
+      // Switching roles resets permissions to that role's defaults.
+      // The user can then fine-tune them via the module toggles below.
       system_permissions: role === 'super_admin' ? {} : DEFAULT_PERMISSIONS(role),
     }));
   };
@@ -249,10 +263,8 @@ function UserForm({ initial = {}, onSave, onClose, loading, tenants = [], curren
       toast.error('Email y rol son requeridos');
       return;
     }
-    // Name is required for brand-new users; for an existing email the backend
-    // keeps the user's current name when this field is left blank.
     if (!initial.id && !form.name.trim()) {
-      toast.error('El nombre es obligatorio para usuarios nuevos (déjalo en blanco si el correo ya existe en el sistema)');
+      toast.error('El nombre completo es obligatorio');
       return;
     }
     onSave(form);
@@ -264,16 +276,16 @@ function UserForm({ initial = {}, onSave, onClose, loading, tenants = [], curren
     <form onSubmit={handleSubmit} className="space-y-6">
       {/* Basic info */}
       {!initial.id && (
-        <div className="flex items-start gap-2.5 px-3 py-2.5 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-700">
+        <div className="flex items-start gap-2.5 px-3 py-2.5 bg-teal-50 border border-teal-200 rounded-xl text-xs text-teal-700">
           <AlertCircle size={14} className="flex-shrink-0 mt-0.5" />
           <span>
-            Si el correo ya pertenece a un residente o admin de condominio, se le asignará el perfil de sistema
-            sin crear una cuenta nueva. El acceso es siempre mediante <strong>código de verificación por email</strong>.
+            El correo debe ser exclusivo para usuarios del sistema — no puede estar registrado en ningún condominio.
+            El acceso es siempre mediante <strong>código de verificación por email</strong>.
           </span>
         </div>
       )}
       <div className="grid grid-cols-2 gap-4">
-        <Field label="Nombre completo" required={!initial.id} hint={!initial.id ? 'Opcional si el correo ya existe en el sistema' : undefined}>
+        <Field label="Nombre completo" required={!initial.id}>
           <input className={inputCls} value={form.name} onChange={set('name')} placeholder="Ana García" />
         </Field>
         <Field label="Email" required>
@@ -512,17 +524,8 @@ export default function SystemUsers({ currentUserRole }) {
         });
         toast.success('Usuario actualizado');
       } else {
-        // Authentication is via email-verification-code (passwordless).
-        // The backend either creates a new user (HTTP 201) or elevates an
-        // existing tenant user to system staff (HTTP 200) — no password is
-        // generated or returned in either case.
-        const res = await systemUsersAPI.create(data);
-        const wasExisting = res.status === 200;
-        toast.success(
-          wasExisting
-            ? `${data.email} ya tenía cuenta — ahora tiene acceso como usuario del sistema`
-            : 'Usuario del sistema creado. Puede iniciar sesión con su código de verificación por email.'
-        );
+        await systemUsersAPI.create(data);
+        toast.success('Usuario del sistema creado. Puede iniciar sesión con su código de verificación por email.');
       }
       setUserModal(null);
       invalidate();

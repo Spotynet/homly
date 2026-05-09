@@ -7487,10 +7487,7 @@ class SystemUserViewSet(viewsets.ModelViewSet):
         serializer = SystemUserCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
-        # Determine HTTP status: 200 if existing user was upgraded, 201 if created.
-        was_existing = getattr(user, '_was_existing', False)
-        http_status = status.HTTP_200_OK if was_existing else status.HTTP_201_CREATED
-        return Response(SystemUserSerializer(user).data, status=http_status)
+        return Response(SystemUserSerializer(user).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['patch'], url_path='update-permissions')
     def update_permissions(self, request, pk=None):
