@@ -15,8 +15,8 @@ import api from '../api/client';
 import {
   Users, Plus, Edit, Trash2, RefreshCw, X, Check,
   Shield, TrendingUp, Megaphone, HeartHandshake, Wrench,
-  Mail, Search, Eye, EyeOff, KeyRound, ToggleLeft,
-  ToggleRight, Building2, Lock, Globe, Activity,
+  Mail, Search, Eye, EyeOff, KeyRound,
+  Building2, Lock, Globe, Activity,
   Target, CreditCard, ChevronDown, ChevronUp,
   AlertCircle, CheckCircle, Copy,
 } from 'lucide-react';
@@ -104,14 +104,6 @@ const MODULE_INFO = {
   crm:           { label: 'CRM Comercial',icon: Target,     desc: 'Contactos, pipeline, campañas y tickets' },
   logs:          { label: 'Logs',         icon: Activity,   desc: 'Logs y auditoría del sistema' },
   system_users:  { label: 'Usuarios Sistema', icon: Users,  desc: 'Gestión de usuarios internos' },
-};
-
-const DEFAULT_PERMISSIONS = (role) => {
-  const profile = ROLE_PROFILES[role];
-  if (!profile || role === 'super_admin') return {};
-  return Object.fromEntries(
-    profile.modules.map(m => [m, true])
-  );
 };
 
 // ─── UI Atoms ─────────────────────────────────────────────────────────────────
@@ -208,23 +200,15 @@ function RoleCard({ roleKey, selected, onSelect, currentUserRole }) {
 }
 
 // ─── User Form ────────────────────────────────────────────────────────────────
+// Permisos: son FIJOS por rol — no son editables por usuario.
+// El admin solo puede seleccionar el rol y opcionalmente restringir tenants.
 
 function UserForm({ initial = {}, onSave, onClose, loading, tenants = [], currentUserRole }) {
-  const [form, setForm] = useState(() => {
-    const base = {
-      name: '', email: '', system_role: 'ventas',
-      allowed_tenant_ids: [], ...initial,
-    };
-    // Always pre-populate permissions from the role defaults so the checkboxes
-    // show the correct initial state. The user can then add or remove modules.
-    // For editing (initial.id exists) keep whatever permissions are already saved,
-    // but also fall back to role defaults if saved permissions happen to be empty.
-    const roleForDefaults = base.system_role;
-    const hasPerms = initial.system_permissions && Object.keys(initial.system_permissions).length > 0;
-    base.system_permissions = hasPerms
-      ? { ...initial.system_permissions }
-      : (roleForDefaults !== 'super_admin' ? DEFAULT_PERMISSIONS(roleForDefaults) : {});
-    return base;
+  const [form, setForm] = useState({
+    name: '', email: '',
+    system_role: 'ventas',
+    allowed_tenant_ids: [],
+    ...initial,
   });
   const [showRoles, setShowRoles] = useState(true);
   const set = (k) => (e) => setForm(p => ({ ...p, [k]: e.target.value }));
@@ -233,17 +217,8 @@ function UserForm({ initial = {}, onSave, onClose, loading, tenants = [], curren
     setForm(p => ({
       ...p,
       system_role: role,
-      // Switching roles resets permissions to that role's defaults.
-      // The user can then fine-tune them via the module toggles below.
-      system_permissions: role === 'super_admin' ? {} : DEFAULT_PERMISSIONS(role),
-    }));
-  };
-
-  const toggleModule = (mod) => {
-    if (form.system_role === 'super_admin') return; // super_admin has all — no toggling
-    setForm(p => ({
-      ...p,
-      system_permissions: { ...p.system_permissions, [mod]: !p.system_permissions[mod] },
+      // Tenants reset when role changes (different roles may need different scopes)
+      allowed_tenant_ids: [],
     }));
   };
 
@@ -267,23 +242,29 @@ function UserForm({ initial = {}, onSave, onClose, loading, tenants = [], curren
       toast.error('El nombre completo es obligatorio');
       return;
     }
-    onSave(form);
+    // Never send system_permissions — backend derives them from the role
+    const { system_permissions: _omit, ...payload } = form;
+    onSave(payload);
   };
 
   const profile = ROLE_PROFILES[form.system_role];
+  const roleModules = profile?.modules || [];
+  const isSuperAdminRole = form.system_role === 'super_admin';
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
-      {/* Basic info */}
+      {/* Info banner (new user only) */}
       {!initial.id && (
         <div className="flex items-start gap-2.5 px-3 py-2.5 bg-teal-50 border border-teal-200 rounded-xl text-xs text-teal-700">
           <AlertCircle size={14} className="flex-shrink-0 mt-0.5" />
           <span>
-            El correo debe ser exclusivo para usuarios del sistema — no puede estar registrado en ningún condominio.
+            El correo debe ser exclusivo — no puede estar registrado en ningún condominio ni perfil existente.
             El acceso es siempre mediante <strong>código de verificación por email</strong>.
           </span>
         </div>
       )}
+
+      {/* Basic info */}
       <div className="grid grid-cols-2 gap-4">
         <Field label="Nombre completo" required={!initial.id}>
           <input className={inputCls} value={form.name} onChange={set('name')} placeholder="Ana García" />
@@ -315,47 +296,45 @@ function UserForm({ initial = {}, onSave, onClose, loading, tenants = [], curren
         )}
       </div>
 
-      {/* Module permissions (only for non super_admin) */}
-      {form.system_role && form.system_role !== 'super_admin' && (
-        <div>
-          <label className="block text-sm font-semibold text-slate-700 mb-3">
-            Permisos de módulos
-          </label>
-          <div className="grid grid-cols-1 gap-2">
-            {Object.entries(MODULE_INFO).map(([modKey, modInfo]) => {
-              const ModIcon = modInfo.icon;
-              const enabled = !!form.system_permissions[modKey];
+      {/* Permissions display — read-only, derived from role */}
+      <div>
+        <div className="flex items-center gap-2 mb-2">
+          <label className="text-sm font-semibold text-slate-700">Módulos incluidos en este rol</label>
+          <span className="text-xs px-2 py-0.5 bg-slate-100 text-slate-500 rounded-full font-medium">Solo lectura</span>
+        </div>
+        {isSuperAdminRole ? (
+          <div className="flex flex-wrap gap-2 p-3 bg-slate-50 rounded-xl border border-slate-200">
+            {Object.entries(MODULE_INFO).map(([modKey, m]) => {
+              const Icon = m.icon;
               return (
-                <button
-                  key={modKey}
-                  type="button"
-                  onClick={() => toggleModule(modKey)}
-                  className={`flex items-center justify-between p-3 rounded-xl border transition-all ${
-                    enabled
-                      ? 'bg-teal-50 border-teal-300 text-teal-700'
-                      : 'bg-slate-50 border-slate-200 text-slate-500'
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5">
-                    <ModIcon size={14} />
-                    <div className="text-left">
-                      <div className="text-sm font-semibold">{modInfo.label}</div>
-                      <div className="text-xs opacity-70">{modInfo.desc}</div>
-                    </div>
-                  </div>
-                  {enabled
-                    ? <ToggleRight size={20} className="text-teal-500 flex-shrink-0" />
-                    : <ToggleLeft size={20} className="text-slate-300 flex-shrink-0" />
-                  }
-                </button>
+                <span key={modKey} className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg text-xs font-semibold shadow-sm">
+                  <Icon size={11} />{m.label}
+                </span>
+              );
+            })}
+            <span className="flex items-center gap-1 px-2.5 py-1.5 bg-slate-600 text-white rounded-lg text-xs font-bold">Acceso total</span>
+          </div>
+        ) : (
+          <div className="flex flex-wrap gap-2 p-3 bg-teal-50 rounded-xl border border-teal-200">
+            {roleModules.map(modKey => {
+              const m = MODULE_INFO[modKey];
+              if (!m) return null;
+              const Icon = m.icon;
+              return (
+                <span key={modKey} className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-teal-200 text-teal-700 rounded-lg text-xs font-semibold shadow-sm">
+                  <Icon size={11} />{m.label}
+                </span>
               );
             })}
           </div>
-        </div>
-      )}
+        )}
+        <p className="text-xs text-slate-400 mt-1.5">
+          Los permisos son fijos para este rol y no pueden modificarse individualmente.
+        </p>
+      </div>
 
-      {/* Tenant access restriction */}
-      {form.system_role && form.system_role !== 'super_admin' && tenants.length > 0 && (
+      {/* Tenant access restriction (only for restricted roles) */}
+      {!isSuperAdminRole && tenants.length > 0 && (
         <div>
           <Field
             label="Tenants con acceso"
@@ -394,48 +373,58 @@ function UserForm({ initial = {}, onSave, onClose, loading, tenants = [], curren
   );
 }
 
-// ─── Permissions Editor Modal ─────────────────────────────────────────────────
+// ─── Tenant Access Editor Modal ───────────────────────────────────────────────
+// Permisos de módulos son SOLO LECTURA (fijos por rol).
+// Solo se puede cambiar a qué tenants tiene acceso el usuario.
 
 function PermissionsEditor({ user, tenants, onSave, onClose, loading }) {
-  const [perms, setPerms] = useState({ ...user.system_permissions });
   const [tenantIds, setTenantIds] = useState([...(user.allowed_tenant_ids || [])]);
 
-  const toggleModule = (k) => setPerms(p => ({ ...p, [k]: !p[k] }));
   const toggleTenant = (id) => setTenantIds(p =>
     p.includes(id) ? p.filter(x => x !== id) : [...p, id]
   );
 
+  const profile = ROLE_PROFILES[user.system_role] || {};
+  const roleModules = profile.modules || [];
+
   return (
     <div className="space-y-5">
-      {/* Modules */}
+      {/* Modules — read-only display */}
       <div>
-        <h4 className="text-sm font-semibold text-slate-700 mb-3">Módulos habilitados</h4>
-        <div className="space-y-2">
-          {Object.entries(MODULE_INFO).map(([k, m]) => {
+        <div className="flex items-center gap-2 mb-2">
+          <h4 className="text-sm font-semibold text-slate-700">Módulos del rol</h4>
+          <span className="text-xs px-2 py-0.5 bg-slate-100 text-slate-500 rounded-full font-medium">Solo lectura</span>
+        </div>
+        <div className="flex flex-wrap gap-2 p-3 bg-teal-50 rounded-xl border border-teal-200">
+          {roleModules.map(modKey => {
+            const m = MODULE_INFO[modKey];
+            if (!m) return null;
             const Icon = m.icon;
-            const on = !!perms[k];
             return (
-              <button key={k} type="button" onClick={() => toggleModule(k)}
-                className={`flex items-center justify-between w-full p-3 rounded-xl border transition-all ${on ? 'bg-teal-50 border-teal-300 text-teal-700' : 'bg-slate-50 border-slate-200 text-slate-500'}`}>
-                <div className="flex items-center gap-2">
-                  <Icon size={14} />
-                  <span className="text-sm font-medium">{m.label}</span>
-                </div>
-                {on ? <ToggleRight size={20} className="text-teal-500" /> : <ToggleLeft size={20} className="text-slate-300" />}
-              </button>
+              <span key={modKey} className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-teal-200 text-teal-700 rounded-lg text-xs font-semibold shadow-sm">
+                <Icon size={11} />{m.label}
+              </span>
             );
           })}
         </div>
+        <p className="text-xs text-slate-400 mt-1.5">
+          Los permisos son fijos para el rol <strong>{profile.label || user.system_role}</strong> y no pueden modificarse.
+        </p>
       </div>
 
-      {/* Tenants */}
+      {/* Tenant access — editable */}
       {tenants.length > 0 && (
         <div>
-          <h4 className="text-sm font-semibold text-slate-700 mb-1">
+          <h4 className="text-sm font-semibold text-slate-700 mb-0.5">
             Tenants con acceso
-            <span className="ml-1.5 text-slate-400 font-normal">({tenantIds.length} seleccionados — vacío = todos)</span>
           </h4>
-          <div className="max-h-48 overflow-y-auto border border-slate-200 rounded-xl divide-y divide-slate-100">
+          <p className="text-xs text-slate-400 mb-2">
+            {tenantIds.length === 0
+              ? 'Sin selección: el usuario puede ver todos los tenants.'
+              : `${tenantIds.length} tenant${tenantIds.length !== 1 ? 's' : ''} seleccionado${tenantIds.length !== 1 ? 's' : ''} — solo verá estos.`
+            }
+          </p>
+          <div className="max-h-52 overflow-y-auto border border-slate-200 rounded-xl divide-y divide-slate-100">
             {tenants.slice(0, 100).map(t => {
               const sel = tenantIds.includes(String(t.id));
               return (
@@ -454,9 +443,9 @@ function PermissionsEditor({ user, tenants, onSave, onClose, loading }) {
 
       <div className="flex justify-end gap-3 pt-2 border-t border-slate-100">
         <Btn variant="secondary" onClick={onClose}>Cancelar</Btn>
-        <Btn onClick={() => onSave({ system_permissions: perms, allowed_tenant_ids: tenantIds })} disabled={loading}>
+        <Btn onClick={() => onSave({ allowed_tenant_ids: tenantIds })} disabled={loading}>
           {loading ? <RefreshCw size={14} className="animate-spin" /> : <Check size={14} />}
-          Guardar permisos
+          Guardar acceso
         </Btn>
       </div>
     </div>
@@ -519,7 +508,7 @@ export default function SystemUsers({ currentUserRole }) {
         await systemUsersAPI.update(userModal.id, {
           name: data.name,
           system_role: data.system_role,
-          system_permissions: data.system_permissions,
+          // system_permissions intentionally omitted — backend derives them from role
           allowed_tenant_ids: data.allowed_tenant_ids,
         });
         toast.success('Usuario actualizado');
@@ -808,7 +797,7 @@ export default function SystemUsers({ currentUserRole }) {
       )}
 
       {permsModal && (
-        <Modal title={`Permisos: ${permsModal.name}`} onClose={() => setPermsModal(null)} wide>
+        <Modal title={`Acceso de tenants: ${permsModal.name}`} onClose={() => setPermsModal(null)} wide>
           <PermissionsEditor
             user={permsModal}
             tenants={allTenants}

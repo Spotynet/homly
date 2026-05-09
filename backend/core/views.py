@@ -7492,21 +7492,24 @@ class SystemUserViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['patch'], url_path='update-permissions')
     def update_permissions(self, request, pk=None):
         """
-        Update system_permissions and allowed_tenant_ids for a staff user.
-        Payload: { system_permissions: {...}, allowed_tenant_ids: [...] }
+        Update tenant access (allowed_tenant_ids) for a restricted staff user.
+        Payload: { allowed_tenant_ids: [...] }
+
+        system_permissions are intentionally ignored from the payload — they are
+        always derived from the user's system_role (golden rule: permissions == role).
         """
+        from .serializers import SYSTEM_ROLE_DEFAULT_PERMISSIONS
         user = self.get_object()
-        if user.system_role == 'super_admin':
+        if not user.system_role or user.system_role == 'super_admin':
             return Response(
-                {'detail': 'Los Super Administradores tienen acceso completo — no se pueden restringir sus permisos.'},
+                {'detail': 'Los Super Administradores tienen acceso completo — no se pueden restringir sus tenants.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        perms   = request.data.get('system_permissions')
         tenants = request.data.get('allowed_tenant_ids')
-        if perms is not None:
-            user.system_permissions = perms
         if tenants is not None:
             user.allowed_tenant_ids = tenants
+        # Always re-sync permissions from role definition (defensive integrity check)
+        user.system_permissions = SYSTEM_ROLE_DEFAULT_PERMISSIONS.get(user.system_role, {})
         user.save(update_fields=['system_permissions', 'allowed_tenant_ids', 'updated_at'])
         return Response(SystemUserSerializer(user).data)
 

@@ -19,6 +19,21 @@ from .models import (
 
 
 # ═══════════════════════════════════════════════════════════
+#  SYSTEM ROLE PERMISSIONS — single source of truth
+#  Mirrors ROLE_PROFILES.modules in frontend/SystemUsers.jsx.
+#  Permissions are ALWAYS derived from the role; users cannot
+#  have custom permissions that differ from their role.
+# ═══════════════════════════════════════════════════════════
+SYSTEM_ROLE_DEFAULT_PERMISSIONS = {
+    'ventas':           {'crm': True, 'tenants': True},
+    'marketing':        {'crm': True},
+    'atencion_cliente': {'crm': True, 'tenants': True},
+    'soporte_tecnico':  {'logs': True, 'tenants': True},
+    'super_admin':      {},   # full super admin — no restriction needed; backend grants all
+}
+
+
+# ═══════════════════════════════════════════════════════════
 #  AUTH
 # ═══════════════════════════════════════════════════════════
 
@@ -240,16 +255,32 @@ class SystemUserSerializer(serializers.ModelSerializer):
         tenants = _Tenant.objects.filter(id__in=obj.allowed_tenant_ids).values('id', 'name')
         return [{'id': str(t['id']), 'name': t['name']} for t in tenants]
 
+    def update(self, instance, validated_data):
+        """
+        Override update to enforce the golden rule:
+        system_permissions are ALWAYS derived from the role, never from user input.
+        When system_role changes, permissions are automatically re-synced.
+        """
+        # Discard any system_permissions sent from the client — role defines them.
+        validated_data.pop('system_permissions', None)
+        new_role = validated_data.get('system_role', instance.system_role)
+        if new_role and new_role != 'super_admin':
+            validated_data['system_permissions'] = SYSTEM_ROLE_DEFAULT_PERMISSIONS.get(new_role, {})
+        elif new_role == 'super_admin':
+            validated_data['system_permissions'] = {}
+        return super().update(instance, validated_data)
+
 
 class SystemUserCreateSerializer(serializers.ModelSerializer):
     """
     Creates a new Homly internal staff user with a system_role.
 
-    Rules:
+    Golden rules enforced here:
+    • system_permissions are NOT accepted from the client — they are always
+      derived automatically from SYSTEM_ROLE_DEFAULT_PERMISSIONS[system_role].
     • The email must be unique across ALL users (system and tenant profiles).
       A system user cannot share an email with any existing tenant user.
     • Tenant users CAN coexist across multiple tenants (different rule).
-    • If system_permissions is empty, the role's default permissions are applied.
 
     Authentication is always via email-verification-code (passwordless); no
     password is ever set or returned.
@@ -260,7 +291,8 @@ class SystemUserCreateSerializer(serializers.ModelSerializer):
         model = User
         fields = [
             'id', 'email', 'name',
-            'system_role', 'system_permissions', 'allowed_tenant_ids',
+            'system_role', 'allowed_tenant_ids',
+            # system_permissions intentionally NOT listed — derived from role, never user input
         ]
         read_only_fields = ['id']
         extra_kwargs = {
@@ -287,23 +319,13 @@ class SystemUserCreateSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         import secrets
 
-        # Default permissions per role — mirrors ROLE_PROFILES.modules on the frontend
-        ROLE_DEFAULTS = {
-            'ventas':           {'crm': True, 'tenants': True},
-            'marketing':        {'crm': True},
-            'atencion_cliente': {'crm': True, 'tenants': True},
-            'soporte_tecnico':  {'logs': True, 'tenants': True},
-        }
-
         email              = validated_data['email']  # already normalised by validate_email
         system_role        = validated_data.get('system_role')
-        system_permissions = validated_data.get('system_permissions') or {}
         allowed_tenant_ids = validated_data.get('allowed_tenant_ids') or []
 
-        # If no permissions were sent (or an empty dict), fall back to role defaults.
-        # This ensures the predefined role permissions are always applied.
-        if not system_permissions and system_role and system_role != 'super_admin':
-            system_permissions = ROLE_DEFAULTS.get(system_role, {})
+        # Permissions are ALWAYS set from the role definition — not from user input.
+        # super_admin gets {} (backend grants them full access; no restriction needed).
+        system_permissions = SYSTEM_ROLE_DEFAULT_PERMISSIONS.get(system_role, {})
 
         name = validated_data.get('name', '').strip()
         if not name:
