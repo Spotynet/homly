@@ -75,32 +75,8 @@ function RoleRoute({ module: moduleKey, children }) {
   return children;
 }
 
-// System-level route guard — only accessible to system users with the required permission.
-// Full super admins always pass. Restricted system_staff need the specific permission key.
-function SystemRoute({ permKey, children }) {
-  const { isSuperAdmin, isSystemStaff, hasSystemPermission, loading } = useAuth();
-
-  if (loading) return LOADER;
-
-  if (isSuperAdmin) return children;
-  if (isSystemStaff && hasSystemPermission(permKey)) return children;
-
-  return <Navigate to="/app" replace />;
-}
-
-// Determine the default landing route for a system staff user based on their permissions
-function getSystemStaffDefaultRoute(systemPermissions) {
-  const order = ['crm', 'tenants', 'suscripciones', 'logs'];
-  for (const mod of order) {
-    if (systemPermissions && systemPermissions[mod]) {
-      return `/app/sistema/${mod}`;
-    }
-  }
-  return '/app'; // fallback — should not normally happen
-}
-
 function AppRoutes() {
-  const { isAuthenticated, isVecino, isSuperAdmin, isSystemStaff, systemRole, systemPermissions, loading } = useAuth();
+  const { isAuthenticated, isVecino, isSuperAdmin, systemRole, loading } = useAuth();
 
   // Wait for auth to be restored from localStorage before rendering routes.
   // Without this, super admins get flashed to /app/dashboard (no tenantId) on refresh.
@@ -122,23 +98,22 @@ function AppRoutes() {
           element={
             <Navigate
               to={
-                isSuperAdmin    ? '/app/sistema/tenants'
-                : isSystemStaff ? getSystemStaffDefaultRoute(systemPermissions)
-                : isVecino      ? '/app/my-unit'
-                :                 '/app/dashboard'
+                isSuperAdmin ? '/app/sistema/tenants'
+                : isVecino   ? '/app/my-unit'
+                :              '/app/dashboard'
               }
               replace
             />
           }
         />
         <Route path="dashboard"      element={<RoleRoute module="dashboard">     <Dashboard />     </RoleRoute>} />
-        {(isSuperAdmin || isSystemStaff) && (
+        {isSuperAdmin && (
           <Route path="sistema">
-            <Route path="tenants"       element={<SystemRoute permKey="tenants">       <Tenants />                                       </SystemRoute>} />
-            <Route path="logs"          element={<SystemRoute permKey="logs">          <Logs />                                          </SystemRoute>} />
-            <Route path="suscripciones" element={<SystemRoute permKey="suscripciones"> <Suscripciones />                                 </SystemRoute>} />
-            <Route path="crm"           element={<SystemRoute permKey="crm">           <CRM />                                           </SystemRoute>} />
-            <Route path="usuarios"      element={<SystemRoute permKey="system_users">  <SystemUsers currentUserRole={systemRole} />       </SystemRoute>} />
+            <Route path="tenants"       element={<Tenants />} />
+            <Route path="logs"          element={<Logs />} />
+            <Route path="suscripciones" element={<Suscripciones />} />
+            <Route path="crm"           element={<CRM />} />
+            <Route path="usuarios"      element={<SystemUsers currentUserRole={systemRole} />} />
           </Route>
         )}
         <Route path="cobranza"      element={<RoleRoute module="cobranza">      <Cobranza />      </RoleRoute>} />

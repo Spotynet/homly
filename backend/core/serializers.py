@@ -18,19 +18,7 @@ from .models import (
 )
 
 
-# ═══════════════════════════════════════════════════════════
-#  SYSTEM ROLE PERMISSIONS — single source of truth
-#  Mirrors ROLE_PROFILES.modules in frontend/SystemUsers.jsx.
-#  Permissions are ALWAYS derived from the role; users cannot
-#  have custom permissions that differ from their role.
-# ═══════════════════════════════════════════════════════════
-SYSTEM_ROLE_DEFAULT_PERMISSIONS = {
-    'ventas':           {'crm': True, 'tenants': True},
-    'marketing':        {'crm': True},
-    'atencion_cliente': {'crm': True, 'tenants': True},
-    'soporte_tecnico':  {'logs': True, 'tenants': True},
-    'super_admin':      {},   # full super admin — no restriction needed; backend grants all
-}
+# Only super_admin system users exist — no restricted roles.
 
 
 # ═══════════════════════════════════════════════════════════
@@ -66,15 +54,9 @@ class LoginSerializer(serializers.Serializer):
                     tenant = Tenant.objects.get(id=str(tenant_id))
                 except Tenant.DoesNotExist:
                     raise serializers.ValidationError('Condominio no encontrado.')
-            # Full super admin: no system_role OR system_role == 'super_admin'
-            # Restricted staff: any other system_role (ventas, marketing, etc.)
-            is_full_admin = (not user.system_role or user.system_role == 'super_admin')
-            data['user']        = user
-            data['role']        = 'superadmin' if is_full_admin else 'system_staff'
-            data['tenant']      = tenant
-            data['system_role'] = user.system_role or 'super_admin'
-            data['system_permissions'] = user.system_permissions or {}
-            data['allowed_tenant_ids'] = user.allowed_tenant_ids or []
+            data['user']   = user
+            data['role']   = 'superadmin'
+            data['tenant'] = tenant
             return data
 
         # Regular user — use the selected tenant_id, or fall back to first assigned
@@ -172,15 +154,9 @@ class LoginWithCodeSerializer(serializers.Serializer):
                     raise serializers.ValidationError(
                         {'tenant_id': 'Condominio no encontrado.'}
                     )
-            # Full super admin: no system_role OR system_role == 'super_admin'
-            # Restricted staff: any other system_role (ventas, marketing, etc.)
-            is_full_admin = (not user.system_role or user.system_role == 'super_admin')
-            data['user']        = user
-            data['role']        = 'superadmin' if is_full_admin else 'system_staff'
-            data['tenant']      = tenant
-            data['system_role'] = user.system_role or 'super_admin'
-            data['system_permissions'] = user.system_permissions or {}
-            data['allowed_tenant_ids'] = user.allowed_tenant_ids or []
+            data['user']   = user
+            data['role']   = 'superadmin'
+            data['tenant'] = tenant
             return data
 
         user_tenants = TenantUser.objects.select_related('tenant').filter(user=user)
@@ -256,90 +232,55 @@ class SystemUserSerializer(serializers.ModelSerializer):
         return [{'id': str(t['id']), 'name': t['name']} for t in tenants]
 
     def update(self, instance, validated_data):
-        """
-        Override update to enforce the golden rule:
-        system_permissions are ALWAYS derived from the role, never from user input.
-        When system_role changes, permissions are automatically re-synced.
-        """
-        # Discard any system_permissions sent from the client — role defines them.
+        # Only super_admin system users exist — discard any permission/role changes from client.
         validated_data.pop('system_permissions', None)
-        new_role = validated_data.get('system_role', instance.system_role)
-        if new_role and new_role != 'super_admin':
-            validated_data['system_permissions'] = SYSTEM_ROLE_DEFAULT_PERMISSIONS.get(new_role, {})
-        elif new_role == 'super_admin':
-            validated_data['system_permissions'] = {}
+        validated_data.pop('system_role', None)
+        validated_data.pop('allowed_tenant_ids', None)
         return super().update(instance, validated_data)
 
 
 class SystemUserCreateSerializer(serializers.ModelSerializer):
     """
-    Creates a new Homly internal staff user with a system_role.
+    Creates a new Super Administrador del Sistema (is_super_admin=True).
 
-    Golden rules enforced here:
-    • system_permissions are NOT accepted from the client — they are always
-      derived automatically from SYSTEM_ROLE_DEFAULT_PERMISSIONS[system_role].
-    • The email must be unique across ALL users (system and tenant profiles).
-      A system user cannot share an email with any existing tenant user.
-    • Tenant users CAN coexist across multiple tenants (different rule).
+    Only super_admin system users are supported. Restricted staff roles
+    (ventas, marketing, etc.) have been removed from the system.
 
-    Authentication is always via email-verification-code (passwordless); no
-    password is ever set or returned.
+    Rules:
+    • Email must be unique across ALL users (system and tenant profiles).
+    • Authentication is via email-verification-code (passwordless).
     """
     email = serializers.EmailField()
 
     class Meta:
         model = User
-        fields = [
-            'id', 'email', 'name',
-            'system_role', 'allowed_tenant_ids',
-            # system_permissions intentionally NOT listed — derived from role, never user input
-        ]
+        fields = ['id', 'email', 'name']
         read_only_fields = ['id']
-        extra_kwargs = {
-            'name': {'required': True},
-        }
-
-    def validate_system_role(self, value):
-        if not value:
-            raise serializers.ValidationError('El rol de sistema es requerido.')
-        return value
+        extra_kwargs = {'name': {'required': True}}
 
     def validate_email(self, value):
         email = value.strip().lower()
-        # System users must have a completely unique email — no sharing with any
-        # existing profile (tenant user OR another system user).
         if User.objects.filter(email=email).exists():
             raise serializers.ValidationError(
                 'Este correo ya existe en otro perfil. '
-                'Los usuarios del sistema deben tener un correo exclusivo que no esté '
+                'Los Super Administradores deben tener un correo exclusivo que no esté '
                 'registrado en ningún otro perfil del sistema o de condominio.'
             )
         return email
 
     def create(self, validated_data):
         import secrets
-
-        email              = validated_data['email']  # already normalised by validate_email
-        system_role        = validated_data.get('system_role')
-        allowed_tenant_ids = validated_data.get('allowed_tenant_ids') or []
-
-        # Permissions are ALWAYS set from the role definition — not from user input.
-        # super_admin gets {} (backend grants them full access; no restriction needed).
-        system_permissions = SYSTEM_ROLE_DEFAULT_PERMISSIONS.get(system_role, {})
-
-        name = validated_data.get('name', '').strip()
+        email = validated_data['email']
+        name  = validated_data.get('name', '').strip()
         if not name:
             raise serializers.ValidationError({'name': 'El nombre es obligatorio.'})
-
-        # Login is via email-verification-code; the password is never shown
-        # or prompted.  must_change_password stays False for the same reason.
         auto_password = secrets.token_urlsafe(24)
         user = User(
             email=email,
             name=name,
-            system_role=system_role,
-            system_permissions=system_permissions,
-            allowed_tenant_ids=allowed_tenant_ids,
+            system_role='super_admin',
+            system_permissions={},
+            allowed_tenant_ids=[],
             is_super_admin=True,
             is_staff=True,
             must_change_password=False,

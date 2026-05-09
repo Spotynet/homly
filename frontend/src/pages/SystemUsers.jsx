@@ -1,109 +1,27 @@
 /**
- * SystemUsers.jsx — Administración de Usuarios del Sistema Homly
+ * SystemUsers.jsx — Administración de Super Administradores del Sistema Homly
  * Solo disponible para SuperAdmin bajo el menú SISTEMA.
  *
- * Gestiona los perfiles internos del equipo Homly:
- *  - Super Administrador
- *  - Revenue Growth Strategist (Ventas)
- *  - Content Strategist Lead (Marketing)
- *  - Customer Success Hero (Atención al cliente)
- *  - Systems Reliability Engineer (Soporte técnico)
+ * Gestiona únicamente el perfil de Super Administrador del sistema.
  */
 import React, { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '../api/client';
 import {
   Users, Plus, Edit, Trash2, RefreshCw, X, Check,
-  Shield, TrendingUp, Megaphone, HeartHandshake, Wrench,
-  Mail, Search, Eye, EyeOff, KeyRound,
-  Building2, Lock, Globe, Activity,
-  Target, CreditCard, ChevronDown, ChevronUp,
-  AlertCircle, CheckCircle, Copy,
+  Shield, Mail, Search, Eye, EyeOff,
+  AlertCircle,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 // ─── API helpers ─────────────────────────────────────────────────────────────
 
 const systemUsersAPI = {
-  list:              (params) => api.get('/system-users/', { params }),
-  get:               (id)     => api.get(`/system-users/${id}/`),
-  create:            (data)   => api.post('/system-users/', data),
-  update:            (id, d)  => api.patch(`/system-users/${id}/`, d),
-  delete:            (id)     => api.delete(`/system-users/${id}/`),
-  updatePermissions: (id, d)  => api.patch(`/system-users/${id}/update-permissions/`, d),
-  toggleActive:      (id)     => api.patch(`/system-users/${id}/toggle-active/`),
-  resetPassword:     (id)     => api.post(`/system-users/${id}/reset-password/`),
-};
-
-// Also fetch tenants for the permission assignment
-const tenantsListAPI = () => api.get('/tenants/', { params: { page_size: 500 } });
-
-// ─── Role definitions ─────────────────────────────────────────────────────────
-
-const ROLE_PROFILES = {
-  super_admin: {
-    label:       'Super Administrador',
-    subtitle:    'Acceso completo al sistema',
-    icon:        Shield,
-    gradient:    'from-slate-600 to-slate-800',
-    lightBg:     'bg-slate-50 border-slate-200',
-    badgeColor:  'bg-slate-100 text-slate-700',
-    dot:         'bg-slate-600',
-    modules:     ['tenants', 'suscripciones', 'crm', 'logs', 'system_users'],
-    description: 'Control total de la plataforma. Puede crear y gestionar todos los usuarios del sistema.',
-  },
-  ventas: {
-    label:       'Revenue Growth Strategist',
-    subtitle:    'Estratega de Crecimiento de Negocio',
-    icon:        TrendingUp,
-    gradient:    'from-teal-500 to-emerald-600',
-    lightBg:     'bg-teal-50 border-teal-200',
-    badgeColor:  'bg-teal-100 text-teal-700',
-    dot:         'bg-teal-500',
-    modules:     ['crm', 'tenants'],
-    description: 'Acceso al CRM, pipeline de ventas, gestión de leads y contactos. Visibilidad de tenants asignados.',
-  },
-  marketing: {
-    label:       'Content Strategist Lead',
-    subtitle:    'Líder Estratega de Contenido',
-    icon:        Megaphone,
-    gradient:    'from-violet-500 to-purple-600',
-    lightBg:     'bg-violet-50 border-violet-200',
-    badgeColor:  'bg-violet-100 text-violet-700',
-    dot:         'bg-violet-500',
-    modules:     ['crm'],
-    description: 'Acceso al módulo de Marketing del CRM: campañas, segmentación y análisis de audiencia.',
-  },
-  atencion_cliente: {
-    label:       'Customer Success Hero',
-    subtitle:    'Héroe de Éxito del Cliente',
-    icon:        HeartHandshake,
-    gradient:    'from-rose-500 to-pink-600',
-    lightBg:     'bg-rose-50 border-rose-200',
-    badgeColor:  'bg-rose-100 text-rose-700',
-    dot:         'bg-rose-500',
-    modules:     ['crm', 'tenants'],
-    description: 'Gestión de tickets de soporte, atención a clientes activos y resolución de incidencias.',
-  },
-  soporte_tecnico: {
-    label:       'Systems Reliability Engineer',
-    subtitle:    'Ingeniero de Confiabilidad de Sistemas',
-    icon:        Wrench,
-    gradient:    'from-amber-500 to-orange-600',
-    lightBg:     'bg-amber-50 border-amber-200',
-    badgeColor:  'bg-amber-100 text-amber-700',
-    dot:         'bg-amber-500',
-    modules:     ['logs', 'tenants'],
-    description: 'Acceso a logs del sistema, monitoreo de tenants y soporte técnico de plataforma.',
-  },
-};
-
-const MODULE_INFO = {
-  tenants:       { label: 'Tenants',      icon: Building2,  desc: 'Ver y gestionar condominios' },
-  suscripciones: { label: 'Suscripciones',icon: CreditCard, desc: 'Planes y pagos de suscripción' },
-  crm:           { label: 'CRM Comercial',icon: Target,     desc: 'Contactos, pipeline, campañas y tickets' },
-  logs:          { label: 'Logs',         icon: Activity,   desc: 'Logs y auditoría del sistema' },
-  system_users:  { label: 'Usuarios Sistema', icon: Users,  desc: 'Gestión de usuarios internos' },
+  list:         (params) => api.get('/system-users/', { params }),
+  create:       (data)   => api.post('/system-users/', data),
+  update:       (id, d)  => api.patch(`/system-users/${id}/`, d),
+  delete:       (id)     => api.delete(`/system-users/${id}/`),
+  toggleActive: (id)     => api.patch(`/system-users/${id}/toggle-active/`),
 };
 
 // ─── UI Atoms ─────────────────────────────────────────────────────────────────
@@ -111,7 +29,7 @@ const MODULE_INFO = {
 function Modal({ title, onClose, children, wide = false }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-      <div className={`bg-white rounded-2xl shadow-2xl w-full ${wide ? 'max-w-2xl' : 'max-w-lg'} max-h-[92vh] overflow-y-auto`}>
+      <div className={`bg-white rounded-2xl shadow-2xl w-full ${wide ? 'max-w-lg' : 'max-w-md'} max-h-[92vh] overflow-y-auto`}>
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 sticky top-0 bg-white z-10">
           <h2 className="text-lg font-bold text-slate-800">{title}</h2>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 transition-colors">
@@ -140,11 +58,9 @@ function Field({ label, required, children, hint }) {
 
 function Btn({ onClick, disabled, variant = 'primary', size = 'md', children, type = 'button' }) {
   const v = {
-    primary:  'bg-gradient-to-r from-teal-500 to-emerald-500 text-white hover:from-teal-600 hover:to-emerald-600 shadow-sm',
-    secondary:'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50',
-    danger:   'bg-red-500 text-white hover:bg-red-600',
-    ghost:    'text-slate-500 hover:text-slate-700 hover:bg-slate-100',
-    indigo:   'bg-gradient-to-r from-indigo-500 to-violet-500 text-white hover:from-indigo-600 hover:to-violet-600',
+    primary:   'bg-gradient-to-r from-teal-500 to-emerald-500 text-white hover:from-teal-600 hover:to-emerald-600 shadow-sm',
+    secondary: 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50',
+    danger:    'bg-red-500 text-white hover:bg-red-600',
   };
   const s = { sm: 'px-3 py-1.5 text-xs', md: 'px-4 py-2.5 text-sm', lg: 'px-6 py-3 text-sm' };
   return (
@@ -155,106 +71,27 @@ function Btn({ onClick, disabled, variant = 'primary', size = 'md', children, ty
   );
 }
 
-// ─── Role Card (compact selector) ─────────────────────────────────────────────
-
-function RoleCard({ roleKey, selected, onSelect, currentUserRole }) {
-  const p = ROLE_PROFILES[roleKey];
-  const Icon = p.icon;
-  // Restrict: only full super_admins can create another super_admin
-  const restricted = roleKey === 'super_admin' && currentUserRole && currentUserRole !== 'super_admin';
-
-  return (
-    <button
-      type="button"
-      disabled={restricted}
-      onClick={() => !restricted && onSelect(roleKey)}
-      className={`w-full text-left p-4 rounded-2xl border-2 transition-all ${
-        selected
-          ? `${p.lightBg} border-current`
-          : 'bg-white border-slate-100 hover:border-slate-300'
-      } ${restricted ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
-    >
-      <div className="flex items-start gap-3">
-        <div className={`p-2.5 rounded-xl bg-gradient-to-br ${p.gradient} text-white flex-shrink-0`}>
-          <Icon size={16} />
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-sm font-bold text-slate-800">{p.label}</span>
-            {selected && <CheckCircle size={16} className="text-teal-500 flex-shrink-0" />}
-            {restricted && <Lock size={14} className="text-slate-400 flex-shrink-0" />}
-          </div>
-          <p className="text-xs text-slate-500 mt-0.5">{p.subtitle}</p>
-          <p className="text-xs text-slate-400 mt-1 leading-relaxed">{p.description}</p>
-          <div className="flex flex-wrap gap-1 mt-2">
-            {(p.modules || []).map(m => (
-              <span key={m} className="text-xs px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded-md">
-                {MODULE_INFO[m]?.label || m}
-              </span>
-            ))}
-          </div>
-        </div>
-      </div>
-    </button>
-  );
-}
-
 // ─── User Form ────────────────────────────────────────────────────────────────
-// Permisos: son FIJOS por rol — no son editables por usuario.
-// El admin solo puede seleccionar el rol y opcionalmente restringir tenants.
 
-function UserForm({ initial = {}, onSave, onClose, loading, tenants = [], currentUserRole }) {
+function UserForm({ initial = {}, onSave, onClose, loading }) {
+  const isEdit = !!initial.id;
   const [form, setForm] = useState({
-    name: '', email: '',
-    system_role: 'ventas',
-    allowed_tenant_ids: [],
-    ...initial,
+    name:  initial.name  || '',
+    email: initial.email || '',
   });
-  const [showRoles, setShowRoles] = useState(true);
   const set = (k) => (e) => setForm(p => ({ ...p, [k]: e.target.value }));
-
-  const handleRoleSelect = (role) => {
-    setForm(p => ({
-      ...p,
-      system_role: role,
-      // Tenants reset when role changes (different roles may need different scopes)
-      allowed_tenant_ids: [],
-    }));
-  };
-
-  const toggleTenant = (id) => {
-    setForm(p => {
-      const ids = p.allowed_tenant_ids || [];
-      return {
-        ...p,
-        allowed_tenant_ids: ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id],
-      };
-    });
-  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!form.email.trim() || !form.system_role) {
-      toast.error('Email y rol son requeridos');
-      return;
-    }
-    if (!initial.id && !form.name.trim()) {
-      toast.error('El nombre completo es obligatorio');
-      return;
-    }
-    // Never send system_permissions — backend derives them from the role
-    const { system_permissions: _omit, ...payload } = form;
-    onSave(payload);
+    if (!form.email.trim()) { toast.error('El email es obligatorio'); return; }
+    if (!form.name.trim())  { toast.error('El nombre completo es obligatorio'); return; }
+    onSave(isEdit ? { name: form.name } : { name: form.name, email: form.email });
   };
 
-  const profile = ROLE_PROFILES[form.system_role];
-  const roleModules = profile?.modules || [];
-  const isSuperAdminRole = form.system_role === 'super_admin';
-
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
+    <form onSubmit={handleSubmit} className="space-y-5">
       {/* Info banner (new user only) */}
-      {!initial.id && (
+      {!isEdit && (
         <div className="flex items-start gap-2.5 px-3 py-2.5 bg-teal-50 border border-teal-200 rounded-xl text-xs text-teal-700">
           <AlertCircle size={14} className="flex-shrink-0 mt-0.5" />
           <span>
@@ -264,275 +101,87 @@ function UserForm({ initial = {}, onSave, onClose, loading, tenants = [], curren
         </div>
       )}
 
-      {/* Basic info */}
-      <div className="grid grid-cols-2 gap-4">
-        <Field label="Nombre completo" required={!initial.id}>
+      <div className="grid grid-cols-1 gap-4">
+        <Field label="Nombre completo" required>
           <input className={inputCls} value={form.name} onChange={set('name')} placeholder="Ana García" />
         </Field>
         <Field label="Email" required>
-          <input className={inputCls} type="email" value={form.email} onChange={set('email')} placeholder="ana@homly.mx" disabled={!!initial.id} />
+          <input
+            className={inputCls}
+            type="email"
+            value={form.email}
+            onChange={set('email')}
+            placeholder="ana@homly.mx"
+            disabled={isEdit}
+          />
         </Field>
       </div>
 
-      {/* Role selector */}
-      <div>
-        <button type="button" onClick={() => setShowRoles(p => !p)}
-          className="flex items-center justify-between w-full mb-3 text-sm font-semibold text-slate-700">
-          <span>Rol del Sistema <span className="text-red-500">*</span></span>
-          {showRoles ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-        </button>
-        {showRoles && (
-          <div className="space-y-2.5">
-            {Object.keys(ROLE_PROFILES).map(r => (
-              <RoleCard
-                key={r}
-                roleKey={r}
-                selected={form.system_role === r}
-                onSelect={handleRoleSelect}
-                currentUserRole={currentUserRole}
-              />
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Permissions display — read-only, derived from role */}
-      <div>
-        <div className="flex items-center gap-2 mb-2">
-          <label className="text-sm font-semibold text-slate-700">Módulos incluidos en este rol</label>
-          <span className="text-xs px-2 py-0.5 bg-slate-100 text-slate-500 rounded-full font-medium">Solo lectura</span>
+      {/* Role info — read-only */}
+      <div className="flex items-center gap-3 p-3 bg-slate-50 border border-slate-200 rounded-xl">
+        <div className="p-2 rounded-lg bg-gradient-to-br from-slate-600 to-slate-800 text-white flex-shrink-0">
+          <Shield size={14} />
         </div>
-        {isSuperAdminRole ? (
-          <div className="flex flex-wrap gap-2 p-3 bg-slate-50 rounded-xl border border-slate-200">
-            {Object.entries(MODULE_INFO).map(([modKey, m]) => {
-              const Icon = m.icon;
-              return (
-                <span key={modKey} className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg text-xs font-semibold shadow-sm">
-                  <Icon size={11} />{m.label}
-                </span>
-              );
-            })}
-            <span className="flex items-center gap-1 px-2.5 py-1.5 bg-slate-600 text-white rounded-lg text-xs font-bold">Acceso total</span>
-          </div>
-        ) : (
-          <div className="flex flex-wrap gap-2 p-3 bg-teal-50 rounded-xl border border-teal-200">
-            {roleModules.map(modKey => {
-              const m = MODULE_INFO[modKey];
-              if (!m) return null;
-              const Icon = m.icon;
-              return (
-                <span key={modKey} className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-teal-200 text-teal-700 rounded-lg text-xs font-semibold shadow-sm">
-                  <Icon size={11} />{m.label}
-                </span>
-              );
-            })}
-          </div>
-        )}
-        <p className="text-xs text-slate-400 mt-1.5">
-          Los permisos son fijos para este rol y no pueden modificarse individualmente.
-        </p>
-      </div>
-
-      {/* Tenant access restriction (only for restricted roles) */}
-      {!isSuperAdminRole && tenants.length > 0 && (
         <div>
-          <Field
-            label="Tenants con acceso"
-            hint={`Sin selección = acceso a todos. Seleccionados: ${(form.allowed_tenant_ids || []).length}`}
-          >
-            <div className="max-h-48 overflow-y-auto border border-slate-200 rounded-xl divide-y divide-slate-100">
-              {tenants.slice(0, 100).map(t => {
-                const sel = (form.allowed_tenant_ids || []).includes(String(t.id));
-                return (
-                  <button
-                    key={t.id}
-                    type="button"
-                    onClick={() => toggleTenant(String(t.id))}
-                    className={`flex items-center gap-3 w-full px-3 py-2.5 text-left hover:bg-slate-50 transition-colors ${sel ? 'bg-teal-50' : ''}`}
-                  >
-                    <div className={`w-4 h-4 rounded flex items-center justify-center flex-shrink-0 ${sel ? 'bg-teal-500' : 'border border-slate-300'}`}>
-                      {sel && <Check size={10} className="text-white" />}
-                    </div>
-                    <span className="text-sm text-slate-700">{t.name}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </Field>
+          <div className="text-sm font-bold text-slate-800">Super Administrador</div>
+          <div className="text-xs text-slate-400">Acceso completo al sistema Homly</div>
         </div>
-      )}
+        <span className="ml-auto text-xs px-2 py-0.5 bg-slate-200 text-slate-600 rounded-full font-medium">Fijo</span>
+      </div>
 
       <div className="flex justify-end gap-3 pt-2 border-t border-slate-100">
         <Btn variant="secondary" onClick={onClose}>Cancelar</Btn>
         <Btn type="submit" disabled={loading}>
           {loading ? <RefreshCw size={14} className="animate-spin" /> : <Check size={14} />}
-          {initial.id ? 'Guardar cambios' : 'Crear usuario'}
+          {isEdit ? 'Guardar cambios' : 'Crear Super Admin'}
         </Btn>
       </div>
     </form>
   );
 }
 
-// ─── Tenant Access Editor Modal ───────────────────────────────────────────────
-// Permisos de módulos son SOLO LECTURA (fijos por rol).
-// Solo se puede cambiar a qué tenants tiene acceso el usuario.
-
-function PermissionsEditor({ user, tenants, onSave, onClose, loading }) {
-  const [tenantIds, setTenantIds] = useState([...(user.allowed_tenant_ids || [])]);
-
-  const toggleTenant = (id) => setTenantIds(p =>
-    p.includes(id) ? p.filter(x => x !== id) : [...p, id]
-  );
-
-  const profile = ROLE_PROFILES[user.system_role] || {};
-  const roleModules = profile.modules || [];
-
-  return (
-    <div className="space-y-5">
-      {/* Modules — read-only display */}
-      <div>
-        <div className="flex items-center gap-2 mb-2">
-          <h4 className="text-sm font-semibold text-slate-700">Módulos del rol</h4>
-          <span className="text-xs px-2 py-0.5 bg-slate-100 text-slate-500 rounded-full font-medium">Solo lectura</span>
-        </div>
-        <div className="flex flex-wrap gap-2 p-3 bg-teal-50 rounded-xl border border-teal-200">
-          {roleModules.map(modKey => {
-            const m = MODULE_INFO[modKey];
-            if (!m) return null;
-            const Icon = m.icon;
-            return (
-              <span key={modKey} className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-teal-200 text-teal-700 rounded-lg text-xs font-semibold shadow-sm">
-                <Icon size={11} />{m.label}
-              </span>
-            );
-          })}
-        </div>
-        <p className="text-xs text-slate-400 mt-1.5">
-          Los permisos son fijos para el rol <strong>{profile.label || user.system_role}</strong> y no pueden modificarse.
-        </p>
-      </div>
-
-      {/* Tenant access — editable */}
-      {tenants.length > 0 && (
-        <div>
-          <h4 className="text-sm font-semibold text-slate-700 mb-0.5">
-            Tenants con acceso
-          </h4>
-          <p className="text-xs text-slate-400 mb-2">
-            {tenantIds.length === 0
-              ? 'Sin selección: el usuario puede ver todos los tenants.'
-              : `${tenantIds.length} tenant${tenantIds.length !== 1 ? 's' : ''} seleccionado${tenantIds.length !== 1 ? 's' : ''} — solo verá estos.`
-            }
-          </p>
-          <div className="max-h-52 overflow-y-auto border border-slate-200 rounded-xl divide-y divide-slate-100">
-            {tenants.slice(0, 100).map(t => {
-              const sel = tenantIds.includes(String(t.id));
-              return (
-                <button key={t.id} type="button" onClick={() => toggleTenant(String(t.id))}
-                  className={`flex items-center gap-3 w-full px-3 py-2.5 text-left hover:bg-slate-50 transition-colors ${sel ? 'bg-teal-50' : ''}`}>
-                  <div className={`w-4 h-4 rounded flex-shrink-0 flex items-center justify-center ${sel ? 'bg-teal-500' : 'border border-slate-300'}`}>
-                    {sel && <Check size={10} className="text-white" />}
-                  </div>
-                  <span className="text-sm text-slate-700 truncate">{t.name}</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      <div className="flex justify-end gap-3 pt-2 border-t border-slate-100">
-        <Btn variant="secondary" onClick={onClose}>Cancelar</Btn>
-        <Btn onClick={() => onSave({ allowed_tenant_ids: tenantIds })} disabled={loading}>
-          {loading ? <RefreshCw size={14} className="animate-spin" /> : <Check size={14} />}
-          Guardar acceso
-        </Btn>
-      </div>
-    </div>
-  );
-}
-
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
-export default function SystemUsers({ currentUserRole }) {
+export default function SystemUsers() {
   const queryClient = useQueryClient();
   const [search, setSearch]               = useState('');
-  const [roleFilter, setRoleFilter]       = useState('');
   const [userModal, setUserModal]         = useState(null);
-  const [permsModal, setPermsModal]       = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
-  const [tempPwd, setTempPwd]             = useState(null);
   const [loading, setLoading]             = useState(false);
 
-  // Fetch system users
-  const { data: users = [], isLoading, refetch } = useQuery({
-    queryKey: ['system-users', search, roleFilter],
-    queryFn: () => systemUsersAPI.list({
-      search: search || undefined,
-      system_role: roleFilter || undefined,
-    }).then(r => {
-      const d = r.data;
-      return Array.isArray(d) ? d : (d?.results ?? []);
-    }),
+  const { data: users = [], isLoading } = useQuery({
+    queryKey: ['system-users', search],
+    queryFn: () => systemUsersAPI.list({ search: search || undefined })
+      .then(r => { const d = r.data; return Array.isArray(d) ? d : (d?.results ?? []); }),
     staleTime: 60 * 1000,
-  });
-
-  // Fetch tenants for permission assignment
-  const { data: allTenants = [] } = useQuery({
-    queryKey: ['tenants-for-sysusr'],
-    queryFn: () => tenantsListAPI().then(r => {
-      const d = r.data;
-      return Array.isArray(d) ? d : (d?.results ?? []);
-    }),
-    staleTime: 5 * 60 * 1000,
   });
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['system-users'] });
 
-  // ── Save user ─────────────────────────────────────────────────────
-  // Helper: extract the most useful validation message from an API error response.
   const apiErrMsg = (e, fallback = 'Error al guardar usuario') => {
     const d = e?.response?.data;
     if (!d) return fallback;
-    // DRF field errors come as { field: ['msg', …] } or { detail: 'msg' }
     if (typeof d === 'string') return d;
     if (d.detail) return d.detail;
     const firstField = Object.values(d).find(v => Array.isArray(v) && v.length);
     return firstField ? firstField[0] : fallback;
   };
 
+  // ── Save ──────────────────────────────────────────────────────────
   const handleSave = async (data) => {
     setLoading(true);
     try {
       if (userModal?.id) {
-        await systemUsersAPI.update(userModal.id, {
-          name: data.name,
-          system_role: data.system_role,
-          // system_permissions intentionally omitted — backend derives them from role
-          allowed_tenant_ids: data.allowed_tenant_ids,
-        });
+        await systemUsersAPI.update(userModal.id, data);
         toast.success('Usuario actualizado');
       } else {
         await systemUsersAPI.create(data);
-        toast.success('Usuario del sistema creado. Puede iniciar sesión con su código de verificación por email.');
+        toast.success('Super Admin creado. Puede iniciar sesión con código de verificación por email.');
       }
       setUserModal(null);
       invalidate();
     } catch (e) {
       toast.error(apiErrMsg(e));
-    } finally { setLoading(false); }
-  };
-
-  // ── Save permissions ──────────────────────────────────────────────
-  const handleSavePerms = async (data) => {
-    setLoading(true);
-    try {
-      await systemUsersAPI.updatePermissions(permsModal.id, data);
-      toast.success('Permisos actualizados');
-      setPermsModal(null);
-      invalidate();
-    } catch (e) {
-      toast.error(e.response?.data?.detail || 'Error al guardar permisos');
     } finally { setLoading(false); }
   };
 
@@ -545,18 +194,6 @@ export default function SystemUsers({ currentUserRole }) {
     } catch (e) {
       toast.error(e.response?.data?.detail || 'Error');
     }
-  };
-
-  // ── Reset password ────────────────────────────────────────────────
-  const handleResetPwd = async (user) => {
-    setLoading(true);
-    try {
-      const res = await systemUsersAPI.resetPassword(user.id);
-      setTempPwd({ name: user.name, email: user.email, pwd: res.data.temp_password });
-      invalidate();
-    } catch (e) {
-      toast.error(e.response?.data?.detail || 'Error al restablecer contraseña');
-    } finally { setLoading(false); }
   };
 
   // ── Delete ────────────────────────────────────────────────────────
@@ -574,16 +211,11 @@ export default function SystemUsers({ currentUserRole }) {
 
   // ─── Render ────────────────────────────────────────────────────────────────
 
-  const roleStats = Object.entries(ROLE_PROFILES).map(([k, p]) => ({
-    key: k, ...p,
-    count: users.filter(u => u.system_role === k).length,
-  }));
-
   return (
     <div className="min-h-screen bg-slate-50">
       {/* Header */}
       <div className="bg-white border-b border-slate-100 px-6 py-5">
-        <div className="flex items-center justify-between mb-5">
+        <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
               <span className="bg-gradient-to-br from-slate-600 to-slate-800 text-white p-2 rounded-xl">
@@ -591,35 +223,11 @@ export default function SystemUsers({ currentUserRole }) {
               </span>
               Usuarios del Sistema
             </h1>
-            <p className="text-slate-500 text-sm mt-0.5">Equipo interno Homly · Solo SuperAdmin</p>
+            <p className="text-slate-500 text-sm mt-0.5">Super Administradores · Equipo interno Homly</p>
           </div>
           <Btn onClick={() => setUserModal('new')}>
-            <Plus size={14} /> Nuevo usuario
+            <Plus size={14} /> Nuevo Super Admin
           </Btn>
-        </div>
-
-        {/* Role stat cards */}
-        <div className="grid grid-cols-5 gap-3">
-          {roleStats.map(r => {
-            const Icon = r.icon;
-            return (
-              <button key={r.key}
-                onClick={() => setRoleFilter(roleFilter === r.key ? '' : r.key)}
-                className={`flex items-center gap-3 p-3 rounded-2xl border-2 transition-all text-left ${
-                  roleFilter === r.key
-                    ? `${r.lightBg} border-current`
-                    : 'bg-white border-slate-100 hover:border-slate-300'
-                }`}>
-                <div className={`p-2 rounded-xl bg-gradient-to-br ${r.gradient} text-white flex-shrink-0`}>
-                  <Icon size={14} />
-                </div>
-                <div className="min-w-0">
-                  <div className="text-lg font-bold text-slate-800">{r.count}</div>
-                  <div className="text-xs text-slate-500 truncate">{r.label}</div>
-                </div>
-              </button>
-            );
-          })}
         </div>
       </div>
 
@@ -636,13 +244,9 @@ export default function SystemUsers({ currentUserRole }) {
               onChange={e => setSearch(e.target.value)}
             />
           </div>
-          {roleFilter && (
-            <button onClick={() => setRoleFilter('')}
-              className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 text-slate-600 rounded-xl text-sm hover:bg-slate-200 transition-colors">
-              <X size={12} /> Quitar filtro
-            </button>
-          )}
-          <span className="text-sm text-slate-400 ml-auto">{users.length} usuario{users.length !== 1 ? 's' : ''}</span>
+          <span className="text-sm text-slate-400 ml-auto">
+            {users.length} Super Admin{users.length !== 1 ? 's' : ''}
+          </span>
         </div>
 
         {/* Table */}
@@ -655,180 +259,84 @@ export default function SystemUsers({ currentUserRole }) {
             <div className="flex flex-col items-center justify-center py-16 text-center">
               <div className="p-4 rounded-2xl bg-slate-50 text-slate-300 mb-4"><Users size={32} /></div>
               <p className="text-slate-600 font-semibold text-lg mb-1">Sin usuarios del sistema</p>
-              <p className="text-slate-400 text-sm mb-6">Crea el primer usuario del equipo Homly</p>
-              <Btn onClick={() => setUserModal('new')}><Plus size={14} /> Crear usuario</Btn>
+              <p className="text-slate-400 text-sm mb-6">Crea el primer Super Administrador del equipo Homly</p>
+              <Btn onClick={() => setUserModal('new')}><Plus size={14} /> Crear Super Admin</Btn>
             </div>
           ) : (
             <table className="w-full text-sm">
               <thead className="bg-slate-50 border-b border-slate-100">
                 <tr>
-                  {['Usuario','Rol del Sistema','Módulos','Tenants asignados','Estado',''].map(h => (
+                  {['Usuario', 'Rol', 'Estado', ''].map(h => (
                     <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {users.map(u => {
-                  const profile = ROLE_PROFILES[u.system_role] || {};
-                  const Icon = profile.icon || Shield;
-                  const mods = u.system_role === 'super_admin'
-                    ? Object.keys(MODULE_INFO)
-                    : Object.entries(u.system_permissions || {}).filter(([,v]) => v).map(([k]) => k);
-
-                  return (
-                    <tr key={u.id} className="hover:bg-slate-50/50 transition-colors">
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-3">
-                          <div className={`w-9 h-9 rounded-xl bg-gradient-to-br ${profile.gradient || 'from-slate-400 to-slate-600'} flex items-center justify-center text-white flex-shrink-0 font-bold text-sm`}>
-                            {u.name?.[0]?.toUpperCase()}
-                          </div>
-                          <div>
-                            <div className="font-semibold text-slate-800">{u.name}</div>
-                            <div className="text-xs text-slate-400">{u.email}</div>
+                {users.map(u => (
+                  <tr key={u.id} className="hover:bg-slate-50/50 transition-colors">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-slate-600 to-slate-800 flex items-center justify-center text-white flex-shrink-0 font-bold text-sm">
+                          {u.name?.[0]?.toUpperCase()}
+                        </div>
+                        <div>
+                          <div className="font-semibold text-slate-800">{u.name}</div>
+                          <div className="text-xs text-slate-400 flex items-center gap-1">
+                            <Mail size={10} />{u.email}
                           </div>
                         </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <Icon size={13} className="text-slate-500" />
-                          <div>
-                            <div className="font-medium text-slate-700 text-xs">{profile.label || u.system_role}</div>
-                            <div className="text-xs text-slate-400">{profile.subtitle}</div>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex flex-wrap gap-1 max-w-xs">
-                          {mods.length === 0
-                            ? <span className="text-xs text-slate-400">Sin permisos</span>
-                            : mods.map(m => (
-                                <span key={m} className="text-xs px-1.5 py-0.5 bg-teal-50 text-teal-600 rounded-md font-medium">
-                                  {MODULE_INFO[m]?.label || m}
-                                </span>
-                              ))
-                          }
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-slate-500 text-xs">
-                        {u.system_role === 'super_admin'
-                          ? <span className="text-slate-400 italic">Todos</span>
-                          : u.allowed_tenants_data?.length > 0
-                            ? <span>{u.allowed_tenants_data.length} tenant{u.allowed_tenants_data.length !== 1 ? 's' : ''}</span>
-                            : <span className="text-slate-400 italic">Todos</span>
-                        }
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${u.is_active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
-                          <span className={`w-1.5 h-1.5 rounded-full ${u.is_active ? 'bg-green-500' : 'bg-red-400'}`} />
-                          {u.is_active ? 'Activo' : 'Inactivo'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-1 justify-end">
-                          {u.system_role !== 'super_admin' && (
-                            <button onClick={() => setPermsModal(u)}
-                              className="p-1.5 rounded-lg hover:bg-indigo-50 text-slate-400 hover:text-indigo-600 transition-colors" title="Editar permisos">
-                              <Lock size={14} />
-                            </button>
-                          )}
-                          <button onClick={() => setUserModal(u)}
-                            className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors" title="Editar usuario">
-                            <Edit size={14} />
-                          </button>
-                          <button onClick={() => handleResetPwd(u)} disabled={loading}
-                            className="p-1.5 rounded-lg hover:bg-amber-50 text-slate-400 hover:text-amber-600 transition-colors" title="Restablecer contraseña">
-                            <KeyRound size={14} />
-                          </button>
-                          <button onClick={() => handleToggleActive(u)}
-                            className={`p-1.5 rounded-lg transition-colors ${u.is_active ? 'hover:bg-orange-50 text-slate-400 hover:text-orange-500' : 'hover:bg-green-50 text-slate-400 hover:text-green-600'}`}
-                            title={u.is_active ? 'Desactivar' : 'Activar'}>
-                            {u.is_active ? <EyeOff size={14} /> : <Eye size={14} />}
-                          </button>
-                          <button onClick={() => setConfirmDelete({ id: u.id, name: u.name })}
-                            className="p-1.5 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-500 transition-colors" title="Eliminar">
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <Shield size={13} className="text-slate-500" />
+                        <span className="text-xs font-medium text-slate-700">Super Administrador</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${u.is_active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${u.is_active ? 'bg-green-500' : 'bg-red-400'}`} />
+                        {u.is_active ? 'Activo' : 'Inactivo'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1 justify-end">
+                        <button onClick={() => setUserModal(u)}
+                          className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors" title="Editar usuario">
+                          <Edit size={14} />
+                        </button>
+                        <button onClick={() => handleToggleActive(u)}
+                          className={`p-1.5 rounded-lg transition-colors ${u.is_active ? 'hover:bg-orange-50 text-slate-400 hover:text-orange-500' : 'hover:bg-green-50 text-slate-400 hover:text-green-600'}`}
+                          title={u.is_active ? 'Desactivar' : 'Activar'}>
+                          {u.is_active ? <EyeOff size={14} /> : <Eye size={14} />}
+                        </button>
+                        <button onClick={() => setConfirmDelete({ id: u.id, name: u.name })}
+                          className="p-1.5 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-500 transition-colors" title="Eliminar">
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           )}
-        </div>
-
-        {/* Legend: role descriptions */}
-        <div className="mt-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {Object.entries(ROLE_PROFILES).map(([k, p]) => {
-            const Icon = p.icon;
-            return (
-              <div key={k} className={`${p.lightBg} border rounded-2xl p-4`}>
-                <div className="flex items-center gap-2.5 mb-2">
-                  <div className={`p-2 rounded-lg bg-gradient-to-br ${p.gradient} text-white`}>
-                    <Icon size={14} />
-                  </div>
-                  <div>
-                    <div className="text-sm font-bold text-slate-800">{p.label}</div>
-                    <div className="text-xs text-slate-500">{p.subtitle}</div>
-                  </div>
-                </div>
-                <p className="text-xs text-slate-500 leading-relaxed">{p.description}</p>
-              </div>
-            );
-          })}
         </div>
       </div>
 
       {/* Modals */}
 
       {userModal && (
-        <Modal title={userModal === 'new' || !userModal?.id ? 'Nuevo Usuario del Sistema' : `Editar: ${userModal.name}`}
-          onClose={() => setUserModal(null)} wide>
+        <Modal
+          title={userModal === 'new' || !userModal?.id ? 'Nuevo Super Administrador' : `Editar: ${userModal.name}`}
+          onClose={() => setUserModal(null)}
+        >
           <UserForm
             initial={userModal === 'new' ? {} : userModal}
             onSave={handleSave}
             onClose={() => setUserModal(null)}
             loading={loading}
-            tenants={allTenants}
-            currentUserRole={currentUserRole}
           />
-        </Modal>
-      )}
-
-      {permsModal && (
-        <Modal title={`Acceso de tenants: ${permsModal.name}`} onClose={() => setPermsModal(null)} wide>
-          <PermissionsEditor
-            user={permsModal}
-            tenants={allTenants}
-            onSave={handleSavePerms}
-            onClose={() => setPermsModal(null)}
-            loading={loading}
-          />
-        </Modal>
-      )}
-
-      {/* Temp password dialog — only used for manual password resets */}
-      {tempPwd && (
-        <Modal title="Contraseña restablecida" onClose={() => setTempPwd(null)}>
-          <div className="space-y-4 text-center">
-            <div className="p-4 bg-amber-50 border border-amber-100 rounded-2xl">
-              <KeyRound size={28} className="text-amber-500 mx-auto mb-2" />
-              <p className="text-sm text-slate-700 font-medium">
-                Contraseña temporal para <strong>{tempPwd.name}</strong>
-              </p>
-              <p className="text-xs text-slate-500 mt-0.5">{tempPwd.email}</p>
-              <div className="mt-3 bg-white border border-amber-200 rounded-xl px-4 py-3 flex items-center justify-between gap-2">
-                <code className="text-lg font-mono font-bold text-slate-800 tracking-wider">{tempPwd.pwd}</code>
-                <button onClick={() => { navigator.clipboard.writeText(tempPwd.pwd); toast.success('Copiado'); }}
-                  className="p-1.5 rounded-lg hover:bg-amber-50 text-amber-600 transition-colors">
-                  <Copy size={14} />
-                </button>
-              </div>
-              <p className="text-xs text-amber-600 mt-2 font-medium">El usuario deberá cambiar su contraseña en el próximo inicio de sesión.</p>
-            </div>
-            <Btn onClick={() => setTempPwd(null)}>Entendido</Btn>
-          </div>
         </Modal>
       )}
 

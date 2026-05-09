@@ -52,7 +52,7 @@ from .serializers import (
     CRMCampaignSerializer, CRMCampaignContactSerializer, CRMTicketSerializer,
     SystemUserSerializer, SystemUserCreateSerializer,
 )
-from .permissions import IsSuperAdmin, IsFullSuperAdmin, IsTenantAdmin, IsTenantMember, IsAdminOrTesorero, IsAdminOrTesOrAuditor, CanApproveReservation
+from .permissions import IsSuperAdmin, IsTenantAdmin, IsTenantMember, IsAdminOrTesorero, IsAdminOrTesOrAuditor, CanApproveReservation
 
 
 # ═══════════════════════════════════════════════════════════
@@ -641,23 +641,12 @@ class TenantsForEmailView(APIView):
         if not user.is_active:
             return Response({'is_super_admin': False, 'tenants': []})
 
-        # Super admin — full super admins see all tenants; restricted staff see only allowed ones
+        # Super admin — can access every tenant in the system
         if user.is_super_admin:
             try:
-                is_full_admin = (not user.system_role or user.system_role == 'super_admin')
-                allowed_ids   = user.allowed_tenant_ids or []
-
-                if is_full_admin or not allowed_ids:
-                    # Full super admin (or restricted staff with no restriction): all tenants
-                    tenants = list(
-                        Tenant.objects.all().order_by('name').values('id', 'name')
-                    )
-                else:
-                    # Restricted staff: only tenants in allowed_tenant_ids
-                    tenants = list(
-                        Tenant.objects.filter(id__in=allowed_ids).order_by('name').values('id', 'name')
-                    )
-
+                tenants = list(
+                    Tenant.objects.all().order_by('name').values('id', 'name')
+                )
                 return Response({
                     'is_super_admin': True,
                     'tenants': [{'id': str(t['id']), 'name': t['name']} for t in tenants],
@@ -7425,12 +7414,11 @@ class CRMDashboardView(APIView):
 
 class SystemUserViewSet(viewsets.ModelViewSet):
     """
-    CRUD for Homly internal staff users (system_role is set).
-    Only full super_admins (system_role='super_admin' OR legacy is_super_admin
-    without system_role) can create other super_admin users.
-    All system users can be managed by super_admin only.
+    CRUD for Homly Super Administradores del Sistema (is_super_admin=True).
+    Only accessible by Super Administradores.
+    Restricted staff roles (ventas, marketing, etc.) have been removed.
     """
-    permission_classes = [IsFullSuperAdmin]
+    permission_classes = [IsSuperAdmin]
     http_method_names  = ['get', 'post', 'patch', 'delete', 'head', 'options']
 
     def get_serializer_class(self):
@@ -7461,57 +7449,11 @@ class SystemUserViewSet(viewsets.ModelViewSet):
         return qs
 
     def create(self, request, *args, **kwargs):
-        """
-        Create — or upgrade — a system staff user.
-
-        • New email  → a fresh User is created.
-        • Existing email → the existing User is elevated to system staff
-          (is_super_admin=True) and assigned the requested role/permissions,
-          preserving any tenant memberships.
-
-        Creating a 'super_admin' role is restricted to full super_admins.
-        Authentication is passwordless (email-verification-code); no password
-        is generated or returned.
-        """
-        target_role = request.data.get('system_role')
-        requester   = request.user
-
-        if target_role == 'super_admin':
-            # Only full super_admins (no restricted role) can create another super_admin
-            if requester.system_role and requester.system_role != 'super_admin':
-                return Response(
-                    {'detail': 'Solo un Super Administrador completo puede crear otros Super Administradores.'},
-                    status=status.HTTP_403_FORBIDDEN,
-                )
-
+        """Create a new Super Administrador del Sistema."""
         serializer = SystemUserCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
         return Response(SystemUserSerializer(user).data, status=status.HTTP_201_CREATED)
-
-    @action(detail=True, methods=['patch'], url_path='update-permissions')
-    def update_permissions(self, request, pk=None):
-        """
-        Update tenant access (allowed_tenant_ids) for a restricted staff user.
-        Payload: { allowed_tenant_ids: [...] }
-
-        system_permissions are intentionally ignored from the payload — they are
-        always derived from the user's system_role (golden rule: permissions == role).
-        """
-        from .serializers import SYSTEM_ROLE_DEFAULT_PERMISSIONS
-        user = self.get_object()
-        if not user.system_role or user.system_role == 'super_admin':
-            return Response(
-                {'detail': 'Los Super Administradores tienen acceso completo — no se pueden restringir sus tenants.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        tenants = request.data.get('allowed_tenant_ids')
-        if tenants is not None:
-            user.allowed_tenant_ids = tenants
-        # Always re-sync permissions from role definition (defensive integrity check)
-        user.system_permissions = SYSTEM_ROLE_DEFAULT_PERMISSIONS.get(user.system_role, {})
-        user.save(update_fields=['system_permissions', 'allowed_tenant_ids', 'updated_at'])
-        return Response(SystemUserSerializer(user).data)
 
     @action(detail=True, methods=['patch'], url_path='toggle-active')
     def toggle_active(self, request, pk=None):

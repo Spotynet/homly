@@ -613,7 +613,7 @@ export default function AppLayout() {
   const {
     user, role, tenantId, tenantName,
     userTenants, loadUserTenants, switchTenant,
-    logout, isSuperAdmin, isSystemStaff, systemRole, systemPermissions, profileId,
+    logout, isSuperAdmin, profileId,
   } = useAuth();
 
   // ── Guía interactiva flotante ────────────────────────────────────
@@ -681,22 +681,10 @@ export default function AppLayout() {
   // If user has a custom profile, use its base_role for the nav structure.
   const navRole = activeProfile ? (activeProfile.base_role || role) : role;
 
-  // System role labels for restricted staff users
-  const SYSTEM_ROLE_LABELS = {
-    ventas:           'Revenue Growth Strategist',
-    marketing:        'Content Strategist Lead',
-    atencion_cliente: 'Customer Success Hero',
-    soporte_tecnico:  'Systems Reliability Engineer',
-    super_admin:      'Super Administrador',
-  };
-
   // Role display info — use profile label/color when applicable
-  // For system_staff, show their specific role label
   const roleConfig = activeProfile
     ? { label: activeProfile.label, color: activeProfile.color || 'var(--teal-500)' }
-    : isSystemStaff && systemRole && SYSTEM_ROLE_LABELS[systemRole]
-      ? { label: SYSTEM_ROLE_LABELS[systemRole], color: '#0F766E' }
-      : (ROLES[role] || ROLES.vecino);
+    : (ROLES[role] || ROLES.vecino);
 
   // Helper: resolve visibility from a perms entry (handles old array + new object formats).
   // roleKey is needed to check ROLE_BASE_MODULES for new modules missing from old-format arrays.
@@ -717,36 +705,9 @@ export default function AppLayout() {
     return val === undefined || val !== 'hidden'; // default: visible unless explicitly hidden
   };
 
-  // Build dynamic nav for restricted system_staff users based on their permissions
-  const systemStaffNav = React.useMemo(() => {
-    if (!isSystemStaff) return null;
-    const MODULE_TO_PATH = {
-      tenants:       '/app/sistema/tenants',
-      suscripciones: '/app/sistema/suscripciones',
-      crm:           '/app/sistema/crm',
-      system_users:  '/app/sistema/usuarios',
-      logs:          '/app/sistema/logs',
-    };
-    const MODULE_TO_LABEL = {
-      tenants:       { icon: Globe,      label: 'Tenants'          },
-      suscripciones: { icon: CreditCard, label: 'Suscripciones'    },
-      crm:           { icon: Target,     label: 'CRM Comercial'    },
-      system_users:  { icon: Users,      label: 'Usuarios Sistema' },
-      logs:          { icon: Activity,   label: 'Logs del Sistema' },
-    };
-    const items = Object.entries(systemPermissions || {})
-      .filter(([, enabled]) => enabled)
-      .map(([mod]) => MODULE_TO_PATH[mod] ? { path: MODULE_TO_PATH[mod], ...MODULE_TO_LABEL[mod] } : null)
-      .filter(Boolean);
-    if (items.length === 0) return [];
-    return [{ section: 'system', label: 'Sistema', items }];
-  }, [isSystemStaff, systemPermissions]);
-
   // Filter nav based on module permissions or custom profile modules
-  const rawNav = isSystemStaff
-    ? (systemStaffNav || [])
-    : (NAV_ITEMS[navRole] || NAV_ITEMS.vecino);
-  const effectiveNav = (role === 'superadmin' || isSystemStaff)
+  const rawNav = NAV_ITEMS[navRole] || NAV_ITEMS.vecino;
+  const effectiveNav = role === 'superadmin'
     ? rawNav
     : rawNav.map(group => ({
         ...group,
