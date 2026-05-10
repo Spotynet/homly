@@ -1,20 +1,35 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { subscriptionPlansAPI, trialRequestsAPI, tenantSubscriptionsAPI, tenantsAPI } from '../api/client';
 import {
   Plus, Edit, Trash2, Check, X, ChevronDown, ChevronUp,
   DollarSign, Users, Clock, Zap, Star, AlertCircle, RefreshCw,
   CheckCircle, XCircle, ShieldCheck, Building2, CreditCard,
-  Calculator, History, PowerOff, Receipt, Eye,
+  Calculator, History, PowerOff, Receipt, Eye, FileText, Printer,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import SubscriptionReceiptModal from '../components/SubscriptionReceiptModal';
+import { APP_VERSION } from '../utils/helpers.jsx';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 const CURRENCY_SYMBOLS = { MXN: '$', USD: 'US$', EUR: '€', COP: 'COP$' };
 const fmtAmt = (amount, currency = 'MXN') =>
   `${CURRENCY_SYMBOLS[currency] || '$'}${Number(amount || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })}`;
+
+const fmtDate = (d) => {
+  if (!d) return '—';
+  try {
+    return new Date(d + 'T00:00:00').toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric' });
+  } catch { return d; }
+};
+
+const fmtDateShort = (d) => {
+  if (!d) return '—';
+  try {
+    return new Date(d + 'T00:00:00').toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' });
+  } catch { return d; }
+};
 
 const STATUS_LABELS = {
   trial: { label: 'Prueba', color: 'bg-blue-100 text-blue-700' },
@@ -904,11 +919,251 @@ function computeAmountPreview(plan, units) {
   return monthly;
 }
 
+// ─── Billing Cycle Generation ─────────────────────────────────────────────────
+
+const MONTHS_ES = [
+  'enero','febrero','marzo','abril','mayo','junio',
+  'julio','agosto','septiembre','octubre','noviembre','diciembre',
+];
+
+function parsePeriodLabel(label) {
+  if (!label) return null;
+  const lower = label.toLowerCase().trim();
+  for (let i = 0; i < MONTHS_ES.length; i++) {
+    if (lower.includes(MONTHS_ES[i])) {
+      const m = lower.match(/\d{4}/);
+      if (m) return { month: i + 1, year: parseInt(m[0]) };
+    }
+  }
+  return null;
+}
+
+function generateBillingCycles(sub, payments) {
+  if (!sub?.billing_start) return [];
+  const today = new Date();
+  today.setHours(23, 59, 59, 0);
+  const isAnnual = sub.plan_billing_cycle === 'annual';
+  const GRACE = 5;
+  const [sy, sm, sd] = sub.billing_start.split('-').map(Number);
+  let cs = new Date(sy, sm - 1, sd);
+  const cycles = [];
+  while (cs <= today) {
+    const ce = new Date(cs);
+    if (isAnnual) ce.setFullYear(ce.getFullYear() + 1);
+    else          ce.setMonth(ce.getMonth() + 1);
+    const csLabel = cs.toLocaleDateString('es-MX', { month: 'long', year: 'numeric' });
+    const csMonth = cs.getMonth() + 1;
+    const csYear  = cs.getFullYear();
+    const payment = payments.find(p => {
+      const parsed = parsePeriodLabel(p.period_label);
+      if (parsed) return parsed.month === csMonth && parsed.year === csYear;
+      if (!p.payment_date) return false;
+      const pd = new Date(p.payment_date + 'T00:00:00');
+      return pd >= cs && pd < ce;
+    }) || null;
+    let status;
+    if (payment) {
+      status = 'paid';
+    } else {
+      const graceEnd = new Date(ce);
+      graceEnd.setDate(graceEnd.getDate() + GRACE);
+      if (ce > today)           status = 'current';
+      else if (graceEnd > today) status = 'grace';
+      else                       status = 'overdue';
+    }
+    cycles.push({
+      number: cycles.length + 1,
+      cycleStart:     cs.toISOString().slice(0, 10),
+      cycleEnd:       new Date(ce.getTime() - 1).toISOString().slice(0, 10),
+      dueDate:        cs.toISOString().slice(0, 10),
+      periodLabel:    csLabel.charAt(0).toUpperCase() + csLabel.slice(1),
+      isAnnual,
+      expectedAmount: Number(sub.amount_per_cycle || 0),
+      currency:       sub.currency || 'MXN',
+      payment,
+      status,
+    });
+    cs = ce;
+  }
+  return cycles;
+}
+
+// ─── Kardex PDF Printer ───────────────────────────────────────────────────────
+
+function printKardexPDF({ cycles, sub, tenantData, adminName, adminEmail }) {
+  const sym = { MXN: '$', USD: 'US$', EUR: '€', COP: 'COP$' };
+  const curr = sym[sub.currency] || '$';
+  const fmtM = (n) => `${curr}${Number(n || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })}`;
+  const fmtD = (d) => {
+    if (!d) return '—';
+    try { return new Date(d + 'T00:00:00').toLocaleDateString('es-MX', { day:'2-digit', month:'short', year:'numeric' }); }
+    catch { return d; }
+  };
+  const logoUrl = window.location.origin + '/img/homly-full.png';
+  const addrParts = [
+    tenantData?.info_calle && [tenantData.info_calle, tenantData.info_num_externo].filter(Boolean).join(' #'),
+    tenantData?.info_colonia,
+    tenantData?.info_ciudad,
+    tenantData?.info_codigo_postal && `C.P. ${tenantData.info_codigo_postal}`,
+  ].filter(Boolean);
+  const addr = addrParts.join(', ');
+  const totalExpected = cycles.reduce((s, c) => s + c.expectedAmount, 0);
+  const totalPaid     = cycles.filter(c => c.payment).reduce((s, c) => s + Number(c.payment.amount), 0);
+  const paidCount     = cycles.filter(c => c.status === 'paid').length;
+  const overdueCount  = cycles.filter(c => c.status === 'overdue').length;
+  const balance       = totalExpected - totalPaid;
+  const trialRow = sub.trial_start ? `
+    <tr style="background:#F0F9FF">
+      <td style="padding:7px 10px;text-align:center;font-weight:600;color:#475569">—</td>
+      <td style="padding:7px 10px;font-weight:600;color:#2563EB">Período de Prueba</td>
+      <td style="padding:7px 10px;color:#475569">${fmtD(sub.trial_start)}</td>
+      <td style="padding:7px 10px;color:#475569">${fmtD(sub.trial_end)}</td>
+      <td style="padding:7px 10px;color:#475569">—</td>
+      <td style="padding:7px 10px;color:#16A34A;font-weight:700">${fmtM(0)}</td>
+      <td style="padding:7px 10px;color:#6B7280">—</td>
+      <td style="padding:7px 10px;color:#6B7280">—</td>
+      <td style="padding:7px 10px"><span style="background:#DBEAFE;color:#1D4ED8;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:700">Prueba gratuita</span></td>
+    </tr>` : '';
+  const STATUS_STYLE = {
+    paid:    'background:#DCFCE7;color:#15803D;',
+    current: 'background:#FEF3C7;color:#92400E;',
+    grace:   'background:#FFEDD5;color:#9A3412;',
+    overdue: 'background:#FEE2E2;color:#991B1B;',
+  };
+  const STATUS_LABEL = { paid:'✓ Pagado', current:'⏳ Vigente', grace:'⚠ En gracia', overdue:'✗ Vencido' };
+  const cycleRows = cycles.map(c => `
+    <tr style="${c.status !== 'paid' ? 'background:#FFFBEB' : ''}">
+      <td style="padding:7px 10px;text-align:center;font-weight:700;color:#475569">${c.number}</td>
+      <td style="padding:7px 10px;font-weight:600;color:#1E293B">${c.periodLabel}</td>
+      <td style="padding:7px 10px;color:#475569">${fmtD(c.cycleStart)}</td>
+      <td style="padding:7px 10px;color:#475569">${fmtD(c.cycleEnd)}</td>
+      <td style="padding:7px 10px;color:#475569">${fmtD(c.dueDate)}</td>
+      <td style="padding:7px 10px;font-weight:700;color:#1E293B">${fmtM(c.expectedAmount)}</td>
+      <td style="padding:7px 10px;font-weight:700;color:${c.payment ? '#15803D' : '#9CA3AF'}">${c.payment ? fmtM(c.payment.amount) : '—'}</td>
+      <td style="padding:7px 10px;color:#475569">${c.payment ? fmtD(c.payment.payment_date) : '—'}</td>
+      <td style="padding:7px 10px"><span style="${STATUS_STYLE[c.status] || ''}padding:2px 8px;border-radius:99px;font-size:11px;font-weight:700">${STATUS_LABEL[c.status] || c.status}</span></td>
+    </tr>`).join('');
+  const generatedAt = new Date().toLocaleDateString('es-MX', { day:'2-digit', month:'long', year:'numeric', hour:'2-digit', minute:'2-digit' });
+  const subStatus = STATUS_LABELS[sub.status]?.label || sub.status || '—';
+  const html = `<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8"/>
+<title>Kardex Membresía — ${tenantData?.name || ''}</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;font-size:12px;color:#1E293B;background:white}
+  @page{size:A4 landscape;margin:14mm 16mm}
+  @media print{body{print-color-adjust:exact;-webkit-print-color-adjust:exact}}
+  .header{display:flex;align-items:flex-start;justify-content:space-between;padding-bottom:14px;border-bottom:2px solid #0D9488;margin-bottom:14px}
+  .header-left{display:flex;align-items:center;gap:14px}
+  .header-logo{height:38px;width:auto;object-fit:contain}
+  .header-title h1{font-size:17px;font-weight:900;color:#0F766E;letter-spacing:-0.3px}
+  .header-title p{font-size:11px;color:#64748B;margin-top:2px}
+  .header-right{text-align:right}
+  .header-right .doc-label{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:#94A3B8}
+  .header-right .doc-num{font-size:13px;font-weight:900;color:#1E293B;margin-top:3px}
+  .info-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
+  .info-box{background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;padding:10px 14px}
+  .info-box h3{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:#94A3B8;margin-bottom:6px}
+  .info-box p{font-size:12px;font-weight:600;color:#1E293B;line-height:1.5}
+  .info-box .sub{font-size:11px;font-weight:400;color:#64748B}
+  .plan-strip{background:#F0FDFA;border:1px solid #99F6E4;border-radius:8px;padding:10px 16px;margin-bottom:14px;display:flex;gap:24px;align-items:center;flex-wrap:wrap}
+  .plan-strip .item .label{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:#0F766E}
+  .plan-strip .item .value{font-size:13px;font-weight:900;color:#0F766E;margin-top:2px}
+  table{width:100%;border-collapse:collapse;font-size:11px}
+  thead tr{background:#0F766E}
+  thead th{padding:8px 10px;text-align:left;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:white;white-space:nowrap}
+  tbody tr:nth-child(even){background:#F8FAFC}
+  tbody td{border-bottom:1px solid #F1F5F9}
+  .summary{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-top:14px}
+  .sum-card{background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;padding:8px 12px;text-align:center}
+  .sum-card .s-label{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:#94A3B8}
+  .sum-card .s-val{font-size:15px;font-weight:900;color:#1E293B;margin-top:4px}
+  .sum-card.green .s-val{color:#15803D}
+  .sum-card.red .s-val{color:#DC2626}
+  .footer{margin-top:14px;padding-top:10px;border-top:1px solid #E2E8F0;display:flex;justify-content:space-between;font-size:10px;color:#94A3B8}
+</style></head><body><div class="page">
+  <div class="header">
+    <div class="header-left">
+      <img src="${logoUrl}" alt="Homly" class="header-logo" onerror="this.style.display='none'"/>
+      <div class="header-title"><h1>Estado de Cuenta — Membresía</h1><p>Kardex de ciclos de facturación</p></div>
+    </div>
+    <div class="header-right">
+      <div class="doc-label">Documento</div>
+      <div class="doc-num">Membresía Homly</div>
+      <div style="font-size:11px;color:#64748B;margin-top:3px">${generatedAt}</div>
+    </div>
+  </div>
+  <div class="info-grid">
+    <div class="info-box">
+      <h3>Tenant / Condominio</h3>
+      <p>${tenantData?.name || '—'}</p>
+      ${tenantData?.razon_social ? `<p class="sub">Razón social: ${tenantData.razon_social}</p>` : ''}
+      ${tenantData?.rfc ? `<p class="sub">RFC: ${tenantData.rfc}</p>` : ''}
+      ${addr ? `<p class="sub">${addr}</p>` : ''}
+    </div>
+    <div class="info-box">
+      <h3>Administrador de Cuenta</h3>
+      <p>${adminName || '—'}</p>
+      ${adminEmail ? `<p class="sub">${adminEmail}</p>` : ''}
+      <p class="sub" style="margin-top:6px">Estado: <strong>${subStatus}</strong></p>
+    </div>
+  </div>
+  <div class="plan-strip">
+    <div class="item"><div class="label">Plan</div><div class="value">${sub.plan_name || '—'}</div></div>
+    <div class="item"><div class="label">Modalidad</div><div class="value">${sub.plan_billing_cycle === 'annual' ? 'Anual' : 'Mensual'}</div></div>
+    <div class="item"><div class="label">Monto/ciclo</div><div class="value">${fmtM(sub.amount_per_cycle)}</div></div>
+    <div class="item"><div class="label">Unidades</div><div class="value">${sub.units_count || 0}</div></div>
+    <div class="item"><div class="label">Inicio facturación</div><div class="value">${fmtD(sub.billing_start)}</div></div>
+    <div class="item"><div class="label">Próx. cobro</div><div class="value">${fmtD(sub.next_billing_date)}</div></div>
+  </div>
+  <table>
+    <thead><tr>
+      <th>#</th><th>Período</th><th>Inicio</th><th>Fin</th><th>Vencimiento</th>
+      <th>Cargo</th><th>Pago</th><th>Fecha Pago</th><th>Estatus</th>
+    </tr></thead>
+    <tbody>
+      ${trialRow}
+      ${cycleRows}
+      <tr style="background:#F1F5F9;font-weight:700;border-top:2px solid #CBD5E1">
+        <td colspan="5" style="padding:8px 10px;text-align:right;color:#475569">Totales:</td>
+        <td style="padding:8px 10px;font-weight:800;color:#1E293B">${fmtM(totalExpected)}</td>
+        <td style="padding:8px 10px;font-weight:800;color:#15803D">${fmtM(totalPaid)}</td>
+        <td colspan="2" style="padding:8px 10px;color:${balance > 0 ? '#DC2626' : '#15803D'}">
+          Saldo: ${fmtM(Math.abs(balance))}${balance > 0 ? ' pendiente' : ' a favor'}
+        </td>
+      </tr>
+    </tbody>
+  </table>
+  <div class="summary">
+    <div class="sum-card"><div class="s-label">Ciclos totales</div><div class="s-val">${cycles.length}</div></div>
+    <div class="sum-card green"><div class="s-label">Ciclos pagados</div><div class="s-val">${paidCount}</div></div>
+    <div class="sum-card red"><div class="s-label">Ciclos vencidos</div><div class="s-val">${overdueCount}</div></div>
+    <div class="sum-card green"><div class="s-label">Total cobrado</div><div class="s-val">${fmtM(totalPaid)}</div></div>
+    <div class="sum-card${balance > 0 ? ' red' : ''}"><div class="s-label">Saldo pendiente</div><div class="s-val">${fmtM(balance > 0 ? balance : 0)}</div></div>
+  </div>
+  <div class="footer">
+    <span>Generado: ${generatedAt}</span>
+    <span>Homly v${APP_VERSION} — Sistema de administración de condominios</span>
+  </div>
+</div></body></html>`;
+  const w = window.open('', '_blank', 'width=1100,height=800');
+  if (!w) { alert('Permite ventanas emergentes para imprimir el kardex.'); return; }
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
+  setTimeout(() => { w.print(); }, 600);
+}
+
 // ─── Row Panel (inline status edit + payment + deactivate) ────────────────────
 
 function RowPanel({ sub, plans, onRefresh }) {
+  const { user: authUser } = useAuth();
   const inputSt = { width: '100%', border: '1px solid #E2E8F0', borderRadius: 8, padding: '7px 10px', fontSize: 13, boxSizing: 'border-box' };
   const labelSt = { display: 'block', fontSize: 11, fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 };
+
+  // ── Kardex state ─────────────────────────────────────────────────────────
+  const [showKardex,        setShowKardex]        = useState(true);
+  const [activeCycleForPay, setActiveCycleForPay] = useState(null);
 
   // ── Membership edit state ────────────────────────────────────────────────
   const [status,          setStatus]          = useState(sub.status);
@@ -958,6 +1213,18 @@ function RowPanel({ sub, plans, onRefresh }) {
   // Auto-calculate preview when plan or units change
   const selectedPlanObj = plans.find(p => String(p.id) === String(plan));
   const preview = computeAmountPreview(selectedPlanObj, unitsCount);
+
+  // Augment sub with plan_billing_cycle (may come from backend or derived from plan)
+  const subAugmented = useMemo(() => {
+    const planObj = plans.find(p => String(p.id) === String(sub.plan));
+    return { ...sub, plan_billing_cycle: sub.plan_billing_cycle || planObj?.billing_cycle || 'monthly' };
+  }, [sub, plans]);
+
+  // Billing cycles derived from sub + loaded payments
+  const cycles = useMemo(() => {
+    if (!sub.billing_start) return [];
+    return generateBillingCycles(subAugmented, paymentHistory);
+  }, [subAugmented, paymentHistory, sub.billing_start]);
 
   // When plan changes, auto-set currency and compute preview
   const handlePlanChange = (newPlanId) => {
@@ -1032,6 +1299,11 @@ function RowPanel({ sub, plans, onRefresh }) {
     }
   }, [sub.id, sub.tenant]);
 
+  // Auto-load payments and tenant data when panel first mounts
+  useEffect(() => {
+    loadPaymentHistory();
+  }, [loadPaymentHistory]);
+
   const handleTogglePayments = () => {
     if (!showPayments && paymentHistory.length === 0) loadPaymentHistory();
     setShowPayments(p => !p);
@@ -1061,6 +1333,7 @@ function RowPanel({ sub, plans, onRefresh }) {
       }
       setPay({ amount: '', currency: sub.currency || 'MXN', period_label: '', payment_date: '', payment_method: 'transfer', reference: '', notes: '' });
       setShowPay(false);
+      setActiveCycleForPay(null);
       // Refresh payment list if panel is open
       setPaymentHistory(prev => [newPayment, ...prev]);
       // Auto-open receipt for the newly recorded payment
@@ -1276,10 +1549,221 @@ function RowPanel({ sub, plans, onRefresh }) {
         })()}
       </div>
 
+      {/* ── KARDEX DE CICLOS DE MEMBRESÍA ──────────────────────────────── */}
+      <div className="border-t border-slate-200 pt-4">
+        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Kardex de Membresía</p>
+            {cycles.length > 0 && (
+              <>
+                <span className="text-xs bg-slate-100 text-slate-600 rounded-full px-2 py-0.5 font-semibold border border-slate-200">
+                  {cycles.length} ciclo{cycles.length !== 1 ? 's' : ''}
+                </span>
+                <span className="text-xs bg-green-100 text-green-700 rounded-full px-2 py-0.5 font-semibold border border-green-200">
+                  {cycles.filter(c => c.status === 'paid').length} pagado{cycles.filter(c => c.status === 'paid').length !== 1 ? 's' : ''}
+                </span>
+                {cycles.filter(c => c.status === 'overdue').length > 0 && (
+                  <span className="text-xs bg-red-100 text-red-700 rounded-full px-2 py-0.5 font-semibold border border-red-200">
+                    {cycles.filter(c => c.status === 'overdue').length} vencido{cycles.filter(c => c.status === 'overdue').length !== 1 ? 's' : ''}
+                  </span>
+                )}
+                {cycles.filter(c => c.status === 'grace').length > 0 && (
+                  <span className="text-xs bg-orange-100 text-orange-700 rounded-full px-2 py-0.5 font-semibold border border-orange-200">
+                    {cycles.filter(c => c.status === 'grace').length} en gracia
+                  </span>
+                )}
+              </>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            {cycles.length > 0 && tenantData && (
+              <button
+                onClick={() => printKardexPDF({
+                  cycles, sub: subAugmented, tenantData,
+                  adminName:  authUser?.name  || 'Super Admin',
+                  adminEmail: authUser?.email || '',
+                })}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">
+                <Printer size={12} /> PDF
+              </button>
+            )}
+            <button onClick={() => setShowKardex(k => !k)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-teal-700 bg-teal-50 border border-teal-200 rounded-lg hover:bg-teal-100 transition-colors">
+              <FileText size={12} />
+              {showKardex ? 'Ocultar' : 'Ver Kardex'}
+              {showKardex ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+            </button>
+          </div>
+        </div>
+
+        {showKardex && (
+          <div>
+            {loadingPayments ? (
+              <div className="flex items-center gap-2 text-xs text-slate-400 py-4 justify-center">
+                <RefreshCw size={13} className="animate-spin" /> Cargando ciclos de facturación…
+              </div>
+            ) : !sub.billing_start ? (
+              <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
+                <AlertCircle size={13} className="inline mr-1.5" />
+                Sin fecha de inicio de facturación. Configura &ldquo;Inicio Facturación&rdquo; arriba para generar el kardex.
+              </div>
+            ) : cycles.length === 0 ? (
+              <div className="text-xs text-slate-400 py-3 text-center bg-slate-50 rounded-lg border border-slate-100">
+                No hay ciclos generados aún.
+              </div>
+            ) : (
+              <div className="overflow-x-auto rounded-xl border border-slate-200">
+                <table className="w-full">
+                  <thead>
+                    <tr className="bg-slate-700 text-white">
+                      <th className="px-3 py-2 text-left text-xs font-semibold whitespace-nowrap">#</th>
+                      <th className="px-3 py-2 text-left text-xs font-semibold whitespace-nowrap">Período</th>
+                      <th className="px-3 py-2 text-left text-xs font-semibold whitespace-nowrap">Inicio</th>
+                      <th className="px-3 py-2 text-left text-xs font-semibold whitespace-nowrap">Vence</th>
+                      <th className="px-3 py-2 text-right text-xs font-semibold whitespace-nowrap">Cargo</th>
+                      <th className="px-3 py-2 text-right text-xs font-semibold whitespace-nowrap">Pagado</th>
+                      <th className="px-3 py-2 text-left text-xs font-semibold whitespace-nowrap">Fecha Pago</th>
+                      <th className="px-3 py-2 text-center text-xs font-semibold whitespace-nowrap">Estatus</th>
+                      <th className="px-3 py-2 text-center text-xs font-semibold whitespace-nowrap">Acción</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {/* Trial row */}
+                    {sub.trial_start && (
+                      <tr className="bg-blue-50 border-b border-blue-100">
+                        <td className="px-3 py-2 text-center text-xs font-semibold text-slate-400">—</td>
+                        <td className="px-3 py-2 text-xs font-bold text-blue-700">Período de Prueba</td>
+                        <td className="px-3 py-2 text-xs text-slate-600">{fmtDateShort(sub.trial_start)}</td>
+                        <td className="px-3 py-2 text-xs text-slate-600">{fmtDateShort(sub.trial_end)}</td>
+                        <td className="px-3 py-2 text-xs text-right font-bold text-green-600">$0.00</td>
+                        <td className="px-3 py-2 text-xs text-right text-slate-400">—</td>
+                        <td className="px-3 py-2 text-xs text-slate-400">—</td>
+                        <td className="px-3 py-2 text-center">
+                          <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full text-xs font-semibold">Prueba gratuita</span>
+                        </td>
+                        <td className="px-3 py-2 text-center text-xs text-slate-400">—</td>
+                      </tr>
+                    )}
+
+                    {/* Billing cycle rows */}
+                    {cycles.map(cycle => {
+                      const CYCLE_STATUS_CFG = {
+                        paid:    { label: '✓ Pagado',    cls: 'bg-green-100 text-green-700' },
+                        current: { label: '⏳ Vigente',   cls: 'bg-yellow-100 text-yellow-700' },
+                        grace:   { label: '⚠ En gracia', cls: 'bg-orange-100 text-orange-700' },
+                        overdue: { label: '✗ Vencido',   cls: 'bg-red-100 text-red-700' },
+                      };
+                      const cst = CYCLE_STATUS_CFG[cycle.status] || { label: cycle.status, cls: 'bg-slate-100 text-slate-600' };
+                      const isPayingThis = activeCycleForPay?.number === cycle.number;
+                      return (
+                        <tr key={cycle.number} className={`border-b border-slate-100 transition-colors ${
+                          isPayingThis
+                            ? 'bg-teal-50 border-l-2 border-l-teal-500'
+                            : cycle.status === 'overdue' ? 'bg-red-50/40'
+                            : cycle.status === 'grace'   ? 'bg-orange-50/40'
+                            : ''
+                        }`}>
+                          <td className="px-3 py-2 text-center text-xs font-bold text-slate-500">{cycle.number}</td>
+                          <td className="px-3 py-2 text-xs font-semibold text-slate-800">{cycle.periodLabel}</td>
+                          <td className="px-3 py-2 text-xs text-slate-500">{fmtDateShort(cycle.cycleStart)}</td>
+                          <td className="px-3 py-2 text-xs text-slate-500">{fmtDateShort(cycle.cycleEnd)}</td>
+                          <td className="px-3 py-2 text-xs text-right font-bold text-slate-800">{fmtAmt(cycle.expectedAmount, cycle.currency)}</td>
+                          <td className={`px-3 py-2 text-xs text-right font-bold ${cycle.payment ? 'text-green-600' : 'text-slate-400'}`}>
+                            {cycle.payment ? fmtAmt(cycle.payment.amount, cycle.payment.currency || cycle.currency) : '—'}
+                          </td>
+                          <td className="px-3 py-2 text-xs text-slate-500">
+                            {cycle.payment ? cycle.payment.payment_date : '—'}
+                          </td>
+                          <td className="px-3 py-2 text-center">
+                            <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${cst.cls}`}>{cst.label}</span>
+                          </td>
+                          <td className="px-3 py-2 text-center">
+                            {cycle.payment ? (
+                              <button
+                                onClick={() => handleOpenReceipt(cycle.payment)}
+                                className="inline-flex items-center gap-1 px-2 py-1 text-xs text-teal-700 bg-teal-50 border border-teal-200 rounded-lg hover:bg-teal-100 transition-colors font-semibold">
+                                <Eye size={11} /> Recibo
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => {
+                                  if (isPayingThis) {
+                                    setActiveCycleForPay(null);
+                                    setShowPay(false);
+                                    setPay({ amount: '', currency: sub.currency || 'MXN', period_label: '', payment_date: '', payment_method: 'transfer', reference: '', notes: '' });
+                                  } else {
+                                    setActiveCycleForPay(cycle);
+                                    setPay({
+                                      amount: String(cycle.expectedAmount),
+                                      currency: cycle.currency,
+                                      period_label: cycle.periodLabel,
+                                      payment_date: new Date().toISOString().slice(0, 10),
+                                      payment_method: 'transfer',
+                                      reference: '',
+                                      notes: '',
+                                    });
+                                    setShowPay(true);
+                                  }
+                                }}
+                                className={`inline-flex items-center gap-1 px-2 py-1 text-xs rounded-lg border transition-colors font-semibold ${
+                                  isPayingThis
+                                    ? 'bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200'
+                                    : 'bg-teal-600 text-white border-teal-600 hover:bg-teal-700'
+                                }`}>
+                                <DollarSign size={11} />
+                                {isPayingThis ? 'Cancelar' : 'Registrar'}
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+
+                    {/* Totals row */}
+                    {(() => {
+                      const totalExp  = cycles.reduce((s, c) => s + c.expectedAmount, 0);
+                      const totalPaid = cycles.filter(c => c.payment).reduce((s, c) => s + Number(c.payment.amount), 0);
+                      const balance   = totalExp - totalPaid;
+                      const nOverdue  = cycles.filter(c => c.status === 'overdue').length;
+                      return (
+                        <tr className="bg-slate-100 border-t-2 border-slate-300 font-bold">
+                          <td colSpan={4} className="px-3 py-2 text-right text-xs text-slate-600">Totales:</td>
+                          <td className="px-3 py-2 text-xs text-right text-slate-800">{fmtAmt(totalExp, sub.currency)}</td>
+                          <td className="px-3 py-2 text-xs text-right text-green-700">{fmtAmt(totalPaid, sub.currency)}</td>
+                          <td colSpan={2} className="px-3 py-2 text-xs text-slate-600">
+                            Saldo:{' '}
+                            <span className={balance > 0 ? 'text-red-600 font-bold' : 'text-green-600 font-bold'}>
+                              {fmtAmt(Math.abs(balance), sub.currency)}{balance > 0 ? ' pendiente' : ' a favor'}
+                            </span>
+                            {nOverdue > 0 && (
+                              <span className="ml-3 text-red-600">· {nOverdue} ciclo{nOverdue !== 1 ? 's' : ''} vencido{nOverdue !== 1 ? 's' : ''}</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2" />
+                        </tr>
+                      );
+                    })()}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* ── MIDDLE ROW: Registrar pago ────────────────────────────────────── */}
       <div className="border-t border-slate-200 pt-4">
         <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Confirmar pago</p>
-        <button onClick={() => setShowPay(p => !p)}
+        <button
+          onClick={() => {
+            const opening = !showPay;
+            setShowPay(opening);
+            if (opening) {
+              // General pay — clear any cycle-specific context
+              setActiveCycleForPay(null);
+              setPay({ amount: '', currency: sub.currency || 'MXN', period_label: '', payment_date: '', payment_method: 'transfer', reference: '', notes: '' });
+            }
+          }}
           className="flex items-center gap-2 px-4 py-2 text-xs font-bold text-teal-700 bg-teal-50 border border-teal-200 rounded-lg hover:bg-teal-100 transition-colors mb-3">
           <DollarSign size={13} />
           {showPay ? 'Cancelar' : 'Registrar Pago'}
@@ -1287,6 +1771,17 @@ function RowPanel({ sub, plans, onRefresh }) {
         </button>
         {showPay && (
           <div className="space-y-2">
+            {activeCycleForPay && (
+              <div className="flex items-center gap-2 text-xs text-teal-700 bg-teal-50 border border-teal-200 rounded-lg px-3 py-2">
+                <Receipt size={13} className="flex-shrink-0" />
+                <span>Registrando pago del ciclo <strong>{activeCycleForPay.periodLabel}</strong></span>
+                <button
+                  onClick={() => { setActiveCycleForPay(null); setShowPay(false); setPay({ amount: '', currency: sub.currency || 'MXN', period_label: '', payment_date: '', payment_method: 'transfer', reference: '', notes: '' }); }}
+                  className="ml-auto text-slate-400 hover:text-red-500 transition-colors">
+                  <X size={12} />
+                </button>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-2">
               {[
                 { key: 'amount',       label: 'Monto',            type: 'number', placeholder: '0.00' },
