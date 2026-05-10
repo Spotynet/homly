@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { tenantsAPI } from '../api/client';
+import { tenantsAPI, usersAPI } from '../api/client';
 import {
   CreditCard, AlertCircle, CheckCircle, Clock, XCircle, ShieldOff,
   Calendar, DollarSign, RefreshCw, Building2, Receipt, Eye,
-  TrendingUp, Award, AlertTriangle, Bell, Info,
+  TrendingUp, Award, AlertTriangle, Bell, Info, FileText, Printer,
+  ChevronDown, ChevronUp,
 } from 'lucide-react';
 import SubscriptionReceiptModal from '../components/SubscriptionReceiptModal';
+import { APP_VERSION } from '../utils/helpers.jsx';
 
 // ─── Status config ─────────────────────────────────────────────────────────────
 const SUB_STATUS = {
@@ -66,6 +68,529 @@ const calcTenure = (startDateStr) => {
   if (months > 0) parts.push(`${months} ${months === 1 ? 'mes' : 'meses'}`);
   return parts.join(', ');
 };
+
+// ─── Billing Cycle Generation ─────────────────────────────────────────────────
+
+const MONTHS_ES = [
+  'enero','febrero','marzo','abril','mayo','junio',
+  'julio','agosto','septiembre','octubre','noviembre','diciembre',
+];
+
+/** Try to parse a period_label like "Enero 2025" → { month:1, year:2025 } */
+function parsePeriodLabel(label) {
+  if (!label) return null;
+  const lower = label.toLowerCase().trim();
+  for (let i = 0; i < MONTHS_ES.length; i++) {
+    if (lower.includes(MONTHS_ES[i])) {
+      const m = lower.match(/\d{4}/);
+      if (m) return { month: i + 1, year: parseInt(m[0]) };
+    }
+  }
+  return null;
+}
+
+/**
+ * Produce an ordered list of billing cycles from billing_start to today.
+ * Each cycle is matched against payments by period_label (month/year) first,
+ * then by date range as a fallback.
+ */
+function generateBillingCycles(sub, payments) {
+  if (!sub?.billing_start) return [];
+
+  const today = new Date();
+  today.setHours(23, 59, 59, 0);
+
+  const isAnnual  = sub.plan_billing_cycle === 'annual';
+  const GRACE     = 5; // days
+
+  const [sy, sm, sd] = sub.billing_start.split('-').map(Number);
+  let cs = new Date(sy, sm - 1, sd); // cycle start
+
+  const cycles = [];
+
+  while (cs <= today) {
+    // Cycle end = start of NEXT cycle
+    const ce = new Date(cs);
+    if (isAnnual) ce.setFullYear(ce.getFullYear() + 1);
+    else           ce.setMonth(ce.getMonth() + 1);
+
+    // Try label match first
+    const csLabel = cs.toLocaleDateString('es-MX', { month: 'long', year: 'numeric' });
+    const csMonth = cs.getMonth() + 1;
+    const csYear  = cs.getFullYear();
+
+    const payment = payments.find(p => {
+      const parsed = parsePeriodLabel(p.period_label);
+      if (parsed) return parsed.month === csMonth && parsed.year === csYear;
+      // fallback: payment_date within [cs, ce)
+      if (!p.payment_date) return false;
+      const pd = new Date(p.payment_date + 'T00:00:00');
+      return pd >= cs && pd < ce;
+    }) || null;
+
+    // Status
+    let status;
+    if (payment) {
+      status = 'paid';
+    } else {
+      const graceEnd = new Date(ce);
+      graceEnd.setDate(graceEnd.getDate() + GRACE);
+      if (ce > today)        status = 'current';
+      else if (graceEnd > today) status = 'grace';
+      else                   status = 'overdue';
+    }
+
+    cycles.push({
+      number: cycles.length + 1,
+      cycleStart:     cs.toISOString().slice(0, 10),
+      cycleEnd:       new Date(ce.getTime() - 1).toISOString().slice(0, 10),
+      dueDate:        cs.toISOString().slice(0, 10),
+      periodLabel:    csLabel.charAt(0).toUpperCase() + csLabel.slice(1),
+      isAnnual,
+      expectedAmount: Number(sub.amount_per_cycle || 0),
+      currency:       sub.currency || 'MXN',
+      payment,
+      status,
+    });
+
+    cs = ce;
+  }
+
+  return cycles;
+}
+
+// ─── PDF Printer ───────────────────────────────────────────────────────────────
+
+function printKardexPDF({ cycles, sub, tenantData, adminName, adminEmail }) {
+  const sym = { MXN: '$', USD: 'US$', EUR: '€', COP: 'COP$' };
+  const curr = sym[sub.currency] || '$';
+  const fmtM = (n) => `${curr}${Number(n || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })}`;
+  const fmtD = (d) => {
+    if (!d) return '—';
+    try { return new Date(d + 'T00:00:00').toLocaleDateString('es-MX', { day:'2-digit', month:'short', year:'numeric' }); }
+    catch { return d; }
+  };
+
+  // Homly logo — absolute URL for the print window
+  const logoUrl = window.location.origin + '/img/homly-full.png';
+
+  // Build address
+  const addrParts = [
+    tenantData?.info_calle && [tenantData.info_calle, tenantData.info_num_externo].filter(Boolean).join(' #'),
+    tenantData?.info_colonia,
+    tenantData?.info_ciudad,
+    tenantData?.info_codigo_postal && `C.P. ${tenantData.info_codigo_postal}`,
+  ].filter(Boolean);
+  const addr = addrParts.join(', ');
+
+  // Summaries
+  const totalExpected = cycles.reduce((s, c) => s + c.expectedAmount, 0);
+  const totalPaid     = cycles.filter(c => c.payment).reduce((s, c) => s + Number(c.payment.amount), 0);
+  const paidCount     = cycles.filter(c => c.status === 'paid').length;
+  const overdueCount  = cycles.filter(c => c.status === 'overdue').length;
+  const graceCount    = cycles.filter(c => c.status === 'grace').length;
+  const balance       = totalExpected - totalPaid;
+
+  // Trial row (if applicable)
+  const trialRow = sub.trial_start ? `
+    <tr style="background:#F0F9FF">
+      <td style="padding:7px 10px;text-align:center;font-weight:600;color:#475569">—</td>
+      <td style="padding:7px 10px;font-weight:600;color:#2563EB">Período de Prueba</td>
+      <td style="padding:7px 10px;color:#475569">${fmtD(sub.trial_start)}</td>
+      <td style="padding:7px 10px;color:#475569">${fmtD(sub.trial_end)}</td>
+      <td style="padding:7px 10px;color:#475569">—</td>
+      <td style="padding:7px 10px;color:#16A34A;font-weight:700">${fmtM(0)}</td>
+      <td style="padding:7px 10px;color:#6B7280">—</td>
+      <td style="padding:7px 10px;color:#6B7280">—</td>
+      <td style="padding:7px 10px">
+        <span style="background:#DBEAFE;color:#1D4ED8;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:700">Prueba gratuita</span>
+      </td>
+    </tr>` : '';
+
+  const STATUS_STYLE = {
+    paid:    'background:#DCFCE7;color:#15803D;',
+    current: 'background:#FEF3C7;color:#92400E;',
+    grace:   'background:#FFEDD5;color:#9A3412;',
+    overdue: 'background:#FEE2E2;color:#991B1B;',
+  };
+  const STATUS_LABEL = { paid:'✓ Pagado', current:'⏳ Vigente', grace:'⚠ En gracia', overdue:'✗ Vencido' };
+
+  const cycleRows = cycles.map(c => `
+    <tr style="${c.status === 'paid' ? '' : 'background:#FFFBEB'}">
+      <td style="padding:7px 10px;text-align:center;font-weight:700;color:#475569">${c.number}</td>
+      <td style="padding:7px 10px;font-weight:600;color:#1E293B">${c.periodLabel}</td>
+      <td style="padding:7px 10px;color:#475569">${fmtD(c.cycleStart)}</td>
+      <td style="padding:7px 10px;color:#475569">${fmtD(c.cycleEnd)}</td>
+      <td style="padding:7px 10px;color:#475569">${fmtD(c.dueDate)}</td>
+      <td style="padding:7px 10px;font-weight:700;color:#1E293B">${fmtM(c.expectedAmount)}</td>
+      <td style="padding:7px 10px;font-weight:700;color:${c.payment ? '#15803D' : '#9CA3AF'}">${c.payment ? fmtM(c.payment.amount) : '—'}</td>
+      <td style="padding:7px 10px;color:#475569">${c.payment ? fmtD(c.payment.payment_date) : '—'}</td>
+      <td style="padding:7px 10px">
+        <span style="${STATUS_STYLE[c.status] || ''}padding:2px 8px;border-radius:99px;font-size:11px;font-weight:700">
+          ${STATUS_LABEL[c.status] || c.status}
+        </span>
+      </td>
+    </tr>`).join('');
+
+  const generatedAt = new Date().toLocaleDateString('es-MX', { day:'2-digit', month:'long', year:'numeric', hour:'2-digit', minute:'2-digit' });
+
+  const html = `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <title>Kardex Membresía — ${tenantData?.name || ''}</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; font-size:12px; color:#1E293B; background:white; }
+    @page { size: A4 landscape; margin: 14mm 16mm; }
+    @media print { body { print-color-adjust: exact; -webkit-print-color-adjust: exact; } }
+    .page { padding:0; }
+    .header { display:flex; align-items:flex-start; justify-content:space-between; padding-bottom:14px; border-bottom:2px solid #0D9488; margin-bottom:14px; }
+    .header-left { display:flex; align-items:center; gap:14px; }
+    .header-logo { height:38px; width:auto; object-fit:contain; }
+    .header-title h1 { font-size:17px; font-weight:900; color:#0F766E; letter-spacing:-0.3px; }
+    .header-title p  { font-size:11px; color:#64748B; margin-top:2px; }
+    .header-right { text-align:right; }
+    .header-right .doc-label { font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:.06em; color:#94A3B8; }
+    .header-right .doc-num   { font-size:13px; font-weight:900; color:#1E293B; margin-top:3px; }
+    .info-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:14px; }
+    .info-box { background:#F8FAFC; border:1px solid #E2E8F0; border-radius:8px; padding:10px 14px; }
+    .info-box h3 { font-size:9px; font-weight:800; text-transform:uppercase; letter-spacing:.07em; color:#94A3B8; margin-bottom:6px; }
+    .info-box p  { font-size:12px; font-weight:600; color:#1E293B; line-height:1.5; }
+    .info-box .sub { font-size:11px; font-weight:400; color:#64748B; }
+    .plan-strip { background:#F0FDFA; border:1px solid #99F6E4; border-radius:8px; padding:10px 16px; margin-bottom:14px; display:flex; gap:24px; align-items:center; }
+    .plan-strip .item { }
+    .plan-strip .item .label { font-size:9px; font-weight:800; text-transform:uppercase; letter-spacing:.06em; color:#0F766E; }
+    .plan-strip .item .value { font-size:13px; font-weight:900; color:#0F766E; margin-top:2px; }
+    table { width:100%; border-collapse:collapse; font-size:11px; }
+    thead tr { background:#0F766E; }
+    thead th { padding:8px 10px; text-align:left; font-size:9px; font-weight:800; text-transform:uppercase; letter-spacing:.06em; color:white; white-space:nowrap; }
+    tbody tr:nth-child(even) { background:#F8FAFC; }
+    tbody td { border-bottom:1px solid #F1F5F9; }
+    .summary { display:grid; grid-template-columns:repeat(5,1fr); gap:8px; margin-top:14px; }
+    .sum-card { background:#F8FAFC; border:1px solid #E2E8F0; border-radius:8px; padding:8px 12px; text-align:center; }
+    .sum-card .s-label { font-size:9px; font-weight:800; text-transform:uppercase; letter-spacing:.05em; color:#94A3B8; }
+    .sum-card .s-val   { font-size:15px; font-weight:900; color:#1E293B; margin-top:4px; }
+    .sum-card.green .s-val { color:#15803D; }
+    .sum-card.red   .s-val { color:#DC2626; }
+    .footer { margin-top:14px; padding-top:10px; border-top:1px solid #E2E8F0; display:flex; justify-content:space-between; font-size:10px; color:#94A3B8; }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <!-- Header -->
+  <div class="header">
+    <div class="header-left">
+      <img src="${logoUrl}" alt="Homly" class="header-logo" onerror="this.style.display='none'"/>
+      <div class="header-title">
+        <h1>Estado de Cuenta — Membresía</h1>
+        <p>Kardex de ciclos de facturación</p>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="doc-label">Documento</div>
+      <div class="doc-num">Membresía Homly</div>
+      <div style="font-size:11px;color:#64748B;margin-top:3px">${generatedAt}</div>
+    </div>
+  </div>
+
+  <!-- Info grid -->
+  <div class="info-grid">
+    <div class="info-box">
+      <h3>Condominio</h3>
+      <p>${tenantData?.name || '—'}</p>
+      ${tenantData?.razon_social && tenantData.razon_social !== tenantData?.name ? `<p class="sub">Razón social: ${tenantData.razon_social}</p>` : ''}
+      ${tenantData?.rfc ? `<p class="sub">RFC: ${tenantData.rfc}</p>` : ''}
+      ${addr ? `<p class="sub">${addr}</p>` : ''}
+    </div>
+    <div class="info-box">
+      <h3>Contacto Administrador</h3>
+      <p>${adminName || '—'}</p>
+      ${adminEmail ? `<p class="sub">${adminEmail}</p>` : ''}
+      <p class="sub" style="margin-top:6px">
+        Estado membresía: <strong style="color:${sub.status==='active'?'#15803D':sub.status==='trial'?'#2563EB':'#DC2626'}">${sub.status_label || sub.status}</strong>
+      </p>
+    </div>
+  </div>
+
+  <!-- Plan strip -->
+  <div class="plan-strip">
+    <div class="item">
+      <div class="label">Plan</div>
+      <div class="value">${sub.plan_name || 'Sin plan'}</div>
+    </div>
+    <div class="item">
+      <div class="label">Ciclo</div>
+      <div class="value">${sub.plan_billing_cycle === 'annual' ? 'Anual' : 'Mensual'}</div>
+    </div>
+    <div class="item">
+      <div class="label">Monto por ciclo</div>
+      <div class="value">${fmtM(sub.amount_per_cycle)} ${sub.currency}</div>
+    </div>
+    ${sub.units_count > 0 ? `<div class="item"><div class="label">Unidades</div><div class="value">${sub.units_count}</div></div>` : ''}
+    ${sub.billing_start ? `<div class="item"><div class="label">Inicio facturación</div><div class="value">${fmtD(sub.billing_start)}</div></div>` : ''}
+    ${sub.next_billing_date ? `<div class="item"><div class="label">Próximo vencimiento</div><div class="value">${fmtD(sub.next_billing_date)}</div></div>` : ''}
+  </div>
+
+  <!-- Kardex table -->
+  <table>
+    <thead>
+      <tr>
+        <th style="width:36px">#</th>
+        <th>Período</th>
+        <th>Inicio ciclo</th>
+        <th>Fin ciclo</th>
+        <th>Vencimiento</th>
+        <th>Cargo esperado</th>
+        <th>Pago registrado</th>
+        <th>Fecha de pago</th>
+        <th>Estado</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${trialRow}
+      ${cycleRows || '<tr><td colspan="9" style="text-align:center;padding:20px;color:#94A3B8">Sin ciclos de facturación registrados</td></tr>'}
+    </tbody>
+  </table>
+
+  <!-- Summary -->
+  <div class="summary">
+    <div class="sum-card">
+      <div class="s-label">Total ciclos</div>
+      <div class="s-val">${cycles.length}</div>
+    </div>
+    <div class="sum-card green">
+      <div class="s-label">Pagados</div>
+      <div class="s-val">${paidCount}</div>
+    </div>
+    <div class="sum-card ${overdueCount > 0 ? 'red' : ''}">
+      <div class="s-label">Vencidos</div>
+      <div class="s-val">${overdueCount}</div>
+    </div>
+    <div class="sum-card green">
+      <div class="s-label">Total pagado</div>
+      <div class="s-val">${fmtM(totalPaid)}</div>
+    </div>
+    <div class="sum-card ${balance > 0 ? 'red' : 'green'}">
+      <div class="s-label">Saldo pendiente</div>
+      <div class="s-val">${fmtM(Math.max(0, balance))}</div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div class="footer">
+    <span>Homly · Sistema de Gestión de Condominios · soporte@homly.mx</span>
+    <span>Generado: ${generatedAt} · v${APP_VERSION}</span>
+  </div>
+
+</div>
+</body>
+</html>`;
+
+  const w = window.open('', '_blank', 'width=1100,height=800');
+  if (!w) { alert('Permite las ventanas emergentes para generar el PDF.'); return; }
+  w.document.write(html);
+  w.document.close();
+  setTimeout(() => { w.focus(); w.print(); }, 700);
+}
+
+// ─── Kardex Section (on-screen) ───────────────────────────────────────────────
+
+const CYCLE_STATUS = {
+  paid:    { label: 'Pagado',    color: '#15803D', bg: '#DCFCE7', border: '#BBF7D0' },
+  current: { label: 'Vigente',   color: '#92400E', bg: '#FEF3C7', border: '#FDE68A' },
+  grace:   { label: 'En gracia', color: '#9A3412', bg: '#FFEDD5', border: '#FED7AA' },
+  overdue: { label: 'Vencido',   color: '#991B1B', bg: '#FEE2E2', border: '#FECACA' },
+};
+
+function KardexSection({ cycles, sub, tenantData, adminName, adminEmail, onViewReceipt }) {
+  const [expanded, setExpanded] = useState(true);
+
+  const sym = { MXN: '$', USD: 'US$', EUR: '€', COP: 'COP$' };
+  const curr = sym[sub?.currency] || '$';
+  const fmtM = (n) => `${curr}${Number(n || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })}`;
+  const fmtD = (d) => {
+    if (!d) return '—';
+    try { return new Date(d + 'T00:00:00').toLocaleDateString('es-MX', { day:'2-digit', month:'short', year:'numeric' }); }
+    catch { return d; }
+  };
+
+  const totalPaid  = cycles.filter(c => c.payment).reduce((s, c) => s + Number(c.payment.amount), 0);
+  const paidCount  = cycles.filter(c => c.status === 'paid').length;
+  const overdueCount = cycles.filter(c => c.status === 'overdue').length;
+
+  if (!sub?.billing_start && !sub?.trial_start) return null;
+
+  return (
+    <div style={{
+      gridColumn: '1 / -1',
+      background: 'var(--white)', border: '1px solid var(--sand-200)', borderRadius: 16,
+    }}>
+      {/* Section header */}
+      <button
+        onClick={() => setExpanded(p => !p)}
+        style={{
+          width: '100%', display: 'flex', alignItems: 'center', gap: 8,
+          padding: '16px 20px', background: 'none', border: 'none', cursor: 'pointer',
+          borderBottom: expanded ? '1px solid var(--sand-100)' : 'none',
+          borderRadius: expanded ? '16px 16px 0 0' : 16,
+        }}
+      >
+        <FileText size={13} color="var(--ink-400)" />
+        <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--ink-400)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+          Kardex de Membresía
+        </span>
+        <span style={{
+          fontSize: 11, fontWeight: 700,
+          background: 'var(--teal-50)', color: 'var(--teal-700)', border: '1px solid var(--teal-200)',
+          borderRadius: 12, padding: '2px 10px',
+        }}>
+          {cycles.length} ciclos
+        </span>
+        {/* Summary chips */}
+        {paidCount > 0 && (
+          <span style={{ fontSize: 11, fontWeight: 700, background: '#DCFCE7', color: '#15803D', border: '1px solid #BBF7D0', borderRadius: 12, padding: '2px 8px' }}>
+            {paidCount} pagados
+          </span>
+        )}
+        {overdueCount > 0 && (
+          <span style={{ fontSize: 11, fontWeight: 700, background: '#FEE2E2', color: '#991B1B', border: '1px solid #FECACA', borderRadius: 12, padding: '2px 8px' }}>
+            {overdueCount} vencidos
+          </span>
+        )}
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); printKardexPDF({ cycles, sub, tenantData, adminName, adminEmail }); }}
+          style={{
+            marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6,
+            padding: '6px 14px', background: 'var(--teal-600)', border: 'none',
+            borderRadius: 8, fontSize: 12, fontWeight: 700, color: 'white',
+            cursor: 'pointer', flexShrink: 0,
+          }}
+          title="Imprimir / Descargar PDF"
+        >
+          <Printer size={12} /> PDF
+        </button>
+        {expanded ? <ChevronUp size={14} color="var(--ink-400)" /> : <ChevronDown size={14} color="var(--ink-400)" />}
+      </button>
+
+      {expanded && (
+        <div style={{ padding: '0 0 4px' }}>
+          {/* Trial period row */}
+          {sub.trial_start && (
+            <div style={{
+              display: 'grid', gridTemplateColumns: '44px 1fr 1fr 1fr 110px 110px 120px',
+              gap: 0, padding: '10px 20px',
+              background: '#EFF6FF', borderBottom: '1px solid #DBEAFE',
+              alignItems: 'center',
+            }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: '#475569', textAlign: 'center' }}>—</span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: '#2563EB' }}>Período de Prueba</span>
+              <span style={{ fontSize: 11, color: '#475569' }}>{fmtD(sub.trial_start)}</span>
+              <span style={{ fontSize: 11, color: '#475569' }}>{fmtD(sub.trial_end)}</span>
+              <span style={{ fontSize: 11, color: '#475569' }}>—</span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: '#16A34A' }}>{fmtM(0)}</span>
+              <span style={{
+                fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 99,
+                background: '#DBEAFE', color: '#1D4ED8', display: 'inline-block',
+              }}>Prueba gratuita</span>
+            </div>
+          )}
+
+          {/* Column headers */}
+          <div style={{
+            display: 'grid', gridTemplateColumns: '44px 1fr 1fr 1fr 110px 110px 120px',
+            gap: 0, padding: '6px 20px 4px',
+            background: 'var(--sand-50)', borderBottom: '1px solid var(--sand-100)',
+          }}>
+            {['#','Período','Inicio ciclo','Vencimiento','Cargo esperado','Pagado','Estado'].map(h => (
+              <span key={h} style={{ fontSize: 10, fontWeight: 800, color: 'var(--ink-400)', textTransform: 'uppercase', letterSpacing: '0.06em', textAlign: h === '#' ? 'center' : 'left' }}>{h}</span>
+            ))}
+          </div>
+
+          {/* Cycle rows */}
+          {cycles.length === 0 ? (
+            <div style={{ padding: '20px', textAlign: 'center', color: 'var(--ink-400)', fontSize: 13 }}>
+              No hay ciclos de facturación registrados.
+            </div>
+          ) : (
+            cycles.map((c) => {
+              const st = CYCLE_STATUS[c.status] || CYCLE_STATUS.current;
+              return (
+                <div key={c.number} style={{
+                  display: 'grid', gridTemplateColumns: '44px 1fr 1fr 1fr 110px 110px 120px',
+                  gap: 0, padding: '10px 20px',
+                  background: c.status === 'paid' ? 'transparent' : c.status === 'current' ? '#FFFBEB' : c.status === 'overdue' ? '#FFF5F5' : '#FFF7ED',
+                  borderBottom: '1px solid var(--sand-50)',
+                  alignItems: 'center',
+                }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-500)', textAlign: 'center' }}>{c.number}</span>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink-800)' }}>{c.periodLabel}</div>
+                    {c.payment?.reference && (
+                      <div style={{ fontSize: 10, color: 'var(--ink-300)', marginTop: 1 }}>Ref: {c.payment.reference}</div>
+                    )}
+                  </div>
+                  <span style={{ fontSize: 11, color: 'var(--ink-500)' }}>{fmtD(c.cycleStart)}</span>
+                  <span style={{ fontSize: 11, color: 'var(--ink-500)' }}>{fmtD(c.dueDate)}</span>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-700)' }}>{fmtM(c.expectedAmount)}</span>
+                  <div>
+                    {c.payment ? (
+                      <>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: '#15803D' }}>{fmtM(c.payment.amount)}</div>
+                        <div style={{ fontSize: 10, color: 'var(--ink-400)', marginTop: 1 }}>{fmtD(c.payment.payment_date)}</div>
+                      </>
+                    ) : (
+                      <span style={{ fontSize: 11, color: 'var(--ink-300)' }}>—</span>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{
+                      fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 99,
+                      background: st.bg, color: st.color, border: `1px solid ${st.border}`,
+                    }}>{st.label}</span>
+                    {c.payment && onViewReceipt && (
+                      <button
+                        onClick={() => onViewReceipt(c.payment)}
+                        style={{
+                          padding: '3px 7px', background: 'var(--teal-50)', border: '1.5px solid var(--teal-200)',
+                          borderRadius: 6, fontSize: 10, fontWeight: 700, color: 'var(--teal-700)',
+                          cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4,
+                        }}
+                        title="Ver recibo"
+                      >
+                        <Eye size={10} /> Recibo
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })
+          )}
+
+          {/* Totals row */}
+          {cycles.length > 0 && (
+            <div style={{
+              display: 'grid', gridTemplateColumns: '44px 1fr 1fr 1fr 110px 110px 120px',
+              gap: 0, padding: '10px 20px',
+              background: 'var(--sand-50)', borderTop: '2px solid var(--sand-200)',
+              alignItems: 'center',
+            }}>
+              <span />
+              <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--ink-600)', textTransform: 'uppercase', letterSpacing: '0.05em', gridColumn: '2 / 5' }}>
+                Total · {cycles.length} ciclo{cycles.length !== 1 ? 's' : ''}
+              </span>
+              <span />
+              <span style={{ fontSize: 13, fontWeight: 900, color: '#15803D' }}>{fmtM(totalPaid)}</span>
+              <span />
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ─── Sub-components ────────────────────────────────────────────────────────────
 function InfoRow({ label, value, accent, chip }) {
@@ -134,7 +659,7 @@ function AlertBanner({ type, title, message }) {
 
 // ─── Main page ─────────────────────────────────────────────────────────────────
 export default function MiMembresia() {
-  const { tenantId, tenantName } = useAuth();
+  const { tenantId, tenantName, user: authUser } = useAuth();
 
   const [sub,            setSub]            = useState(null);
   const [loading,        setLoading]        = useState(true);
@@ -142,16 +667,18 @@ export default function MiMembresia() {
   const [payments,       setPayments]       = useState([]);
   const [tenantData,     setTenantData]     = useState(null);
   const [receiptPayment, setReceiptPayment] = useState(null);
+  const [adminUser,      setAdminUser]      = useState(null);
 
   const loadSub = useCallback(async () => {
     if (!tenantId) return;
     setLoading(true);
     setError(null);
     try {
-      const [subRes, paysRes, tenantRes] = await Promise.allSettled([
+      const [subRes, paysRes, tenantRes, usersRes] = await Promise.allSettled([
         tenantsAPI.getSubscription(tenantId),
         tenantsAPI.getSubscriptionPayments(tenantId),
         tenantsAPI.get(tenantId),
+        usersAPI.list(tenantId, { page_size: 50 }),
       ]);
       if (subRes.status === 'fulfilled') {
         setSub(subRes.value.data);
@@ -166,12 +693,26 @@ export default function MiMembresia() {
       if (tenantRes.status === 'fulfilled') {
         setTenantData(tenantRes.value.data || null);
       }
+      if (usersRes.status === 'fulfilled') {
+        const allUsers = Array.isArray(usersRes.value.data)
+          ? usersRes.value.data
+          : (usersRes.value.data?.results || []);
+        const admin = allUsers.find(u => u.role === 'admin') || allUsers[0] || null;
+        setAdminUser(admin);
+      }
     } finally {
       setLoading(false);
     }
   }, [tenantId]);
 
   useEffect(() => { loadSub(); }, [loadSub]);
+
+  // ─── Billing cycles (kardex) ─────────────────────────────────────────────────
+  const cycles = useMemo(() => generateBillingCycles(sub, payments), [sub, payments]);
+
+  // Admin contact for PDF
+  const adminName  = adminUser?.user_name  || authUser?.name  || '';
+  const adminEmail = adminUser?.user_email || authUser?.email || '';
 
   // ─── Derived values ──────────────────────────────────────────────────────────
   const derived = useMemo(() => {
@@ -631,6 +1172,16 @@ export default function MiMembresia() {
             </div>
           )}
         </div>
+
+        {/* ── Kardex de ciclos ── */}
+        <KardexSection
+          cycles={cycles}
+          sub={sub}
+          tenantData={tenantData}
+          adminName={adminName}
+          adminEmail={adminEmail}
+          onViewReceipt={(p) => setReceiptPayment(p)}
+        />
 
         {/* ── Contact CTA ── */}
         <div style={{
