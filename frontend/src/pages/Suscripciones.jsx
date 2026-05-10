@@ -1069,6 +1069,11 @@ function printKardexPDF({ cycles, sub, tenantData, adminName, adminEmail }) {
   .plan-strip{background:#F0FDFA;border:1px solid #99F6E4;border-radius:8px;padding:10px 16px;margin-bottom:14px;display:flex;gap:24px;align-items:center;flex-wrap:wrap}
   .plan-strip .item .label{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:#0F766E}
   .plan-strip .item .value{font-size:13px;font-weight:900;color:#0F766E;margin-top:2px}
+  .pay-info{background:#FFF7ED;border:1px solid #FED7AA;border-radius:8px;padding:10px 16px;margin-bottom:14px;display:flex;gap:32px;align-items:center;flex-wrap:wrap}
+  .pay-info h3{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:#C2410C;margin-bottom:4px;width:100%}
+  .pay-info .pi{display:flex;flex-direction:column;gap:1px}
+  .pay-info .pi .lbl{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#9A3412}
+  .pay-info .pi .val{font-size:12px;font-weight:800;color:#1E293B}
   table{width:100%;border-collapse:collapse;font-size:11px}
   thead tr{background:#0F766E}
   thead th{padding:8px 10px;text-align:left;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:white;white-space:nowrap}
@@ -1107,6 +1112,13 @@ function printKardexPDF({ cycles, sub, tenantData, adminName, adminEmail }) {
       ${adminEmail ? `<p class="sub">${adminEmail}</p>` : ''}
       <p class="sub" style="margin-top:6px">Estado: <strong>${subStatus}</strong></p>
     </div>
+  </div>
+  <div class="pay-info">
+    <h3>Información de Pago</h3>
+    <div class="pi"><div class="lbl">Banco</div><div class="val">BBVA</div></div>
+    <div class="pi"><div class="lbl">Titular</div><div class="val">Spotynet S.A. de C.V.</div></div>
+    <div class="pi"><div class="lbl">No. Cuenta</div><div class="val">011 785 7578</div></div>
+    <div class="pi"><div class="lbl">Cuenta CLABE</div><div class="val">012 180 00117857578</div></div>
   </div>
   <div class="plan-strip">
     <div class="item"><div class="label">Plan</div><div class="value">${sub.plan_name || '—'}</div></div>
