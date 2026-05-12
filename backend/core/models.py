@@ -78,6 +78,13 @@ class User(AbstractBaseUser, PermissionsMixin):
         default=dict, blank=True,
         help_text='Module-level access flags for non-superadmin system users.',
     )
+    # Human-readable role label set by super-admin when creating staff users
+    # (e.g. "Operador de Tenants", "Analista CRM").
+    role_name = models.CharField(
+        max_length=120, blank=True, default='',
+        help_text='Display label for this user\'s role. '
+                  'Falls back to system_role display or "Super Administrador" if blank.',
+    )
     # Restrict which tenants a staff user can see (empty = all visible tenants)
     allowed_tenant_ids = models.JSONField(
         default=list, blank=True,

@@ -7427,10 +7427,12 @@ class SystemUserViewSet(viewsets.ModelViewSet):
         return SystemUserSerializer
 
     def get_queryset(self):
-        """Return all system users (is_super_admin=True), including legacy ones
-        whose system_role was never set before the field was introduced."""
+        """Return all system users: super-admins (is_super_admin=True) plus staff
+        users with a system_role who may have custom role/permission configurations."""
         from django.db.models import Q as DQ
-        qs = User.objects.filter(is_super_admin=True).order_by('name')
+        qs = User.objects.filter(
+            DQ(is_super_admin=True) | DQ(system_role__isnull=False, is_staff=True)
+        ).distinct().order_by('name')
 
         role_f   = self.request.query_params.get('system_role')
         search   = self.request.query_params.get('search', '').strip()

@@ -195,33 +195,34 @@ class SystemUserSerializer(serializers.ModelSerializer):
     """
     Serializer for Homly internal system staff users.
     Used by SystemUserViewSet (SuperAdmin only).
+
+    Exposes role_name (custom display label), is_super_admin, system_permissions
+    and allowed_tenant_ids so the frontend can render and edit full role+permission
+    configuration per user.
     """
-    system_role_label = serializers.SerializerMethodField()
     allowed_tenants_data = serializers.SerializerMethodField()
 
     class Meta:
         model = User
         fields = [
-            'id', 'email', 'name', 'is_active',
-            'system_role', 'system_role_label',
+            'id', 'email', 'name', 'is_active', 'is_super_admin',
+            'role_name', 'system_role',
             'system_permissions', 'allowed_tenant_ids', 'allowed_tenants_data',
             'created_at', 'updated_at',
         ]
-        read_only_fields = ['id', 'created_at', 'updated_at', 'system_role_label', 'allowed_tenants_data']
-
-    def get_system_role_label(self, obj):
-        # Legacy super admins (created before the system_role field was introduced)
-        # have system_role=None but are full super admins — surface them as such.
-        if not obj.system_role:
-            return 'Super Administrador'
-        return obj.get_system_role_display()
+        read_only_fields = ['id', 'email', 'created_at', 'updated_at', 'allowed_tenants_data']
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
         # Normalise legacy super admins: treat system_role=None as 'super_admin'
-        # so the frontend renders their role card and permissions correctly.
         if not data.get('system_role') and instance.is_super_admin:
             data['system_role'] = 'super_admin'
+        # Provide a resolved role_name if the field is blank
+        if not data.get('role_name'):
+            if instance.is_super_admin:
+                data['role_name'] = 'Super Administrador'
+            elif instance.system_role:
+                data['role_name'] = instance.get_system_role_display()
         return data
 
     def get_allowed_tenants_data(self, obj):
@@ -232,29 +233,38 @@ class SystemUserSerializer(serializers.ModelSerializer):
         return [{'id': str(t['id']), 'name': t['name']} for t in tenants]
 
     def update(self, instance, validated_data):
-        # Only super_admin system users exist — discard any permission/role changes from client.
-        validated_data.pop('system_permissions', None)
-        validated_data.pop('system_role', None)
-        validated_data.pop('allowed_tenant_ids', None)
+        # Allow role_name, is_super_admin, system_permissions, and allowed_tenant_ids
+        # to be updated by a super-admin.
+        is_super = validated_data.get('is_super_admin', instance.is_super_admin)
+        # When promoting to super_admin, clear custom permissions (full access)
+        if is_super:
+            validated_data['system_permissions'] = {}
+            validated_data['allowed_tenant_ids'] = []
         return super().update(instance, validated_data)
 
 
 class SystemUserCreateSerializer(serializers.ModelSerializer):
     """
-    Creates a new Super Administrador del Sistema (is_super_admin=True).
+    Creates a new Homly system user with configurable role and permissions.
 
-    Only super_admin system users are supported. Restricted staff roles
-    (ventas, marketing, etc.) have been removed from the system.
+    Accepts:
+      • name, email    — required
+      • role_name      — display label (e.g. "Operador de Tenants")
+      • is_super_admin — full system access (default True)
+      • permissions    — dict: { modules, module_tabs, allowed_tenants }
+                         Ignored when is_super_admin=True.
 
-    Rules:
-    • Email must be unique across ALL users (system and tenant profiles).
-    • Authentication is via email-verification-code (passwordless).
+    Authentication is always via email-verification-code (passwordless).
+    Email must be unique across ALL users (system and tenant profiles).
     """
-    email = serializers.EmailField()
+    email          = serializers.EmailField()
+    role_name      = serializers.CharField(max_length=120, required=False, allow_blank=True, default='')
+    is_super_admin = serializers.BooleanField(required=False, default=True)
+    permissions    = serializers.DictField(required=False, default=dict)
 
     class Meta:
         model = User
-        fields = ['id', 'email', 'name']
+        fields = ['id', 'email', 'name', 'role_name', 'is_super_admin', 'permissions']
         read_only_fields = ['id']
         extra_kwargs = {'name': {'required': True}}
 
@@ -263,25 +273,44 @@ class SystemUserCreateSerializer(serializers.ModelSerializer):
         if User.objects.filter(email=email).exists():
             raise serializers.ValidationError(
                 'Este correo ya existe en otro perfil. '
-                'Los Super Administradores deben tener un correo exclusivo que no esté '
+                'El usuario debe tener un correo exclusivo que no esté '
                 'registrado en ningún otro perfil del sistema o de condominio.'
             )
         return email
 
     def create(self, validated_data):
         import secrets
-        email = validated_data['email']
-        name  = validated_data.get('name', '').strip()
+        email       = validated_data['email']
+        name        = validated_data.get('name', '').strip()
+        role_name   = validated_data.get('role_name', '').strip()
+        is_super    = validated_data.get('is_super_admin', True)
+        permissions = validated_data.get('permissions') or {}
+
         if not name:
             raise serializers.ValidationError({'name': 'El nombre es obligatorio.'})
+
+        # Build system_permissions and allowed_tenant_ids from the permissions dict
+        system_perms    = {}
+        allowed_tenants = []
+        if not is_super and permissions:
+            system_perms = {
+                'modules':     permissions.get('modules', []),
+                'module_tabs': permissions.get('module_tabs', {}),
+            }
+            allowed_tenants = permissions.get('allowed_tenants', [])
+
+        # Resolve effective role_name
+        effective_role_name = role_name or ('Super Administrador' if is_super else 'Operador')
+
         auto_password = secrets.token_urlsafe(24)
         user = User(
             email=email,
             name=name,
+            role_name=effective_role_name,
             system_role='super_admin',
-            system_permissions={},
-            allowed_tenant_ids=[],
-            is_super_admin=True,
+            system_permissions=system_perms,
+            allowed_tenant_ids=allowed_tenants,
+            is_super_admin=is_super,
             is_staff=True,
             must_change_password=False,
         )

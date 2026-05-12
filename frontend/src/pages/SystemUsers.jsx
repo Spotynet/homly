@@ -408,12 +408,14 @@ function UserForm({ initial = {}, existingRoles = [], onSave, onClose, loading }
     initial.role_name || (existingRoles.length > 0 ? existingRoles[0] : '')
   );
 
-  // Permissions state
+  // Permissions state — map backend fields (system_permissions / allowed_tenant_ids)
+  // to the flat perms structure used by PermissionsGrid.
+  const backendPerms = initial.system_permissions || {};
   const [perms, setPerms] = useState({
     is_super_admin:  initial.is_super_admin ?? true,
-    modules:         initial.permissions?.modules || SISTEMA_MODULES.map(m => m.id),
-    module_tabs:     initial.permissions?.module_tabs || {},
-    allowed_tenants: initial.permissions?.allowed_tenants || [],
+    modules:         backendPerms.modules      || SISTEMA_MODULES.map(m => m.id),
+    module_tabs:     backendPerms.module_tabs  || {},
+    allowed_tenants: initial.allowed_tenant_ids || [],
   });
 
   const set = (k) => (e) => setForm(p => ({ ...p, [k]: e.target.value }));
@@ -557,7 +559,8 @@ function PermBadge({ user }) {
       </div>
     );
   }
-  const modules = user.permissions?.modules || [];
+  // Backend returns system_permissions; fall back to permissions for any local state
+  const modules = (user.system_permissions || user.permissions || {}).modules || [];
   if (modules.length === 0) {
     return <span className="text-xs text-slate-400 italic">Sin módulos</span>;
   }
@@ -623,9 +626,26 @@ export default function SystemUsers() {
     setLoading(true);
     try {
       if (userModal?.id) {
-        await systemUsersAPI.update(userModal.id, data);
+        // PATCH uses SystemUserSerializer: expects system_permissions + allowed_tenant_ids
+        // directly (not nested under "permissions").
+        const { permissions, ...rest } = data;
+        const patchPayload = {
+          ...rest,
+          ...(data.is_super_admin
+            ? { system_permissions: {}, allowed_tenant_ids: [] }
+            : {
+                system_permissions: {
+                  modules:     permissions?.modules     || [],
+                  module_tabs: permissions?.module_tabs || {},
+                },
+                allowed_tenant_ids: permissions?.allowed_tenants || [],
+              }
+          ),
+        };
+        await systemUsersAPI.update(userModal.id, patchPayload);
         toast.success('Usuario actualizado');
       } else {
+        // POST uses SystemUserCreateSerializer: accepts { role_name, is_super_admin, permissions:{...} }
         await systemUsersAPI.create(data);
         toast.success('Usuario creado. Puede iniciar sesión con código de verificación por email.');
       }
