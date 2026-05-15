@@ -4522,8 +4522,8 @@ def _compute_statement(tenant, unit_id, start_period, cutoff_period, _prefetched
 
         cargo_opt = total_cargo_opt
         cargo_total = cargo_oblig + cargo_opt
-        abono_balance = total_abono_req + total_abono_opt          # Solo pagos que afectan el saldo
-        abono_display = abono_balance + total_received_neutral     # Todos los pagos recibidos (para mostrar)
+        abono_balance = total_abono_req + total_abono_opt + total_received_neutral  # Todos los pagos afectan el saldo
+        abono_display = abono_balance                                                # Display = todos los pagos recibidos
 
         # Adeudo cobrado en este período: se suma al display y al balance
         # __prevDebt: solo display (ya está en saldo_acum inicial vía prev_debt_adeudo)

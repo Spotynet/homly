@@ -109,3 +109,150 @@ ACCION REQUERIDA:
 
 PROXIMA EJECUCION PROGRAMADA: 2026-05-09 08:00
 ==============================================================
+
+==============================================================
+EJECUCION: 2026-05-13 08:00 (tarea programada diaria)
+==============================================================
+RESULTADO: ERROR — No se pudo ejecutar la verificacion
+
+INTENTOS REALIZADOS:
+  1. API REST (POST http://localhost:8000/api/tenant-subscriptions/run-billing-check/)
+     → Fallo con exit code 7 (connection refused). El servidor Django
+       no esta corriendo en el sandbox.
+
+  2. Django management shell (python manage.py shell)
+     → El entorno virtual usa Python 3.14 (binarios macOS/darwin).
+       El sandbox ejecuta Python 3.10 en Linux — incompatibles.
+
+  3. Conexion directa a PostgreSQL (localhost:5432)
+     → Rechazada (Connection refused). La base de datos corre en la
+       maquina local del usuario, no accesible desde el sandbox.
+
+CAUSA RAIZ (PERSISTENTE):
+  Esta tarea lleva fallando desde 2026-05-07. El sandbox de Claude
+  (Linux aislado) no tiene acceso de red a los servicios locales del
+  usuario (Django en :8000 y PostgreSQL en :5432). El entorno virtual
+  del proyecto es incompatible con el runtime del sandbox.
+
+ESTADO: Sin cambios en la base de datos. Ninguna suscripcion fue marcada.
+
+ACCION REQUERIDA (URGENTE — 6 dias sin verificacion):
+  Ejecutar manualmente desde la maquina donde corre el backend:
+
+    cd ~/Documents/Homly/backend
+    source venv/bin/activate
+    python manage.py shell -c "
+    import datetime
+    from django.utils import timezone
+    from core.models import TenantSubscription
+    today = timezone.now().date()
+    grace_deadline = today - datetime.timedelta(days=5)
+    candidates = TenantSubscription.objects.select_related('tenant','plan').filter(
+        status__in=['active','trial'],
+        next_billing_date__isnull=False,
+        next_billing_date__lte=grace_deadline,
+    )
+    marked = 0
+    for sub in candidates:
+        has_payment = sub.payments.filter(payment_date__gte=sub.next_billing_date).exists()
+        if not has_payment:
+            sub.status = 'past_due'
+            sub.save(update_fields=['status','updated_at'])
+            sub.sync_tenant_active()
+            marked += 1
+            print(f'VENCIDO: {sub.tenant.name} - next_billing_date={sub.next_billing_date}')
+    total = TenantSubscription.objects.filter(status='past_due').count()
+    print(f'Completado: {marked} nuevos vencimientos, {total} total vencidos')
+    "
+
+SOLUCION DEFINITIVA RECOMENDADA:
+  Configurar un cron job directamente en la maquina local:
+
+    # Agregar al crontab del usuario (crontab -e):
+    0 8 * * * cd ~/Documents/Homly/backend && source venv/bin/activate && python manage.py shell -c "..."
+
+  O bien desplegar el backend en un servidor publico (Railway, Render,
+  VPS) y apuntar esta tarea al endpoint publico.
+
+PROXIMA EJECUCION PROGRAMADA: 2026-05-14 08:00
+==============================================================
+
+==============================================================
+EJECUCION: 2026-05-15 08:00 (tarea programada diaria)
+==============================================================
+RESULTADO: ERROR — No se pudo ejecutar la verificacion
+
+INTENTOS REALIZADOS:
+  1. API REST (POST http://localhost:8000/api/tenant-subscriptions/run-billing-check/)
+     → Fallo con exit code 7 (connection refused). El servidor Django
+       no esta corriendo en el sandbox.
+
+  2. Django management shell (python manage.py shell)
+     → El entorno virtual usa Python 3.14 (binarios macOS/darwin).
+       El sandbox ejecuta Python 3.10 en Linux — incompatibles.
+       pip install django bloqueado por proxy de red del sandbox.
+
+  3. Conexion directa a PostgreSQL (localhost:5432)
+     → Rechazada (Connection refused). La base de datos corre en la
+       maquina local del usuario, no accesible desde el sandbox.
+
+CAUSA RAIZ (PERSISTENTE — 9 dias consecutivos sin ejecucion exitosa):
+  Este problema lleva ocurriendo desde 2026-05-07. El sandbox de Claude
+  (Linux aislado) no tiene acceso de red a los servicios locales del
+  usuario (Django en :8000 y PostgreSQL en :5432). El entorno virtual
+  del proyecto es incompatible con el runtime del sandbox.
+
+ESTADO: Sin cambios en la base de datos. Ninguna suscripcion fue marcada.
+
+ACCION REQUERIDA (CRITICA — 9 dias sin verificacion automatica):
+  Ejecutar manualmente desde la maquina donde corre el backend:
+
+    cd ~/Documents/Homly/backend  (o la ruta donde este el proyecto)
+    source venv/bin/activate
+    python manage.py shell -c "
+    import datetime
+    from django.utils import timezone
+    from core.models import TenantSubscription
+    today = timezone.now().date()
+    grace_deadline = today - datetime.timedelta(days=5)
+    candidates = TenantSubscription.objects.select_related('tenant','plan').filter(
+        status__in=['active','trial'],
+        next_billing_date__isnull=False,
+        next_billing_date__lte=grace_deadline,
+    )
+    marked = 0
+    for sub in candidates:
+        has_payment = sub.payments.filter(payment_date__gte=sub.next_billing_date).exists()
+        if not has_payment:
+            sub.status = 'past_due'
+            sub.save(update_fields=['status','updated_at'])
+            sub.sync_tenant_active()
+            marked += 1
+            print(f'VENCIDO: {sub.tenant.name} - next_billing_date={sub.next_billing_date}')
+    total = TenantSubscription.objects.filter(status='past_due').count()
+    print(f'Completado: {marked} nuevos vencimientos, {total} total vencidos')
+    "
+
+SOLUCION DEFINITIVA RECOMENDADA:
+  Esta tarea programada NO puede ejecutarse correctamente desde el
+  sandbox de Claude Cowork porque el backend y la base de datos solo
+  son accesibles localmente. Las opciones son:
+
+  Opcion A — Cron job local (mas sencilla):
+    Agregar al crontab en la maquina del servidor:
+      crontab -e
+      # Agregar la linea:
+      0 8 * * * cd /ruta/a/Homly/backend && source venv/bin/activate && python manage.py shell -c "..."
+
+  Opcion B — Endpoint publico:
+    Si el backend esta desplegado en un servidor publico (Railway,
+    Render, VPS), actualizar la URL del endpoint en esta tarea
+    para apuntar al servidor publico en lugar de localhost.
+
+  Opcion C — Celery Beat / APScheduler:
+    Configurar un scheduler interno en Django (Celery Beat o
+    django-apscheduler) para que la verificacion corra automaticamente
+    dentro del mismo proceso del servidor.
+
+PROXIMA EJECUCION PROGRAMADA: 2026-05-16 08:00
+==============================================================
