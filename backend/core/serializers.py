@@ -160,6 +160,13 @@ class LoginWithCodeSerializer(serializers.Serializer):
             data['tenant'] = tenant
             return data
 
+        # System staff user (non-super-admin internal Homly staff with an assigned system role)
+        if user.is_staff and user.system_role:
+            data['user']   = user
+            data['role']   = 'superadmin'
+            data['tenant'] = None
+            return data
+
         user_tenants = TenantUser.objects.select_related('tenant').filter(user=user)
         if not user_tenants.exists():
             raise serializers.ValidationError(
@@ -308,7 +315,7 @@ class SystemUserCreateSerializer(serializers.ModelSerializer):
             email=email,
             name=name,
             role_name=effective_role_name,
-            system_role='super_admin',
+            system_role='super_admin' if is_super else 'staff',
             system_permissions=system_perms,
             allowed_tenant_ids=allowed_tenants,
             is_super_admin=is_super,

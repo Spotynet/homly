@@ -659,6 +659,10 @@ class TenantsForEmailView(APIView):
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 )
 
+        # System staff user (non-super-admin internal Homly staff with an assigned system role)
+        if user.is_staff and user.system_role:
+            return Response({'is_super_admin': True, 'tenants': []})
+
         # Regular user — only their assigned tenants
         try:
             qs = (
