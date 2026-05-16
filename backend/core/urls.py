@@ -12,6 +12,8 @@ router.register(r'audit-logs', views.AuditLogViewSet, basename='audit-logs')
 router.register(r'subscription-plans', views.SubscriptionPlanViewSet, basename='subscription-plans')
 router.register(r'trial-requests', views.TrialRequestViewSet, basename='trial-requests')
 router.register(r'tenant-subscriptions', views.TenantSubscriptionViewSet, basename='tenant-subscriptions')
+router.register(r'subscription-payments', views.SubscriptionPaymentViewSet, basename='subscription-payments')
+router.register(r'system-roles', views.SystemRoleViewSet, basename='system-roles')
 
 # System staff users (superadmin only)
 router.register(r'system-users', views.SystemUserViewSet, basename='system-users')

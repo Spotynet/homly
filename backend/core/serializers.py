@@ -15,6 +15,7 @@ from .models import (
     SubscriptionPayment,
     CRMContact, CRMOpportunity, CRMActivity,
     CRMCampaign, CRMCampaignContact, CRMTicket,
+    SystemRole,
 )
 
 
@@ -1155,6 +1156,44 @@ class SubscriptionPaymentSerializer(serializers.ModelSerializer):
 
     def get_payment_method_label(self, obj):
         return obj.get_payment_method_display()
+
+
+# ═══════════════════════════════════════════════════════════
+#  SYSTEM ROLE SERIALIZER
+# ═══════════════════════════════════════════════════════════
+
+class SystemRoleSerializer(serializers.ModelSerializer):
+    """
+    Serializer for SystemRole — reusable role templates for Homly staff.
+    Includes a computed `users_count` so the UI can show how many users
+    are assigned to each role.
+    """
+    users_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model  = SystemRole
+        fields = [
+            'id', 'name', 'description',
+            'is_super_admin', 'permissions',
+            'users_count',
+            'created_at', 'updated_at',
+        ]
+        read_only_fields = ['id', 'users_count', 'created_at', 'updated_at']
+
+    def get_users_count(self, obj):
+        return User.objects.filter(role_name=obj.name, is_staff=True).count()
+
+    def validate_name(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError('El nombre del rol no puede estar vacío.')
+        # Unique check excluding self on update
+        qs = SystemRole.objects.filter(name__iexact=value)
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError('Ya existe un rol con ese nombre.')
+        return value
 
 
 # ═══════════════════════════════════════════════════════════

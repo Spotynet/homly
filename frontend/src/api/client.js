@@ -304,6 +304,21 @@ export const tenantSubscriptionsAPI = {
   runBillingCheck: ()         => api.post('/tenant-subscriptions/run-billing-check/'),
 };
 
+// ─── Subscription Payments (individual edit/delete) ──
+export const subscriptionPaymentsAPI = {
+  update: (id, data) => api.patch(`/subscription-payments/${id}/`, data),
+  delete: (id)       => api.delete(`/subscription-payments/${id}/`),
+};
+
+// ─── System Roles ─────────────────────────────────────
+export const systemRolesAPI = {
+  list:   (params) => api.get('/system-roles/', { params }),
+  get:    (id)     => api.get(`/system-roles/${id}/`),
+  create: (data)   => api.post('/system-roles/', data),
+  update: (id, d)  => api.patch(`/system-roles/${id}/`, d),
+  delete: (id)     => api.delete(`/system-roles/${id}/`),
+};
+
 // ─── Super Admins ────────────────────────────────
 export const superAdminAPI = {
   list: () => api.get('/super-admins/'),

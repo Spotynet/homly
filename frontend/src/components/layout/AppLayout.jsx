@@ -19,7 +19,7 @@ const NAV_ITEMS = {
       { path: '/app/sistema/tenants',          icon: Globe,      label: 'Tenants'           },
       { path: '/app/sistema/suscripciones',    icon: CreditCard, label: 'Suscripciones'     },
       { path: '/app/sistema/crm',              icon: Target,     label: 'CRM Comercial'     },
-      { path: '/app/sistema/usuarios',         icon: Users,      label: 'Usuarios Sistema'  },
+      { path: '/app/sistema/usuarios',         icon: Users,      label: 'Roles y Usuarios'  },
       { path: '/app/sistema/logs',             icon: Activity,   label: 'Logs del Sistema'  },
     ]},
     { section: 'tenant_general', label: 'General', items: [

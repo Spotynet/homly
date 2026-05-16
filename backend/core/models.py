@@ -1732,3 +1732,31 @@ class CRMTicket(models.Model):
     def __str__(self):
         return f'[{self.priority.upper()}] {self.subject} — {self.status}'
 
+
+# ═══════════════════════════════════════════════════════════
+#  SYSTEM ROLES (Homly staff role templates)
+# ═══════════════════════════════════════════════════════════
+
+class SystemRole(models.Model):
+    """
+    Reusable role template for Homly internal staff users.
+    Defines a name, description and a permission set (modules + tabs).
+    When a SystemUser is created or updated, the role's permissions are
+    copied onto the user (denormalised for fast access).
+    """
+    name          = models.CharField(max_length=120, unique=True)
+    description   = models.CharField(max_length=255, blank=True, default='')
+    is_super_admin = models.BooleanField(default=False,
+                     help_text='Grants full system access to users assigned this role')
+    permissions   = models.JSONField(default=dict, blank=True,
+                    help_text='{ modules: [str], module_tabs: {modId: [tabId]} }')
+    created_at    = models.DateTimeField(auto_now_add=True)
+    updated_at    = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'system_roles'
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+

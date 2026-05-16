@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { subscriptionPlansAPI, trialRequestsAPI, tenantSubscriptionsAPI, tenantsAPI } from '../api/client';
+import { subscriptionPlansAPI, trialRequestsAPI, tenantSubscriptionsAPI, tenantsAPI, subscriptionPaymentsAPI } from '../api/client';
 import {
   Plus, Edit, Trash2, Check, X, ChevronDown, ChevronUp,
   DollarSign, Users, Clock, Zap, Star, AlertCircle, RefreshCw,
@@ -1206,6 +1206,12 @@ function RowPanel({ sub, plans, onRefresh }) {
   const [receiptPayment,  setReceiptPayment]  = useState(null);  // payment to show in receipt
   const [tenantData,      setTenantData]      = useState(null);  // full tenant info for receipt
 
+  // ── Edit payment state ────────────────────────────────────────────────────
+  const [editingPayment,  setEditingPayment]  = useState(null);  // payment being edited
+  const [editPay,         setEditPay]         = useState({});    // edit form values
+  const [savingEdit,      setSavingEdit]      = useState(false);
+  const [deletingPayment, setDeletingPayment] = useState(null);  // id of payment being deleted
+
   // ── Deactivate state ─────────────────────────────────────────────────────
   const [showDeactivate, setShowDeactivate] = useState(false);
   const [deactivateReason, setDeactivateReason] = useState('');
@@ -1354,6 +1360,54 @@ function RowPanel({ sub, plans, onRefresh }) {
     } catch (e) {
       toast.error(e?.response?.data?.detail || 'Error al registrar pago');
     } finally { setSaving(false); }
+  };
+
+  const handleOpenEditPayment = (p) => {
+    setEditingPayment(p.id);
+    setEditPay({
+      amount:         String(p.amount),
+      currency:       p.currency || sub.currency || 'MXN',
+      period_label:   p.period_label || '',
+      payment_date:   p.payment_date || '',
+      payment_method: p.payment_method || 'transfer',
+      reference:      p.reference || '',
+      notes:          p.notes || '',
+    });
+  };
+
+  const handleCancelEditPayment = () => {
+    setEditingPayment(null);
+    setEditPay({});
+  };
+
+  const handleSaveEditPayment = async () => {
+    if (!editPay.amount || !editPay.payment_date) { toast.error('Monto y fecha son obligatorios'); return; }
+    setSavingEdit(true);
+    try {
+      const { data: updated } = await subscriptionPaymentsAPI.update(editingPayment, {
+        ...editPay,
+        amount: Number(editPay.amount),
+      });
+      setPaymentHistory(prev => prev.map(p => p.id === editingPayment ? updated : p));
+      toast.success('Pago actualizado');
+      setEditingPayment(null);
+      setEditPay({});
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || 'Error al actualizar pago');
+    } finally { setSavingEdit(false); }
+  };
+
+  const handleDeletePayment = async (paymentId) => {
+    if (!window.confirm('¿Eliminar este pago? Esta acción no se puede deshacer.')) return;
+    setDeletingPayment(paymentId);
+    try {
+      await subscriptionPaymentsAPI.delete(paymentId);
+      setPaymentHistory(prev => prev.filter(p => p.id !== paymentId));
+      toast.success('Pago eliminado');
+      onRefresh();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || 'Error al eliminar pago');
+    } finally { setDeletingPayment(null); }
   };
 
   const handleDeactivate = async () => {
@@ -1860,17 +1914,79 @@ function RowPanel({ sub, plans, onRefresh }) {
               </div>
             ) : (
               paymentHistory.map(p => (
-                <div key={p.id} className="flex items-center justify-between bg-white border border-slate-100 rounded-lg px-3 py-2.5 text-xs">
-                  <div className="flex flex-col gap-0.5 min-w-0">
-                    <span className="font-bold text-slate-800">{fmtAmt(p.amount, p.currency)}</span>
-                    <span className="text-slate-500">{p.period_label || '—'} · {p.payment_method_label} · {p.payment_date}</span>
-                    {p.reference && <span className="text-slate-400">Ref: {p.reference}</span>}
-                  </div>
-                  <button
-                    onClick={() => handleOpenReceipt(p)}
-                    className="flex items-center gap-1.5 px-2.5 py-1.5 text-teal-700 bg-teal-50 border border-teal-200 rounded-lg hover:bg-teal-100 transition-colors font-bold ml-2 flex-shrink-0">
-                    <Eye size={12} /> Ver recibo
-                  </button>
+                <div key={p.id} className="bg-white border border-slate-100 rounded-lg text-xs overflow-hidden">
+                  {editingPayment === p.id ? (
+                    /* ── Inline edit form ── */
+                    <div className="p-3 space-y-2 bg-blue-50 border-b border-blue-100">
+                      <p className="text-xs font-bold text-blue-700 uppercase tracking-wider mb-2">Editando pago</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        {[
+                          { key: 'amount',       label: 'Monto',            type: 'number' },
+                          { key: 'payment_date', label: 'Fecha',            type: 'date'   },
+                          { key: 'period_label', label: 'Período cubierto', type: 'text'   },
+                          { key: 'reference',    label: 'Referencia',       type: 'text'   },
+                        ].map(({ key, label, type }) => (
+                          <div key={key}>
+                            <label style={labelSt}>{label}</label>
+                            <input type={type} value={editPay[key] || ''} onChange={e => setEditPay(v => ({ ...v, [key]: e.target.value }))} style={inputSt} />
+                          </div>
+                        ))}
+                        <div>
+                          <label style={labelSt}>Método</label>
+                          <select value={editPay.payment_method || 'transfer'} onChange={e => setEditPay(v => ({ ...v, payment_method: e.target.value }))} style={inputSt}>
+                            <option value="transfer">Transferencia</option>
+                            <option value="cash">Efectivo</option>
+                            <option value="card">Tarjeta</option>
+                            <option value="other">Otro</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label style={labelSt}>Moneda</label>
+                          <select value={editPay.currency || 'MXN'} onChange={e => setEditPay(v => ({ ...v, currency: e.target.value }))} style={inputSt}>
+                            {['MXN','USD','EUR','COP'].map(c => <option key={c}>{c}</option>)}
+                          </select>
+                        </div>
+                      </div>
+                      <div>
+                        <label style={labelSt}>Notas</label>
+                        <textarea value={editPay.notes || ''} onChange={e => setEditPay(v => ({ ...v, notes: e.target.value }))} rows={2} style={{ ...inputSt, resize: 'vertical' }} />
+                      </div>
+                      <div className="flex gap-2 pt-1">
+                        <button onClick={handleSaveEditPayment} disabled={savingEdit}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 disabled:opacity-50 transition-colors">
+                          <Check size={12} /> {savingEdit ? 'Guardando…' : 'Guardar'}
+                        </button>
+                        <button onClick={handleCancelEditPayment} disabled={savingEdit}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-xs font-bold hover:bg-slate-200 transition-colors">
+                          <X size={12} /> Cancelar
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    /* ── Payment card ── */
+                    <div className="flex items-center justify-between px-3 py-2.5">
+                      <div className="flex flex-col gap-0.5 min-w-0">
+                        <span className="font-bold text-slate-800">{fmtAmt(p.amount, p.currency)}</span>
+                        <span className="text-slate-500">{p.period_label || '—'} · {p.payment_method_label} · {p.payment_date}</span>
+                        {p.reference && <span className="text-slate-400">Ref: {p.reference}</span>}
+                        {p.notes && <span className="text-slate-400 italic">{p.notes}</span>}
+                      </div>
+                      <div className="flex items-center gap-1.5 ml-2 flex-shrink-0">
+                        <button onClick={() => handleOpenReceipt(p)}
+                          className="flex items-center gap-1 px-2 py-1.5 text-teal-700 bg-teal-50 border border-teal-200 rounded-lg hover:bg-teal-100 transition-colors font-bold">
+                          <Eye size={12} /> Recibo
+                        </button>
+                        <button onClick={() => handleOpenEditPayment(p)}
+                          className="flex items-center gap-1 px-2 py-1.5 text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors font-bold">
+                          <Edit size={12} /> Editar
+                        </button>
+                        <button onClick={() => handleDeletePayment(p.id)} disabled={deletingPayment === p.id}
+                          className="flex items-center gap-1 px-2 py-1.5 text-red-600 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-colors font-bold disabled:opacity-50">
+                          <Trash2 size={12} /> {deletingPayment === p.id ? '…' : ''}
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))
             )}

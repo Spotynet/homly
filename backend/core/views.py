@@ -28,6 +28,7 @@ from .models import (
     SubscriptionPayment,
     CRMContact, CRMOpportunity, CRMActivity,
     CRMCampaign, CRMCampaignContact, CRMTicket,
+    SystemRole,
 )
 from .email_service import (
     send_verification_email, send_notification_email, CODE_EXPIRY_MINUTES,
@@ -51,6 +52,7 @@ from .serializers import (
     CRMContactSerializer, CRMOpportunitySerializer, CRMActivitySerializer,
     CRMCampaignSerializer, CRMCampaignContactSerializer, CRMTicketSerializer,
     SystemUserSerializer, SystemUserCreateSerializer,
+    SystemRoleSerializer,
 )
 from .permissions import IsSuperAdmin, IsTenantAdmin, IsTenantMember, IsAdminOrTesorero, IsAdminOrTesOrAuditor, CanApproveReservation
 
@@ -6599,6 +6601,24 @@ class TrialRequestViewSet(viewsets.ModelViewSet):
 #  TENANT SUBSCRIPTIONS — view and manage per-tenant subscriptions
 # ═══════════════════════════════════════════════════════════
 
+class SubscriptionPaymentViewSet(viewsets.ModelViewSet):
+    """Edit and delete individual subscription payments. Superadmin only."""
+    serializer_class = SubscriptionPaymentSerializer
+    permission_classes = [IsSuperAdmin]
+    http_method_names = ['get', 'patch', 'delete', 'head', 'options']
+
+    def get_queryset(self):
+        return SubscriptionPayment.objects.select_related(
+            'subscription__tenant', 'recorded_by'
+        ).all()
+
+    def perform_update(self, serializer):
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        instance.delete()
+
+
 class TenantSubscriptionViewSet(viewsets.ModelViewSet):
     """List and manage tenant subscriptions. Superadmin only."""
     serializer_class = TenantSubscriptionSerializer
@@ -7408,6 +7428,48 @@ class CRMDashboardView(APIView):
 
 
 # ═══════════════════════════════════════════════════════════
+#  SYSTEM ROLES — Reusable role templates for Homly staff
+#  SuperAdmin only.
+# ═══════════════════════════════════════════════════════════
+
+class SystemRoleViewSet(viewsets.ModelViewSet):
+    """
+    CRUD for SystemRole entities (reusable role templates).
+    SuperAdmin only.
+
+    GET    /api/system-roles/          — list all roles
+    POST   /api/system-roles/          — create a role
+    GET    /api/system-roles/{id}/     — retrieve
+    PATCH  /api/system-roles/{id}/     — update
+    DELETE /api/system-roles/{id}/     — delete (fails if users are assigned)
+    """
+    serializer_class   = SystemRoleSerializer
+    permission_classes = [IsSuperAdmin]
+    http_method_names  = ['get', 'post', 'patch', 'delete', 'head', 'options']
+
+    def get_queryset(self):
+        qs = SystemRole.objects.all()
+        search = self.request.query_params.get('search')
+        if search:
+            qs = qs.filter(name__icontains=search)
+        return qs
+
+    def destroy(self, request, *args, **kwargs):
+        role = self.get_object()
+        # Warn if any system users are still using this role's name
+        users_with_role = User.objects.filter(role_name=role.name, is_staff=True)
+        if users_with_role.exists():
+            count = users_with_role.count()
+            return Response(
+                {'detail': f'No se puede eliminar: {count} usuario(s) tienen asignado este rol. '
+                           f'Reasigna o elimina esos usuarios primero.'},
+                status=400,
+            )
+        role.delete()
+        return Response(status=204)
+
+
+# ═══════════════════════════════════════════════════════════
 #  SYSTEM USERS — Homly internal staff management
 #  SuperAdmin only. Manages system_role staff accounts.
 # ═══════════════════════════════════════════════════════════
@@ -7451,11 +7513,61 @@ class SystemUserViewSet(viewsets.ModelViewSet):
         return qs
 
     def create(self, request, *args, **kwargs):
-        """Create a new Super Administrador del Sistema."""
-        serializer = SystemUserCreateSerializer(data=request.data)
+        """Create a new system staff user.
+        If role_id is provided, fetch the SystemRole and apply its permissions to the user.
+        """
+        data = request.data.copy()
+        role_id = data.pop('role_id', None)
+        if isinstance(role_id, list):
+            role_id = role_id[0] if role_id else None
+
+        # Resolve role from SystemRole entity and merge into payload
+        if role_id:
+            try:
+                role_obj = SystemRole.objects.get(pk=role_id)
+                data['role_name'] = role_obj.name
+                data['is_super_admin'] = role_obj.is_super_admin
+                if not role_obj.is_super_admin:
+                    data['permissions'] = role_obj.permissions
+            except SystemRole.DoesNotExist:
+                return Response({'detail': 'Rol no encontrado.'}, status=400)
+
+        serializer = SystemUserCreateSerializer(data=data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
         return Response(SystemUserSerializer(user).data, status=status.HTTP_201_CREATED)
+
+    def partial_update(self, request, *args, **kwargs):
+        """Update an existing system staff user.
+        If role_id is provided, fetch the SystemRole and apply its permissions.
+        """
+        instance = self.get_object()
+        data = request.data.copy()
+        role_id = data.pop('role_id', None)
+        if isinstance(role_id, list):
+            role_id = role_id[0] if role_id else None
+
+        if role_id:
+            try:
+                role_obj = SystemRole.objects.get(pk=role_id)
+                data['role_name'] = role_obj.name
+                data['is_super_admin'] = role_obj.is_super_admin
+                if role_obj.is_super_admin:
+                    data['system_permissions'] = {}
+                    data['allowed_tenant_ids'] = []
+                else:
+                    perms = role_obj.permissions or {}
+                    data['system_permissions'] = {
+                        'modules':     perms.get('modules', []),
+                        'module_tabs': perms.get('module_tabs', {}),
+                    }
+            except SystemRole.DoesNotExist:
+                return Response({'detail': 'Rol no encontrado.'}, status=400)
+
+        serializer = SystemUserSerializer(instance, data=data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(SystemUserSerializer(instance).data)
 
     @action(detail=True, methods=['patch'], url_path='toggle-active')
     def toggle_active(self, request, pk=None):
