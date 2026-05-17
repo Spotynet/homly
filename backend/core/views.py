@@ -1053,9 +1053,15 @@ class UnitViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['get'], url_path='evidence')
     def evidence(self, request, tenant_id=None, pk=None):
-        """GET /api/tenants/{tenant_id}/units/{pk}/evidence/ — devuelve solo el Base64 PDF."""
+        """GET /api/tenants/{tenant_id}/units/{pk}/evidence/ — devuelve solo el Base64 PDF de adeudo previo."""
         unit = self.get_object()
         return Response({'evidence': unit.previous_debt_evidence or ''})
+
+    @action(detail=True, methods=['get'], url_path='credit-evidence')
+    def credit_evidence(self, request, tenant_id=None, pk=None):
+        """GET /api/tenants/{tenant_id}/units/{pk}/credit-evidence/ — devuelve Base64 PDF de saldo a favor previo."""
+        unit = self.get_object()
+        return Response({'evidence': unit.credit_balance_evidence or ''})
 
     @action(detail=False, methods=['patch'], url_path='update-my-info')
     def update_my_info(self, request, tenant_id=None):

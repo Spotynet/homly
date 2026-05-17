@@ -526,12 +526,16 @@ class TenantUserSerializer(serializers.ModelSerializer):
 # ═══════════════════════════════════════════════════════════
 
 class UnitListSerializer(serializers.ModelSerializer):
-    """Serializer ligero para el listado de unidades — excluye el Base64 de evidencia."""
+    """Serializer ligero para el listado de unidades — excluye los Base64 de evidencias."""
     responsible_name = serializers.ReadOnlyField()
     has_evidence = serializers.SerializerMethodField()
+    has_credit_evidence = serializers.SerializerMethodField()
 
     def get_has_evidence(self, obj):
         return bool(obj.previous_debt_evidence)
+
+    def get_has_credit_evidence(self, obj):
+        return bool(obj.credit_balance_evidence)
 
     class Meta:
         model = Unit
@@ -540,14 +544,14 @@ class UnitListSerializer(serializers.ModelSerializer):
                   'coowner_first_name', 'coowner_last_name', 'coowner_email', 'coowner_phone',
                   'occupancy', 'tenant_first_name', 'tenant_last_name',
                   'tenant_email', 'tenant_phone', 'responsible_name',
-                  'admin_exempt', 'previous_debt', 'has_evidence',
+                  'admin_exempt', 'previous_debt', 'has_evidence', 'has_credit_evidence',
                   'credit_balance', 'is_active',
                   'created_at', 'updated_at']
         read_only_fields = ['id', 'created_at', 'updated_at']
 
 
 class UnitSerializer(serializers.ModelSerializer):
-    """Serializer completo — incluye previous_debt_evidence (Base64 PDF)."""
+    """Serializer completo — incluye previous_debt_evidence y credit_balance_evidence (Base64 PDF)."""
     responsible_name = serializers.ReadOnlyField()
 
     class Meta:
@@ -558,7 +562,7 @@ class UnitSerializer(serializers.ModelSerializer):
                   'occupancy', 'tenant_first_name', 'tenant_last_name',
                   'tenant_email', 'tenant_phone', 'responsible_name',
                   'admin_exempt', 'previous_debt', 'previous_debt_evidence',
-                  'credit_balance', 'is_active',
+                  'credit_balance', 'credit_balance_evidence', 'is_active',
                   'created_at', 'updated_at']
         read_only_fields = ['id', 'created_at', 'updated_at']
 

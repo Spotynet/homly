@@ -948,6 +948,27 @@ export default function EstadoCuenta() {
                               </tr>
                             );
                           })()}
+                          {/* Sub-filas: pagos a campos de ingresos (campos opcionales neutrales — concepto de servicio del condominio) */}
+                          {(p.field_detail || [])
+                            .filter(fd => fd.contributes_balance === false && !fd.is_plan_installment && (fd.abono || 0) > 0)
+                            .map((fd, fi) => (
+                              <tr key={`income-field-${i}-${fi}`} style={{ background: 'var(--blue-50)', borderLeft: '3px solid var(--blue-200)' }}>
+                                <td style={{ paddingLeft: 28, fontSize: 11, color: 'var(--blue-700)', fontWeight: 600 }}>
+                                  💳 {fd.label}
+                                  <div style={{ fontSize: 10, color: 'var(--blue-500)', fontWeight: 400 }}>Concepto de ingreso del condominio</div>
+                                </td>
+                                <td style={{ textAlign: 'right', fontSize: 12, color: 'var(--ink-400)' }}>—</td>
+                                <td style={{ textAlign: 'right', fontSize: 12, color: 'var(--ink-400)' }}>—</td>
+                                <td style={{ textAlign: 'right', fontSize: 12, fontWeight: 700, color: 'var(--blue-700)' }}>
+                                  {fmt(fd.abono)}
+                                </td>
+                                <td>
+                                  <span className="badge" style={{ fontSize: 10, background: 'var(--blue-100)', color: 'var(--blue-700)', border: '1px solid var(--blue-200)' }}>Ingreso</span>
+                                </td>
+                                <td style={{ textAlign: 'right', fontSize: 11, color: 'var(--ink-400)', fontStyle: 'italic' }}>—</td>
+                                <td></td>
+                              </tr>
+                            ))}
                         </React.Fragment>
                       );
                     })}

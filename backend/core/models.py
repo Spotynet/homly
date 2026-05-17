@@ -336,6 +336,8 @@ class Unit(models.Model):
     )
     credit_balance = models.DecimalField(max_digits=12, decimal_places=2, default=0,
                                          help_text='Saldo a favor previo al inicio de operaciones')
+    credit_balance_evidence = models.TextField(blank=True, default='',
+                                               help_text='Base64 PDF evidencia del saldo a favor previo')
     is_active = models.BooleanField(default=True,
                                     help_text='Unidad activa. Si es False queda de solo lectura y no acepta nuevos pagos.')
     created_at = models.DateTimeField(auto_now_add=True)

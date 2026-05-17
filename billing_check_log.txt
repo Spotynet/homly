@@ -256,3 +256,43 @@ SOLUCION DEFINITIVA RECOMENDADA:
 
 PROXIMA EJECUCION PROGRAMADA: 2026-05-16 08:00
 ==============================================================
+
+======================================================
+Homly Daily Billing Check — 2026-05-16 00:00:53
+======================================================
+STATUS: ❌ NO EJECUTADO — Servicios no disponibles
+
+Razones:
+- Backend API (localhost:8000): NO ALCANZABLE desde el entorno sandbox
+- Base de datos PostgreSQL (localhost:5432): NO ALCANZABLE desde el entorno sandbox
+- Python venv de Django: no funcional (Python 3.14 symlink roto)
+- pip: sin acceso a red para instalar dependencias
+
+Acción requerida:
+El administrador debe ejecutar manualmente el billing check:
+  cd /sessions/sweet-trusting-cray/mnt/Homly/backend
+  source venv/bin/activate  # si el venv funciona en el servidor real
+  python manage.py shell -c "
+    import datetime
+    from django.utils import timezone
+    from core.models import TenantSubscription
+    today = timezone.now().date()
+    grace_deadline = today - datetime.timedelta(days=5)
+    candidates = TenantSubscription.objects.select_related('tenant', 'plan').filter(
+        status__in=['active', 'trial'],
+        next_billing_date__isnull=False,
+        next_billing_date__lte=grace_deadline,
+    )
+    marked = 0
+    for sub in candidates:
+        has_payment = sub.payments.filter(payment_date__gte=sub.next_billing_date).exists()
+        if not has_payment:
+            sub.status = 'past_due'
+            sub.save(update_fields=['status', 'updated_at'])
+            sub.sync_tenant_active()
+            marked += 1
+            print(f'VENCIDO: {sub.tenant.name} — next_billing_date={sub.next_billing_date}')
+    total_past_due = TenantSubscription.objects.filter(status='past_due').count()
+    print(f'Completado: {marked} nuevos vencimientos, {total_past_due} total vencidos')
+  "
+======================================================

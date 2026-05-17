@@ -441,6 +441,7 @@ export default function Config() {
         previous_debt: parseFloat(unitForm.previous_debt) || 0,
         previous_debt_evidence: unitForm.previous_debt_evidence || '',
         credit_balance: parseFloat(unitForm.credit_balance) || 0,
+        credit_balance_evidence: unitForm.credit_balance_evidence || '',
         admin_exempt: !!unitForm.admin_exempt,
         owner_first_name: unitForm.owner_first_name || '',
         owner_last_name: unitForm.owner_last_name || '',
@@ -1077,7 +1078,7 @@ export default function Config() {
               </div>
               {isAdmin && (
                 <button className="btn btn-primary" onClick={() => {
-                  setUnitForm({ unit_name:'', unit_id_code:'', owner_first_name:'', owner_last_name:'', owner_email:'', owner_phone:'', coowner_first_name:'', coowner_last_name:'', coowner_email:'', coowner_phone:'', occupancy:'propietario', previous_debt:0, previous_debt_evidence:'', credit_balance:0, admin_exempt:false, tenant_first_name:'', tenant_last_name:'', tenant_email:'', tenant_phone:'' });
+                  setUnitForm({ unit_name:'', unit_id_code:'', owner_first_name:'', owner_last_name:'', owner_email:'', owner_phone:'', coowner_first_name:'', coowner_last_name:'', coowner_email:'', coowner_phone:'', occupancy:'propietario', previous_debt:0, previous_debt_evidence:'', credit_balance:0, credit_balance_evidence:'', admin_exempt:false, tenant_first_name:'', tenant_last_name:'', tenant_email:'', tenant_phone:'' });
                   setUnitModal('add');
                 }}>
                   <Plus size={14} /> Nueva Unidad
@@ -1182,14 +1183,26 @@ export default function Config() {
                                   previous_debt: 0, credit_balance: 0, admin_exempt: false,
                                   ...u,
                                   previous_debt_evidence: '',
+                                  credit_balance_evidence: '',
                                 });
                                 setUnitModal('edit');
+                                // Cargar evidencias en paralelo
+                                const evidenceLoads = [];
                                 if (u.has_evidence) {
-                                  try {
-                                    const r = await unitsAPI.evidence(tenantId, u.id);
-                                    setUnitForm(f => ({...f, previous_debt_evidence: r.data.evidence || ''}));
-                                  } catch { /* silencioso: el usuario puede re-subir si falla */ }
+                                  evidenceLoads.push(
+                                    unitsAPI.evidence(tenantId, u.id)
+                                      .then(r => setUnitForm(f => ({...f, previous_debt_evidence: r.data.evidence || ''})))
+                                      .catch(() => {})
+                                  );
                                 }
+                                if (u.has_credit_evidence) {
+                                  evidenceLoads.push(
+                                    unitsAPI.creditEvidence(tenantId, u.id)
+                                      .then(r => setUnitForm(f => ({...f, credit_balance_evidence: r.data.evidence || ''})))
+                                      .catch(() => {})
+                                  );
+                                }
+                                await Promise.all(evidenceLoads);
                               }}><Edit2 size={14}/></button>
                               {u.is_active === false
                                 ? <button className="btn-ghost" style={{ color:'var(--teal-600)' }} title="Reactivar unidad" onClick={() => handleUnitActivate(u)}>
@@ -2850,6 +2863,13 @@ export default function Config() {
                     setTimeout(()=>URL.revokeObjectURL(url),15000);
                   }}><FileText size={12}/> Ver evidencia</button>
                 )}
+                {unitForm.previous_debt_evidence && (
+                  <button type="button" className="btn btn-secondary btn-sm"
+                    style={{ color:'var(--coral-600)', borderColor:'var(--coral-200)' }}
+                    onClick={()=>{ if(window.confirm('¿Eliminar la evidencia del adeudo previo?')) setUnitForm(f=>({...f,previous_debt_evidence:''})); }}>
+                    <Trash2 size={12}/> Eliminar evidencia
+                  </button>
+                )}
               </div>
             </div>
             <div className="field">
@@ -2858,6 +2878,37 @@ export default function Config() {
                 value={unitForm.credit_balance || 0}
                 onChange={e=>setUnitForm(f=>({...f,credit_balance:parseFloat(e.target.value)||0}))} />
               <div style={{ fontSize:11, color:'var(--teal-600)', marginTop:4 }}>Saldo a favor acumulado antes del inicio de operaciones (reduce el adeudo inicial)</div>
+              <div style={{ marginTop:6, display:'flex', alignItems:'center', gap:6, flexWrap:'wrap' }}>
+                <label className="btn btn-secondary btn-sm" style={{ cursor:'pointer', display:'inline-flex', alignItems:'center', gap:4 }}>
+                  <Upload size={12} />
+                  {unitForm.credit_balance_evidence ? '✓ PDF cargado' : 'Cargar PDF evidencia'}
+                  <input type="file" accept=".pdf" style={{ display:'none' }} onChange={e=>{
+                    const file=e.target.files?.[0]; if(!file) return;
+                    if(file.type!=='application/pdf'){ toast.error('Solo se permiten archivos PDF.'); return; }
+                    const r=new FileReader(); r.onload=()=>{ const b=r.result?.split(',')[1]||''; setUnitForm(f=>({...f,credit_balance_evidence:b})); }; r.readAsDataURL(file);
+                    e.target.value='';
+                  }} />
+                </label>
+                {unitForm.credit_balance_evidence && (
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={()=>{
+                    const b64=unitForm.credit_balance_evidence;
+                    if(!b64) return toast.error('No hay PDF cargado.');
+                    const bytes=atob(b64); const arr=new Uint8Array(bytes.length);
+                    for(let i=0;i<bytes.length;i++) arr[i]=bytes.charCodeAt(i);
+                    const blob=new Blob([arr],{type:'application/pdf'});
+                    const url=URL.createObjectURL(blob);
+                    window.open(url,'_blank');
+                    setTimeout(()=>URL.revokeObjectURL(url),15000);
+                  }}><FileText size={12}/> Ver evidencia</button>
+                )}
+                {unitForm.credit_balance_evidence && (
+                  <button type="button" className="btn btn-secondary btn-sm"
+                    style={{ color:'var(--coral-600)', borderColor:'var(--coral-200)' }}
+                    onClick={()=>{ if(window.confirm('¿Eliminar la evidencia del saldo a favor previo?')) setUnitForm(f=>({...f,credit_balance_evidence:''})); }}>
+                    <Trash2 size={12}/> Eliminar evidencia
+                  </button>
+                )}
+              </div>
             </div>
           </div>
           <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
