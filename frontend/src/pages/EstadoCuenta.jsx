@@ -822,6 +822,21 @@ export default function EstadoCuenta() {
                       const maint = parseFloat(p.maintenance || p.charge || 0);
                       const hasDebt = saldoAcum > 0.5;
 
+                      // Detectar pago tardío: pagado en un periodo posterior al periodo del cargo
+                      const isLatePaid = (() => {
+                        if (p.status !== 'pagado' && p.status !== 'exento') return false;
+                        if (!p.payment_date) return false;
+                        const [py, pm] = p.period.split('-').map(Number);
+                        const d = new Date(p.payment_date);
+                        const dy = d.getFullYear(), dm = d.getMonth() + 1;
+                        return dy > py || (dy === py && dm > pm);
+                      })();
+
+                      // Badge de estado: amarillo si fue pagado después del periodo
+                      const periodBadge = isLatePaid
+                        ? <span className="badge status-pagado-tardio" title={`Pagado el ${p.payment_date}`}>✓ Pagado</span>
+                        : <span className={`badge ${statusClass(p.status)}`}>{statusLabel(p.status)}</span>;
+
                       // Abonos a adeudos recibidos en este período (deuda anterior + períodos no pagados)
                       const adeudoAp = p.pay?.adeudo_payments || {};
                       // Abono a deuda anterior (prevDebt)
@@ -847,7 +862,7 @@ export default function EstadoCuenta() {
                               {paid > 0 ? fmt(paid) : '—'}
                             </td>
                             <td>
-                              <span className={`badge ${statusClass(p.status)}`}>{statusLabel(p.status)}</span>
+                              {periodBadge}
                             </td>
                             <td style={{ textAlign: 'right' }}>
                               <span style={{

@@ -401,14 +401,16 @@ export default function Dashboard() {
             const d  = r.value.data;
             const rd = d.report_data || {};
             return {
-              period: p,
-              label:  shortMonth(p),
-              ingresos: parseFloat(rd.total_ingresos_reconciled ?? 0),
-              gastos:   parseFloat(rd.total_egresos_reconciled  ?? 0),
-              saldo:    parseFloat(d.saldo_final ?? 0),
+              period:              p,
+              label:               shortMonth(p),
+              ingresos:            parseFloat(rd.total_ingresos_reconciled ?? 0),
+              gastos:              parseFloat(rd.total_egresos_reconciled   ?? 0),
+              saldo:               parseFloat(d.saldo_final ?? 0),
+              ingresosNoConcil:    parseFloat(rd.ingresos_no_reconciled     ?? 0),
+              gastosNoConcil:      parseFloat(rd.total_cheques_transito     ?? 0),
             };
           }
-          return { period: p, label: shortMonth(p), ingresos: 0, gastos: 0, saldo: 0 };
+          return { period: p, label: shortMonth(p), ingresos: 0, gastos: 0, saldo: 0, ingresosNoConcil: 0, gastosNoConcil: 0 };
         });
         setPeriodHistory(data);
       })
@@ -1538,9 +1540,11 @@ export default function Dashboard() {
                     <Legend
                       wrapperStyle={{ fontSize: 12, paddingTop: 8 }}
                       formatter={value => ({
-                        ingresos: 'Ingresos conciliados',
-                        gastos:   'Gastos conciliados',
-                        saldo:    'Saldo final',
+                        ingresos:         'Ingresos conciliados',
+                        gastos:           'Gastos conciliados',
+                        saldo:            'Saldo final',
+                        ingresosNoConcil: 'Ingresos no conciliados',
+                        gastosNoConcil:   'Gastos no conciliados',
                       }[value] || value)}
                     />
                     <Line
@@ -1554,12 +1558,32 @@ export default function Dashboard() {
                     />
                     <Line
                       type="monotone"
+                      dataKey="ingresosNoConcil"
+                      name="ingresosNoConcil"
+                      stroke="var(--teal-500)"
+                      strokeWidth={1.8}
+                      strokeDasharray="5 4"
+                      dot={{ r: 3, fill: 'var(--teal-300)', stroke: 'white', strokeWidth: 1.5 }}
+                      activeDot={{ r: 5 }}
+                    />
+                    <Line
+                      type="monotone"
                       dataKey="gastos"
                       name="gastos"
                       stroke="var(--coral-500)"
                       strokeWidth={2.5}
                       dot={{ r: 4, fill: 'var(--coral-400)', stroke: 'white', strokeWidth: 2 }}
                       activeDot={{ r: 6 }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="gastosNoConcil"
+                      name="gastosNoConcil"
+                      stroke="var(--coral-500)"
+                      strokeWidth={1.8}
+                      strokeDasharray="5 4"
+                      dot={{ r: 3, fill: 'var(--coral-300)', stroke: 'white', strokeWidth: 1.5 }}
+                      activeDot={{ r: 5 }}
                     />
                     <Line
                       type="monotone"
@@ -1586,15 +1610,16 @@ export default function Dashboard() {
                 </ResponsiveContainer>
               )}
 
-              {/* Leyenda de colores de saldo */}
+              {/* Leyenda de líneas */}
               {!historyLoading && periodHistory.length > 0 && (
                 <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginTop: 6, fontSize: 11, color: 'var(--ink-400)' }}>
+                  {/* Líneas sólidas */}
                   <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                    <span style={{ width: 10, height: 10, borderRadius: '50%', background: 'var(--teal-400)', display: 'inline-block' }} />
+                    <span style={{ width: 18, height: 3, background: 'var(--teal-500)', borderRadius: 2, display: 'inline-block' }} />
                     Ingresos conciliados
                   </span>
                   <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                    <span style={{ width: 10, height: 10, borderRadius: '50%', background: 'var(--coral-400)', display: 'inline-block' }} />
+                    <span style={{ width: 18, height: 3, background: 'var(--coral-500)', borderRadius: 2, display: 'inline-block' }} />
                     Gastos conciliados
                   </span>
                   <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
@@ -1604,6 +1629,19 @@ export default function Dashboard() {
                   <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                     <span style={{ width: 10, height: 10, borderRadius: '50%', background: 'var(--coral-600)', display: 'inline-block' }} />
                     Saldo final negativo
+                  </span>
+                  {/* Líneas punteadas */}
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <svg width="18" height="6" style={{ display: 'inline-block', verticalAlign: 'middle' }}>
+                      <line x1="0" y1="3" x2="18" y2="3" stroke="var(--teal-500)" strokeWidth="2" strokeDasharray="4 3" />
+                    </svg>
+                    Ingresos no conciliados
+                  </span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <svg width="18" height="6" style={{ display: 'inline-block', verticalAlign: 'middle' }}>
+                      <line x1="0" y1="3" x2="18" y2="3" stroke="var(--coral-500)" strokeWidth="2" strokeDasharray="4 3" />
+                    </svg>
+                    Gastos no conciliados
                   </span>
                 </div>
               )}

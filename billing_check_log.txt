@@ -296,3 +296,77 @@ El administrador debe ejecutar manualmente el billing check:
     print(f'Completado: {marked} nuevos vencimientos, {total_past_due} total vencidos')
   "
 ======================================================
+
+==============================================================
+EJECUCION: 2026-05-18 12:38 CST (tarea programada diaria)
+==============================================================
+RESULTADO: ERROR — No se pudo ejecutar la verificacion
+
+INTENTOS REALIZADOS:
+  1. API REST (POST http://localhost:8000/api/tenant-subscriptions/run-billing-check/)
+     → Fallo con exit code 7 (connection refused). El servidor Django
+       no esta corriendo en el sandbox.
+
+  2. Django management shell con PYTHONPATH del venv (Python 3.14)
+     → Django importo correctamente pero psycopg2 fallo —
+       el binario compilado para macOS/Python 3.14 es incompatible
+       con Python 3.10/Linux del sandbox.
+
+  3. Conexion directa a PostgreSQL (localhost:5432)
+     → psql no disponible en el sandbox. pip bloqueado por proxy.
+
+CAUSA RAIZ (PERSISTENTE — 11 dias consecutivos sin ejecucion exitosa):
+  El sandbox de Claude (Linux/Python 3.10 aislado) no tiene acceso de red
+  a los servicios locales del usuario (Django en :8000, PostgreSQL en :5432).
+  El entorno virtual del proyecto (Python 3.14/macOS) produce binarios
+  incompatibles que no pueden usarse en el sandbox Linux.
+
+ESTADO: Sin cambios en la base de datos. Ninguna suscripcion fue marcada.
+
+ACCION REQUERIDA (CRITICA — 11 dias sin verificacion automatica):
+  Ejecutar manualmente desde la maquina donde corre el backend:
+
+    cd ~/Documents/Homly/backend
+    source venv/bin/activate
+    python manage.py shell -c "
+    import datetime
+    from django.utils import timezone
+    from core.models import TenantSubscription
+    today = timezone.now().date()
+    grace_deadline = today - datetime.timedelta(days=5)
+    candidates = TenantSubscription.objects.select_related('tenant','plan').filter(
+        status__in=['active','trial'],
+        next_billing_date__isnull=False,
+        next_billing_date__lte=grace_deadline,
+    )
+    marked = 0
+    for sub in candidates:
+        has_payment = sub.payments.filter(payment_date__gte=sub.next_billing_date).exists()
+        if not has_payment:
+            sub.status = 'past_due'
+            sub.save(update_fields=['status','updated_at'])
+            sub.sync_tenant_active()
+            marked += 1
+            print(f'VENCIDO: {sub.tenant.name} - next_billing_date={sub.next_billing_date}, dias_vencido={(today - sub.next_billing_date).days}')
+    total = TenantSubscription.objects.filter(status='past_due').count()
+    print(f'Completado: {marked} nuevos vencimientos, {total} total vencidos')
+    "
+
+SOLUCION DEFINITIVA RECOMENDADA:
+  Esta tarea programada lleva 11 dias fallando. Se requiere accion
+  estructural. Las opciones son:
+
+  Opcion A — Cron job local (mas sencilla e inmediata):
+    Agregar en la maquina donde corre el backend (crontab -e):
+      0 8 * * * cd ~/Documents/Homly/backend && source venv/bin/activate && python manage.py shell -c "..."
+
+  Opcion B — Endpoint publico en servidor desplegado:
+    Si el backend ya esta en EC2/Railway/Render, actualizar la URL
+    de esta tarea al endpoint publico en lugar de localhost.
+
+  Opcion C — Scheduler interno en Django:
+    Configurar Celery Beat o django-apscheduler para ejecutar
+    la verificacion automaticamente desde el proceso del servidor.
+
+PROXIMA EJECUCION PROGRAMADA: 2026-05-19 08:00
+==============================================================

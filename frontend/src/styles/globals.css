@@ -871,9 +871,10 @@ tr:hover td { background: rgba(59,185,144,0.02); }
 .si-pagado    { background: var(--teal-500); }
 .si-pendiente { background: var(--sand-300); }
 .si-parcial   { background: var(--amber-400); }
-.status-pagado   { background: var(--teal-50);  color: var(--teal-700); }
-.status-parcial  { background: var(--amber-50); color: var(--amber-600); }
-.status-pendiente{ background: var(--sand-100); color: var(--ink-500); }
+.status-pagado        { background: var(--teal-50);   color: var(--teal-700);  }
+.status-pagado-tardio { background: var(--amber-50);  color: var(--amber-700); }
+.status-parcial       { background: var(--amber-50);  color: var(--amber-600); }
+.status-pendiente     { background: var(--sand-100);  color: var(--ink-500);   }
 
 /* ─── Stat cards (Dashboard) ─── */
 .stats {
