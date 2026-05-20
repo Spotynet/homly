@@ -4598,14 +4598,16 @@ def _compute_statement(tenant, unit_id, start_period, cutoff_period, _prefetched
                 'total': float(sum(cross_extra.values())),
             }
 
-        # Detectar pago tardío: payment_date cae en un periodo posterior al cargo
+        # Detectar pago tardío: el registro fue creado en un mes posterior al periodo del cargo.
+        # Se usa created_at (timestamp inmutable del sistema) en lugar de payment_date
+        # porque payment_date es editable por el admin y puede ser backdateado al periodo.
         eff_pay_obj = pay or eff_pay
-        _payment_date_str = None
+        _payment_date_str = str(eff_pay_obj.payment_date) if eff_pay_obj and eff_pay_obj.payment_date else None
         _is_late_payment = False
-        if eff_pay_obj and eff_pay_obj.payment_date:
-            _payment_date_str = str(eff_pay_obj.payment_date)
-            _pay_period = f"{eff_pay_obj.payment_date.year}-{str(eff_pay_obj.payment_date.month).zfill(2)}"
-            _is_late_payment = eff_status == 'pagado' and _pay_period > period
+        if eff_pay_obj and eff_status == 'pagado':
+            _created = eff_pay_obj.created_at  # DateTimeField auto_now_add, siempre presente
+            _created_period = f"{_created.year}-{str(_created.month).zfill(2)}"
+            _is_late_payment = _created_period > period
 
         rows.append({
             'period': period,
@@ -4619,6 +4621,7 @@ def _compute_statement(tenant, unit_id, start_period, cutoff_period, _prefetched
             'maintenance': float(maint_charge),
             'status': eff_status,
             'is_late_payment': _is_late_payment,
+            'payment_registered_at': str(eff_pay_obj.created_at.date()) if eff_pay_obj else None,
             'payment_type': eff_pay_obj.payment_type if eff_pay_obj else None,
             'payment_date': _payment_date_str,
             'field_detail': field_detail,
