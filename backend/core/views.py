@@ -4598,6 +4598,15 @@ def _compute_statement(tenant, unit_id, start_period, cutoff_period, _prefetched
                 'total': float(sum(cross_extra.values())),
             }
 
+        # Detectar pago tardío: payment_date cae en un periodo posterior al cargo
+        eff_pay_obj = pay or eff_pay
+        _payment_date_str = None
+        _is_late_payment = False
+        if eff_pay_obj and eff_pay_obj.payment_date:
+            _payment_date_str = str(eff_pay_obj.payment_date)
+            _pay_period = f"{eff_pay_obj.payment_date.year}-{str(eff_pay_obj.payment_date.month).zfill(2)}"
+            _is_late_payment = eff_status == 'pagado' and _pay_period > period
+
         rows.append({
             'period': period,
             'charge': float(cargo_total),
@@ -4609,8 +4618,9 @@ def _compute_statement(tenant, unit_id, start_period, cutoff_period, _prefetched
             'adeudo_received_for_period': float(adeudo_credits_received.get(period, Decimal('0'))),
             'maintenance': float(maint_charge),
             'status': eff_status,
-            'payment_type': (pay or eff_pay).payment_type if (pay or eff_pay) else None,
-            'payment_date': str((pay or eff_pay).payment_date) if (pay or eff_pay) and (pay or eff_pay).payment_date else None,
+            'is_late_payment': _is_late_payment,
+            'payment_type': eff_pay_obj.payment_type if eff_pay_obj else None,
+            'payment_date': _payment_date_str,
             'field_detail': field_detail,
             'maint_detail': {'charge': float(maint_charge), 'received': float(maint_received), 'adelanto': float(maint_adelanto), 'abono': float(maint_abono)},
             'pay': PaymentSerializer(pay).data if pay else None,
