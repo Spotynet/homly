@@ -42,7 +42,7 @@ const ROLES_ES = {
   admin:    'Administrador',
   tesorero: 'Tesorero',
   auditor:  'Auditor',
-  vecino:   'Vecino / Residente',
+  vecino:   'Residente',
 };
 const ROLE_ORDER = ['admin', 'tesorero', 'auditor', 'vecino'];
 

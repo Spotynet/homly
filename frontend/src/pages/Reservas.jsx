@@ -100,12 +100,12 @@ const DEFAULT_ROLE_PERMS = {
   contador:   { can_request: false, can_approve: false },
   auditor:    { can_request: false, can_approve: false },
   vigilante:  { can_request: true,  can_approve: false },
-  vecino:     { can_request: true,  can_approve: false },
+  residente:     { can_request: true,  can_approve: false },
 };
 
 // ─── Main ──────────────────────────────────────────────────────────────────
 export default function Reservas() {
-  const { tenantId, isVecino, role, user } = useAuth();
+  const { tenantId, isResidente, role, user } = useAuth();
 
   const queryClient = useQueryClient();
   const today = new Date();
@@ -116,7 +116,7 @@ export default function Reservas() {
 
   const [resStatusFilter, setResStatusFilter] = useState('all');
 
-  // Vecino view toggle: "mine" (only own reservations in list) vs "all" (calendar availability)
+  // Residente view toggle: "mine" (only own reservations in list) vs "all" (calendar availability)
   const [myResOnly, setMyResOnly] = useState(true);
 
   // New reservation modal
@@ -160,7 +160,7 @@ export default function Reservas() {
   const canManage         = role === 'superadmin' ? true : _rolePerms.can_approve;
   const canCancelOwn      = !canManage && canRequest;   // requesters can cancel their own
   const showActionsCol    = canManage || canCancelOwn;
-  const needsUnitSelector = !isVecino;                  // admins / managers pick unit manually
+  const needsUnitSelector = !isResidente;                  // admins / managers pick unit manually
 
   // ── Calendar ────────────────────────────────────────────────────────────
   const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
@@ -176,8 +176,8 @@ export default function Reservas() {
   const visibleRes = reservations.filter(r => {
     if (selectedDay && r.date !== selectedDay) return false;
     if (resStatusFilter !== 'all' && r.status !== resStatusFilter) return false;
-    // Vecinos in "Mis reservas" mode: show only their own
-    if (isVecino && myResOnly && r.requested_by !== user?.id) return false;
+    // Residentes en modo "Mis reservas": show only their own
+    if (isResidente && myResOnly && r.requested_by !== user?.id) return false;
     return true;
   });
 
@@ -328,7 +328,7 @@ export default function Reservas() {
                 {pendingCount} pendiente{pendingCount !== 1 ? 's' : ''} de revisión
               </span>
             )}
-            {isVecino && myPendingCount > 0 && (
+            {isResidente && myPendingCount > 0 && (
               <span style={{ marginLeft: 8, background: 'var(--amber-50)', color: 'var(--amber-700)', border: '1px solid var(--amber-100)', borderRadius: 20, padding: '1px 8px', fontSize: 11, fontWeight: 700 }}>
                 {myPendingCount} reserva{myPendingCount !== 1 ? 's' : ''} en espera
               </span>
@@ -336,8 +336,8 @@ export default function Reservas() {
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          {/* Vecino view toggle */}
-          {isVecino && (
+          {/* Residente view toggle */}
+          {isResidente && (
             <div style={{ display: 'flex', background: 'var(--sand-100)', borderRadius: 8, padding: 3, gap: 2 }}>
               <button
                 onClick={() => setMyResOnly(true)}
@@ -382,8 +382,8 @@ export default function Reservas() {
         </div>
       </div>
 
-      {/* ── Vecino: info sobre modo de aprobación ─────────────────────── */}
-      {isVecino && (
+      {/* ── Residente: info sobre modo de aprobación ─────────────────────── */}
+      {isResidente && (
         <div style={{
           marginBottom: 16, padding: '10px 14px', borderRadius: 10,
           background: isAutoApprover ? 'var(--teal-50)' : 'var(--amber-50)',
@@ -459,7 +459,7 @@ export default function Reservas() {
               setSelectedDay(null);
             }}><ChevronRight size={16} /></button>
           </div>
-          {isVecino && !myResOnly && (
+          {isResidente && !myResOnly && (
             <div style={{ padding: '6px 12px 0', fontSize: 11, color: 'var(--ink-400)', textAlign: 'center' }}>
               Vista de disponibilidad — todas las áreas
             </div>
@@ -532,7 +532,7 @@ export default function Reservas() {
           {/* Filtros */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, flexWrap: 'wrap', justifyContent: 'space-between' }}>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-              {isVecino && (
+              {isResidente && (
                 <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-400)', marginRight: 4 }}>
                   {myResOnly ? 'Mis reservas' : 'Todas las áreas'}:
                 </span>
@@ -542,9 +542,9 @@ export default function Reservas() {
                   style={{ padding: '4px 10px', fontSize: 12 }}
                   onClick={() => setResStatusFilter(v)}>
                   {l}
-                  {v === 'pending' && (isVecino ? myPendingCount : pendingCount) > 0 && (
+                  {v === 'pending' && (isResidente ? myPendingCount : pendingCount) > 0 && (
                     <span className="badge badge-amber" style={{ marginLeft: 5, fontSize: 10, padding: '1px 5px' }}>
-                      {isVecino ? myPendingCount : pendingCount}
+                      {isResidente ? myPendingCount : pendingCount}
                     </span>
                   )}
                 </button>
@@ -572,7 +572,7 @@ export default function Reservas() {
                     ? `Sin reservas para el ${fmtDate(selectedDay)}`
                     : resStatusFilter !== 'all'
                       ? `Sin reservas con estado "${STATUS_CFG[resStatusFilter]?.label || resStatusFilter}"`
-                      : isVecino && myResOnly
+                      : isResidente && myResOnly
                         ? 'No tienes reservas este mes — usa "Nueva Reserva" para solicitar un área'
                         : 'Sin reservas este mes'}
                 </div>
@@ -657,7 +657,7 @@ export default function Reservas() {
                                     Cancelar
                                   </button>
                                 )}
-                                {/* Vecino / Vigilante: cancel own pending or approved reservations */}
+                                {/* Residente / Vigilante: cancel own pending or approved reservations */}
                                 {canCancelOwn && (r.status === 'pending' || r.status === 'approved') && r.requested_by === user?.id && (
                                   <button className="btn btn-secondary btn-sm" style={{ padding: '3px 10px', fontSize: 11 }}
                                     onClick={() => handleCancel(r.id)}>
@@ -803,8 +803,8 @@ export default function Reservas() {
                   onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
               </div>
 
-              {/* Aprobación info para vecinos */}
-              {isVecino && (
+              {/* Aprobación info para residentes */}
+              {isResidente && (
                 <div style={{
                   padding: '10px 14px', borderRadius: 10, fontSize: 12,
                   background: isAutoApprover ? 'var(--teal-50)' : 'var(--amber-50)',

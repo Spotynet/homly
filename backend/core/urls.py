@@ -93,6 +93,6 @@ urlpatterns = [
          views.SendUnitStatementEmailView.as_view(), name='send-unit-statement-email'),
     path('tenants/<uuid:tenant_id>/send-statement-email/',
          views.SendGeneralStatementEmailView.as_view(), name='send-statement-email'),
-    path('tenants/<uuid:tenant_id>/send-vecino-statement-email/',
-         views.SendVecinoStatementEmailView.as_view(), name='send-vecino-statement-email'),
+    path('tenants/<uuid:tenant_id>/send-residente-statement-email/',
+         views.SendResidenteStatementEmailView.as_view(), name='send-residente-statement-email'),
 ]

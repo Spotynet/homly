@@ -14,7 +14,7 @@ import {
   Edit2, Save, X, Sparkles,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import VecinoOnboarding, { onboardingKey } from '../components/onboarding/VecinoOnboarding';
+import ResidenteOnboarding, { onboardingKey } from '../components/onboarding/VecinoOnboarding';
 
 // ─── Formatters ────────────────────────────────────────────────────────────
 function _fmt(n, currency = 'MXN') {
@@ -543,7 +543,7 @@ export default function MyUnit() {
       {/* ── Welcome card ────────────────────────────────────────────────── */}
       {/* ── Onboarding interactivo ────────────────────────────────────────── */}
       {showOnboarding && (
-        <VecinoOnboarding
+        <ResidenteOnboarding
           user={user}
           tenantName={tenantName}
           onClose={() => setShowOnboarding(false)}
@@ -552,7 +552,7 @@ export default function MyUnit() {
 
       <div className="welcome-card" style={{ position: 'relative' }}>
         <h2>Hola, {user?.name || unit.owner_first_name} 👋</h2>
-        <p>Bienvenido a tu portal de vecino · {tenantName}</p>
+        <p>Bienvenido a tu portal de residente · {tenantName}</p>
         {/* Botón "Ver tour" siempre disponible */}
         <button
           onClick={() => setShowOnboarding(true)}

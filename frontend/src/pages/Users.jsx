@@ -137,7 +137,7 @@ export default function Users() {
     try {
       if (editId) {
         if (!form.name?.trim()) { toast.error('El nombre es obligatorio'); setSaving(false); return; }
-        if (effRole === 'vecino' && !form.unit_id) { toast.error('Seleccione una unidad para el vecino'); setSaving(false); return; }
+        if (effRole === 'vecino' && !form.unit_id) { toast.error('Seleccione una unidad para el residente'); setSaving(false); return; }
         await usersAPI.update(tenantId, editId, {
           name:       form.name.trim(),
           role:       form.role,
@@ -149,7 +149,7 @@ export default function Users() {
         if (!form.email) { toast.error('El email es obligatorio'); setSaving(false); return; }
         if (existingUser === false && !form.name) { toast.error('El nombre es obligatorio'); setSaving(false); return; }
         if (existingUser === false && !form.password) { toast.error('La contraseña es obligatoria'); setSaving(false); return; }
-        if (effRole === 'vecino' && !form.unit_id) { toast.error('Seleccione una unidad para el vecino'); setSaving(false); return; }
+        if (effRole === 'vecino' && !form.unit_id) { toast.error('Seleccione una unidad para el residente'); setSaving(false); return; }
 
         const payload = {
           email:      form.email.trim(),
@@ -500,7 +500,7 @@ export default function Users() {
                   })()}
                 </div>
 
-                {/* UNIDAD — visible si el rol efectivo es vecino */}
+                {/* UNIDAD — visible si el rol efectivo es residente */}
                 {effectiveRole(form, profiles) === 'vecino' && (
                   <div className="field field-full">
                     <label className="field-label">Unidad Asignada *</label>

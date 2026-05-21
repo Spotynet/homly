@@ -1234,7 +1234,7 @@ tr:hover td { background: rgba(59,185,144,0.02); }
 .period-row-debt td { background: rgba(242,114,90,0.03); }
 .period-row-ok   td { background: rgba(42,157,115,0.02); }
 
-/* ─── Info grid (vecino / config) ─── */
+/* ─── Info grid (residente / config) ─── */
 .info-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
@@ -1276,7 +1276,7 @@ tr:hover td { background: rgba(59,185,144,0.02); }
   border-bottom: 1px solid var(--sand-100);
 }
 
-/* ─── Welcome card (vecino) ─── */
+/* ─── Welcome card (residente) ─── */
 .welcome-card {
   background: linear-gradient(135deg, var(--teal-500), var(--teal-600));
   border-radius: var(--radius-xl);

@@ -16,7 +16,7 @@ import GUIDE_ROLES from '../constants/guideCatalog';
  * ─────────────────────────────────────────────────────────────────
  * Hub central de la Guía de Uso. Muestra las guías agrupadas por
  * rol en secciones colapsables (Administrador, Tesorero, Contador,
- * Vecino / Residente). Cada sección expone los capítulos operativos
+ * Residente). Cada sección expone los capítulos operativos
  * de ese rol.
  *
  * Tipos de capítulos:

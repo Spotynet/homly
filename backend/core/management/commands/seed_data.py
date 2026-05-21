@@ -94,10 +94,10 @@ class Command(BaseCommand):
         users_data = [
             ('Carlos Rodríguez', 'carlos@email.com', 'Admin123', 'admin', 'C-001'),
             ('María López', 'maria@email.com', 'Teso1234', 'tesorero', None),
-            ('Ana García', 'ana@email.com', 'Vecino12', 'vecino', 'C-003'),
+            ('Ana García', 'ana@email.com', 'Residente12', 'vecino', 'C-003'),
             ('Pedro Sánchez', 'pedro@email.com', 'Conta123', 'contador', None),
             ('Laura Martínez', 'laura@email.com', 'Audit123', 'auditor', None),
-            ('Juan Pérez', 'juan@email.com', 'Vecino34', 'vecino', 'C-002'),
+            ('Juan Pérez', 'juan@email.com', 'Residente34', 'vecino', 'C-002'),
         ]
 
         for name, email, pwd, role, unit_code in users_data:

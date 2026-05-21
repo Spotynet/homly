@@ -124,7 +124,7 @@ export default function Notificaciones() {
     if (n.related_reservation_id) navigate('/app/reservas');
     else if (['plan_proposal_sent','plan_accepted','plan_rejected','plan_cancelled','plan_installment_paid'].includes(n.notif_type)) navigate('/app/plan-pagos');
     else if (['payment_registered','payment_updated','payment_deleted'].includes(n.notif_type)) {
-      // Vecinos only have EC access (no cobranza); all other roles go to cobranza
+      // Residentes only have EC access (no cobranza); all other roles go to cobranza
       navigate(role === 'vecino' ? '/app/estado-cuenta' : '/app/cobranza');
     }
     else if (['period_closed','period_reopened'].includes(n.notif_type)) navigate('/app/cobranza');

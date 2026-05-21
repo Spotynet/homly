@@ -318,7 +318,7 @@ export default function Landing() {
               Todo lo que necesitas,<br />nada que no necesitas
             </h2>
             <p style={{ color: '#7A7166', fontSize: 17, marginTop: 16, maxWidth: 520, margin: '16px auto 0' }}>
-              Diseñado para simplificar la vida de administradores, tesoreros y vecinos.
+              Diseñado para simplificar la vida de administradores, tesoreros y residentes.
               Cada módulo está pensado para el día a día de un condominio real.
             </p>
           </div>
@@ -367,7 +367,7 @@ export default function Landing() {
             {
               icon: <IconTrendingDown />,
               title: 'Plan de Pagos',
-              desc: 'Gestiona adeudos en cuotas personalizadas. Define frecuencia, plazos e intereses. El vecino acepta el plan y los pagos se sincronizan automáticamente.',
+              desc: 'Gestiona adeudos en cuotas personalizadas. Define frecuencia, plazos e intereses. El residente acepta el plan y los pagos se sincronizan automáticamente.',
               badge: 'Nuevo',
             },
             {
@@ -460,7 +460,7 @@ export default function Landing() {
           <div className="landing-steps-grid">
             {[
               { step: '01', title: 'Crea tu condominio', desc: 'Configura el perfil de tu condominio: nombre, unidades, cuota de mantenimiento y moneda.' },
-              { step: '02', title: 'Agrega a tu equipo', desc: 'Invita a tu tesorero, contador o vecinos. Cada rol tiene acceso exacto a lo que necesita.' },
+              { step: '02', title: 'Agrega a tu equipo', desc: 'Invita a tu tesorero, contador o residentes. Cada rol tiene acceso exacto a lo que necesita.' },
               { step: '03', title: 'Registra y cobra', desc: 'Captura pagos, genera recibos y lleva las cuentas al día. Todo en un solo lugar.' },
             ].map((s, i) => (
               <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -516,7 +516,7 @@ export default function Landing() {
               condo: 'Torre Mirador · Guadalajara',
             },
             {
-              quote: 'Como vecino, puedo ver mi estado de cuenta, mis pagos y reservar áreas comunes sin tener que hablarle a nadie. Muy conveniente.',
+              quote: 'Como residente, puedo ver mi estado de cuenta, mis pagos y reservar áreas comunes sin tener que hablarle a nadie. Muy conveniente.',
               name: 'Jorge Medina',
               role: 'Propietario · Unidad 3B',
               condo: 'Condominio Arboledas · Querétaro',
@@ -592,10 +592,10 @@ export default function Landing() {
               },
               {
                 q: '¿Necesito conocimientos técnicos o contables para usarlo?',
-                a: 'No. Homly está diseñado para administradores, tesoreros y vecinos sin formación técnica. La interfaz es visual e intuitiva — si sabes usar WhatsApp o Excel, sabrás usar Homly sin necesidad de capacitación.',
+                a: 'No. Homly está diseñado para administradores, tesoreros y residentes sin formación técnica. La interfaz es visual e intuitiva — si sabes usar WhatsApp o Excel, sabrás usar Homly sin necesidad de capacitación.',
               },
               {
-                q: '¿Los vecinos también tienen acceso?',
+                q: '¿Los residentes también tienen acceso?',
                 a: 'Sí. Cada residente puede tener su propia cuenta con acceso a su estado de cuenta, historial de pagos, reservas de áreas comunes y notificaciones del condominio. Todo sin necesidad de contactar al administrador para cada consulta.',
               },
               {
@@ -608,11 +608,11 @@ export default function Landing() {
               },
               {
                 q: '¿Qué pasa si un residente tiene adeudos acumulados?',
-                a: 'Puedes crear un Plan de Pagos para ese residente: defines cuotas, frecuencia y si aplica intereses. El vecino recibe el plan por correo, lo acepta desde su cuenta y los pagos del plan se integran automáticamente a la cobranza mensual.',
+                a: 'Puedes crear un Plan de Pagos para ese residente: defines cuotas, frecuencia y si aplica intereses. El residente recibe el plan por correo, lo acepta desde su cuenta y los pagos del plan se integran automáticamente a la cobranza mensual.',
               },
               {
                 q: '¿La plataforma funciona en celular?',
-                a: 'Sí. Homly está adaptada para funcionar correctamente en smartphones y tabletas desde el navegador. Administradores pueden registrar pagos y vecinos pueden consultar su cuenta desde cualquier dispositivo, sin instalar nada.',
+                a: 'Sí. Homly está adaptada para funcionar correctamente en smartphones y tabletas desde el navegador. Administradores pueden registrar pagos y residentes pueden consultar su cuenta desde cualquier dispositivo, sin instalar nada.',
               },
               {
                 q: '¿Mis datos y los del condominio están seguros?',

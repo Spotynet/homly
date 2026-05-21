@@ -33,7 +33,8 @@ const ROLE_META = {
   contador:    { label: 'Contador',       color: 'var(--blue-500)',  bg: 'var(--blue-50)',    desc: 'Lectura de reportes y gastos' },
   auditor:     { label: 'Auditor',        color: 'var(--amber-600)', bg: 'var(--amber-50)',   desc: 'Solo lectura del sistema' },
   vigilante:   { label: 'Vigilante',      color: 'var(--amber-600)', bg: 'var(--amber-50)',   desc: 'Solo lectura de unidades y residentes' },
-  vecino:      { label: 'Vecino',         color: 'var(--ink-500)',   bg: 'var(--sand-100)',   desc: 'Acceso a su unidad y estado de cuenta' },
+  vecino:      { label: 'Residente',      color: 'var(--ink-500)',   bg: 'var(--sand-100)',   desc: 'Acceso a su unidad y estado de cuenta' },
+  custom:      { label: 'Personalizado',  color: 'var(--teal-600)',  bg: 'var(--teal-50)',    desc: 'Perfil personalizado con acceso configurado por módulo' },
 };
 
 const TENANT_ROLES = ['admin','tesorero','contador','auditor','vigilante','vecino'];
@@ -61,7 +62,7 @@ const MODULE_DEFINITIONS = [
   { key: 'notificaciones',  label: 'Notificaciones',      icon: Bell,         desc: 'Centro de avisos y notificaciones' },
   { key: 'onboarding',      label: 'Guía de Inicio',      icon: Sparkles,     desc: 'Tour interactivo para configurar el tenant paso a paso' },
   { key: 'config',          label: 'Configuración',       icon: Settings,     desc: 'Configuración del condominio' },
-  { key: 'my_unit',         label: 'Mi Unidad',           icon: Home,         desc: 'Vista de la unidad del residente (solo Vecino)' },
+  { key: 'my_unit',         label: 'Mi Unidad',           icon: Home,         desc: 'Vista de la unidad del residente (solo Residente)' },
 ];
 
 // ROLE_BASE_MODULES is now imported from '../constants/modulePermissions'
@@ -526,7 +527,7 @@ export default function Config() {
     try {
       const res = await unitsAPI.createUser(tenantId, altaModal.unit.id, altaModal.persona);
       const msg = res.status === 201
-        ? 'Usuario creado y dado de alta como vecino.'
+        ? 'Usuario creado y dado de alta como residente.'
         : 'El usuario ya existe y fue asociado al condominio.';
       toast.success(msg);
       setAltaModal(null);
@@ -616,9 +617,11 @@ export default function Config() {
     // Only require name for genuinely new users (not existing ones being added to tenant)
     const isExistingUser = addUserExisting && addUserExisting.id;
     if (!isExistingUser && !addUserForm.name?.trim()) return toast.error('El nombre es obligatorio');
-    if (!addUserForm.role) return toast.error('El rol es obligatorio');
-    if (addUserForm.role === 'vecino' && !addUserForm.unit_id)
-      return toast.error('Los vecinos deben tener una unidad asignada');
+    const isCustomProfile = addUserForm.roleMode === 'custom';
+    if (isCustomProfile && !addUserForm.profile_id) return toast.error('Selecciona un perfil personalizado');
+    if (!isCustomProfile && !addUserForm.role) return toast.error('El rol es obligatorio');
+    if (!isCustomProfile && addUserForm.role === 'vecino' && !addUserForm.unit_id)
+      return toast.error('Los residentes deben tener una unidad asignada');
     // For new users show email confirmation; for existing users proceed directly
     if (!isExistingUser) {
       setShowUserEmailConfirm(true);
@@ -629,13 +632,15 @@ export default function Config() {
 
   const doCreateUser = async () => {
     const isExistingUser = addUserExisting && addUserExisting.id;
+    const isCustomProfile = addUserForm.roleMode === 'custom';
     setShowUserEmailConfirm(false);
     try {
       const payload = {
-        email:     addUserForm.email.trim(),
-        role:      addUserForm.role,
-        tenant_id: tenantId,
-        unit_id:   addUserForm.role === 'vecino' && addUserForm.unit_id ? addUserForm.unit_id : null,
+        email:      addUserForm.email.trim(),
+        role:       isCustomProfile ? 'custom' : addUserForm.role,
+        tenant_id:  tenantId,
+        unit_id:    (!isCustomProfile && addUserForm.role === 'vecino' && addUserForm.unit_id) ? addUserForm.unit_id : null,
+        profile_id: isCustomProfile ? addUserForm.profile_id : '',
       };
       if (!isExistingUser) {
         payload.name = addUserForm.name.trim();
@@ -652,22 +657,32 @@ export default function Config() {
 
   const openEditUser = (u) => {
     setEditUserId(u.id);
-    setEditUserForm({ name: u.user_name || '', role: u.role || 'vecino', unit_id: u.unit || '', profile_id: u.profile_id || '' });
+    const hasProfile = !!(u.profile_id);
+    setEditUserForm({
+      name:       u.user_name || '',
+      role:       hasProfile ? 'custom' : (u.role || 'vecino'),
+      unit_id:    u.unit || '',
+      profile_id: u.profile_id || '',
+      roleMode:   hasProfile ? 'custom' : 'predefined',
+    });
     setEditUserOpen(true);
   };
 
   const saveEditUser = async () => {
     if (!editUserForm.name?.trim())
       return toast.error('El nombre es obligatorio');
-    // Vecinos always require a unit, regardless of whether a custom profile is set
-    if (editUserForm.role === 'vecino' && !editUserForm.unit_id)
-      return toast.error('Los vecinos deben tener una unidad asignada');
+    const isCustomProfile = editUserForm.roleMode === 'custom';
+    if (isCustomProfile && !editUserForm.profile_id)
+      return toast.error('Selecciona un perfil personalizado');
+    // Residentes always require a unit
+    if (!isCustomProfile && editUserForm.role === 'vecino' && !editUserForm.unit_id)
+      return toast.error('Los residentes deben tener una unidad asignada');
     try {
       await usersAPI.update(tenantId, editUserId, {
         name:       editUserForm.name.trim(),
-        role:       editUserForm.role,
-        unit:       editUserForm.role === 'vecino' ? (editUserForm.unit_id || null) : null,
-        profile_id: editUserForm.profile_id || '',
+        role:       isCustomProfile ? 'custom' : editUserForm.role,
+        unit:       (!isCustomProfile && editUserForm.role === 'vecino') ? (editUserForm.unit_id || null) : null,
+        profile_id: isCustomProfile ? editUserForm.profile_id : '',
       });
       toast.success('Usuario actualizado');
       setEditUserOpen(false);
@@ -1588,7 +1603,7 @@ export default function Config() {
                 </span>
               </div>
               {isAdmin && (
-                <button className="btn btn-primary" onClick={() => { setAddUserForm({ role:'admin' }); setAddUserExisting(null); setAddUserOpen(true); }}>
+                <button className="btn btn-primary" onClick={() => { setAddUserForm({ role:'admin', roleMode:'predefined', profile_id:'' }); setAddUserExisting(null); setAddUserOpen(true); }}>
                   <Plus size={14} /> Nuevo Usuario
                 </button>
               )}
@@ -2426,8 +2441,8 @@ export default function Config() {
               {[
                 {
                   value: 'require_vecinos',
-                  label: 'Requerir aprobación solo para vecinos',
-                  desc: 'Los vecinos y vigilantes envían solicitudes que deben aprobar admin / tesorero. Admins y tesoreros crean reservas auto-aprobadas.',
+                  label: 'Requerir aprobación solo para residentes',
+                  desc: 'Los residentes y vigilantes envían solicitudes que deben aprobar admin / tesorero. Admins y tesoreros crean reservas auto-aprobadas.',
                 },
                 {
                   value: 'require_all',
@@ -2803,7 +2818,7 @@ export default function Config() {
                 <option value="comite">Comité</option>
               </select>
               <div style={{ fontSize:11, color:'var(--ink-400)', marginTop:4 }}>
-                {editGenForm.admin_type==='administrador'?'Administración profesional externa':'Administración por vecinos del condominio'}
+                {editGenForm.admin_type==='administrador'?'Administración profesional externa':'Administración por residentes del condominio'}
               </div>
             </div>
             <div className="field">
@@ -3029,7 +3044,7 @@ export default function Config() {
                 </div>
               </div>
               <p style={{ fontSize:13, color:'var(--ink-500)', margin:0 }}>
-                Se creará (o asociará) este usuario en el sistema con el perfil de <strong>Vecino</strong> vinculado a esta unidad.
+                Se creará (o asociará) este usuario en el sistema con el perfil de <strong>Residente</strong> vinculado a esta unidad.
                 Recibirá un correo de bienvenida con acceso al condominio.
               </p>
             </div>
@@ -3273,20 +3288,66 @@ export default function Config() {
               </div>
             )}
 
-            {/* Rol — siempre visible */}
-            <div className="field">
-              <label className="field-label">Rol</label>
-              <select className="field-select" value={addUserForm.role||'admin'}
-                onChange={e=>setAddUserForm(f=>({...f,role:e.target.value,unit_id:e.target.value!=='vecino'?'':f.unit_id}))}>
-                {TENANT_ROLES.map(r => {
-                  const m = ROLE_META[r];
-                  return <option key={r} value={r}>{m?.label||r} — {m?.desc||''}</option>;
-                })}
-              </select>
+            {/* Rol o Perfil — siempre visible */}
+            <div className={`field ${customProfiles.length > 0 ? 'field-full' : ''}`}>
+              <label className="field-label">Rol / Perfil</label>
+
+              {/* Mode toggle — only when custom profiles exist */}
+              {customProfiles.length > 0 && (
+                <div style={{ display:'flex', gap:6, marginBottom:10 }}>
+                  {[
+                    { key:'predefined', label:'Rol predefinido' },
+                    { key:'custom',     label:'Perfil personalizado' },
+                  ].map(opt => {
+                    const active = (addUserForm.roleMode || 'predefined') === opt.key;
+                    return (
+                      <button key={opt.key} type="button"
+                        onClick={() => setAddUserForm(f => ({
+                          ...f,
+                          roleMode:   opt.key,
+                          role:       opt.key === 'predefined' ? (f.role === 'custom' ? 'admin' : f.role) : 'custom',
+                          profile_id: opt.key === 'predefined' ? '' : f.profile_id,
+                          unit_id:    opt.key === 'custom' ? '' : f.unit_id,
+                        }))}
+                        style={{
+                          padding:'5px 14px', borderRadius:20, border:'1.5px solid',
+                          borderColor: active ? 'var(--teal-600)' : 'var(--sand-200)',
+                          background:  active ? 'var(--teal-50)'  : 'white',
+                          color:       active ? 'var(--teal-700)' : 'var(--ink-400)',
+                          fontSize:12, fontWeight: active ? 700 : 500, cursor:'pointer',
+                        }}>
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Predefined role selector */}
+              {(addUserForm.roleMode || 'predefined') === 'predefined' && (
+                <select className="field-select" value={addUserForm.role||'admin'}
+                  onChange={e=>setAddUserForm(f=>({...f,role:e.target.value,unit_id:e.target.value!=='vecino'?'':f.unit_id}))}>
+                  {TENANT_ROLES.map(r => {
+                    const m = ROLE_META[r];
+                    return <option key={r} value={r}>{m?.label||r} — {m?.desc||''}</option>;
+                  })}
+                </select>
+              )}
+
+              {/* Custom profile selector */}
+              {(addUserForm.roleMode || 'predefined') === 'custom' && customProfiles.length > 0 && (
+                <select className="field-select" value={addUserForm.profile_id||''}
+                  onChange={e=>setAddUserForm(f=>({...f,profile_id:e.target.value}))}>
+                  <option value="">— Selecciona un perfil —</option>
+                  {customProfiles.map(p => (
+                    <option key={p.id} value={p.id}>{p.label}</option>
+                  ))}
+                </select>
+              )}
             </div>
 
-            {/* Unidad — visible cuando el rol es vecino */}
-            {(addUserForm.role||'admin')==='vecino' && (
+            {/* Unidad — visible cuando el rol predefinido es residente */}
+            {(addUserForm.roleMode || 'predefined') === 'predefined' && (addUserForm.role||'admin')==='vecino' && (
               <div className="field field-full">
                 <label className="field-label">Unidad Asignada *</label>
                 <select className="field-select" value={addUserForm.unit_id||''} onChange={e=>setAddUserForm(f=>({...f,unit_id:e.target.value}))}>
@@ -3354,59 +3415,74 @@ export default function Config() {
               <input className="field-input" value={editUserForm.name||''}
                 onChange={e => setEditUserForm(f => ({ ...f, name: e.target.value }))} />
             </div>
-            <div className="field">
-              <label className="field-label">Rol</label>
-              <select className="field-select" value={editUserForm.role||'vecino'}
-                onChange={e => setEditUserForm(f => ({ ...f, role: e.target.value, profile_id: '', unit_id: e.target.value !== 'vecino' ? '' : f.unit_id }))}>
-                {TENANT_ROLES.map(r => {
-                  const m = ROLE_META[r];
-                  return <option key={r} value={r}>{m?.label||r} — {m?.desc||''}</option>;
-                })}
-              </select>
-            </div>
-            {/* Custom profile selector */}
-            {customProfiles.length > 0 && (
-              <div className="field field-full">
-                <label className="field-label">Perfil Personalizado <span style={{ fontWeight:400, color:'var(--ink-400)' }}>(opcional — sobrescribe visibilidad de módulos)</span></label>
-                <select className="field-select" value={editUserForm.profile_id||''}
-                  onChange={e => setEditUserForm(f => ({ ...f, profile_id: e.target.value }))}>
-                  <option value="">— Sin perfil personalizado —</option>
-                  {customProfiles.filter(p => {
-                    // Only show profiles compatible with the selected role's base permissions
-                    const baseRole = p.base_role;
-                    if (!baseRole) return false;
-                    // Admin can use any profile; vecino can only use vecino-based profiles; etc.
-                    const roleOrder = ['vecino','vigilante','auditor','contador','tesorero','admin'];
-                    const selectedIdx = roleOrder.indexOf(editUserForm.role || 'vecino');
-                    const profileIdx  = roleOrder.indexOf(baseRole);
-                    return profileIdx >= 0;
-                  }).map(p => {
-                    const m = ROLE_META[p.base_role] || {};
-                    return <option key={p.id} value={p.id}>{p.label} (base: {m.label || p.base_role})</option>;
+            <div className={`field ${customProfiles.length > 0 ? 'field-full' : ''}`}>
+              <label className="field-label">Rol / Perfil</label>
+
+              {/* Mode toggle */}
+              {customProfiles.length > 0 && (
+                <div style={{ display:'flex', gap:6, marginBottom:10 }}>
+                  {[
+                    { key:'predefined', label:'Rol predefinido' },
+                    { key:'custom',     label:'Perfil personalizado' },
+                  ].map(opt => {
+                    const active = (editUserForm.roleMode || 'predefined') === opt.key;
+                    return (
+                      <button key={opt.key} type="button"
+                        onClick={() => setEditUserForm(f => ({
+                          ...f,
+                          roleMode:   opt.key,
+                          role:       opt.key === 'predefined' ? (f.role === 'custom' ? 'vecino' : f.role) : 'custom',
+                          profile_id: opt.key === 'predefined' ? '' : f.profile_id,
+                          unit_id:    opt.key === 'custom' ? '' : f.unit_id,
+                        }))}
+                        style={{
+                          padding:'5px 14px', borderRadius:20, border:'1.5px solid',
+                          borderColor: active ? 'var(--teal-600)' : 'var(--sand-200)',
+                          background:  active ? 'var(--teal-50)'  : 'white',
+                          color:       active ? 'var(--teal-700)' : 'var(--ink-400)',
+                          fontSize:12, fontWeight: active ? 700 : 500, cursor:'pointer',
+                        }}>
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Predefined role selector */}
+              {(editUserForm.roleMode || 'predefined') === 'predefined' && (
+                <select className="field-select" value={editUserForm.role||'vecino'}
+                  onChange={e => setEditUserForm(f => ({ ...f, role: e.target.value, profile_id: '', unit_id: e.target.value !== 'vecino' ? '' : f.unit_id }))}>
+                  {TENANT_ROLES.map(r => {
+                    const m = ROLE_META[r];
+                    return <option key={r} value={r}>{m?.label||r} — {m?.desc||''}</option>;
                   })}
                 </select>
-                {editUserForm.profile_id && (
-                  <div style={{ fontSize:11, color:'var(--ink-400)', marginTop:4 }}>
-                    El perfil personalizado determina los módulos visibles. Los permisos de backend corresponden al rol base del perfil.
-                  </div>
-                )}
-              </div>
-            )}
-            {editUserForm.role === 'vecino' && (
+              )}
+
+              {/* Custom profile selector */}
+              {(editUserForm.roleMode || 'predefined') === 'custom' && customProfiles.length > 0 && (
+                <select className="field-select" value={editUserForm.profile_id||''}
+                  onChange={e => setEditUserForm(f => ({ ...f, profile_id: e.target.value }))}>
+                  <option value="">— Selecciona un perfil —</option>
+                  {customProfiles.map(p => (
+                    <option key={p.id} value={p.id}>{p.label}</option>
+                  ))}
+                </select>
+              )}
+            </div>
+
+            {/* Unidad — visible solo cuando rol predefinido es residente */}
+            {(editUserForm.roleMode || 'predefined') === 'predefined' && editUserForm.role === 'vecino' && (
               <div className="field field-full">
                 <label className="field-label">Unidad Asignada *</label>
-                <select className="field-select" value={editUserForm.unit_id||''}
-                  onChange={e => setEditUserForm(f => ({ ...f, unit_id: e.target.value }))}>
+                <select className="field-select" value={editUserForm.unit_id||''} onChange={e => setEditUserForm(f => ({ ...f, unit_id: e.target.value }))}>
                   <option value="">— Seleccione una unidad —</option>
-                  {units.map(u => (
-                    <option key={u.id} value={u.id}>
-                      {[u.unit_id_code, u.unit_name].filter(Boolean).join(' — ')}
-                      {u.owner_name ? ` · ${u.owner_name}` : ''}
-                    </option>
-                  ))}
+                  {units.map(u => <option key={u.id} value={u.id}>{[u.unit_id_code,u.unit_name].filter(Boolean).join(' — ')}</option>)}
                 </select>
               </div>
             )}
+
           </div>
         </Modal>
       )}

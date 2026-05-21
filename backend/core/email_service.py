@@ -140,7 +140,7 @@ ROLE_DESCRIPTIONS = {
     'tesorero':   ('Tesorero', 'Puedes registrar y revisar pagos, acceder a reportes financieros y gestionar la cobranza mensual.'),
     'contador':   ('Contador', 'Tienes acceso a los reportes financieros, estados de cuenta y resúmenes de cobranza.'),
     'auditor':    ('Auditor', 'Puedes consultar reportes y estados de cuenta para fines de revisión, sin modificar datos.'),
-    'vecino':     ('Vecino / Residente', 'Puedes consultar el estado de cuenta de tu unidad, ver tus cargos y pagos registrados.'),
+    'vecino':     ('Residente', 'Puedes consultar el estado de cuenta de tu unidad, ver tus cargos y pagos registrados.'),
     'vigilante':  ('Vigilante', 'Puedes consultar la información del condominio que el administrador habilite para tu perfil.'),
 }
 
@@ -1471,7 +1471,7 @@ def send_payment_plan_email(
     terms_conditions: str = '',
     num_options: int = 1,
 ) -> bool:
-    """Send a payment plan proposal email to the vecino."""
+    """Send a payment plan proposal email to the residente."""
     c = COLORS
 
     def fmt(n):

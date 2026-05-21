@@ -76,7 +76,7 @@ function RoleRoute({ module: moduleKey, children }) {
 }
 
 function AppRoutes() {
-  const { isAuthenticated, isVecino, isSuperAdmin, systemRole, loading } = useAuth();
+  const { isAuthenticated, isResidente, isSuperAdmin, systemRole, loading } = useAuth();
 
   // Wait for auth to be restored from localStorage before rendering routes.
   // Without this, super admins get flashed to /app/dashboard (no tenantId) on refresh.
@@ -99,7 +99,7 @@ function AppRoutes() {
             <Navigate
               to={
                 isSuperAdmin ? '/app/sistema/tenants'
-                : isVecino   ? '/app/my-unit'
+                : isResidente   ? '/app/my-unit'
                 :              '/app/dashboard'
               }
               replace

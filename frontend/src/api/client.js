@@ -340,7 +340,7 @@ export const reportsAPI = {
     }),
   sendUnitStatementEmail: (tenantId, data) => api.post(`/tenants/${tenantId}/send-unit-statement-email/`, data),
   sendGeneralStatementEmail: (tenantId, data) => api.post(`/tenants/${tenantId}/send-statement-email/`, data),
-  sendVecinoStatementEmail: (tenantId, data) => api.post(`/tenants/${tenantId}/send-vecino-statement-email/`, data),
+  sendResidenteStatementEmail: (tenantId, data) => api.post(`/tenants/${tenantId}/send-residente-statement-email/`, data),
 };
 
 // ─── CRM (SuperAdmin only) ──────────────────────

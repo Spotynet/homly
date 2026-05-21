@@ -460,7 +460,7 @@ function NotificationBell({ tenantId, role, tenantModulePerms, activeProfile }) 
     if (n.related_reservation_id) navigate('/app/reservas');
     else if (['plan_proposal_sent','plan_accepted','plan_rejected','plan_cancelled','plan_installment_paid'].includes(n.notif_type)) navigate('/app/plan-pagos');
     else if (['payment_registered','payment_updated','payment_deleted'].includes(n.notif_type)) {
-      // Vecinos only see EC (they have no cobranza access); admin/tesorero/contador/auditor go to cobranza
+      // Residentes only see EC (they have no cobranza access); admin/tesorero/contador/auditor go to cobranza
       navigate(role === 'vecino' ? '/app/estado-cuenta' : '/app/cobranza');
     }
     else if (['period_closed','period_reopened'].includes(n.notif_type)) navigate('/app/cobranza');
@@ -628,12 +628,12 @@ export default function AppLayout() {
   const [customProfiles,             setCustomProfiles]             = useState([]);
   const [subscriptionAllowedModules, setSubscriptionAllowedModules] = useState([]);
   const [subscriptionStatus,         setSubscriptionStatus]         = useState(null);
-  // For vecino: only show Plan de Pagos if they have at least one plan (any status)
-  const [vecHasPlan, setVecHasPlan] = useState(false);
+  // Para residente: only show Plan de Pagos if they have at least one plan (any status)
+  const [resHasPlan, setResHasPlan] = useState(false);
   const navigate  = useNavigate();
   const location  = useLocation();
 
-  const isVecino = role === 'vecino' || role === 'vigilante';
+  const isResidente = role === 'vecino' || role === 'vigilante';
 
   // Fetch tenant data (module permissions + custom profiles) whenever the active tenant changes
   useEffect(() => {
@@ -661,15 +661,15 @@ export default function AppLayout() {
       });
   }, [tenantId, role]);
 
-  // Fetch vecino's plan de pagos — show the nav item only if at least one plan exists
+  // Fetch residente's plan de pagos — show the nav item only if at least one plan exists
   useEffect(() => {
-    if (role !== 'vecino' || !tenantId) { setVecHasPlan(false); return; }
+    if (role !== 'vecino' || !tenantId) { setResHasPlan(false); return; }
     paymentPlansAPI.list(tenantId, { page_size: 1 })
       .then(r => {
         const results = Array.isArray(r.data) ? r.data : (r.data?.results || []);
         setVecHasPlan(results.length > 0);
       })
-      .catch(() => setVecHasPlan(false));
+      .catch(() => setResHasPlan(false));
   }, [role, tenantId]);
 
   // Resolve the active custom profile (if any)
@@ -715,8 +715,8 @@ export default function AppLayout() {
           const moduleKey = PATH_TO_MODULE[item.path];
           if (!moduleKey) return true;
 
-          // Vecino: hide Plan de Pagos when no plan exists in any status
-          if (role === 'vecino' && moduleKey === 'plan_pagos' && !vecHasPlan) return false;
+          // Residente: hide Plan de Pagos when no plan exists in any status
+          if (role === 'vecino' && moduleKey === 'plan_pagos' && !resHasPlan) return false;
 
           // ── Subscription plan filter ─────────────────────────────────────
           // If the tenant's subscription plan defines allowed_modules, only

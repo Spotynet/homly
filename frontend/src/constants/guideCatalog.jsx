@@ -20,7 +20,7 @@ import {
   Receipt, DollarSign, Wallet, TrendingDown, FileText, Send,
   // Contador
   ShoppingBag, BookOpen, Lock, ClipboardCheck,
-  // Vecino
+  // Residente
   Home, Calendar, Bell,
   // Comunes
   Building2, Globe, Mail, CheckCircle2,
@@ -186,7 +186,7 @@ const tesoreroChapters = [
         body:
           'Si la unidad abona menos de la cuota, queda pendiente. Si abona de más, el excedente se aplica automáticamente al siguiente mes. No tienes que hacer ajustes manuales.',
         tips: [
-          'Un vecino con adeudo previo lo paga desde el módulo de Plan de Pagos.',
+          'Un residente con adeudo previo lo paga desde el módulo de Plan de Pagos.',
           'Puedes abonar a varios meses en una sola captura.',
         ],
       },
@@ -195,11 +195,11 @@ const tesoreroChapters = [
         title: 'Cargos adicionales',
         subtitle: 'Multas, recargos, extras',
         body:
-          'A cada pago puedes agregarle conceptos adicionales (multa por atraso, cuota especial, recargo). Aparecen en el recibo y en el estado de cuenta del vecino.',
+          'A cada pago puedes agregarle conceptos adicionales (multa por atraso, cuota especial, recargo). Aparecen en el recibo y en el estado de cuenta del residente.',
       },
       {
         icon: Mail, color: '#22c55e', bg: '#dcfce7',
-        title: 'Enviar recibo al vecino',
+        title: 'Enviar recibo al residente',
         subtitle: 'Al propietario y copropietario',
         body:
           'Después de capturar el pago, desde el folio puedes enviar el recibo por correo al propietario y copropietario. Se adjunta el PDF y queda registrado en el historial.',
@@ -229,7 +229,7 @@ const tesoreroChapters = [
         title: 'Proponer un plan de pagos',
         subtitle: 'Mensualidades pactadas',
         body:
-          'Selecciona la unidad y elige número de mensualidades, fecha de inicio y monto por mes. Homly calcula el resto. El plan queda en estado "Propuesto" hasta que el vecino lo acepte.',
+          'Selecciona la unidad y elige número de mensualidades, fecha de inicio y monto por mes. Homly calcula el resto. El plan queda en estado "Propuesto" hasta que el residente lo acepte.',
       },
       {
         icon: Send, color: '#f59e0b', bg: '#fef3c7',
@@ -244,7 +244,7 @@ const tesoreroChapters = [
         title: 'Aceptar, rechazar o cancelar',
         subtitle: 'Ciclo de vida del plan',
         body:
-          'Cuando el vecino responde, marcas el plan como Aceptado. A partir de ese momento, los abonos que capturas en Cobranza se aplican al plan automáticamente. Si se incumple, se puede cancelar.',
+          'Cuando el residente responde, marcas el plan como Aceptado. A partir de ese momento, los abonos que capturas en Cobranza se aplican al plan automáticamente. Si se incumple, se puede cancelar.',
       },
     ],
   },
@@ -478,7 +478,7 @@ const contadorChapters = [
 // ═══════════════════════════════════════════════════════════════
 //  VECINO / RESIDENTE — 4 capítulos
 // ═══════════════════════════════════════════════════════════════
-const vecinoChapters = [
+const residenteChapters = [
   {
     id: 'vec-my-unit',
     kind: 'modal',
@@ -616,12 +616,12 @@ export const GUIDE_ROLES = [
   },
   {
     key: 'vecino',
-    label: 'Vecino / Residente',
+    label: 'Residente',
     icon: Home,
     color: 'var(--coral-500)',
     bg: 'var(--coral-50)',
     description: 'Mi unidad, reservas, estado de cuenta y notificaciones',
-    chapters: vecinoChapters,
+    chapters: residenteChapters,
   },
 ];
 

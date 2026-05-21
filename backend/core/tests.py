@@ -68,11 +68,11 @@ class BaseTestCase(TestCase):
             tenant=self.tenant, user=self.tesorero_user, role='tesorero'
         )
 
-        self.vecino_user = User.objects.create_user(
+        self.residente_user = User.objects.create_user(
             email='ana@email.com', name='Ana García', password='Vecino12'
         )
         TenantUser.objects.create(
-            tenant=self.tenant, user=self.vecino_user, role='vecino', unit=self.unit3
+            tenant=self.tenant, user=self.residente_user, role='vecino', unit=self.unit3
         )
 
         # Extra fields

@@ -88,7 +88,7 @@ const SYSTEM_MODULES = [
   { key: 'plan_pagos',      label: 'Plan de Pagos',          desc: 'Acuerdos de pago diferido' },
   { key: 'cierre_periodo',  label: 'Cierre de Período',      desc: 'Cierre y reapertura de períodos' },
   { key: 'config',          label: 'Configuración',          desc: 'Ajustes generales del condominio' },
-  { key: 'my_unit',         label: 'Mi Unidad',              desc: 'Vista individual para vecinos' },
+  { key: 'my_unit',         label: 'Mi Unidad',              desc: 'Vista individual para residentes' },
 ];
 
 const EMPTY_PLAN = {

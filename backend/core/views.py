@@ -149,7 +149,7 @@ def _notify_roles(tenant_id, roles, notif_type, title, message='', **extra_field
 
 
 def _notify_unit_residents(tenant_id, unit_id, notif_type, title, message='', **extra_fields):
-    """Create notifications for all vecinos assigned to *unit_id*,
+    """Create notifications for all residentes assigned to *unit_id*,
     respecting tenant module permissions.
     Also sends a branded alert email to each resident in a background thread."""
     if not unit_id:
@@ -952,7 +952,7 @@ class UnitViewSet(viewsets.ModelViewSet):
                    tenant_id=self.kwargs['tenant_id'],
                    object_type='Unit', object_id=str(unit.id),
                    object_repr=f'{unit.unit_id_code} {unit.unit_name}')
-        self._auto_create_vecino(unit)
+        self._auto_create_residente(unit)
 
     def perform_update(self, serializer):
         unit = serializer.save()
@@ -1016,9 +1016,9 @@ class UnitViewSet(viewsets.ModelViewSet):
                    object_repr=f'{unit.unit_id_code} {unit.unit_name}')
         return Response(UnitListSerializer(unit).data)
 
-    def _auto_create_vecino(self, unit):
+    def _auto_create_residente(self, unit):
         """
-        If the unit has an owner_email, create (or associate) a vecino User
+        If the unit has an owner_email, create (or associate) a residente User
         with is_active=False and link it to this unit via TenantUser.
         Silently skips if email is blank or user already has access.
         """
@@ -1042,7 +1042,7 @@ class UnitViewSet(viewsets.ModelViewSet):
             user.must_change_password = True
             user.save(update_fields=['is_active', 'must_change_password'])
 
-        # Associate with tenant as vecino (skip if already a member)
+        # Associate with tenant as residente (skip if already a member)
         if not TenantUser.objects.filter(user=user, tenant_id=unit.tenant_id).exists():
             TenantUser.objects.create(
                 user=user,
@@ -1066,7 +1066,7 @@ class UnitViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['patch'], url_path='update-my-info')
     def update_my_info(self, request, tenant_id=None):
         """PATCH /api/tenants/{tenant_id}/units/update-my-info/
-           Allows a vecino to update their own unit's contact information.
+           Allows a residente to update their own unit's contact information.
            Only specific contact fields are writable; admin-only fields are ignored."""
         try:
             tenant_user = TenantUser.objects.select_related('unit').get(
@@ -1131,7 +1131,7 @@ class UnitViewSet(viewsets.ModelViewSet):
         POST /api/tenants/{tenant_id}/units/{pk}/create-user/
         Body: { "persona": "owner" | "coowner" | "tenant" }
 
-        Creates (or associates) a System User with role=vecino for the given
+        Creates (or associates) a System User with role=vecino (residente) for the given
         persona in this unit. Returns the TenantUser record.
         """
         import secrets, string as pystring
@@ -1173,7 +1173,7 @@ class UnitViewSet(viewsets.ModelViewSet):
             user.must_change_password = True
             user.save(update_fields=['is_active', 'must_change_password'])
 
-        # Associate with tenant as vecino (or update existing)
+        # Associate with tenant as residente (or update existing)
         tenant_user, created = TenantUser.objects.get_or_create(
             user=user,
             tenant_id=unit.tenant_id,
@@ -1206,7 +1206,7 @@ class UnitViewSet(viewsets.ModelViewSet):
             pass
 
         return Response(
-            {'detail': 'Usuario creado y dado de alta como vecino.',
+            {'detail': 'Usuario creado y dado de alta como residente.',
              'tenant_user': TenantUserSerializer(tenant_user).data},
             status=status.HTTP_201_CREATED,
         )
@@ -1228,9 +1228,11 @@ class TenantUserViewSet(viewsets.ModelViewSet):
 
     def _resolve_role_from_profile(self, profile_id, tenant_id):
         """
-        Given a profile_id, look it up in the tenant's custom_profiles and
-        return the base_role (used as the actual Django/DRF permission role).
-        Returns None if not found.
+        Given a profile_id, look it up in the tenant's custom_profiles.
+        Custom profiles always map to the 'custom' DB role — they do not
+        inherit permissions from any predefined role. Module visibility is
+        controlled entirely by the profile's own modules configuration.
+        Returns None if the profile is not found.
         """
         if not profile_id:
             return None
@@ -1238,7 +1240,7 @@ class TenantUserViewSet(viewsets.ModelViewSet):
             tenant = Tenant.objects.get(id=tenant_id)
             for p in (tenant.custom_profiles or []):
                 if str(p.get('id', '')) == str(profile_id):
-                    return p.get('base_role')
+                    return 'custom'  # standalone role — no predefined base
         except Tenant.DoesNotExist:
             pass
         return None
@@ -1246,11 +1248,11 @@ class TenantUserViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         profile_id = self.request.data.get('profile_id', '')
         role = serializer.validated_data.get('role')
-        # If a custom profile is selected, override role with its base_role
+        # If a custom profile is selected, use 'custom' role (no predefined base)
         if profile_id:
-            base_role = self._resolve_role_from_profile(profile_id, self.kwargs['tenant_id'])
-            if base_role:
-                role = base_role
+            resolved = self._resolve_role_from_profile(profile_id, self.kwargs['tenant_id'])
+            if resolved:
+                role = resolved
         instance = serializer.save(role=role, profile_id=profile_id)
         _audit_log(self.request, 'usuarios', 'create',
                    f'Usuario asignado: {instance.user.email} (rol: {instance.role})',
@@ -1265,9 +1267,9 @@ class TenantUserViewSet(viewsets.ModelViewSet):
         if profile_id is not None:
             kwargs['profile_id'] = profile_id
             if profile_id:
-                base_role = self._resolve_role_from_profile(profile_id, self.kwargs['tenant_id'])
-                if base_role:
-                    kwargs['role'] = base_role
+                resolved = self._resolve_role_from_profile(profile_id, self.kwargs['tenant_id'])
+                if resolved:
+                    kwargs['role'] = resolved  # 'custom' — no predefined base
             else:
                 # Profile cleared — role from the request payload takes over
                 pass
@@ -1454,7 +1456,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
             tenant_id=self.kwargs['tenant_id']
         ).select_related('unit').prefetch_related('field_payments')
 
-        # M-01: Restricción IDOR — vecino solo ve pagos de su propia unidad.
+        # M-01: Restricción IDOR — residente solo ve pagos de su propia unidad.
         # Se aplica antes de cualquier filtro de query params para evitar bypass.
         if not self.request.user.is_super_admin:
             try:
@@ -1467,7 +1469,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
                         qs = qs.filter(unit_id=tu.unit_id)
                     else:
                         return Payment.objects.none()
-                    # Para vecino: solo se aplica filtro de período; no se permite
+                    # Para residente: solo se aplica filtro de período; no se permite
                     # sobreescribir unit_id desde query params (evita bypass del IDOR).
                     period = self.request.query_params.get('period')
                     if period:
@@ -1581,7 +1583,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
             except Exception:
                 pass
 
-        # ── Notify vecinos of the unit ──────────────────────────
+        # ── Notify residentes of the unit ──────────────────────────
         try:
             unit_obj = payment.unit
             period_label = payment.period  # e.g. "2025-03"
@@ -1735,7 +1737,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
             except Exception:
                 pass
 
-        # Notify vecinos after deletion
+        # Notify residentes after deletion
         if unit_id_str:
             try:
                 _notify_unit_residents(tenant_id, unit_id_str, 'payment_deleted', notif_title, notif_msg)
@@ -1884,11 +1886,11 @@ class PaymentViewSet(viewsets.ModelViewSet):
     def receipt_pdf(self, request, tenant_id=None, pk=None):
         """GET /api/tenants/{tenant_id}/payments/{id}/receipt-pdf/
            Returns the payment receipt as a downloadable PDF.
-           Vecinos can only download receipts for their own unit."""
+           Residentes can only download receipts for their own unit."""
         payment = self.get_object()
         unit = payment.unit
 
-        # Vecino authorization: only their own unit
+        # Residente authorization: only their own unit
         tu = TenantUser.objects.filter(tenant_id=tenant_id, user=request.user).first()
         if tu and tu.role == 'vecino' and str(tu.unit_id) != str(unit.id):
             return Response({'detail': 'No autorizado.'}, status=status.HTTP_403_FORBIDDEN)
@@ -2298,7 +2300,7 @@ def _generate_payment_plan_pdf(plan, tenant):
     # ── Status badge ───────────────────────────────────────────────────────
     status_color = STATUS_COLORS.get(plan.status, COL_INK_LT)
     status_label_map = {
-        'draft': 'Borrador', 'sent': 'Enviado al vecino', 'accepted': 'Aceptado / Activo',
+        'draft': 'Borrador', 'sent': 'Enviado al residente', 'accepted': 'Aceptado / Activo',
         'rejected': 'Rechazado', 'completed': 'Completado', 'cancelled': 'Cancelado',
     }
     status_label = status_label_map.get(plan.status, plan.status)
@@ -2487,7 +2489,7 @@ class PaymentPlanViewSet(viewsets.ModelViewSet):
     serializer_class = PaymentPlanSerializer
 
     def get_permissions(self):
-        # Vecino can list/retrieve/accept/reject/pdf; management roles can do everything
+        # Residente can list/retrieve/accept/reject/pdf; management roles can do everything
         if self.action in ['accept', 'reject', 'list', 'retrieve', 'pdf']:
             return [IsTenantMember()]
         return [IsAdminOrTesOrAuditor()]
@@ -2496,7 +2498,7 @@ class PaymentPlanViewSet(viewsets.ModelViewSet):
         tenant_id = self.kwargs['tenant_id']
         qs = PaymentPlan.objects.filter(tenant_id=tenant_id).select_related('unit', 'tenant')
 
-        # Vecinos only see plans that have been sent/accepted/rejected/completed
+        # Residentes only see plans that have been sent/accepted/rejected/completed
         user = self.request.user
         if not user.is_super_admin:
             try:
@@ -2756,7 +2758,7 @@ class PaymentPlanViewSet(viewsets.ModelViewSet):
             object_id=str(group_id),
         )
 
-        # Notify vecinos of the unit
+        # Notify residentes of the unit
         num_opts = len(created_plans)
         opts_label = f'{num_opts} opción' if num_opts == 1 else f'{num_opts} opciones'
         _notify_unit_residents(
@@ -2785,7 +2787,7 @@ class PaymentPlanViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'])
     def send(self, request, tenant_id=None, pk=None):
-        """Enviar plan al vecino (cambia estado a 'sent', manda email)."""
+        """Enviar plan al residente (cambia estado a 'sent', manda email)."""
         plan = self.get_object()
         if plan.status not in ('draft',):
             return Response(
@@ -2836,21 +2838,21 @@ class PaymentPlanViewSet(viewsets.ModelViewSet):
 
         _audit_log(
             request, 'cobranza', 'update',
-            f'Plan de pago enviado al vecino: {unit.unit_id_code}',
+            f'Plan de pago enviado al residente: {unit.unit_id_code}',
             tenant_id=tenant_id, object_type='PaymentPlan', object_id=str(plan.id),
         )
         return Response(PaymentPlanSerializer(plan).data)
 
     @action(detail=True, methods=['post'])
     def accept(self, request, tenant_id=None, pk=None):
-        """Vecino acepta el plan (cambia estado a 'accepted')."""
+        """Residente acepta el plan (cambia estado a 'accepted')."""
         plan = self.get_object()
         if plan.status != 'sent':
             return Response(
                 {'detail': 'Solo se puede aceptar un plan enviado.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        # Ensure only vecino of the unit (or admin) can accept
+        # Ensure only residente of the unit (or admin) can accept
         user = request.user
         if not user.is_super_admin:
             try:
@@ -2877,7 +2879,7 @@ class PaymentPlanViewSet(viewsets.ModelViewSet):
 
         _audit_log(
             request, 'cobranza', 'update',
-            f'Plan de pago aceptado por vecino: {plan.unit.unit_id_code}',
+            f'Plan de pago aceptado por residente: {plan.unit.unit_id_code}',
             tenant_id=tenant_id, object_type='PaymentPlan', object_id=str(plan.id),
         )
 
@@ -2887,14 +2889,14 @@ class PaymentPlanViewSet(viewsets.ModelViewSet):
             roles=['admin', 'tesorero'],
             notif_type='plan_accepted',
             title=f'✅ Plan de pagos aceptado — Unidad {plan.unit.unit_id_code}',
-            message=f'El vecino de la unidad {plan.unit.unit_name or plan.unit.unit_id_code} aceptó el plan de pagos (Opción {plan.option_number}). El plan está ahora activo.',
+            message=f'El residente de la unidad {plan.unit.unit_name or plan.unit.unit_id_code} aceptó el plan de pagos (Opción {plan.option_number}). El plan está ahora activo.',
         )
 
         return Response(PaymentPlanSerializer(plan).data)
 
     @action(detail=True, methods=['post'])
     def reject(self, request, tenant_id=None, pk=None):
-        """Vecino rechaza el plan (cambia estado a 'rejected')."""
+        """Residente rechaza el plan (cambia estado a 'rejected')."""
         plan = self.get_object()
         if plan.status != 'sent':
             return Response(
@@ -2915,7 +2917,7 @@ class PaymentPlanViewSet(viewsets.ModelViewSet):
 
         _audit_log(
             request, 'cobranza', 'update',
-            f'Plan de pago rechazado por vecino: {plan.unit.unit_id_code}',
+            f'Plan de pago rechazado por residente: {plan.unit.unit_id_code}',
             tenant_id=tenant_id, object_type='PaymentPlan', object_id=str(plan.id),
         )
 
@@ -2925,7 +2927,7 @@ class PaymentPlanViewSet(viewsets.ModelViewSet):
             roles=['admin', 'tesorero'],
             notif_type='plan_rejected',
             title=f'❌ Plan de pagos rechazado — Unidad {plan.unit.unit_id_code}',
-            message=f'El vecino de la unidad {plan.unit.unit_name or plan.unit.unit_id_code} rechazó el plan de pagos (Opción {plan.option_number}).',
+            message=f'El residente de la unidad {plan.unit.unit_name or plan.unit.unit_id_code} rechazó el plan de pagos (Opción {plan.option_number}).',
         )
 
         return Response(PaymentPlanSerializer(plan).data)
@@ -2955,7 +2957,7 @@ class PaymentPlanViewSet(viewsets.ModelViewSet):
             tenant_id=tenant_id, object_type='PaymentPlan', object_id=str(plan.id),
         )
 
-        # Notify vecinos of the unit
+        # Notify residentes of the unit
         reason_text = f' Motivo: {reason}' if reason else ''
         _notify_unit_residents(
             tenant_id=tenant_id,
@@ -3547,8 +3549,8 @@ class AmenityReservationViewSet(viewsets.ModelViewSet):
             related_reservation=res,
         )
 
-    def _notify_unit_vecinos(self, res, notif_type, title, message=''):
-        """Notify vecinos of the reservation's unit respecting module permissions."""
+    def _notify_unit_residentes(self, res, notif_type, title, message=''):
+        """Notify residentes of the reservation's unit respecting module permissions."""
         _notify_unit_residents(
             res.tenant_id,
             unit_id=str(res.unit_id) if res.unit_id else None,
@@ -3618,7 +3620,7 @@ class AmenityReservationViewSet(viewsets.ModelViewSet):
 
         time_str = f'{str(res.start_time)[:5]}–{str(res.end_time)[:5]}'
         if res_status == 'pending':
-            # Vecino created → notify managers for review
+            # Residente created → notify managers for review
             unit_label = f' — {unit.unit_name}' if unit else ''
             self._notify_managers(
                 res,
@@ -3627,8 +3629,8 @@ class AmenityReservationViewSet(viewsets.ModelViewSet):
                 message=f'Fecha: {res.date}  {time_str}',
             )
         elif res_status == 'approved':
-            # Admin created directly approved → notify vecinos of the unit
-            self._notify_unit_vecinos(
+            # Admin created directly approved → notify residentes of the unit
+            self._notify_unit_residentes(
                 res,
                 notif_type='reservation_approved',
                 title=f'✅ Nueva reserva aprobada: {res.area_name}',
@@ -3652,7 +3654,7 @@ class AmenityReservationViewSet(viewsets.ModelViewSet):
         res.reviewer_notes = request.data.get('reviewer_notes', '')
         res.save()
         notes_txt = f'\nObservaciones: {res.reviewer_notes}' if res.reviewer_notes else ''
-        self._notify_unit_vecinos(
+        self._notify_unit_residentes(
             res,
             notif_type='reservation_approved',
             title=f'✅ Tu reserva de {res.area_name} fue aprobada',
@@ -3676,7 +3678,7 @@ class AmenityReservationViewSet(viewsets.ModelViewSet):
         res.reviewer_notes = request.data.get('reviewer_notes', res.rejection_reason)
         res.save()
         reason_txt = f'\nMotivo: {res.rejection_reason}' if res.rejection_reason else ''
-        self._notify_unit_vecinos(
+        self._notify_unit_residentes(
             res,
             notif_type='reservation_rejected',
             title=f'❌ Tu reserva de {res.area_name} fue rechazada',
@@ -3709,15 +3711,15 @@ class AmenityReservationViewSet(viewsets.ModelViewSet):
             pass
 
         if canceller_role in ('admin', 'tesorero', 'superadmin', None):
-            # Admin/manager cancelled → notify vecinos of the unit
-            self._notify_unit_vecinos(
+            # Admin/manager cancelled → notify residentes of the unit
+            self._notify_unit_residentes(
                 res,
                 notif_type='reservation_cancelled',
                 title=f'🚫 Tu reserva de {res.area_name} fue cancelada',
                 message=cancel_msg,
             )
         else:
-            # Vecino/vigilante cancelled → notify managers
+            # Residente/vigilante cancelled → notify managers
             self._notify_managers(
                 res,
                 notif_type='reservation_cancelled',
@@ -4653,7 +4655,7 @@ class EstadoCuentaView(APIView):
         period_to = request.query_params.get('to')
         cutoff_param = request.query_params.get('cutoff')  # for units list
 
-        # Resolve 'me' → the unit assigned to the requesting vecino
+        # Resolve 'me' → the unit assigned to the requesting residente
         if unit_id == 'me':
             try:
                 tu = TenantUser.objects.get(user=request.user, tenant_id=tenant_id)
@@ -5288,7 +5290,7 @@ class SendUnitStatementEmailView(APIView):
 
 
 # ═══════════════════════════════════════════════════════════
-#  EMAIL — VECINO ENVÍA SU PROPIO ESTADO DE CUENTA
+#  EMAIL — RESIDENTE ENVÍA SU PROPIO ESTADO DE CUENTA
 # ═══════════════════════════════════════════════════════════
 
 def _generate_receipt_pdf(tenant, unit, payment, receipt_data):
@@ -5729,9 +5731,9 @@ def _generate_unit_statement_pdf(tenant, unit, rows, total_charges, total_paid, 
     return buffer.getvalue()
 
 
-class SendVecinoStatementEmailView(APIView):
-    """POST /api/tenants/{tenant_id}/send-vecino-statement-email/
-       Allows a vecino (resident) to send their own unit estado de cuenta
+class SendResidenteStatementEmailView(APIView):
+    """POST /api/tenants/{tenant_id}/send-residente-statement-email/
+       Allows a residente to send their own unit estado de cuenta
        to their own user email address, with the PDF attached."""
     permission_classes = [IsTenantMember]
 
@@ -5739,7 +5741,7 @@ class SendVecinoStatementEmailView(APIView):
         from_period = request.data.get('from_period', '')
         to_period   = request.data.get('to_period',   _today_period())
 
-        # Get the vecino's TenantUser and unit
+        # Get the residente's TenantUser and unit
         try:
             tenant_user = TenantUser.objects.select_related('unit').get(
                 user=request.user, tenant_id=tenant_id
@@ -6347,7 +6349,7 @@ class EstadoPorUnidadPDFView(APIView):
         if not unit:
             return Response({'detail': 'Unidad no encontrada.'}, status=404)
 
-        # Vecino authorization: can only download their own unit
+        # Residente authorization: can only download their own unit
         tu = TenantUser.objects.filter(tenant_id=tenant.id, user=request.user).first()
         if tu and tu.role == 'vecino' and str(tu.unit_id) != str(unit.id):
             return Response({'detail': 'No autorizado.'}, status=403)

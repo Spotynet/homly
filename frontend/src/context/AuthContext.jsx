@@ -160,7 +160,7 @@ export function AuthProvider({ children }) {
     isSuperAdmin: role === 'superadmin',
     isAdmin: role === 'admin' || role === 'superadmin',
     isTesorero: role === 'tesorero',
-    isVecino: role === 'vecino',
+    isResidente: role === 'vecino',
     isReadOnly: role === 'auditor' || role === 'contador',
   };
 

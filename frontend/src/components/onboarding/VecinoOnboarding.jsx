@@ -22,7 +22,7 @@ function buildSteps(tenantName, userName) {
       accentBg: 'var(--teal-50)',
       title: `¡Hola, ${userName}!`,
       subtitle: `Bienvenido a ${tenantName}`,
-      body: 'Este es tu portal de vecino. En unos segundos te mostraremos todo lo que puedes hacer desde aquí.',
+      body: 'Este es tu portal de residente. En unos segundos te mostraremos todo lo que puedes hacer desde aquí.',
       preview: null,
     },
     // 1 — Mi Unidad
@@ -224,9 +224,9 @@ const previewWrap = {
 };
 
 // ─── Componente principal ──────────────────────────────────────────────────
-export default function VecinoOnboarding({ user, tenantName, onClose }) {
+export default function ResidenteOnboarding({ user, tenantName, onClose }) {
   const navigate  = useNavigate();
-  const steps     = buildSteps(tenantName, user?.name || user?.first_name || 'vecino');
+  const steps     = buildSteps(tenantName, user?.name || user?.first_name || 'residente');
   const [step, setStep]       = useState(0);
   const [exiting, setExiting] = useState(false);   // para animación de salida de paso
 

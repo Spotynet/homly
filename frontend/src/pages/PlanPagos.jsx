@@ -2,7 +2,7 @@
  * Homly — Plan de Pagos
  * Módulo dedicado para gestionar planes de pago de adeudos.
  * - Managers (admin/tesorero/contador/auditor): seleccionan unidad, crean propuestas con hasta 3 opciones.
- * - Vecinos: ven las opciones que les enviaron y eligen una; la opción aceptada queda en firme.
+ * - Residentes: ven las opciones que les enviaron y eligen una; la opción aceptada queda en firme.
  */
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
@@ -100,7 +100,7 @@ export default function PlanPagos() {
 
   const isManager  = ['admin', 'tesorero', 'superadmin'].includes(role);
   const isReadOnly = ['contador', 'auditor'].includes(role);
-  const isVecino   = role === 'vecino';
+  const isResidente   = role === 'vecino';
   const canWrite   = isManager;
 
   // Tracks which unit_id we've already fetched via fallback to avoid repeated calls
@@ -127,7 +127,7 @@ export default function PlanPagos() {
   const [selectedAdeudoItem, setSelectedAdeudoItem] = useState(null);
 
   // ─── React Query: planes de pago ───────────────────────────────────────────
-  const plansParams = isVecino
+  const plansParams = isResidente
     ? { page_size: 1000 }
     : (selectedUnit?.id ? { unit_id: selectedUnit.id, page_size: 1000 } : null);
   const { data: plans = [], isLoading: plansLoading } = useQuery({
@@ -136,7 +136,7 @@ export default function PlanPagos() {
       const data = r.data;
       return Array.isArray(data) ? data : (data?.results || []);
     }),
-    enabled:   !!tenantId && (isVecino || !!selectedUnit?.id),
+    enabled:   !!tenantId && (isResidente || !!selectedUnit?.id),
     staleTime: STALE.PERIOD_ACTIVE,
     placeholderData: [],
   });
@@ -172,7 +172,7 @@ export default function PlanPagos() {
 
   // ─── Carga unidades con adeudos al cambiar cutoff ─────────────────────────
   useEffect(() => {
-    if (!tenantId || isVecino) return;
+    if (!tenantId || isResidente) return;
     setAdeudosLoading(true);
     setSelectedUnit(null);
     setSelectedDebt(0);
@@ -181,12 +181,12 @@ export default function PlanPagos() {
       .then(r => setAdeudosItems(r.data?.units || []))
       .catch(() => toast.error('No se pudieron cargar las unidades.'))
       .finally(() => setAdeudosLoading(false));
-  }, [tenantId, isVecino, cutoff]);
+  }, [tenantId, isResidente, cutoff]);
 
   // ─── Auto-select unit from URL ?unit_id= ─────────────────────────────────
   useEffect(() => {
     const uid = searchParams.get('unit_id');
-    if (!uid || isVecino) return;
+    if (!uid || isResidente) return;
     const item = adeudosItems.find(i => String((i.unit || {}).id) === String(uid));
     if (item) {
       fallbackFetchedRef.current = null;
@@ -201,7 +201,7 @@ export default function PlanPagos() {
         .then(r => { setSelectedUnit(r.data); setSelectedDebt(0); setSelectedAdeudoItem(null); })
         .catch(() => { fallbackFetchedRef.current = null; });
     }
-  }, [adeudosItems, adeudosLoading, searchParams, tenantId, isVecino]);
+  }, [adeudosItems, adeudosLoading, searchParams, tenantId, isResidente]);
 
   // Reset UI state cuando cambia la unidad seleccionada
   useEffect(() => {
@@ -594,7 +594,7 @@ export default function PlanPagos() {
           <button className="btn btn-outline btn-sm" onClick={() => setPrintPlan(plan)}>
             <Printer size={13} /> Imprimir / PDF
           </button>
-          {isVecino && plan.status === 'sent' && (
+          {isResidente && plan.status === 'sent' && (
             <>
               <button
                 className="btn btn-primary btn-sm"
@@ -635,9 +635,9 @@ export default function PlanPagos() {
       return <div style={{ textAlign: 'center', padding: 40, color: 'var(--ink-400)' }}>Cargando planes…</div>;
     }
 
-    // For vecinos: group plans by proposal_group so they see the options side by side
-    if (isVecino) {
-      return renderVecinoProposals();
+    // Para residentes: group plans by proposal_group so they see the options side by side
+    if (isResidente) {
+      return renderResidenteProposals();
     }
 
     if (plans.length === 0) {
@@ -814,8 +814,8 @@ export default function PlanPagos() {
     );
   }
 
-  // ─── Vecino: grouped proposals with accept/reject per option ──────────────
-  const renderVecinoProposals = () => {
+  // ─── Residente: grouped proposals with accept/reject per option ──────────────
+  const renderResidenteProposals = () => {
     if (plans.length === 0) {
       return (
         <div style={{ textAlign: 'center', padding: 40, color: 'var(--ink-400)' }}>
@@ -1281,8 +1281,8 @@ export default function PlanPagos() {
 
   // ─── Render ───────────────────────────────────────────────────────────────
 
-  // Vecino: hide entire module if no proposals exist
-  if (isVecino && !plansLoading && plans.length === 0) {
+  // Residente: hide entire module if no proposals exist
+  if (isResidente && !plansLoading && plans.length === 0) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', padding: 40 }}>
         <div style={{ textAlign: 'center', color: 'var(--ink-400)' }}>
@@ -1308,7 +1308,7 @@ export default function PlanPagos() {
           <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: 'var(--ink-800)' }}>Plan de Pagos</h2>
         </div>
         <p style={{ margin: 0, fontSize: 13, color: 'var(--ink-500)' }}>
-          {isVecino
+          {isResidente
             ? 'Revisa las propuestas de plan de pago enviadas a tu unidad y elige la que mejor te convenga.'
             : 'Crea y envía propuestas de plan de pago con hasta 3 opciones para que el propietario elija.'}
         </p>
@@ -1318,7 +1318,7 @@ export default function PlanPagos() {
       <div style={{ display: 'flex', gap: 20, flex: 1, minHeight: 0 }}>
 
         {/* ── LEFT: Unit selector (managers only) ── */}
-        {!isVecino && (
+        {!isResidente && (
           <div style={{
             width: 280, flexShrink: 0, background: '#fff', border: '1px solid var(--sand-200)',
             borderRadius: 12, display: 'flex', flexDirection: 'column', overflow: 'hidden',
@@ -1473,7 +1473,7 @@ export default function PlanPagos() {
 
         {/* ── RIGHT: Plans panel ── */}
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 0 }}>
-          {!isVecino && !selectedUnit ? (
+          {!isResidente && !selectedUnit ? (
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--sand-50)', borderRadius: 12, border: '1px solid var(--sand-200)' }}>
               <div style={{ textAlign: 'center', color: 'var(--ink-400)' }}>
                 <TrendingDown size={40} style={{ opacity: 0.2, marginBottom: 12 }} />
@@ -1485,12 +1485,12 @@ export default function PlanPagos() {
               {/* Panel header */}
               <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--sand-100)', background: 'var(--sand-50)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
                 <div>
-                  {!isVecino && selectedUnit && (
+                  {!isResidente && selectedUnit && (
                     <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--ink-800)' }}>
                       {selectedUnit.unit_id_code} {selectedUnit.unit_name && `— ${selectedUnit.unit_name}`}
                     </div>
                   )}
-                  {isVecino && (
+                  {isResidente && (
                     <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--ink-800)' }}>Mis planes de pago</div>
                   )}
                 </div>

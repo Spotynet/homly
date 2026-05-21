@@ -27,7 +27,7 @@ function pdfTitle(report, period, tenant) {
 }
 
 export default function EstadoCuenta() {
-  const { tenantId, isVecino, user, role } = useAuth();
+  const { tenantId, isResidente, user, role } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const [units, setUnits] = useState([]);
@@ -49,10 +49,10 @@ export default function EstadoCuenta() {
   const [unitsPage, setUnitsPage] = useState(1);
   const [unitsPerPage, setUnitsPerPage] = useState(25);
   const UNITS_PAGE_OPTIONS = [10, 25, 50, 100];
-  // vecino-specific: which tab is active ('cuenta' | 'reporte')
-  const [vecinoView, setVecinoView] = useState('cuenta');
-  // vecino email self-send
-  const [sendingVecinoEmail, setSendingVecinoEmail] = useState(false);
+  // residente-specific: which tab is active ('cuenta' | 'reporte')
+  const [residenteView, setResidenteView] = useState('cuenta');
+  // residente email self-send
+  const [sendingResidenteEmail, setSendingResidenteEmail] = useState(false);
   // receipt PDF download
   const [downloadingReceipt, setDownloadingReceipt] = useState(null);
   // receipt modal (view)
@@ -68,8 +68,8 @@ export default function EstadoCuenta() {
   // active plans lookup: Set of unit IDs + map of unit_id → plan object
   const [activePlanUnitIds, setActivePlanUnitIds] = useState(new Set());
   const [activePlansMap, setActivePlansMap] = useState({});
-  // vecino: loading while resolving own unit
-  const [vecinoUnitLoading, setVecinoUnitLoading] = useState(false);
+  // residente: loading while resolving own unit
+  const [residenteUnitLoading, setResidenteUnitLoading] = useState(false);
 
   const handleDownloadReceipt = async (payId, period) => {
     setDownloadingReceipt(payId);
@@ -141,13 +141,13 @@ export default function EstadoCuenta() {
   // Load units + tenant info
   useEffect(() => {
     if (!tenantId) return;
-    // Vecinos: resolve their assigned unit via 'me' — no need to list all units
-    if (isVecino) {
-      setVecinoUnitLoading(true);
+    // Residentes: resolve their assigned unit via 'me' — no need to list all units
+    if (isResidente) {
+      setResidenteUnitLoading(true);
       reportsAPI.estadoCuenta(tenantId, { unit_id: 'me' })
         .then(r => { if (r.data?.unit?.id) setSelectedUnit(r.data.unit.id); })
         .catch(() => {})
-        .finally(() => setVecinoUnitLoading(false));
+        .finally(() => setResidenteUnitLoading(false));
     } else {
       unitsAPI.list(tenantId, { page_size: 9999 }).then(r => {
         setUnits(r.data.results || r.data);
@@ -161,7 +161,7 @@ export default function EstadoCuenta() {
     extraFieldsAPI.list(tenantId).then(r => {
       setExtraFields(r.data?.results || r.data || []);
     }).catch(() => {});
-  }, [tenantId, isVecino]);
+  }, [tenantId, isResidente]);
 
   const startPeriod = tenantData?.operation_start_date || tenantData?.created_at?.slice(0, 7) || '';
   // Currency-aware formatter (shadows module-level _fmt)
@@ -198,7 +198,7 @@ export default function EstadoCuenta() {
 
   // Load accepted payment plans to mark units with active plans
   useEffect(() => {
-    if (!tenantId || selectedUnit || isVecino) return;
+    if (!tenantId || selectedUnit || isResidente) return;
     paymentPlansAPI.list(tenantId, { status: 'accepted', page_size: 1000 })
       .then(r => {
         const plans = Array.isArray(r.data) ? r.data : (r.data?.results || []);
@@ -208,7 +208,7 @@ export default function EstadoCuenta() {
         setActivePlansMap(_planMap);
       })
       .catch(() => {});
-  }, [tenantId, selectedUnit, isVecino]);
+  }, [tenantId, selectedUnit, isResidente]);
 
   // Load unit detail with from/to params
   useEffect(() => {
@@ -223,17 +223,17 @@ export default function EstadoCuenta() {
       .finally(() => setLoading(false));
   }, [selectedUnit, tenantId, detailFrom, detailTo]);
 
-  // Load general / reporte (admins via view state; vecinos via vecinoView)
+  // Load general / reporte (admins via view state; residentes via residenteView)
   useEffect(() => {
-    const shouldLoad = isVecino
-      ? vecinoView === 'reporte'
+    const shouldLoad = isResidente
+      ? residenteView === 'reporte'
       : (view === 'tenant' || view === 'reporte');
     if (!shouldLoad || !tenantId) return;
     setGenLoading(true);
     reportsAPI.reporteGeneral(tenantId, cutoff).then(r => {
       setGeneralData(r.data);
     }).catch(() => {}).finally(() => setGenLoading(false));
-  }, [view, vecinoView, tenantId, cutoff, isVecino]);
+  }, [view, residenteView, tenantId, cutoff, isResidente]);
 
   // Load reporte de adeudos
   useEffect(() => {
@@ -322,8 +322,8 @@ export default function EstadoCuenta() {
     return filteredUnits.slice(start, start + unitsPerPage);
   }, [filteredUnits, unitsPage, unitsPerPage]);
 
-  // For vecino: show unit detail only when on 'cuenta' tab; 'reporte' falls to else branch
-  const showDetail = isVecino ? vecinoView === 'cuenta' : !!selectedUnit;
+  // Para residente: show unit detail only when on 'cuenta' tab; 'reporte' falls to else branch
+  const showDetail = isResidente ? residenteView === 'cuenta' : !!selectedUnit;
   const balance = data ? parseFloat(data.balance) : 0;
   const unitPrevDebt = data ? parseFloat(data.previous_debt ?? data.unit?.previous_debt ?? 0) : 0;
   const prevDebtAdeudo = data ? parseFloat(data.prev_debt_adeudo ?? 0) : 0;
@@ -338,26 +338,26 @@ export default function EstadoCuenta() {
   return (
     <div className="content-fade">
 
-      {/* ── Vecino: tabs Mi Estado de Cuenta / Reporte General ── */}
-      {isVecino && (
+      {/* ── Residente: tabs Mi Estado de Cuenta / Reporte General ── */}
+      {isResidente && (
         <div className="ec-toolbar no-print">
           <div className="ec-toolbar-tabs">
             <div className="ec-view-toggle" style={{ marginBottom: 0 }}>
               <button
-                className={`ec-view-btn ${vecinoView === 'cuenta' ? 'active' : ''}`}
-                onClick={() => setVecinoView('cuenta')}
+                className={`ec-view-btn ${residenteView === 'cuenta' ? 'active' : ''}`}
+                onClick={() => setResidenteView('cuenta')}
               >
                 <FileText size={14} /> Mi Estado de Cuenta
               </button>
               <button
-                className={`ec-view-btn ${vecinoView === 'reporte' ? 'active' : ''}`}
-                onClick={() => setVecinoView('reporte')}
+                className={`ec-view-btn ${residenteView === 'reporte' ? 'active' : ''}`}
+                onClick={() => setResidenteView('reporte')}
               >
                 <Globe size={14} /> Reporte General
               </button>
             </div>
           </div>
-          {vecinoView === 'reporte' && (
+          {residenteView === 'reporte' && (
             <div className="ec-toolbar-filters">
               <div style={{ flex: 1 }} />
               <div className="ec-period-pill">
@@ -379,7 +379,7 @@ export default function EstadoCuenta() {
       )}
 
       {/* ── Admin/other roles: Toolbar con tabs (fila 1) + filtros (fila 2) ── */}
-      {!isVecino && !selectedUnit && (
+      {!isResidente && !selectedUnit && (
         <div className="ec-toolbar no-print">
 
           {/* Fila 1: Tabs de navegación */}
@@ -476,7 +476,7 @@ export default function EstadoCuenta() {
       {/* ════════════════════════ UNIT DETAIL VIEW ════════════════════════ */}
       {(showDetail && selectedUnit) ? (
         <div>
-          {!isVecino && (
+          {!isResidente && (
             <div className="no-print" style={{ marginBottom: 16 }}>
               <button className="btn btn-outline btn-sm" onClick={() => { setSelectedUnit(null); setData(null); }}>
                 <ChevronLeft size={14} /> Volver al listado
@@ -563,7 +563,7 @@ export default function EstadoCuenta() {
               </div>
               <div className="ec-detail-actions" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 {/* Email controls for unit statement — admin/tesorero only */}
-                {!isVecino && (
+                {!isResidente && (
                   (data?.unit?.owner_email || selectedUnitInfo?.owner_email) ||
                   (data?.unit?.coowner_email || selectedUnitInfo?.coowner_email) ||
                   (data?.unit?.tenant_email || selectedUnitInfo?.tenant_email)
@@ -577,16 +577,16 @@ export default function EstadoCuenta() {
                   </button>
                 )}
 
-                {/* Vecino: send to own email with PDF attached */}
-                {isVecino && user?.email && (
+                {/* Residente: send to own email with PDF attached */}
+                {isResidente && user?.email && (
                   <button
                     className="btn-outline-white"
-                    disabled={sendingVecinoEmail}
+                    disabled={sendingResidenteEmail}
                     title={`Enviar a ${user.email}`}
                     onClick={async () => {
-                      setSendingVecinoEmail(true);
+                      setSendingResidenteEmail(true);
                       try {
-                        const res = await reportsAPI.sendVecinoStatementEmail(tenantId, {
+                        const res = await reportsAPI.sendResidenteStatementEmail(tenantId, {
                           from_period: detailFrom,
                           to_period: detailTo,
                         });
@@ -594,12 +594,12 @@ export default function EstadoCuenta() {
                       } catch (err) {
                         toast.error(err?.response?.data?.detail || 'Error al enviar el correo');
                       } finally {
-                        setSendingVecinoEmail(false);
+                        setSendingResidenteEmail(false);
                       }
                     }}
                   >
                     <Send size={14} />
-                    {sendingVecinoEmail ? 'Enviando…' : `Enviar a mi correo`}
+                    {sendingResidenteEmail ? 'Enviando…' : `Enviar a mi correo`}
                   </button>
                 )}
 
@@ -1000,17 +1000,17 @@ export default function EstadoCuenta() {
         </div>
       ) : (
         <>
-          {/* ════ Vecino: loading / no-unit placeholder ════ */}
-          {isVecino && vecinoView === 'cuenta' && !selectedUnit && (
+          {/* ════ Residente: loading / no-unit placeholder ════ */}
+          {isResidente && residenteView === 'cuenta' && !selectedUnit && (
             <div className="card" style={{ textAlign: 'center', padding: '50px 20px', color: 'var(--ink-400)', fontSize: 14 }}>
-              {vecinoUnitLoading
+              {residenteUnitLoading
                 ? 'Cargando tu estado de cuenta…'
                 : 'No tienes una unidad asignada. Contacta al administrador del condominio.'}
             </div>
           )}
 
           {/* ════════════════════════ UNIT LIST VIEW ════════════════════════ */}
-          {view === 'units' && !isVecino && (
+          {view === 'units' && !isResidente && (
             <>
               {/* KPI Stats */}
               <div className="cob-stats" style={{ marginBottom: 20 }}>
@@ -1339,7 +1339,7 @@ export default function EstadoCuenta() {
           )}
 
           {/* ════ Vecino: Reporte General (solo lectura) ════ */}
-          {isVecino && vecinoView === 'reporte' && (
+          {isResidente && residenteView === 'reporte' && (
             <ReporteGeneralView
               tenantData={tenantData}
               generalData={generalData}
@@ -1353,7 +1353,7 @@ export default function EstadoCuenta() {
           )}
 
           {/* Vecino without unit assigned */}
-          {isVecino && vecinoView === 'cuenta' && !selectedUnit && (
+          {isResidente && residenteView === 'cuenta' && !selectedUnit && (
             <div className="empty">
               <div className="empty-icon">📋</div>
               <h4>Sin unidad asignada</h4>
@@ -2497,7 +2497,7 @@ const PLAN_STATUS_COLORS = {
 function DebtPaymentPlanModal({ unit, totalAdeudo, maintenanceFee = 0, onClose, tenantId, role, currency = 'MXN' }) {
   const fmt = (n) => _fmt(n, currency);
   const isManager = ['admin', 'tesorero', 'contador', 'superadmin'].includes(role);
-  const isVecinoRole = role === 'vecino';
+  const isResidenteRole = role === 'vecino';
 
   // ─── Tabs: 'list' | 'new' | 'detail' ────────────────────────────────────
   const [tab, setTab] = useState('list');
@@ -2603,7 +2603,7 @@ function DebtPaymentPlanModal({ unit, totalAdeudo, maintenanceFee = 0, onClose, 
     setActionLoading(true);
     try {
       await paymentPlansAPI.send(tenantId, plan.id);
-      toast.success('Plan enviado al vecino por correo.');
+      toast.success('Plan enviado al residente por correo.');
       await loadPlans();
       setSelectedPlan(null);
     } catch (err) {
@@ -2788,10 +2788,10 @@ function DebtPaymentPlanModal({ unit, totalAdeudo, maintenanceFee = 0, onClose, 
           </button>
           {isManager && plan.status === 'draft' && (
             <button className="btn btn-primary btn-sm" disabled={actionLoading} onClick={() => handleSend(plan)}>
-              <Send size={13} /> Enviar al vecino
+              <Send size={13} /> Enviar al residente
             </button>
           )}
-          {isVecinoRole && plan.status === 'sent' && (
+          {isResidenteRole && plan.status === 'sent' && (
             <>
               <button className="btn btn-primary btn-sm" disabled={actionLoading} onClick={() => handleAccept(plan)}
                 style={{ background: 'var(--teal-500)', borderColor: 'var(--teal-500)' }}>
@@ -2860,7 +2860,7 @@ function DebtPaymentPlanModal({ unit, totalAdeudo, maintenanceFee = 0, onClose, 
         <div className="modal-body" style={{ overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: 16 }}>
 
           {/* ══ LIST TAB ══ */}
-          {(tab === 'list' || isVecinoRole) && !selectedPlan && (
+          {(tab === 'list' || isResidenteRole) && !selectedPlan && (
             <div>
               {plansLoading ? (
                 <div style={{ textAlign: 'center', padding: 32, color: 'var(--ink-400)' }}>Cargando planes…</div>
@@ -2868,7 +2868,7 @@ function DebtPaymentPlanModal({ unit, totalAdeudo, maintenanceFee = 0, onClose, 
                 <div style={{ textAlign: 'center', padding: 32, color: 'var(--ink-400)' }}>
                   <TrendingDown size={32} style={{ opacity: 0.3, marginBottom: 8 }} />
                   <div style={{ fontSize: 14 }}>
-                    {isVecinoRole ? 'No hay planes de pago disponibles para tu unidad.' : 'No hay planes de pago para esta unidad.'}
+                    {isResidenteRole ? 'No hay planes de pago disponibles para tu unidad.' : 'No hay planes de pago para esta unidad.'}
                   </div>
                   {isManager && (
                     <button className="btn btn-primary btn-sm" style={{ marginTop: 14 }} onClick={() => setTab('new')}>
@@ -2928,7 +2928,7 @@ function DebtPaymentPlanModal({ unit, totalAdeudo, maintenanceFee = 0, onClose, 
           )}
 
           {/* ══ PLAN DETAIL VIEW ══ */}
-          {(tab === 'list' || isVecinoRole) && selectedPlan && (
+          {(tab === 'list' || isResidenteRole) && selectedPlan && (
             <div>
               <button
                 onClick={() => setSelectedPlan(null)}
@@ -3071,7 +3071,7 @@ function DebtPaymentPlanModal({ unit, totalAdeudo, maintenanceFee = 0, onClose, 
           {tab === 'new' && isManager ? (
             <>
               <span style={{ fontSize: 11, color: 'var(--ink-400)', flex: 1 }}>
-                El plan se guardará como borrador. Podrás enviarlo al vecino cuando esté listo.
+                El plan se guardará como borrador. Podrás enviarlo al residente cuando esté listo.
               </span>
               <button className="btn btn-secondary" onClick={onClose}>Cancelar</button>
               <button className="btn btn-primary" disabled={saving} onClick={handleSaveDraft}>

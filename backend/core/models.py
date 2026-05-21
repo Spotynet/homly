@@ -178,14 +178,14 @@ class Tenant(models.Model):
         default=dict,
         blank=True,
         help_text=(
-            'Per-role module visibility. Keys: admin, tesorero, contador, auditor, vigilante, vecino. '
+            'Per-role module visibility. Keys: admin, tesorero, contador, auditor, vigilante, vecino (residente). '
             'Values: list of enabled module keys. Empty dict = all defaults enabled.'
         ),
     )
 
     # Configurable behaviour for the reservations module.
     # approval_mode choices:
-    #   "require_vecinos"   → vecinos/vigilantes need admin approval (default)
+    #   "require_vecinos"   → residentes/vigilantes need admin approval (default)
     #   "require_all"       → every request (including admin/tesorero) goes through approval
     #   "auto_approve_all"  → all requests are auto-approved (no approval step)
     reservation_settings = models.JSONField(
@@ -263,7 +263,7 @@ class TenantUser(models.Model):
         ('tesorero',   'Tesorero'),
         ('contador',   'Contador'),
         ('auditor',    'Auditor'),
-        ('vecino',     'Vecino / Residente'),
+        ('vecino',     'Residente'),
         ('vigilante',  'Vigilante'),
     ]
 
@@ -273,7 +273,7 @@ class TenantUser(models.Model):
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, db_index=True)
     unit = models.ForeignKey('Unit', on_delete=models.SET_NULL, null=True, blank=True,
                              related_name='assigned_users',
-                             help_text='Required for vecino role')
+                             help_text='Required for residente role')
     # ID referencing a custom profile in tenant.custom_profiles (blank = using built-in role)
     profile_id = models.CharField(max_length=100, blank=True, default='')
     created_at = models.DateTimeField(auto_now_add=True)
@@ -614,7 +614,7 @@ class PaymentPlan(models.Model):
     """
     STATUS_CHOICES = [
         ('draft',     'Borrador'),
-        ('sent',      'Enviado al vecino'),
+        ('sent',      'Enviado al residente'),
         ('accepted',  'Aceptado / Activo'),
         ('rejected',  'Rechazado'),
         ('completed', 'Completado'),

@@ -109,7 +109,7 @@ export default function AdminConfigTour({
       icon: Users, color: '#f59e0b', bg: '#fef3c7',
       title: '4. Usuarios',
       subtitle: 'Accesos al sistema',
-      body: 'Invita a tu equipo (admin, tesorero, contador, auditor) y a los vecinos. Cada uno recibe un correo con su contraseña provisional. Puedes desactivar sin eliminar para mantener la auditoría.',
+      body: 'Invita a tu equipo (admin, tesorero, contador, auditor) y a los residentes. Cada uno recibe un correo con su contraseña provisional. Puedes desactivar sin eliminar para mantener la auditoría.',
     },
     {
       id: 'roles', kind: 'hotspot', tabKey: 'roles',
