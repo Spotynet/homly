@@ -822,14 +822,18 @@ export default function EstadoCuenta() {
                       const maint = parseFloat(p.maintenance || p.charge || 0);
                       const hasDebt = saldoAcum > 0.5;
 
-                      // Badge de estado: amarillo si el pago fue registrado en el sistema
-                      // en un mes posterior al periodo del cargo (via created_at inmutable del backend)
-                      const periodBadge = p.is_late_payment
-                        ? <span className="badge status-pagado-tardio"
-                            title={p.payment_registered_at ? `Registrado el ${p.payment_registered_at}` : 'Registrado fuera del período'}>
-                            ✓ Pagado
-                          </span>
-                        : <span className={`badge ${statusClass(p.status)}`}>{statusLabel(p.status)}</span>;
+                      // Badge de estado: usa statusClass/statusLabel de helpers.
+                      // 'pagado_despues' (backend) → clase status-pagado-tardio (ámbar) + tooltip de fecha de registro.
+                      const periodBadge = (
+                        <span
+                          className={`badge ${statusClass(p.status)}`}
+                          title={p.status === 'pagado_despues' && p.payment_registered_at
+                            ? `Registrado el ${p.payment_registered_at}`
+                            : undefined}
+                        >
+                          {statusLabel(p.status)}
+                        </span>
+                      );
 
                       // Abonos a adeudos recibidos en este período (deuda anterior + períodos no pagados)
                       const adeudoAp = p.pay?.adeudo_payments || {};

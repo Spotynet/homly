@@ -4601,6 +4601,7 @@ def _compute_statement(tenant, unit_id, start_period, cutoff_period, _prefetched
         # Detectar pago tardío: el registro fue creado en un mes posterior al periodo del cargo.
         # Se usa created_at (timestamp inmutable del sistema) en lugar de payment_date
         # porque payment_date es editable por el admin y puede ser backdateado al periodo.
+        # Si es tardío, eff_status se cambia a 'pagado_despues' para distinguirlo en UI y PDF.
         eff_pay_obj = pay or eff_pay
         _payment_date_str = str(eff_pay_obj.payment_date) if eff_pay_obj and eff_pay_obj.payment_date else None
         _is_late_payment = False
@@ -4608,6 +4609,8 @@ def _compute_statement(tenant, unit_id, start_period, cutoff_period, _prefetched
             _created = eff_pay_obj.created_at  # DateTimeField auto_now_add, siempre presente
             _created_period = f"{_created.year}-{str(_created.month).zfill(2)}"
             _is_late_payment = _created_period > period
+            if _is_late_payment:
+                eff_status = 'pagado_despues'
 
         rows.append({
             'period': period,
@@ -4735,7 +4738,7 @@ class EstadoCuentaView(APIView):
                     period_agg[p]['total_charge'] += row['charge']
                     period_agg[p]['total_paid'] += row['paid']  # abono_display
                     st = row.get('status', 'pendiente')
-                    if st == 'pagado':
+                    if st in ('pagado', 'pagado_despues'):
                         period_agg[p]['pagados'] += 1
                     elif st == 'parcial':
                         period_agg[p]['parciales'] += 1
@@ -5320,10 +5323,12 @@ def _generate_receipt_pdf(tenant, unit, payment, receipt_data):
 
     STATUS_COLORS = {
         'pagado': COL_GREEN, 'exento': COL_GREEN,
+        'pagado_despues': COL_AMBER,
         'parcial': COL_AMBER, 'pendiente': COL_CORAL,
     }
     STATUS_LABELS_MAP = {
         'pagado': 'Pagado', 'exento': 'Exento',
+        'pagado_despues': 'Pagado después',
         'parcial': 'Parcial', 'pendiente': 'Pendiente',
     }
 
@@ -5567,11 +5572,12 @@ def _generate_unit_statement_pdf(tenant, unit, rows, total_charges, total_paid, 
     COL_HDR_BG     = colors.HexColor('#1a1a2e')
 
     STATUS_MAP = {
-        'pagado':    ('Pagado',    COL_GREEN_OK),
-        'exento':    ('Exento',    COL_GREEN_OK),
-        'parcial':   ('Parcial',   COL_AMBER),
-        'pendiente': ('Pendiente', COL_CORAL),
-        'futuro':    ('Futuro',    COL_INK_LIGHT),
+        'pagado':         ('Pagado',          COL_GREEN_OK),
+        'exento':         ('Exento',          COL_GREEN_OK),
+        'pagado_despues': ('Pagado después',  COL_AMBER),
+        'parcial':        ('Parcial',         COL_AMBER),
+        'pendiente':      ('Pendiente',       COL_CORAL),
+        'futuro':         ('Futuro',          COL_INK_LIGHT),
     }
 
     buffer = io.BytesIO()

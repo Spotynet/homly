@@ -821,6 +821,7 @@ def send_unit_statement_email(
     STATUS_LABELS = {
         'pagado': ('Pagado', '#1E594F'),
         'exento': ('Exento', '#1E594F'),
+        'pagado_despues': ('Pagado después', '#D97706'),
         'parcial': ('Parcial', '#D97706'),
         'pendiente': ('Pendiente', '#DC2626'),
         'futuro': ('Futuro', '#6B7280'),
