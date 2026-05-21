@@ -140,6 +140,7 @@ export default function Cobranza() {
   const [perPage, setPerPage]                         = useState(25);
   const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
   const [evidencePopup, setEvidencePopup]             = useState(null);
+  const [viewEvidencePay, setViewEvidencePay]         = useState(null); // { files: [...], loading: bool }
   const [captureUnitPeriods, setCaptureUnitPeriods]   = useState([]);
   const [captureUnitPeriodsLoading, setCaptureUnitPeriodsLoading] = useState(false);
 
@@ -645,6 +646,24 @@ export default function Cobranza() {
                         {pay && (
                           <button className="btn btn-secondary btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }} onClick={() => setShowReceipt({ unit: u, pay })}>
                             <FileText size={12} /> Ver Recibo
+                          </button>
+                        )}
+                        {pay?.has_evidence && (
+                          <button
+                            className="btn btn-secondary btn-sm"
+                            title="Ver evidencias adjuntas"
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, borderColor: 'var(--blue-200)', color: 'var(--blue-700)' }}
+                            onClick={() => {
+                              setViewEvidencePay({ files: [], loading: true });
+                              paymentsAPI.get(tenantId, pay.id)
+                                .then(({ data }) => {
+                                  const evList = Array.isArray(data.evidence) ? data.evidence : [];
+                                  setViewEvidencePay({ files: evList, loading: false });
+                                })
+                                .catch(() => setViewEvidencePay({ files: [], loading: false }));
+                            }}
+                          >
+                            📎 Adjuntos
                           </button>
                         )}
                         {!isReadOnly && !isPeriodClosed && pay && (
@@ -1780,6 +1799,49 @@ export default function Cobranza() {
           />
         );
       })()}
+
+      {/* ── Modal listado de evidencias de un pago (ver desde la fila) ── */}
+      {viewEvidencePay && (
+        <div className="modal-bg open" style={{ zIndex: 9990 }} onClick={() => setViewEvidencePay(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 560, width: '92vw' }}>
+            <div className="modal-head">
+              <h3 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 17 }}>📎</span> Evidencias del pago
+              </h3>
+              <button className="modal-close" onClick={() => setViewEvidencePay(null)}><X size={16} /></button>
+            </div>
+            <div className="modal-body" style={{ padding: '16px 20px' }}>
+              {viewEvidencePay.loading ? (
+                <div style={{ textAlign: 'center', padding: 40, color: 'var(--ink-400)', fontSize: 13 }}>Cargando adjuntos…</div>
+              ) : viewEvidencePay.files.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: 40, color: 'var(--ink-300)', fontSize: 13, fontStyle: 'italic' }}>No hay evidencias guardadas.</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {viewEvidencePay.files.map((ev, idx) => {
+                    const isImg = ev.mime && ev.mime.startsWith('image/');
+                    const isPdfEv = ev.mime === 'application/pdf' || /\.pdf$/i.test(ev.name || '');
+                    const evIcon = isImg ? '🖼️' : isPdfEv ? '📄' : /\.(doc|docx|odt|rtf)$/i.test(ev.name || '') ? '📝' : /\.(xls|xlsx|ods|csv)$/i.test(ev.name || '') ? '📊' : /\.(ppt|pptx|odp)$/i.test(ev.name || '') ? '📑' : '📎';
+                    return (
+                      <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--blue-50)', border: '1px solid var(--blue-100)', padding: '8px 14px', borderRadius: 'var(--radius-sm)' }}>
+                        <span style={{ flexShrink: 0, fontSize: 18 }}>{evIcon}</span>
+                        <span style={{ flex: 1, fontSize: 13, color: 'var(--blue-700)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ev.name || `Evidencia ${idx + 1}`}</span>
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          style={{ flexShrink: 0, fontSize: 11 }}
+                          onClick={() => setEvidencePopup({ b64: ev.data, mime: ev.mime || '', fileName: ev.name || `Evidencia ${idx + 1}` })}
+                        >
+                          Ver
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Popup visor de evidencia (adjuntos) ── */}
       {evidencePopup && (() => {

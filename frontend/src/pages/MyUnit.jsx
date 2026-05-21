@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  Legend, ResponsiveContainer, Cell,
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
+  Legend, ResponsiveContainer, ReferenceLine,
 } from 'recharts';
 import { useAuth } from '../context/AuthContext';
 import { reportsAPI, tenantsAPI, assemblyAPI, unitsAPI } from '../api/client';
@@ -372,13 +372,16 @@ export default function MyUnit() {
             const d = r.value.data;
             const rd = d?.report_data || {};
             return {
-              period: p, label: shortMonth(p),
-              ingresos: parseFloat(rd.total_ingresos_reconciled ?? 0),
-              gastos:   parseFloat(rd.total_egresos_reconciled  ?? 0),
-              saldo:    parseFloat(d?.saldo_final ?? 0),
+              period:           p,
+              label:            shortMonth(p),
+              ingresos:         parseFloat(rd.total_ingresos_reconciled ?? 0),
+              gastos:           parseFloat(rd.total_egresos_reconciled  ?? 0),
+              saldo:            parseFloat(d?.saldo_final ?? 0),
+              ingresosNoConcil: parseFloat(rd.ingresos_no_reconciled    ?? 0),
+              gastosNoConcil:   parseFloat(rd.total_cheques_transito    ?? 0),
             };
           }
-          return { period: p, label: shortMonth(p), ingresos: 0, gastos: 0, saldo: 0 };
+          return { period: p, label: shortMonth(p), ingresos: 0, gastos: 0, saldo: 0, ingresosNoConcil: 0, gastosNoConcil: 0 };
         }));
       })
       .finally(() => setHistoryLoading(false));
@@ -1139,59 +1142,145 @@ export default function MyUnit() {
                   Sin datos históricos
                 </div>
               ) : (
-                <ResponsiveContainer width="100%" height={240}>
-                  <BarChart
-                    data={periodHistory}
-                    margin={{ top: 4, right: 8, left: 8, bottom: 0 }}
-                    barCategoryGap="28%"
-                    barGap={3}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--sand-100)" vertical={false} />
-                    <XAxis
-                      dataKey="label"
-                      tick={{ fontSize: 11, fill: 'var(--ink-500)' }}
-                      axisLine={false} tickLine={false}
-                    />
-                    <YAxis
-                      tickFormatter={v => {
-                        if (Math.abs(v) >= 1_000_000) return `$${(v/1_000_000).toFixed(1)}M`;
-                        if (Math.abs(v) >= 1_000)     return `$${(v/1_000).toFixed(0)}k`;
-                        return `$${v}`;
-                      }}
-                      tick={{ fontSize: 10, fill: 'var(--ink-400)' }}
-                      axisLine={false} tickLine={false} width={52}
-                    />
-                    <Tooltip
-                      formatter={(value, name) => [fmtDec(value), name]}
-                      labelFormatter={label => {
-                        const entry = periodHistory.find(d => d.label === label);
-                        return entry ? monthLabel(entry.period) : label;
-                      }}
-                      contentStyle={{
-                        background: 'white',
-                        border: '1px solid var(--sand-100)',
-                        borderRadius: 10,
-                        boxShadow: '0 4px 16px rgba(0,0,0,0.10)',
-                        fontSize: 12,
-                      }}
-                    />
-                    <Legend
-                      wrapperStyle={{ fontSize: 12, paddingTop: 8 }}
-                      formatter={value => ({
-                        ingresos: 'Ingresos conciliados',
-                        gastos:   'Gastos conciliados',
-                        saldo:    'Saldo final',
-                      }[value] || value)}
-                    />
-                    <Bar dataKey="ingresos" name="ingresos" fill="var(--teal-400)"  radius={[4,4,0,0]} maxBarSize={40} />
-                    <Bar dataKey="gastos"   name="gastos"   fill="var(--coral-400)" radius={[4,4,0,0]} maxBarSize={40} />
-                    <Bar dataKey="saldo"    name="saldo"    fill="#6366f1"           radius={[4,4,0,0]} maxBarSize={40}>
-                      {periodHistory.map((entry, idx) => (
-                        <Cell key={`cell-${idx}`} fill={entry.saldo >= 0 ? '#6366f1' : 'var(--coral-600)'} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
+                <>
+                  <ResponsiveContainer width="100%" height={240}>
+                    <LineChart
+                      data={periodHistory}
+                      margin={{ top: 8, right: 16, left: 8, bottom: 0 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--sand-100)" vertical={false} />
+                      <XAxis
+                        dataKey="label"
+                        tick={{ fontSize: 11, fill: 'var(--ink-500)' }}
+                        axisLine={false} tickLine={false}
+                      />
+                      <YAxis
+                        tickFormatter={v => {
+                          if (Math.abs(v) >= 1_000_000) return `$${(v/1_000_000).toFixed(1)}M`;
+                          if (Math.abs(v) >= 1_000)     return `$${(v/1_000).toFixed(0)}k`;
+                          return `$${v}`;
+                        }}
+                        tick={{ fontSize: 10, fill: 'var(--ink-400)' }}
+                        axisLine={false} tickLine={false} width={52}
+                      />
+                      <ReferenceLine y={0} stroke="var(--sand-300)" strokeDasharray="4 3" />
+                      <Tooltip
+                        formatter={(value, name) => [fmtDec(value), name]}
+                        labelFormatter={label => {
+                          const entry = periodHistory.find(d => d.label === label);
+                          return entry ? monthLabel(entry.period) : label;
+                        }}
+                        contentStyle={{
+                          background: 'white',
+                          border: '1px solid var(--sand-100)',
+                          borderRadius: 10,
+                          boxShadow: '0 4px 16px rgba(0,0,0,0.10)',
+                          fontSize: 12,
+                        }}
+                      />
+                      <Legend
+                        wrapperStyle={{ fontSize: 12, paddingTop: 8 }}
+                        formatter={value => ({
+                          ingresos:         'Ingresos conciliados',
+                          gastos:           'Gastos conciliados',
+                          saldo:            'Saldo final',
+                          ingresosNoConcil: 'Ingresos no conciliados',
+                          gastosNoConcil:   'Gastos no conciliados',
+                        }[value] || value)}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="ingresos"
+                        name="ingresos"
+                        stroke="var(--teal-500)"
+                        strokeWidth={2.5}
+                        dot={{ r: 4, fill: 'var(--teal-400)', stroke: 'white', strokeWidth: 2 }}
+                        activeDot={{ r: 6 }}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="ingresosNoConcil"
+                        name="ingresosNoConcil"
+                        stroke="var(--teal-500)"
+                        strokeWidth={1.8}
+                        strokeDasharray="5 4"
+                        dot={{ r: 3, fill: 'var(--teal-300)', stroke: 'white', strokeWidth: 1.5 }}
+                        activeDot={{ r: 5 }}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="gastos"
+                        name="gastos"
+                        stroke="var(--coral-500)"
+                        strokeWidth={2.5}
+                        dot={{ r: 4, fill: 'var(--coral-400)', stroke: 'white', strokeWidth: 2 }}
+                        activeDot={{ r: 6 }}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="gastosNoConcil"
+                        name="gastosNoConcil"
+                        stroke="var(--coral-500)"
+                        strokeWidth={1.8}
+                        strokeDasharray="5 4"
+                        dot={{ r: 3, fill: 'var(--coral-300)', stroke: 'white', strokeWidth: 1.5 }}
+                        activeDot={{ r: 5 }}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="saldo"
+                        name="saldo"
+                        stroke="#6366f1"
+                        strokeWidth={2.5}
+                        dot={(props) => {
+                          const { cx, cy, payload, index } = props;
+                          const fill = payload.saldo >= 0 ? '#6366f1' : 'var(--coral-600)';
+                          return (
+                            <circle
+                              key={`dot-saldo-${index}`}
+                              cx={cx} cy={cy} r={4}
+                              fill={fill}
+                              stroke="white"
+                              strokeWidth={2}
+                            />
+                          );
+                        }}
+                        activeDot={{ r: 6 }}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                  {/* Leyenda descriptiva de líneas */}
+                  <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginTop: 6, fontSize: 11, color: 'var(--ink-400)' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                      <span style={{ width: 18, height: 3, background: 'var(--teal-500)', borderRadius: 2, display: 'inline-block' }} />
+                      Ingresos conciliados
+                    </span>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                      <span style={{ width: 18, height: 3, background: 'var(--coral-500)', borderRadius: 2, display: 'inline-block' }} />
+                      Gastos conciliados
+                    </span>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                      <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#6366f1', display: 'inline-block' }} />
+                      Saldo final positivo
+                    </span>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                      <span style={{ width: 10, height: 10, borderRadius: '50%', background: 'var(--coral-600)', display: 'inline-block' }} />
+                      Saldo final negativo
+                    </span>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                      <svg width="18" height="6" style={{ display: 'inline-block', verticalAlign: 'middle' }}>
+                        <line x1="0" y1="3" x2="18" y2="3" stroke="var(--teal-500)" strokeWidth="2" strokeDasharray="4 3" />
+                      </svg>
+                      Ingresos no conciliados
+                    </span>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                      <svg width="18" height="6" style={{ display: 'inline-block', verticalAlign: 'middle' }}>
+                        <line x1="0" y1="3" x2="18" y2="3" stroke="var(--coral-500)" strokeWidth="2" strokeDasharray="4 3" />
+                      </svg>
+                      Gastos no conciliados
+                    </span>
+                  </div>
+                </>
               )}
             </div>
           </div>
