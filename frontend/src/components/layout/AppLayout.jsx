@@ -434,10 +434,8 @@ function NotificationBell({ tenantId, role, tenantModulePerms, activeProfile }) 
     if (!moduleKey) return false; // no known destination → read-only
     let permsEntry;
     if (activeProfile) {
-      const profileMods = activeProfile.modules;
-      if (!profileMods || (Array.isArray(profileMods) && profileMods.length === 0) ||
-          (typeof profileMods === 'object' && !Array.isArray(profileMods) && Object.keys(profileMods).length === 0)) return true;
-      permsEntry = profileMods;
+      // Custom profile: strict — only explicitly enabled modules grant navigation
+      return isModuleVisible(activeProfile.modules, moduleKey, null, true);
     } else {
       permsEntry = tenantModulePerms ? tenantModulePerms[role] : undefined;
     }
@@ -678,8 +676,9 @@ export default function AppLayout() {
     : null;
 
   // Determine effective role for nav selection:
-  // If user has a custom profile, use its base_role for the nav structure.
-  const navRole = activeProfile ? (activeProfile.base_role || role) : role;
+  // Custom profile users use the 'admin' nav set (all modules), and the
+  // profile's own module list handles visibility filtering below.
+  const navRole = activeProfile ? 'admin' : role;
 
   // Role display info — use profile label/color when applicable
   const roleConfig = activeProfile
@@ -688,21 +687,23 @@ export default function AppLayout() {
 
   // Helper: resolve visibility from a perms entry (handles old array + new object formats).
   // roleKey is needed to check ROLE_BASE_MODULES for new modules missing from old-format arrays.
-  const isModuleVisible = (permsEntry, moduleKey, roleKey) => {
-    if (!permsEntry) return true; // no config → show
+  // isProfilePerms=true means the entry belongs to a custom profile (standalone, no base role):
+  //   - modules not explicitly configured default to hidden (not visible).
+  const isModuleVisible = (permsEntry, moduleKey, roleKey, isProfilePerms = false) => {
+    if (!permsEntry) return !isProfilePerms; // no config: show for roles, hide for profiles
     if (Array.isArray(permsEntry)) {
       // Old array format: explicit allowlist of visible modules.
-      // If module is in the array → visible.
       if (permsEntry.includes(moduleKey)) return true;
-      // If module is NOT in the array but IS in the role's base modules, it means the
-      // module was added after this tenant saved their permissions. Default to visible
-      // so new features appear automatically without forcing admins to re-save config.
+      // For profile arrays each entry is a module key explicitly allowed:
+      if (isProfilePerms) return false;
+      // For role configs: if module added after save, default to visible.
       if (roleKey && ROLE_BASE_MODULES[roleKey]?.includes(moduleKey)) return true;
       return false;
     }
-    // New format: object { moduleKey: "write"|"read"|"hidden" }
+    // New object format: { moduleKey: "write"|"read"|"hidden" }
     const val = permsEntry[moduleKey];
-    return val === undefined || val !== 'hidden'; // default: visible unless explicitly hidden
+    if (val === undefined) return !isProfilePerms; // profiles: hidden by default; roles: visible
+    return val !== 'hidden';
   };
 
   // Filter nav based on module permissions or custom profile modules
@@ -731,12 +732,10 @@ export default function AppLayout() {
             return false;
           }
 
-          // Custom profile: filter by profile's own modules config
+          // Custom profile: filter strictly by profile's own module config
+          // (no base_role inheritance — unset modules default to hidden)
           if (activeProfile) {
-            const profileMods = activeProfile.modules;
-            // Empty / no config → show all base role defaults
-            if (!profileMods || (Array.isArray(profileMods) && profileMods.length === 0) || (typeof profileMods === 'object' && !Array.isArray(profileMods) && Object.keys(profileMods).length === 0)) return true;
-            return isModuleVisible(profileMods, moduleKey, activeProfile.base_role);
+            return isModuleVisible(activeProfile.modules, moduleKey, null, true);
           }
 
           // Standard role: filter by tenant module_permissions config
@@ -911,7 +910,7 @@ export default function AppLayout() {
               (
                 (subscriptionAllowedModules.length === 0 || subscriptionAllowedModules.includes('onboarding')) &&
                 (activeProfile
-                  ? isModuleVisible(activeProfile.modules, 'onboarding', activeProfile.base_role)
+                  ? isModuleVisible(activeProfile.modules, 'onboarding', null, true)
                   : isModuleVisible(tenantModulePerms[role], 'onboarding', role))
               )
             ) && <GuideTourButton />}
@@ -921,7 +920,7 @@ export default function AppLayout() {
               (
                 (subscriptionAllowedModules.length === 0 || subscriptionAllowedModules.includes('notificaciones')) &&
                 (activeProfile
-                  ? isModuleVisible(activeProfile.modules, 'notificaciones', activeProfile.base_role)
+                  ? isModuleVisible(activeProfile.modules, 'notificaciones', null, true)
                   : isModuleVisible(tenantModulePerms[role], 'notificaciones', role))
               )
             ) && <NotificationBell tenantId={tenantId} role={role} tenantModulePerms={tenantModulePerms} activeProfile={activeProfile} />}

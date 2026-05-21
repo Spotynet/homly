@@ -243,11 +243,16 @@ class SystemUserSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         # Allow role_name, is_super_admin, system_permissions, and allowed_tenant_ids
         # to be updated by a super-admin.
-        is_super = validated_data.get('is_super_admin', instance.is_super_admin)
-        # When promoting to super_admin, clear custom permissions (full access)
-        if is_super:
+        # All system users are is_super_admin=True; distinction between full and
+        # restricted access is via system_role ('super_admin' vs 'staff').
+        # Only clear permissions when the effective role is 'super_admin' (full admin).
+        new_system_role = validated_data.get('system_role', instance.system_role)
+        is_full_admin = not new_system_role or new_system_role == 'super_admin'
+        if is_full_admin:
             validated_data['system_permissions'] = {}
             validated_data['allowed_tenant_ids'] = []
+        # Ensure is_super_admin stays True for all system users
+        validated_data['is_super_admin'] = True
         return super().update(instance, validated_data)
 
 
@@ -277,12 +282,18 @@ class SystemUserCreateSerializer(serializers.ModelSerializer):
         extra_kwargs = {'name': {'required': True}}
 
     def validate_email(self, value):
+        from .models import TenantUser as _TenantUser
         email = value.strip().lower()
-        if User.objects.filter(email=email).exists():
+        existing = User.objects.filter(email=email).first()
+        if existing:
+            # Give a specific error if the email belongs to a tenant (condominio) user
+            if _TenantUser.objects.filter(user=existing).exists():
+                raise serializers.ValidationError(
+                    'Este correo ya está registrado como usuario de un condominio. '
+                    'Un usuario de condominio no puede ser creado como usuario del sistema.'
+                )
             raise serializers.ValidationError(
-                'Este correo ya existe en otro perfil. '
-                'El usuario debe tener un correo exclusivo que no esté '
-                'registrado en ningún otro perfil del sistema o de condominio.'
+                'Este correo ya está registrado como usuario del sistema.'
             )
         return email
 
@@ -297,19 +308,22 @@ class SystemUserCreateSerializer(serializers.ModelSerializer):
         if not name:
             raise serializers.ValidationError({'name': 'El nombre es obligatorio.'})
 
-        # Build system_permissions and allowed_tenant_ids from the permissions dict
-        system_perms    = {}
-        allowed_tenants = []
+        # Build system_permissions from the role permissions dict.
+        # allowed_tenant_ids is intentionally left empty here — the viewset patches
+        # it after save using the request data (it's not exposed in this serializer).
+        system_perms = {}
         if not is_super and permissions:
             system_perms = {
                 'modules':     permissions.get('modules', []),
                 'module_tabs': permissions.get('module_tabs', {}),
             }
-            allowed_tenants = permissions.get('allowed_tenants', [])
 
         # Resolve effective role_name
         effective_role_name = role_name or ('Super Administrador' if is_super else 'Operador')
 
+        # All system users are is_super_admin=True so they can call system APIs.
+        # Full super admins have system_role='super_admin'; restricted staff have 'staff'.
+        # IsFullSuperAdmin distinguishes them at the API permission layer.
         auto_password = secrets.token_urlsafe(24)
         user = User(
             email=email,
@@ -317,8 +331,8 @@ class SystemUserCreateSerializer(serializers.ModelSerializer):
             role_name=effective_role_name,
             system_role='super_admin' if is_super else 'staff',
             system_permissions=system_perms,
-            allowed_tenant_ids=allowed_tenants,
-            is_super_admin=is_super,
+            allowed_tenant_ids=[],   # patched by SystemUserViewSet.create()
+            is_super_admin=True,     # always True — all system users are super_admin
             is_staff=True,
             must_change_password=False,
         )

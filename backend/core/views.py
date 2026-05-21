@@ -7546,6 +7546,8 @@ class SystemUserViewSet(viewsets.ModelViewSet):
     def create(self, request, *args, **kwargs):
         """Create a new system staff user.
         If role_id is provided, fetch the SystemRole and apply its permissions to the user.
+        allowed_tenant_ids is patched onto the user after save because
+        SystemUserCreateSerializer does not expose that field.
         """
         data = request.data.copy()
         role_id = data.pop('role_id', None)
@@ -7553,12 +7555,14 @@ class SystemUserViewSet(viewsets.ModelViewSet):
             role_id = role_id[0] if role_id else None
 
         # Resolve role from SystemRole entity and merge into payload
+        role_is_super = True  # default: full admin when no role specified
         if role_id:
             try:
                 role_obj = SystemRole.objects.get(pk=role_id)
-                data['role_name'] = role_obj.name
+                data['role_name']      = role_obj.name
                 data['is_super_admin'] = role_obj.is_super_admin
-                if not role_obj.is_super_admin:
+                role_is_super          = role_obj.is_super_admin
+                if not role_is_super:
                     data['permissions'] = role_obj.permissions
             except SystemRole.DoesNotExist:
                 return Response({'detail': 'Rol no encontrado.'}, status=400)
@@ -7566,11 +7570,22 @@ class SystemUserViewSet(viewsets.ModelViewSet):
         serializer = SystemUserCreateSerializer(data=data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
+
+        # Patch allowed_tenant_ids from the request (not stored inside 'permissions')
+        # Full super admins have no tenant restrictions (stay empty).
+        if not role_is_super:
+            allowed_ids = request.data.get('allowed_tenant_ids', [])
+            if isinstance(allowed_ids, list):
+                user.allowed_tenant_ids = allowed_ids
+                user.save(update_fields=['allowed_tenant_ids'])
+
         return Response(SystemUserSerializer(user).data, status=status.HTTP_201_CREATED)
 
     def partial_update(self, request, *args, **kwargs):
         """Update an existing system staff user.
         If role_id is provided, fetch the SystemRole and apply its permissions.
+        All system users stay is_super_admin=True; the system_role field ('super_admin'
+        vs 'staff') distinguishes full admins from restricted staff.
         """
         instance = self.get_object()
         data = request.data.copy()
@@ -7581,17 +7596,23 @@ class SystemUserViewSet(viewsets.ModelViewSet):
         if role_id:
             try:
                 role_obj = SystemRole.objects.get(pk=role_id)
-                data['role_name'] = role_obj.name
-                data['is_super_admin'] = role_obj.is_super_admin
+                data['role_name']      = role_obj.name
+                # All system users are always is_super_admin=True
+                data['is_super_admin'] = True
                 if role_obj.is_super_admin:
-                    data['system_permissions'] = {}
-                    data['allowed_tenant_ids'] = []
+                    # Full admin role: clear all restrictions
+                    data['system_role']         = 'super_admin'
+                    data['system_permissions']  = {}
+                    data['allowed_tenant_ids']  = []
                 else:
+                    # Restricted role: apply role permissions; allowed_tenant_ids from request
+                    data['system_role'] = 'staff'
                     perms = role_obj.permissions or {}
                     data['system_permissions'] = {
                         'modules':     perms.get('modules', []),
                         'module_tabs': perms.get('module_tabs', {}),
                     }
+                    # allowed_tenant_ids stays from the request body (data already has it)
             except SystemRole.DoesNotExist:
                 return Response({'detail': 'Rol no encontrado.'}, status=400)
 

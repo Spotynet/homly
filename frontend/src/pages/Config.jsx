@@ -1821,7 +1821,7 @@ export default function Config() {
               {isAdmin && (
                 <button className="btn btn-primary btn-sm"
                   onClick={() => {
-                    setProfileForm({ label:'', color:'#0d9488', base_role:'tesorero', modules: [] });
+                    setProfileForm({ label:'', color:'#0d9488', modules: {} });
                     setProfileModalOpen(true);
                   }}>
                   <Plus size={14}/> Nuevo Perfil
@@ -1840,15 +1840,13 @@ export default function Config() {
                   <table>
                     <thead>
                       <tr>
-                        {['Perfil','Rol Base','Módulos','Acciones'].map(h => (
+                        {['Perfil','Módulos activos','Acciones'].map(h => (
                           <th key={h}>{h}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
                       {customProfiles.map((p, idx) => {
-                        const baseMeta = ROLE_META[p.base_role] || {};
-                        const modCount = (p.modules || []).length;
                         return (
                           <tr key={p.id || idx}>
                             <td style={{ fontWeight:600 }}>
@@ -1857,14 +1855,16 @@ export default function Config() {
                                 {p.label}
                               </div>
                             </td>
-                            <td>
-                              <span className="badge" style={{ background: baseMeta.bg || 'var(--sand-100)', color: baseMeta.color || 'var(--ink-500)' }}>
-                                <span className="badge-dot" style={{ background: baseMeta.color || 'var(--ink-400)' }} />
-                                {baseMeta.label || p.base_role}
-                              </span>
-                            </td>
                             <td style={{ fontSize:13, color:'var(--ink-500)' }}>
-                              {modCount === 0 ? 'Todos (rol base)' : `${modCount} módulo${modCount !== 1 ? 's' : ''}`}
+                              {(() => {
+                                const mods = p.modules || {};
+                                const active = Array.isArray(mods)
+                                  ? mods.length
+                                  : Object.values(mods).filter(v => v !== 'hidden').length;
+                                return active === 0
+                                  ? <span style={{ color:'var(--coral-400)' }}>Sin módulos activos</span>
+                                  : `${active} módulo${active !== 1 ? 's' : ''}`;
+                              })()}
                             </td>
                             <td>
                               {isAdmin && (
@@ -3489,37 +3489,37 @@ export default function Config() {
 
       {/* Profile Modal */}
       {profileModalOpen && profileForm && (() => {
-        const isEdit     = !!(profileForm.id);
-        const baseModules = ROLE_BASE_MODULES[profileForm.base_role] || [];
+        const isEdit = !!(profileForm.id);
 
         // Normalise modules to object format { key: "write"|"read"|"hidden" }
-        const normalizeMods = (mods, base) => {
+        // Default access is 'hidden' — modules must be explicitly enabled.
+        const normalizeMods = (mods) => {
           if (!mods || (Array.isArray(mods) && mods.length === 0)) return {};
           if (Array.isArray(mods))
-            return Object.fromEntries(base.map(k => [k, mods.includes(k) ? 'write' : 'hidden']));
+            return Object.fromEntries(mods.map(k => [k, 'write']));
           return mods;
         };
-        const profileModules = normalizeMods(profileForm.modules, baseModules);
-        const hasAnyConfig   = Object.keys(profileModules).length > 0;
+        const profileModules = normalizeMods(profileForm.modules);
 
-        const getProfileAccess = (key) => profileModules[key] ?? 'write'; // default write
+        // Default: hidden (not inherited from any predefined role)
+        const getProfileAccess = (key) => profileModules[key] ?? 'hidden';
 
         const setProfileAccess = (key, level) => {
           setProfileForm(f => {
-            const base = ROLE_BASE_MODULES[f.base_role] || [];
-            const current = normalizeMods(f.modules, base);
+            const current = normalizeMods(f.modules);
             return { ...f, modules: { ...current, [key]: level } };
           });
         };
 
         const saveProfile = async () => {
           if (!profileForm.label?.trim()) return toast.error('El nombre del perfil es obligatorio');
-          if (!profileForm.base_role)     return toast.error('Selecciona un rol base');
+          const mods = normalizeMods(profileForm.modules);
+          const hasVisible = Object.values(mods).some(v => v !== 'hidden');
+          if (!hasVisible) return toast.error('Activa al menos un módulo para el perfil');
           setProfileSaving(true);
           try {
             const entry = { ...profileForm };
             if (!entry.id) {
-              // Generate a simple unique ID
               entry.id = `prof_${Date.now()}_${Math.random().toString(36).slice(2,7)}`;
             }
             setCustomProfiles(prev => {
@@ -3556,7 +3556,7 @@ export default function Config() {
               </div>
 
               {/* Color */}
-              <div className="field">
+              <div className="field field-full">
                 <label className="field-label">Color identificador</label>
                 <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap', marginTop:4 }}>
                   {PRESET_COLORS.map(c => (
@@ -3573,105 +3573,85 @@ export default function Config() {
                     style={{ width:28, height:28, border:'none', padding:0, borderRadius:4, cursor:'pointer' }} />
                 </div>
               </div>
-
-              {/* Base role */}
-              <div className="field">
-                <label className="field-label">Rol Base *</label>
-                <select className="field-select"
-                  value={profileForm.base_role || ''}
-                  onChange={e => setProfileForm(f => ({ ...f, base_role: e.target.value, modules: {} }))}>
-                  <option value="">— Selecciona un rol —</option>
-                  {['admin','tesorero','contador','auditor','vigilante','vecino'].map(r => {
-                    const m = ROLE_META[r] || {};
-                    return <option key={r} value={r}>{m.label || r}</option>;
-                  })}
-                </select>
-                <div style={{ fontSize:11, color:'var(--ink-400)', marginTop:4, lineHeight:1.4 }}>
-                  El rol base determina los permisos de backend. Configura abajo el nivel de acceso por módulo.
-                </div>
-              </div>
             </div>
 
-            {/* Module permission levels */}
-            {profileForm.base_role && (
-              <div style={{ marginTop:20 }}>
-                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
-                  <div style={{ fontSize:13, fontWeight:700, color:'var(--ink-700)' }}>
-                    Permisos por módulo
-                  </div>
-                  {/* Mini legend */}
-                  <div style={{ display:'flex', gap:10, fontSize:10, color:'var(--ink-400)' }}>
-                    {[
-                      { Icon:EyeOff, label:'Oculto',  color:'var(--coral-500)' },
-                      { Icon:Eye,    label:'Lectura',  color:'var(--blue-600)'  },
-                      { Icon:Pencil, label:'Completo', color:'var(--teal-600)'  },
-                    ].map(({ Icon: I, label, color }) => (
-                      <span key={label} style={{ display:'flex', alignItems:'center', gap:3 }}>
-                        <I size={10} color={color}/> <span style={{ color }}>{label}</span>
-                      </span>
-                    ))}
-                  </div>
+            {/* Module permission levels — all modules, default hidden */}
+            <div style={{ marginTop:20 }}>
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
+                <div style={{ fontSize:13, fontWeight:700, color:'var(--ink-700)' }}>
+                  Módulos accesibles
                 </div>
-
-                {!hasAnyConfig && (
-                  <div style={{ marginBottom:10, padding:'8px 12px', background:'var(--amber-50)', border:'1px solid var(--amber-100)', borderRadius:'var(--radius-md)', fontSize:12, color:'var(--amber-700)' }}>
-                    Sin configuración → el perfil hereda el acceso completo del rol base. Ajusta módulos individuales abajo.
-                  </div>
-                )}
-
-                <div style={{ display:'grid', gap:6 }}>
-                  {MODULE_DEFINITIONS.filter(mod => baseModules.includes(mod.key)).map(mod => {
-                    const Icon   = mod.icon;
-                    const access = getProfileAccess(mod.key);
-                    const LEVELS = [
-                      { key:'hidden', LvIcon:EyeOff, label:'Oculto',   activeColor:'var(--coral-500)', activeBg:'var(--coral-50)'  },
-                      { key:'read',   LvIcon:Eye,    label:'Lectura',   activeColor:'var(--blue-600)',  activeBg:'var(--blue-50)'   },
-                      { key:'write',  LvIcon:Pencil, label:'Completo',  activeColor:'var(--teal-600)',  activeBg:'var(--teal-50)'   },
-                    ];
-                    const active = LEVELS.find(l => l.key === access);
-                    return (
-                      <div key={mod.key} style={{
-                        display:'flex', alignItems:'center', gap:12, padding:'10px 14px',
-                        borderRadius:'var(--radius-md)',
-                        border:`1.5px solid ${access === 'hidden' ? 'var(--coral-100)' : access === 'read' ? 'var(--blue-100)' : 'var(--teal-100)'}`,
-                        background: access === 'hidden' ? 'var(--coral-50)' : access === 'read' ? 'var(--blue-50)' : 'var(--teal-50)',
-                        transition:'all 0.15s',
-                      }}>
-                        {/* Module icon + label */}
-                        <span style={{ display:'inline-flex', alignItems:'center', justifyContent:'center', width:28, height:28, borderRadius:7, background:'white', flexShrink:0 }}>
-                          <Icon size={13} color={active?.activeColor || 'var(--ink-400)'} />
-                        </span>
-                        <div style={{ flex:1, minWidth:0 }}>
-                          <div style={{ fontSize:12, fontWeight:700, color:'var(--ink-800)' }}>{mod.label}</div>
-                          <div style={{ fontSize:11, color:'var(--ink-400)', marginTop:1 }}>{mod.desc}</div>
-                        </div>
-                        {/* 3-level pill */}
-                        <div style={{ display:'inline-flex', borderRadius:8, overflow:'hidden', border:'1px solid rgba(0,0,0,0.08)', flexShrink:0 }}>
-                          {LEVELS.map(({ key, LvIcon, label, activeColor, activeBg }) => {
-                            const isActive = access === key;
-                            return (
-                              <button key={key} type="button" title={label}
-                                onClick={() => setProfileAccess(mod.key, key)}
-                                style={{
-                                  display:'flex', alignItems:'center', gap:4,
-                                  padding:'5px 10px', border:'none',
-                                  background: isActive ? activeBg : 'white',
-                                  color: isActive ? activeColor : 'var(--ink-300)',
-                                  cursor:'pointer', fontSize:11, fontWeight: isActive ? 700 : 500,
-                                  transition:'all 0.12s',
-                                  borderRight: key !== 'write' ? '1px solid rgba(0,0,0,0.08)' : 'none',
-                                }}>
-                                <LvIcon size={11}/> {label}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })}
+                {/* Mini legend */}
+                <div style={{ display:'flex', gap:10, fontSize:10, color:'var(--ink-400)' }}>
+                  {[
+                    { Icon:EyeOff, label:'Sin acceso', color:'var(--coral-500)' },
+                    { Icon:Eye,    label:'Lectura',     color:'var(--blue-600)'  },
+                    { Icon:Pencil, label:'Completo',    color:'var(--teal-600)'  },
+                  ].map(({ Icon: I, label, color }) => (
+                    <span key={label} style={{ display:'flex', alignItems:'center', gap:3 }}>
+                      <I size={10} color={color}/> <span style={{ color }}>{label}</span>
+                    </span>
+                  ))}
                 </div>
               </div>
-            )}
+
+              <div style={{ marginBottom:10, padding:'8px 12px', background:'var(--teal-50)', border:'1px solid var(--teal-100)', borderRadius:'var(--radius-md)', fontSize:12, color:'var(--teal-700)' }}>
+                Solo los módulos marcados como <strong>Lectura</strong> o <strong>Completo</strong> estarán disponibles para este perfil. No hereda permisos de ningún rol predefinido.
+              </div>
+
+              <div style={{ display:'grid', gap:6 }}>
+                {MODULE_DEFINITIONS.map(mod => {
+                  const Icon   = mod.icon;
+                  const access = getProfileAccess(mod.key);
+                  const LEVELS = [
+                    { key:'hidden', LvIcon:EyeOff, label:'Sin acceso', activeColor:'var(--coral-500)', activeBg:'var(--coral-50)'  },
+                    { key:'read',   LvIcon:Eye,    label:'Lectura',    activeColor:'var(--blue-600)',  activeBg:'var(--blue-50)'   },
+                    { key:'write',  LvIcon:Pencil, label:'Completo',   activeColor:'var(--teal-600)',  activeBg:'var(--teal-50)'   },
+                  ];
+                  const active = LEVELS.find(l => l.key === access);
+                  return (
+                    <div key={mod.key} style={{
+                      display:'flex', alignItems:'center', gap:12, padding:'10px 14px',
+                      borderRadius:'var(--radius-md)',
+                      border:`1.5px solid ${access === 'hidden' ? 'var(--sand-200)' : access === 'read' ? 'var(--blue-100)' : 'var(--teal-100)'}`,
+                      background: access === 'hidden' ? 'var(--sand-50)' : access === 'read' ? 'var(--blue-50)' : 'var(--teal-50)',
+                      transition:'all 0.15s',
+                      opacity: access === 'hidden' ? 0.7 : 1,
+                    }}>
+                      {/* Module icon + label */}
+                      <span style={{ display:'inline-flex', alignItems:'center', justifyContent:'center', width:28, height:28, borderRadius:7, background:'white', flexShrink:0 }}>
+                        <Icon size={13} color={active?.activeColor || 'var(--ink-300)'} />
+                      </span>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ fontSize:12, fontWeight:700, color: access === 'hidden' ? 'var(--ink-400)' : 'var(--ink-800)' }}>{mod.label}</div>
+                        <div style={{ fontSize:11, color:'var(--ink-400)', marginTop:1 }}>{mod.desc}</div>
+                      </div>
+                      {/* 3-level pill */}
+                      <div style={{ display:'inline-flex', borderRadius:8, overflow:'hidden', border:'1px solid rgba(0,0,0,0.08)', flexShrink:0 }}>
+                        {LEVELS.map(({ key, LvIcon, label, activeColor, activeBg }) => {
+                          const isActive = access === key;
+                          return (
+                            <button key={key} type="button" title={label}
+                              onClick={() => setProfileAccess(mod.key, key)}
+                              style={{
+                                display:'flex', alignItems:'center', gap:4,
+                                padding:'5px 10px', border:'none',
+                                background: isActive ? activeBg : 'white',
+                                color: isActive ? activeColor : 'var(--ink-300)',
+                                cursor:'pointer', fontSize:11, fontWeight: isActive ? 700 : 500,
+                                transition:'all 0.12s',
+                                borderRight: key !== 'write' ? '1px solid rgba(0,0,0,0.08)' : 'none',
+                              }}>
+                              <LvIcon size={11}/> {label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </Modal>
         );
       })()}
