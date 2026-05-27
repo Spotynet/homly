@@ -4354,6 +4354,9 @@ def _compute_statement(tenant, unit_id, start_period, cutoff_period, _prefetched
 
     adelanto_credits = {}
     adeudo_credits_received = {}
+    # Fecha de pago del período fuente que realizó el abono de adeudo hacia cada período destino.
+    # Se usa para mostrar información del pago en el tooltip de "Pagado después".
+    adeudo_credits_source_date = {}   # target_period -> payment_date (str) del pago fuente
     prev_debt_adeudo = Decimal('0')
     # Adeudo recibido por período de pago (para mostrar en la columna Abono del período receptor)
     adeudo_all_by_recv = {}   # payment.period -> total adeudo cobrado (todos los tipos, para display)
@@ -4377,6 +4380,9 @@ def _compute_statement(tenant, unit_id, start_period, cutoff_period, _prefetched
             else:
                 adeudo_credits_received[target_p] = adeudo_credits_received.get(target_p, Decimal('0')) + total
                 adeudo_spec_by_recv[recv_period] = adeudo_spec_by_recv.get(recv_period, Decimal('0')) + total
+                # Registrar la fecha del período fuente para el tooltip de "Pagado después"
+                if total > 0 and target_p not in adeudo_credits_source_date:
+                    adeudo_credits_source_date[target_p] = str(p.payment_date) if p.payment_date else None
             adeudo_all_by_recv[recv_period] = adeudo_all_by_recv.get(recv_period, Decimal('0')) + total
 
     # ── Plan de pagos activo ────────────────────────────────────────
@@ -4600,19 +4606,36 @@ def _compute_statement(tenant, unit_id, start_period, cutoff_period, _prefetched
                 'total': float(sum(cross_extra.values())),
             }
 
-        # Detectar pago tardío: el registro fue creado en un mes posterior al periodo del cargo.
-        # Se usa created_at (timestamp inmutable del sistema) en lugar de payment_date
-        # porque payment_date es editable por el admin y puede ser backdateado al periodo.
-        # Si es tardío, eff_status se cambia a 'pagado_despues' para distinguirlo en UI y PDF.
+        # ── Detectar "Pagado después" ─────────────────────────────────────────────
+        # Aplica ÚNICAMENTE cuando un pago de un período anterior fue registrado
+        # durante la captura de un período POSTERIOR en la cobranza mensual, es decir,
+        # cuando el abono proviene del mecanismo de adeudo (adeudo_payments de otro período).
+        # La lógica NO se rige por la fecha de creación (created_at) del recibo.
+        #
+        # Regla:
+        #   • Si adeudo_credits_received[period] > 0  →  hubo abono desde un período posterior.
+        #   • Si ese abono (sumado al pago directo si lo hay) cubre el cargo obligatorio
+        #     Y el pago directo por sí solo NO lo cubría  →  "pagado_despues".
+        #   • Si el pago directo ya cubría el total por sí solo (adeudo es excedente)
+        #     →  "pagado" normal (no se penaliza al condómino).
+        # ─────────────────────────────────────────────────────────────────────────
         eff_pay_obj = pay or eff_pay
         _payment_date_str = str(eff_pay_obj.payment_date) if eff_pay_obj and eff_pay_obj.payment_date else None
         _is_late_payment = False
-        if eff_pay_obj and eff_status == 'pagado':
-            _created = eff_pay_obj.created_at  # DateTimeField auto_now_add, siempre presente
-            _created_period = f"{_created.year}-{str(_created.month).zfill(2)}"
-            _is_late_payment = _created_period > period
-            if _is_late_payment:
-                eff_status = 'pagado_despues'
+
+        _adeudo_credit = adeudo_credits_received.get(period, Decimal('0'))
+
+        if _adeudo_credit > 0:
+            # El período recibió crédito de adeudo desde un período posterior.
+            # Verificar si el pago directo (si existe) no era suficiente por sí solo.
+            _direct_covers = cargo_oblig > 0 and oblig_abono_capped >= cargo_oblig
+            if not _direct_covers:
+                # El pago directo no cubría el total; el adeudo fue necesario.
+                _total_effective = oblig_abono_capped + _adeudo_credit
+                if cargo_oblig > 0 and _total_effective >= cargo_oblig:
+                    # Con el adeudo de período posterior queda completamente cubierto.
+                    _is_late_payment = True
+                    eff_status = 'pagado_despues'
 
         rows.append({
             'period': period,
@@ -4626,7 +4649,13 @@ def _compute_statement(tenant, unit_id, start_period, cutoff_period, _prefetched
             'maintenance': float(maint_charge),
             'status': eff_status,
             'is_late_payment': _is_late_payment,
-            'payment_registered_at': str(eff_pay_obj.created_at.date()) if eff_pay_obj else None,
+            # payment_registered_at: fecha del pago.
+            # Para pagos directos: fecha de creación del recibo.
+            # Para "Pagado después" via adeudo: fecha del pago del período posterior que realizó el abono.
+            'payment_registered_at': (
+                str(eff_pay_obj.created_at.date()) if eff_pay_obj
+                else adeudo_credits_source_date.get(period)
+            ),
             'payment_type': eff_pay_obj.payment_type if eff_pay_obj else None,
             'payment_date': _payment_date_str,
             'field_detail': field_detail,

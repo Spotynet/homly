@@ -823,12 +823,16 @@ export default function EstadoCuenta() {
                       const hasDebt = saldoAcum > 0.5;
 
                       // Badge de estado: usa statusClass/statusLabel de helpers.
-                      // 'pagado_despues' (backend) → clase status-pagado-tardio (ámbar) + tooltip de fecha de registro.
+                      // 'pagado_despues' (backend) → clase status-pagado-tardio (ámbar) + tooltip informativo.
+                      // Aplica SOLO cuando el pago de este período fue registrado como adeudo
+                      // durante la captura de un período posterior en la cobranza mensual.
                       const periodBadge = (
                         <span
                           className={`badge ${statusClass(p.status)}`}
-                          title={p.status === 'pagado_despues' && p.payment_registered_at
-                            ? `Registrado el ${p.payment_registered_at}`
+                          title={p.status === 'pagado_despues'
+                            ? (p.payment_registered_at
+                                ? `Pagado como adeudo el ${p.payment_registered_at}`
+                                : 'Pagado en un período posterior como adeudo')
                             : undefined}
                         >
                           {statusLabel(p.status)}
