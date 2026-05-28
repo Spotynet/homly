@@ -29,6 +29,7 @@ from .models import (
     CRMContact, CRMOpportunity, CRMActivity,
     CRMCampaign, CRMCampaignContact, CRMTicket,
     SystemRole,
+    BlogPost, BlogReaction, BlogComment,
 )
 from .email_service import (
     send_verification_email, send_notification_email, CODE_EXPIRY_MINUTES,
@@ -53,6 +54,7 @@ from .serializers import (
     CRMCampaignSerializer, CRMCampaignContactSerializer, CRMTicketSerializer,
     SystemUserSerializer, SystemUserCreateSerializer,
     SystemRoleSerializer,
+    BlogPostSerializer, BlogPostListSerializer, BlogCommentSerializer,
 )
 from .permissions import IsSuperAdmin, IsTenantAdmin, IsTenantMember, IsAdminOrTesorero, IsAdminOrTesOrAuditor, CanApproveReservation
 
@@ -7670,4 +7672,177 @@ class SystemUserViewSet(viewsets.ModelViewSet):
         user.must_change_password = True
         user.save(update_fields=['password', 'must_change_password', 'updated_at'])
         return Response({'detail': 'Contraseña restablecida.', 'temp_password': new_pwd})
+
+
+# ═══════════════════════════════════════════════════════════
+#  BLOG
+# ═══════════════════════════════════════════════════════════
+
+class BlogPostViewSet(viewsets.ModelViewSet):
+    """
+    CRUD + publish/unpublish/react/cover-image for community blog posts.
+
+    Permissions:
+      - list / retrieve : IsTenantMember  (audience filtering applied in queryset)
+      - create / update : admin or superadmin (regular members can only read)
+      - destroy         : admin or superadmin
+      - publish/unpublish: admin or superadmin
+      - react           : any tenant member
+      - comments.*      : any tenant member (delete own or admin)
+    """
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return BlogPostListSerializer
+        return BlogPostSerializer
+
+    def get_permissions(self):
+        if self.action in ['list', 'retrieve', 'react', 'comments', 'add_comment', 'delete_comment']:
+            return [IsTenantMember()]
+        return [IsTenantAdmin()]
+
+    def _get_role(self):
+        """Return the current user's role within this tenant."""
+        user = self.request.user
+        if user.is_super_admin:
+            return 'superadmin'
+        try:
+            tu = TenantUser.objects.get(user=user, tenant_id=self.kwargs['tenant_id'])
+            return tu.role
+        except TenantUser.DoesNotExist:
+            return None
+
+    def get_queryset(self):
+        user   = self.request.user
+        role   = self._get_role()
+        tid    = self.kwargs['tenant_id']
+        qs     = BlogPost.objects.filter(tenant_id=tid).select_related('author')
+
+        # Admins & superadmins see everything; regular members see only published+visible
+        if role not in ('superadmin', 'admin'):
+            qs = qs.filter(status='published')
+            # Audience filtering
+            audience_q = Q(audience_type='all')
+            if role:
+                audience_q |= Q(audience_type='roles', audience_roles__contains=[role])
+            if user and user.is_authenticated:
+                audience_q |= Q(audience_type='specific', audience_user_ids__contains=[str(user.pk)])
+            qs = qs.filter(audience_q)
+
+        # Optional filters from query params
+        status_filter   = self.request.query_params.get('status')
+        category_filter = self.request.query_params.get('category')
+        search          = self.request.query_params.get('search', '').strip()
+
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+        if category_filter:
+            qs = qs.filter(category=category_filter)
+        if search:
+            qs = qs.filter(Q(title__icontains=search) | Q(excerpt__icontains=search))
+
+        return qs
+
+    def perform_create(self, serializer):
+        serializer.save(
+            tenant_id=self.kwargs['tenant_id'],
+            author=self.request.user,
+        )
+
+    # ── Custom actions ──────────────────────────────────────────────
+
+    @action(detail=True, methods=['post'], url_path='publish', permission_classes=[IsTenantAdmin])
+    def publish(self, request, tenant_id=None, pk=None):
+        """Publish a post and optionally set its audience."""
+        post = self.get_object()
+        audience_type     = request.data.get('audience_type', post.audience_type)
+        audience_roles    = request.data.get('audience_roles', post.audience_roles)
+        audience_user_ids = request.data.get('audience_user_ids', post.audience_user_ids)
+
+        post.status           = 'published'
+        post.audience_type    = audience_type
+        post.audience_roles   = audience_roles    if isinstance(audience_roles, list)    else post.audience_roles
+        post.audience_user_ids = audience_user_ids if isinstance(audience_user_ids, list) else post.audience_user_ids
+        if not post.published_at:
+            post.published_at = timezone.now()
+        post.save(update_fields=['status', 'audience_type', 'audience_roles', 'audience_user_ids', 'published_at', 'updated_at'])
+        return Response(BlogPostSerializer(post, context={'request': request}).data)
+
+    @action(detail=True, methods=['post'], url_path='unpublish', permission_classes=[IsTenantAdmin])
+    def unpublish(self, request, tenant_id=None, pk=None):
+        """Revert a published post to draft."""
+        post = self.get_object()
+        post.status = 'draft'
+        post.save(update_fields=['status', 'updated_at'])
+        return Response(BlogPostSerializer(post, context={'request': request}).data)
+
+    @action(detail=True, methods=['post'], url_path='cover-image', permission_classes=[IsTenantAdmin])
+    def cover_image(self, request, tenant_id=None, pk=None):
+        """Upload or replace the cover image of a post."""
+        post = self.get_object()
+        img  = request.FILES.get('image')
+        if not img:
+            return Response({'detail': 'No image provided.'}, status=status.HTTP_400_BAD_REQUEST)
+        post.cover_image = img
+        post.save(update_fields=['cover_image', 'updated_at'])
+        return Response(BlogPostSerializer(post, context={'request': request}).data)
+
+    @action(detail=True, methods=['post'], url_path='react', permission_classes=[IsTenantMember])
+    def react(self, request, tenant_id=None, pk=None):
+        """Toggle a reaction on a post. If already reacted with this type, removes it."""
+        post          = self.get_object()
+        reaction_type = request.data.get('type', 'like')
+        valid_types   = [r[0] for r in BlogReaction.REACTION_CHOICES]
+        if reaction_type not in valid_types:
+            return Response({'detail': f'Invalid reaction. Valid: {valid_types}'}, status=400)
+
+        reaction, created = BlogReaction.objects.get_or_create(
+            post=post, user=request.user, reaction=reaction_type
+        )
+        if not created:
+            reaction.delete()
+
+        return Response(BlogPostSerializer(post, context={'request': request}).data)
+
+    @action(detail=True, methods=['get'], url_path='comments', permission_classes=[IsTenantMember])
+    def comments(self, request, tenant_id=None, pk=None):
+        """List comments for a post."""
+        post = self.get_object()
+        qs   = post.comments.select_related('author').order_by('created_at')
+        return Response(BlogCommentSerializer(qs, many=True, context={'request': request}).data)
+
+    @action(detail=True, methods=['post'], url_path='comments/add', permission_classes=[IsTenantMember])
+    def add_comment(self, request, tenant_id=None, pk=None):
+        """Add a comment to a post."""
+        post    = self.get_object()
+        content = request.data.get('content', '').strip()
+        if not content:
+            return Response({'detail': 'El comentario no puede estar vacío.'}, status=400)
+        comment = BlogComment.objects.create(post=post, author=request.user, content=content)
+        return Response(BlogCommentSerializer(comment, context={'request': request}).data, status=201)
+
+    @action(detail=True, methods=['delete'], url_path=r'comments/(?P<comment_id>[^/.]+)/delete',
+            permission_classes=[IsTenantMember])
+    def delete_comment(self, request, tenant_id=None, pk=None, comment_id=None):
+        """Delete a comment. Authors can delete their own; admins can delete any."""
+        post = self.get_object()
+        try:
+            comment = post.comments.get(id=comment_id)
+        except BlogComment.DoesNotExist:
+            return Response({'detail': 'Comentario no encontrado.'}, status=404)
+
+        role = self._get_role()
+        if comment.author != request.user and role not in ('superadmin', 'admin'):
+            return Response({'detail': 'No tienes permiso para eliminar este comentario.'}, status=403)
+
+        comment.delete()
+        return Response(status=204)
+
+    def retrieve(self, request, *args, **kwargs):
+        """Override to increment views_count on detail fetch."""
+        instance = self.get_object()
+        BlogPost.objects.filter(pk=instance.pk).update(views_count=F('views_count') + 1)
+        instance.refresh_from_db(fields=['views_count'])
+        serializer = self.get_serializer(instance)
+        return Response(serializer.data)
 

@@ -1,0 +1,1025 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Homly – Módulo Blog (Prototipo)</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+  * { font-family: 'Inter', sans-serif; box-sizing: border-box; }
+  [contenteditable]:focus { outline: none; }
+  .line-clamp-2 { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+  .animate-fade-in { animation: fadeIn .25s ease; }
+  @keyframes fadeIn { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
+  .animate-slide-up { animation: slideUp .3s ease; }
+  @keyframes slideUp { from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:translateY(0)} }
+  .prose p { margin-bottom: 1rem; }
+  .prose blockquote { border-left: 4px solid #14b8a6; padding-left: 1rem; color: #64748b; font-style: italic; margin: 1.25rem 0; }
+  ::-webkit-scrollbar { width: 4px; } ::-webkit-scrollbar-track { background: transparent; } ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 9999px; }
+  .toast { animation: toastIn .3s ease, toastOut .3s ease 3.2s forwards; }
+  @keyframes toastIn { from{opacity:0;transform:translateX(40px)} to{opacity:1;transform:translateX(0)} }
+  @keyframes toastOut { to{opacity:0;transform:translateX(40px)} }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!--  ROOT APP                                                       -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+
+<div id="app"></div>
+
+<!-- Toast container -->
+<div id="toast-container" class="fixed top-5 right-5 z-50 space-y-2 pointer-events-none"></div>
+
+<script>
+// ── State ────────────────────────────────────────────────────────
+const TENANT = {
+  name: 'Residencial Los Pinos',
+  location: 'Ciudad de México, México',
+  phone: '+52 55 1234-5678',
+  email: 'admin@residenciallospinos.com.mx',
+  units: 120,
+};
+
+const ARTICLES = [
+  { id:1, status:'published',  title:'Asamblea Ordinaria – Junio 2025',
+    excerpt:'Les informamos que la asamblea ordinaria de condóminos se llevará a cabo el próximo sábado 14 de junio a las 10:00 AM en el salón de usos múltiples. Su asistencia es muy importante.',
+    coverGrad:'from-teal-400 to-cyan-500', coverEmoji:'🏛️',
+    author:'Administración', date:'21 May 2025', views:142, category:'evento', tags:['asamblea','reunión'],
+    content:`<p>Estimados condóminos y residentes de Residencial Los Pinos,</p>
+    <p>Por medio del presente comunicado les informamos que la <strong>Asamblea Ordinaria de Condóminos</strong> correspondiente al primer semestre del año 2025 se llevará a cabo el próximo:</p>
+    <p>📅 <strong>Sábado 14 de junio de 2025</strong><br>⏰ <strong>10:00 AM</strong><br>📍 <strong>Salón de Usos Múltiples, planta baja</strong></p>
+    <p>Los temas a tratar en la agenda serán los siguientes:</p>
+    <p>1. Lista de asistencia y verificación de quórum<br>2. Presentación del informe financiero del período enero–mayo 2025<br>3. Aprobación de estados de cuenta<br>4. Propuesta de mejoras en áreas comunes<br>5. Asuntos generales</p>
+    <blockquote>La participación de todos es fundamental para una comunidad organizada y en crecimiento.</blockquote>
+    <p>Se les solicita presentar su identificación oficial al momento de registrar su asistencia. En caso de no poder asistir, pueden otorgar su representación mediante carta poder simple.</p>
+    <p>Atentamente,<br><strong>La Administración · Residencial Los Pinos</strong></p>`
+  },
+  { id:2, status:'published', title:'Mantenimiento Cisterna – 28 Mayo',
+    excerpt:'Se realizará limpieza y mantenimiento de la cisterna el miércoles 28 de mayo de 8:00 AM a 2:00 PM. Durante este período habrá corte de agua en todo el conjunto.',
+    coverGrad:'from-orange-400 to-amber-500', coverEmoji:'💧',
+    author:'Administración', date:'19 May 2025', views:98, category:'mantenimiento', tags:['agua','mantenimiento'],
+    content:`<p>Estimados residentes,</p>
+    <p>Les comunicamos que el próximo <strong>miércoles 28 de mayo</strong> se realizarán trabajos de <strong>limpieza y mantenimiento preventivo de la cisterna principal</strong> del conjunto habitacional.</p>
+    <p>⚠️ <strong>Habrá corte de suministro de agua</strong> en todos los departamentos durante el horario de 8:00 AM a 2:00 PM.</p>
+    <p>Les recomendamos almacenar agua suficiente con anticipación para cubrir sus necesidades durante el período de mantenimiento.</p>
+    <blockquote>Este mantenimiento es esencial para garantizar la calidad e higiene del agua que consumimos.</blockquote>
+    <p>Agradecemos su comprensión y paciencia.<br><strong>La Administración</strong></p>`
+  },
+  { id:3, status:'draft', title:'Reglamento de Uso de Áreas Comunes (Actualización)',
+    excerpt:'Actualización de las normas de uso para la alberca, gimnasio y salón de usos múltiples. Por favor revisen los nuevos horarios y políticas de reservación.',
+    coverGrad:'from-violet-400 to-purple-500', coverEmoji:'📋',
+    author:'Administración', date:'25 May 2025', views:0, category:'reglamento', tags:['reglamento','áreas comunes'],
+    content:`<p>Estimados condóminos,</p><p>Se presentan las actualizaciones al reglamento de uso de áreas comunes vigentes a partir del 1° de junio de 2025...</p>`
+  },
+  { id:4, status:'editing', title:'¡Bienvenida a nuestra nueva familia vecina!',
+    excerpt:'Con mucho gusto les presentamos a la familia Mendoza, nuevos residentes del departamento C-412. Los invitamos a darles una cálida bienvenida.',
+    coverGrad:'from-pink-400 to-rose-500', coverEmoji:'🏠',
+    author:'Administración', date:'26 May 2025', views:0, category:'logro', tags:['bienvenida','comunidad'],
+    content:`<p>Querida comunidad,</p><p>Con mucho gusto les presentamos a la familia Mendoza...</p>`
+  },
+];
+
+const TEMPLATES = [
+  { id:'aviso',        label:'Aviso General',       emoji:'📢', desc:'Comunicados y avisos importantes a la comunidad',
+    content:'<p><strong>Estimados condóminos,</strong></p><p>Por medio del presente les informamos que...</p><p>Quedamos a sus órdenes para cualquier aclaración.</p><p>Atentamente,<br><strong>La Administración</strong></p>' },
+  { id:'mantenimiento',label:'Mantenimiento',        emoji:'🔧', desc:'Interrupciones de servicios o trabajos en el conjunto',
+    content:'<p>Estimados residentes,</p><p>Les comunicamos que el próximo <strong>[FECHA]</strong> se realizarán trabajos de <strong>[TIPO DE MANTENIMIENTO]</strong>.</p><p>⚠️ El servicio de <strong>[SERVICIO]</strong> estará interrumpido de <strong>[HORA INICIO]</strong> a <strong>[HORA FIN]</strong>.</p><p>Agradecemos su comprensión.<br><strong>La Administración</strong></p>' },
+  { id:'evento',       label:'Evento Comunitario',   emoji:'🎉', desc:'Reuniones, fiestas o actividades en el conjunto',
+    content:'<p>¡Querida comunidad!</p><p>Con mucho gusto los invitamos a <strong>[NOMBRE DEL EVENTO]</strong>.</p><p>📅 Fecha: <strong>[FECHA]</strong><br>⏰ Hora: <strong>[HORA]</strong><br>📍 Lugar: <strong>[LUGAR]</strong></p><p>¡Los esperamos! 🎊<br><strong>La Administración</strong></p>' },
+  { id:'reglamento',   label:'Reglamento / Norma',   emoji:'📋', desc:'Actualizaciones de reglas o políticas del condominio',
+    content:'<p>Estimados condóminos,</p><p>Les informamos sobre las actualizaciones al reglamento interno del condominio, vigentes a partir del <strong>[FECHA]</strong>:</p><p>1. [NORMA 1]<br>2. [NORMA 2]<br>3. [NORMA 3]</p><p>Atentamente,<br><strong>La Administración</strong></p>' },
+  { id:'logro',        label:'Logro / Buenas Noticias', emoji:'🏆', desc:'Noticias positivas y logros de la comunidad',
+    content:'<p>¡Querida comunidad!</p><p>Nos da mucho gusto compartir con ustedes que <strong>[DESCRIPCIÓN DEL LOGRO]</strong>.</p><p>Este logro es resultado del esfuerzo y colaboración de todos. ¡Felicidades a todos!</p><p>Con cariño,<br><strong>La Administración</strong></p>' },
+  { id:'blanco',       label:'En blanco',             emoji:'✏️', desc:'Empieza desde cero con total libertad',
+    content:'<p>Escribe tu artículo aquí...</p>' },
+];
+
+const CATEGORIES = [
+  { key:'all',           label:'Todas',          emoji:'📰', pill:'bg-slate-100 text-slate-700 border-slate-300',       activePill:'bg-slate-700 text-white border-slate-700' },
+  { key:'aviso',         label:'Avisos',         emoji:'📢', pill:'bg-teal-50 text-teal-700 border-teal-200',           activePill:'bg-teal-600 text-white border-teal-600' },
+  { key:'mantenimiento', label:'Mantenimiento',  emoji:'🔧', pill:'bg-orange-50 text-orange-700 border-orange-200',     activePill:'bg-orange-500 text-white border-orange-500' },
+  { key:'evento',        label:'Eventos',        emoji:'🎉', pill:'bg-emerald-50 text-emerald-700 border-emerald-200',  activePill:'bg-emerald-600 text-white border-emerald-600' },
+  { key:'reglamento',    label:'Reglamentos',    emoji:'📋', pill:'bg-violet-50 text-violet-700 border-violet-200',    activePill:'bg-violet-600 text-white border-violet-600' },
+  { key:'logro',         label:'Noticias',       emoji:'🏆', pill:'bg-blue-50 text-blue-700 border-blue-200',           activePill:'bg-blue-600 text-white border-blue-600' },
+];
+
+const ROLES = [
+  {key:'admin',label:'Administrador'},{key:'tesorero',label:'Tesorero'},
+  {key:'contador',label:'Contador'},{key:'auditor',label:'Auditor'},
+  {key:'vigilante',label:'Vigilante'},{key:'vecino',label:'Vecino / Residente'},
+];
+
+const USERS = [
+  {id:1,name:'Ana García',role:'vecino',unit:'A-101'},
+  {id:2,name:'Carlos López',role:'vecino',unit:'B-203'},
+  {id:3,name:'María Torres',role:'tesorero',unit:'–'},
+  {id:4,name:'Luis Ramírez',role:'vecino',unit:'C-305'},
+  {id:5,name:'Sandra Ruiz',role:'auditor',unit:'–'},
+  {id:6,name:'Pedro Vargas',role:'vecino',unit:'A-204'},
+];
+
+const COVER_THEMES = [
+  {g:'from-teal-400 to-cyan-500',e:'📢'},
+  {g:'from-orange-400 to-amber-500',e:'💧'},
+  {g:'from-violet-400 to-purple-500',e:'📋'},
+  {g:'from-pink-400 to-rose-500',e:'🏠'},
+  {g:'from-emerald-400 to-green-500',e:'🎉'},
+  {g:'from-blue-400 to-indigo-500',e:'🏆'},
+  {g:'from-slate-500 to-slate-700',e:'📰'},
+  {g:'from-red-400 to-pink-500',e:'🚨'},
+];
+
+let state = {
+  view: 'dashboard', // dashboard | template | editor | reader | publish
+  articles: [...ARTICLES],
+  activeArticle: null,
+  editorTitle: '',
+  editorExcerpt: '',
+  editorContent: '',
+  editorGrad: 'from-teal-400 to-cyan-500',
+  editorEmoji: '📢',
+  editorTags: [],
+  editorTagInput: '',
+  editorTemplate: null,
+  publishAudience: 'all',
+  publishRoles: [],
+  publishUsers: [],
+  searchQuery: '',
+  statusFilter: 'all',
+  categoryFilter: 'all',
+  userSearch: '',
+};
+
+// ── Helpers ──────────────────────────────────────────────────────
+function showToast(msg, type='success') {
+  const c = document.getElementById('toast-container');
+  const div = document.createElement('div');
+  div.className = `toast pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-xl shadow-lg text-sm font-semibold ${type==='success'?'bg-emerald-600 text-white':'bg-red-500 text-white'}`;
+  div.innerHTML = `<span>${type==='success'?'✓':'⚠'}</span><span>${msg}</span>`;
+  c.appendChild(div);
+  setTimeout(() => div.remove(), 3600);
+}
+
+function statusBadge(status) {
+  const m = {
+    published:{t:'Publicado',  c:'text-emerald-700 bg-emerald-50 border-emerald-200'},
+    draft:    {t:'Borrador',   c:'text-amber-700  bg-amber-50  border-amber-200'},
+    editing:  {t:'En Edición', c:'text-blue-700   bg-blue-50   border-blue-200'},
+  };
+  const s = m[status]||m.draft;
+  const ic = status==='published'?'✓' : status==='draft'?'⏱' : '✏';
+  return `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ${s.c}">${ic} ${s.t}</span>`;
+}
+
+function coverDiv(g, e, h='h-44', large=false) {
+  return `<div class="w-full ${h} bg-gradient-to-br ${g} flex items-center justify-center rounded-xl"><span class="text-${large?'7xl':'5xl'}">${e}</span></div>`;
+}
+
+function filtered() {
+  return state.articles.filter(a => {
+    const q = state.searchQuery.toLowerCase();
+    const matchQ = !q || a.title.toLowerCase().includes(q) || a.excerpt.toLowerCase().includes(q);
+    const matchS = state.statusFilter === 'all' || a.status === state.statusFilter;
+    const matchC = state.categoryFilter === 'all' || a.category === state.categoryFilter;
+    return matchQ && matchS && matchC;
+  });
+}
+
+function categoryCounts() {
+  return CATEGORIES.reduce((acc, cat) => {
+    acc[cat.key] = cat.key === 'all'
+      ? state.articles.length
+      : state.articles.filter(a => a.category === cat.key).length;
+    return acc;
+  }, {});
+}
+
+// ── Render functions ─────────────────────────────────────────────
+function renderDashboard() {
+  const arts   = filtered();
+  const counts = categoryCounts();
+  const pub    = state.articles.filter(a=>a.status==='published').length;
+  const draft  = state.articles.filter(a=>a.status==='draft').length;
+  const edit   = state.articles.filter(a=>a.status==='editing').length;
+
+  const statBtns = ['all','published','draft','editing'].map(s =>
+    `<button onclick="setFilter('${s}')" class="px-3 py-2 rounded-xl text-xs font-semibold border transition-all ${state.statusFilter===s?'bg-teal-600 text-white border-teal-600':'bg-white text-slate-600 border-slate-200 hover:border-teal-300'}">
+      ${s==='all'?'Todos':s==='published'?'Publicados':s==='draft'?'Borradores':'En Edición'}
+    </button>`
+  ).join('');
+
+  const isFiltering = state.categoryFilter !== 'all' || state.statusFilter !== 'all' || state.searchQuery.trim() !== '';
+
+  // ── Hero card (most recent) ──────────────────────────────────────
+  function heroCard(a) {
+    const cat = CATEGORIES.find(c => c.key === a.category);
+    const catBadge = cat && cat.key !== 'all'
+      ? `<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold border mb-3 ${cat.pill}">${cat.emoji} ${cat.label}</span>`
+      : '';
+    return `
+      <div class="relative w-full rounded-2xl overflow-hidden cursor-pointer group animate-fade-in" style="height:420px" onclick="viewArticle(${a.id})">
+        <div class="absolute inset-0 bg-gradient-to-br ${a.coverGrad} transition-transform duration-500 group-hover:scale-105"></div>
+        <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <span class="text-9xl opacity-25 select-none">${a.coverEmoji}</span>
+        </div>
+        <div class="absolute inset-0 bg-gradient-to-t from-slate-900/95 via-slate-900/50 to-transparent"></div>
+        <div class="absolute top-4 right-4 z-10">${statusBadge(a.status)}</div>
+        <div class="absolute top-4 left-4 z-10">
+          <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-white text-xs font-bold tracking-wide" style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.25);backdrop-filter:blur(8px)">
+            ✨ Más reciente
+          </span>
+        </div>
+        <div class="absolute bottom-0 left-0 right-0 p-6 z-10">
+          ${catBadge}
+          <h2 class="text-white font-extrabold text-2xl leading-tight mb-2 drop-shadow-sm" style="-webkit-line-clamp:2;display:-webkit-box;-webkit-box-orient:vertical;overflow:hidden">${a.title}</h2>
+          <p class="text-slate-300 text-sm leading-relaxed mb-4 max-w-2xl" style="-webkit-line-clamp:2;display:-webkit-box;-webkit-box-orient:vertical;overflow:hidden">${a.excerpt}</p>
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-4 text-xs text-slate-400">
+              <span>📅 ${a.date}</span>
+              ${a.status==='published'?`<span>👁 ${a.views} vistas</span>`:''}
+              <span class="text-slate-500">· ${a.author}</span>
+            </div>
+            <div class="flex items-center gap-2" onclick="event.stopPropagation()">
+              <button onclick="viewArticle(${a.id})" class="inline-flex items-center gap-2 px-4 py-2 bg-white text-slate-800 rounded-xl text-sm font-bold hover:bg-slate-100 transition-all active:scale-95 shadow-md">
+                👁 Leer artículo
+              </button>
+              <button onclick="editArticle(${a.id})" class="inline-flex items-center gap-2 px-4 py-2 text-white rounded-xl text-sm font-bold transition-all active:scale-95" style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.25);backdrop-filter:blur(8px)">
+                ✏️ Editar
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  // ── Carousel card ───────────────────────────────────────────────
+  function carouselCard(a) {
+    const cat = CATEGORIES.find(c => c.key === a.category);
+    const catBadge = cat && cat.key !== 'all'
+      ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border mb-1.5 ${cat.pill}">${cat.emoji} ${cat.label}</span>`
+      : '';
+    return `
+      <div class="flex-shrink-0 w-52 bg-white rounded-xl border border-slate-200 overflow-hidden cursor-pointer group animate-fade-in"
+        style="transition:transform .2s,box-shadow .2s"
+        onmouseover="this.style.transform='translateY(-4px)';this.style.boxShadow='0 12px 28px rgba(0,0,0,0.12)'"
+        onmouseout="this.style.transform='';this.style.boxShadow=''"
+        onclick="viewArticle(${a.id})">
+        <div class="relative h-32 bg-gradient-to-br ${a.coverGrad} flex items-center justify-center overflow-hidden">
+          <span class="text-4xl transition-transform duration-300 group-hover:scale-110">${a.coverEmoji}</span>
+          <div class="absolute top-2 right-2">${statusBadge(a.status)}</div>
+          <div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2" onclick="event.stopPropagation()">
+            <button onclick="viewArticle(${a.id})" class="p-2 bg-white/90 rounded-lg text-slate-700 hover:bg-white transition-colors shadow-md text-sm">👁</button>
+            <button onclick="editArticle(${a.id})" class="p-2 bg-white/90 rounded-lg text-slate-700 hover:bg-white transition-colors shadow-md text-sm">✏️</button>
+          </div>
+        </div>
+        <div class="p-3">
+          ${catBadge}
+          <h4 class="font-bold text-slate-800 text-xs leading-snug mb-1.5 group-hover:text-teal-600 transition-colors" style="-webkit-line-clamp:2;display:-webkit-box;-webkit-box-orient:vertical;overflow:hidden">${a.title}</h4>
+          <div class="flex items-center gap-1.5 text-[11px] text-slate-400">
+            <span>${a.date}</span>
+            ${a.status==='published'?`<span>· ${a.views} 👁</span>`:''}
+          </div>
+        </div>
+      </div>`;
+  }
+
+  // ── Grid card (compact, for filtered results) ───────────────────
+  function gridCard(a) {
+    const cat = CATEGORIES.find(c => c.key === a.category);
+    const catBadge = cat && cat.key !== 'all'
+      ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${cat.pill}">${cat.emoji} ${cat.label}</span>`
+      : '';
+    return `
+      <div class="bg-white rounded-xl border border-slate-200 overflow-hidden hover:shadow-md transition-all animate-fade-in">
+        <div class="relative cursor-pointer" onclick="viewArticle(${a.id})">
+          <div class="w-full h-40 bg-gradient-to-br ${a.coverGrad} flex items-center justify-center">
+            <span class="text-4xl">${a.coverEmoji}</span>
+          </div>
+          <div class="absolute top-2.5 right-2.5">${statusBadge(a.status)}</div>
+        </div>
+        <div class="p-4">
+          <h3 class="font-bold text-slate-800 text-sm leading-snug mb-1 cursor-pointer hover:text-teal-600 line-clamp-2" onclick="viewArticle(${a.id})">${a.title}</h3>
+          <p class="text-slate-400 text-xs line-clamp-2 mb-2.5">${a.excerpt}</p>
+          ${catBadge ? `<div class="mb-3">${catBadge}</div>` : ''}
+          <div class="flex items-center justify-between pt-2 border-t border-slate-100">
+            <span class="text-[11px] text-slate-400">📅 ${a.date}</span>
+            <div class="flex gap-1">
+              <button onclick="viewArticle(${a.id})" class="p-1.5 rounded-lg text-slate-400 hover:text-teal-600 hover:bg-teal-50 transition-colors">👁</button>
+              <button onclick="editArticle(${a.id})" class="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">✏️</button>
+              <button onclick="deleteArticle(${a.id})" class="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors">🗑</button>
+            </div>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  // ── Build articles section ──────────────────────────────────────
+  let articlesSection = '';
+  if (arts.length === 0) {
+    articlesSection = `<div class="text-center py-20 text-slate-400">
+      <div class="text-5xl mb-4">📰</div>
+      <p class="font-bold text-lg">No se encontraron artículos</p>
+      <p class="text-sm mt-1">Intenta otro filtro o crea un nuevo artículo</p>
+    </div>`;
+  } else if (isFiltering) {
+    // Filtered: compact 3-col grid
+    articlesSection = `<div class="grid grid-cols-3 gap-4">${arts.map(a => gridCard(a)).join('')}</div>`;
+  } else {
+    // Default: hero + carousel
+    const rest = arts.slice(1);
+    const carouselHtml = rest.length > 0 ? `
+      <div>
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-sm font-bold text-slate-700 flex items-center gap-1.5">
+            <span class="text-teal-500">›</span> Artículos anteriores
+          </h3>
+          <span class="text-xs text-slate-400">${rest.length} artículo${rest.length!==1?'s':''}</span>
+        </div>
+        <div class="flex gap-4 overflow-x-auto pb-3" style="scrollbar-width:thin;scrollbar-color:#cbd5e1 transparent">
+          ${rest.map(a => carouselCard(a)).join('')}
+        </div>
+      </div>` : '';
+    articlesSection = `<div class="space-y-8">${heroCard(arts[0])}${carouselHtml}</div>`;
+  }
+
+  document.getElementById('app').innerHTML = `
+  <div class="min-h-screen bg-slate-50">
+    <!-- Header -->
+    <div class="bg-white border-b border-slate-200 px-6 py-5">
+      <div class="max-w-6xl mx-auto flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-teal-500 to-cyan-600 flex items-center justify-center shadow-md text-xl">📰</div>
+          <div>
+            <h1 class="text-xl font-extrabold text-slate-800">Blog del Condominio</h1>
+            <p class="text-xs text-slate-500">${TENANT.name}</p>
+          </div>
+        </div>
+        <button onclick="goNewArticle()" class="inline-flex items-center gap-2 bg-teal-600 hover:bg-teal-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold shadow-sm transition-all hover:shadow-md active:scale-95">
+          + Nuevo Artículo
+        </button>
+      </div>
+    </div>
+
+    <div class="max-w-6xl mx-auto px-6 py-6 space-y-6">
+      <!-- Stats -->
+      <div class="grid grid-cols-3 gap-4">
+        ${[
+          {label:'Publicados', val:pub,   bg:'bg-emerald-50', tc:'text-emerald-600', ic:'✓'},
+          {label:'Borradores', val:draft, bg:'bg-amber-50',   tc:'text-amber-600',   ic:'⏱'},
+          {label:'En Edición', val:edit,  bg:'bg-blue-50',    tc:'text-blue-600',    ic:'✏'},
+        ].map(s => `
+          <div class="bg-white rounded-xl border border-slate-200 p-4 flex items-center gap-3">
+            <div class="w-11 h-11 rounded-xl ${s.bg} flex items-center justify-center text-lg">${s.ic}</div>
+            <div>
+              <div class="text-3xl font-extrabold text-slate-800">${s.val}</div>
+              <div class="text-xs text-slate-500 font-medium">${s.label}</div>
+            </div>
+          </div>`).join('')}
+      </div>
+
+      <!-- Search + Status Filters -->
+      <div class="flex gap-3">
+        <div class="flex-1 relative">
+          <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">🔍</span>
+          <input id="search-input" value="${state.searchQuery}" oninput="setSearch(this.value)" placeholder="Buscar artículos por título o contenido..."
+            class="w-full pl-9 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent" />
+        </div>
+        <div class="flex gap-2">${statBtns}</div>
+      </div>
+
+      <!-- Category filter bar -->
+      <div class="flex items-center gap-3 flex-wrap">
+        <span class="text-xs font-bold text-slate-400 uppercase tracking-wide flex-shrink-0">🏷 Categoría</span>
+        <div class="flex gap-2 flex-wrap">
+          ${CATEGORIES.map(cat => {
+            const isActive = state.categoryFilter === cat.key;
+            const cnt = counts[cat.key] || 0;
+            if (cat.key !== 'all' && cnt === 0) return '';
+            return `<button onclick="setCategoryFilter('${cat.key}')"
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold border transition-all active:scale-95 hover:shadow-sm ${isActive ? cat.activePill : cat.pill}">
+              ${cat.emoji} ${cat.label}
+              <span class="inline-flex items-center justify-center w-4 h-4 rounded-full text-[10px] font-bold ${isActive ? 'bg-white/25' : 'bg-black/5'}">${cnt}</span>
+            </button>`;
+          }).join('')}
+        </div>
+      </div>
+
+      <!-- Active filters summary -->
+      ${(state.categoryFilter !== 'all' || state.statusFilter !== 'all' || state.searchQuery) ? `
+      <div class="flex items-center gap-2 -mt-2 flex-wrap">
+        <span class="text-xs text-slate-400">${arts.length} resultado${arts.length !== 1 ? 's' : ''}</span>
+        ${state.categoryFilter !== 'all' ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-100 rounded-full text-xs text-slate-600">
+          ${CATEGORIES.find(c=>c.key===state.categoryFilter)?.emoji} ${CATEGORIES.find(c=>c.key===state.categoryFilter)?.label}
+          <button onclick="setCategoryFilter('all')" class="ml-0.5 hover:text-red-500 font-bold">×</button></span>` : ''}
+        ${state.statusFilter !== 'all' ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-100 rounded-full text-xs text-slate-600">
+          ${{published:'Publicados',draft:'Borradores',editing:'En Edición'}[state.statusFilter]}
+          <button onclick="setFilter('all')" class="ml-0.5 hover:text-red-500 font-bold">×</button></span>` : ''}
+        ${state.searchQuery ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-100 rounded-full text-xs text-slate-600">
+          "${state.searchQuery}" <button onclick="setSearch('')" class="ml-0.5 hover:text-red-500 font-bold">×</button></span>` : ''}
+        <button onclick="clearAllFilters()" class="text-xs text-teal-600 hover:text-teal-700 font-bold hover:underline ml-1">Limpiar todo</button>
+      </div>` : ''}
+
+      <!-- Articles section (hero + carousel or filtered grid) -->
+      ${articlesSection}
+    </div>
+  </div>`;
+}
+
+function renderTemplate() {
+  const cards = TEMPLATES.map(t => `
+    <button onclick="selectTemplate('${t.id}')"
+      class="bg-white border-2 border-slate-200 hover:border-teal-400 rounded-xl p-6 text-left transition-all hover:shadow-lg group active:scale-95 animate-fade-in">
+      <div class="text-4xl mb-3">${t.emoji}</div>
+      <p class="font-bold text-slate-800 text-sm mb-1.5 group-hover:text-teal-700">${t.label}</p>
+      <p class="text-xs text-slate-500 leading-relaxed">${t.desc}</p>
+    </button>`
+  ).join('');
+
+  document.getElementById('app').innerHTML = `
+  <div class="min-h-screen bg-slate-50">
+    <div class="bg-white border-b border-slate-200 px-6 py-4">
+      <div class="max-w-4xl mx-auto flex items-center gap-3">
+        <button onclick="goView('dashboard')" class="p-2 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors">← Volver</button>
+        <div>
+          <h1 class="text-lg font-extrabold text-slate-800">Nuevo Artículo</h1>
+          <p class="text-xs text-slate-500">Paso 1 de 2 — Elige una plantilla para comenzar</p>
+        </div>
+      </div>
+    </div>
+    <div class="max-w-4xl mx-auto px-6 py-8">
+      <div class="flex items-center gap-3 mb-7">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-teal-500 to-cyan-600 flex items-center justify-center text-lg">✨</div>
+        <div>
+          <p class="font-bold text-slate-800">¿Qué tipo de artículo quieres crear?</p>
+          <p class="text-sm text-slate-500">Las plantillas te ayudan a empezar más rápido</p>
+        </div>
+      </div>
+      <div class="grid grid-cols-3 gap-4">${cards}</div>
+    </div>
+  </div>`;
+}
+
+function renderEditor() {
+  const art = state.activeArticle;
+  const isNew = !art;
+
+  const tagChips = state.editorTags.map(t =>
+    `<span class="inline-flex items-center gap-1 px-2 py-0.5 bg-teal-50 text-teal-700 text-xs rounded-full border border-teal-200">
+      ${t} <button onclick="removeTag('${t}')" class="hover:text-red-500 font-bold">×</button>
+    </span>`
+  ).join('');
+
+  const coverButtons = COVER_THEMES.map((th,i) =>
+    `<button onclick="setCover('${th.g}','${th.e}')" title="${th.e}"
+      class="w-9 h-9 rounded-xl bg-gradient-to-br ${th.g} transition-all hover:scale-110 ${state.editorGrad===th.g?'ring-2 ring-offset-1 ring-teal-500 scale-110':''}"></button>`
+  ).join('');
+
+  document.getElementById('app').innerHTML = `
+  <div class="min-h-screen bg-slate-50 flex flex-col">
+    <!-- Sticky toolbar -->
+    <div class="bg-white border-b border-slate-200 px-6 py-3 sticky top-0 z-20">
+      <div class="max-w-5xl mx-auto flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <button onclick="goView('dashboard')" class="p-2 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors">←</button>
+          <span class="text-sm font-bold text-slate-700">${isNew ? '✨ Nuevo artículo' : '✏️ Editando artículo'}</span>
+          ${state.editorTemplate ? `<span class="text-xs px-2 py-1 bg-amber-100 text-amber-700 rounded-lg font-medium">${state.editorTemplate.emoji} ${state.editorTemplate.label}</span>` : ''}
+        </div>
+        <div class="flex items-center gap-2">
+          <button onclick="saveDraft()" class="inline-flex items-center gap-1.5 px-3 py-2 text-sm text-slate-600 border border-slate-200 rounded-xl hover:bg-slate-50 font-semibold transition-colors">
+            💾 Guardar borrador
+          </button>
+          <button onclick="openPublish()" class="inline-flex items-center gap-1.5 px-4 py-2 text-sm bg-teal-600 hover:bg-teal-700 text-white rounded-xl font-bold shadow-sm transition-all hover:shadow-md active:scale-95">
+            🚀 Publicar
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex flex-1 max-w-5xl mx-auto w-full px-6 py-6 gap-6">
+      <!-- Main -->
+      <div class="flex-1 space-y-4 min-w-0">
+
+        <!-- Cover -->
+        <div class="bg-white rounded-xl border border-slate-200 overflow-hidden animate-fade-in">
+          <div class="h-52 bg-gradient-to-br ${state.editorGrad} flex items-center justify-center">
+            <span class="text-7xl">${state.editorEmoji}</span>
+          </div>
+          <div class="p-4">
+            <p class="text-xs font-bold text-slate-500 uppercase tracking-wide mb-3">🖼 Portada del artículo — elige un tema:</p>
+            <div class="flex flex-wrap gap-2 items-center">
+              ${coverButtons}
+              <button class="w-9 h-9 rounded-xl border-2 border-dashed border-slate-300 hover:border-teal-400 flex items-center justify-center text-slate-400 hover:text-teal-500 transition-colors text-sm font-bold" title="Subir imagen">📷</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Title -->
+        <div class="bg-white rounded-xl border border-slate-200 p-5">
+          <input id="editor-title" value="${state.editorTitle}" oninput="state.editorTitle=this.value"
+            placeholder="Escribe el título del artículo..."
+            class="w-full text-2xl font-extrabold text-slate-800 placeholder-slate-300 focus:outline-none" />
+        </div>
+
+        <!-- Excerpt -->
+        <div class="bg-white rounded-xl border border-slate-200 p-5">
+          <label class="text-xs font-bold text-slate-500 uppercase tracking-wide block mb-2">📝 Descripción corta (se muestra en el tablero)</label>
+          <textarea id="editor-excerpt" rows="2" oninput="state.editorExcerpt=this.value"
+            placeholder="Resume el artículo en una o dos oraciones claras..."
+            class="w-full text-sm text-slate-700 placeholder-slate-400 focus:outline-none resize-none">${state.editorExcerpt}</textarea>
+        </div>
+
+        <!-- Rich text editor -->
+        <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <!-- Format bar -->
+          <div class="flex items-center gap-0.5 p-3 border-b border-slate-100 flex-wrap bg-slate-50">
+            ${[
+              ['B','bold','Negrita'],['I','italic','Cursiva'],['U','underline','Subrayado'],
+              null,
+              ['H1','formatBlock<h2>','Título'],['H2','formatBlock<h3>','Subtítulo'],
+              null,
+              ['≡','justifyLeft','Izquierda'],['≡','justifyCenter','Centrar'],['≡','justifyRight','Derecha'],
+              null,
+              ['•','insertUnorderedList','Lista'],['1.','insertOrderedList','Lista numerada'],
+              ['❝','formatBlock<blockquote>','Cita'],
+            ].map(item => item === null
+              ? `<div class="w-px h-5 bg-slate-300 mx-1"></div>`
+              : `<button onclick="fmt('${item[1]}')" title="${item[2]}"
+                  class="px-2.5 py-1.5 rounded-lg text-slate-600 hover:text-teal-700 hover:bg-teal-50 transition-colors text-xs font-bold">${item[0]}</button>`
+            ).join('')}
+            <div class="w-px h-5 bg-slate-300 mx-1"></div>
+            <label class="px-2.5 py-1.5 rounded-lg text-slate-600 hover:text-teal-700 hover:bg-teal-50 transition-colors text-xs font-bold cursor-pointer" title="Insertar imagen">
+              🖼
+              <input type="file" accept="image/*" class="hidden" onchange="insertImg(event)" />
+            </label>
+          </div>
+          <!-- Editable -->
+          <div id="editor-body" contenteditable="true"
+            class="min-h-72 p-6 text-slate-700 text-sm leading-relaxed focus:outline-none prose"
+            oninput="state.editorContent=this.innerHTML"
+          >${state.editorContent}</div>
+        </div>
+      </div>
+
+      <!-- Sidebar -->
+      <div class="w-64 flex-shrink-0 space-y-4">
+
+        <!-- Tenant info -->
+        <div class="bg-white rounded-xl border border-slate-200 p-4 animate-fade-in">
+          <p class="text-xs font-bold text-slate-500 uppercase tracking-wide mb-3">🏢 Datos del condominio</p>
+          <div class="flex items-center gap-2.5 mb-3">
+            <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-teal-500 to-cyan-600 flex items-center justify-center text-base flex-shrink-0">🏠</div>
+            <div>
+              <p class="text-sm font-extrabold text-slate-800 leading-tight">${TENANT.name}</p>
+              <p class="text-xs text-slate-400">${TENANT.location}</p>
+            </div>
+          </div>
+          <div class="space-y-1 text-xs text-slate-500">
+            <p>📞 ${TENANT.phone}</p>
+            <p>📧 ${TENANT.email}</p>
+            <p>🏘 ${TENANT.units} unidades</p>
+          </div>
+          <button onclick="insertTenantData()" class="mt-3 w-full text-xs text-teal-600 hover:text-teal-700 font-semibold text-left flex items-center gap-1 hover:underline">
+            ✓ Insertar datos en artículo
+          </button>
+        </div>
+
+        <!-- Tags -->
+        <div class="bg-white rounded-xl border border-slate-200 p-4">
+          <p class="text-xs font-bold text-slate-500 uppercase tracking-wide mb-3">🏷 Etiquetas</p>
+          <div class="flex flex-wrap gap-1.5 mb-2">${tagChips}</div>
+          <div class="flex gap-1">
+            <input id="tag-input" value="${state.editorTagInput}" oninput="state.editorTagInput=this.value"
+              onkeydown="if(event.key==='Enter'){addTag();event.preventDefault()}"
+              placeholder="Nueva etiqueta..."
+              class="flex-1 text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-teal-500" />
+            <button onclick="addTag()" class="px-2.5 py-1.5 bg-teal-50 text-teal-600 rounded-lg hover:bg-teal-100 transition-colors text-sm font-bold">+</button>
+          </div>
+        </div>
+
+        <!-- Status -->
+        <div class="bg-white rounded-xl border border-slate-200 p-4">
+          <p class="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">Estado</p>
+          ${statusBadge(art?.status || 'draft')}
+        </div>
+
+        <!-- Publish hint -->
+        <div class="bg-gradient-to-br from-teal-50 to-cyan-50 border border-teal-200 rounded-xl p-4 text-xs text-teal-700">
+          <p class="font-bold mb-1">💡 Tip</p>
+          <p>Guarda como borrador para seguir editando, o publica cuando el artículo esté listo.</p>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderReader() {
+  const a = state.activeArticle;
+  if (!a) return;
+  document.getElementById('app').innerHTML = `
+  <div class="min-h-screen bg-slate-50">
+    <!-- Top bar -->
+    <div class="bg-white border-b border-slate-200 px-6 py-4 sticky top-0 z-10">
+      <div class="max-w-3xl mx-auto flex items-center justify-between">
+        <button onclick="goView('dashboard')" class="inline-flex items-center gap-2 text-sm text-slate-600 hover:text-teal-600 font-semibold transition-colors">
+          ← Volver al tablero
+        </button>
+        <div class="flex items-center gap-2">
+          ${statusBadge(a.status)}
+          <button onclick="editArticle(${a.id})" class="inline-flex items-center gap-1.5 text-sm border border-slate-200 text-slate-600 hover:border-teal-400 hover:text-teal-600 px-3 py-1.5 rounded-xl font-semibold transition-colors">
+            ✏️ Editar
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="max-w-3xl mx-auto px-6 py-8">
+      <!-- Tenant brand -->
+      <div class="flex items-center gap-2.5 mb-6">
+        <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-teal-500 to-cyan-600 flex items-center justify-center text-sm">🏠</div>
+        <span class="text-sm font-bold text-slate-600">${TENANT.name}</span>
+      </div>
+
+      <!-- Cover large -->
+      <div class="w-full h-64 bg-gradient-to-br ${a.coverGrad} flex items-center justify-center rounded-2xl shadow-md animate-fade-in">
+        <span class="text-8xl">${a.coverEmoji}</span>
+      </div>
+
+      <!-- Article card -->
+      <div class="mt-6 bg-white rounded-2xl border border-slate-200 p-8 shadow-sm animate-slide-up">
+        <!-- Tags -->
+        <div class="flex gap-2 mb-4 flex-wrap">
+          ${(a.tags||[]).map(t => `<span class="inline-flex items-center gap-1 px-2.5 py-0.5 bg-teal-50 text-teal-700 text-xs font-semibold rounded-full border border-teal-200">🏷 ${t}</span>`).join('')}
+        </div>
+
+        <h1 class="text-3xl font-extrabold text-slate-900 leading-tight mb-3">${a.title}</h1>
+
+        <div class="flex items-center gap-4 text-sm text-slate-400 pb-5 border-b border-slate-100 mb-6">
+          <span>👤 ${a.author}</span>
+          <span>📅 ${a.date}</span>
+          ${a.status==='published'?`<span>👁 ${a.views} vistas</span>`:''}
+        </div>
+
+        <div class="prose text-slate-700 leading-relaxed">${a.content}</div>
+
+        <!-- Reactions -->
+        <div class="mt-8 pt-6 border-t border-slate-100 flex items-center gap-5">
+          <button onclick="toggleLike(this)" class="flex items-center gap-2 text-slate-400 hover:text-rose-500 transition-colors text-sm font-semibold">
+            ♡ Me gusta <span class="like-count">24</span>
+          </button>
+          <button class="flex items-center gap-2 text-slate-400 hover:text-blue-500 transition-colors text-sm font-semibold">
+            💬 Comentar <span>8</span>
+          </button>
+          <button class="flex items-center gap-2 text-slate-400 hover:text-teal-500 transition-colors text-sm font-semibold ml-auto">
+            ↗ Compartir
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderPublish() {
+  const roleChecks = ROLES.map(r => `
+    <label class="flex items-center gap-2.5 p-3 rounded-xl cursor-pointer transition-colors ${state.publishRoles.includes(r.key)?'bg-teal-50 border border-teal-200':'hover:bg-slate-50 border border-transparent'}">
+      <input type="checkbox" ${state.publishRoles.includes(r.key)?'checked':''} onchange="toggleRole('${r.key}')" class="w-4 h-4 accent-teal-600" />
+      <span class="text-sm text-slate-700 font-medium">${r.label}</span>
+      ${state.publishRoles.includes(r.key)?'<span class="ml-auto text-teal-500 text-xs font-bold">✓</span>':''}
+    </label>`
+  ).join('');
+
+  const fu = USERS.filter(u => !state.userSearch || u.name.toLowerCase().includes(state.userSearch.toLowerCase()));
+  const userChecks = fu.map(u => `
+    <label class="flex items-center gap-2.5 p-2.5 rounded-xl cursor-pointer transition-colors ${state.publishUsers.includes(u.id)?'bg-teal-50 border border-teal-200':'hover:bg-slate-50 border border-transparent'}">
+      <input type="checkbox" ${state.publishUsers.includes(u.id)?'checked':''} onchange="toggleUser(${u.id})" class="w-4 h-4 accent-teal-600" />
+      <div class="flex-1">
+        <span class="text-sm font-semibold text-slate-700">${u.name}</span>
+        <span class="text-xs text-slate-400 ml-1">· ${u.role}${u.unit!=='–'?' · Unidad '+u.unit:''}</span>
+      </div>
+      ${state.publishUsers.includes(u.id)?'<span class="text-teal-500 text-xs font-bold">✓</span>':''}
+    </label>`
+  ).join('');
+
+  const audOpts = [
+    {key:'all',   label:'Todos los usuarios',   icon:'🌐', desc:'Todos los miembros del condominio verán este artículo'},
+    {key:'roles', label:'Por tipo de usuario',  icon:'👥', desc:'Selecciona qué roles pueden ver este artículo'},
+    {key:'specific', label:'Usuarios específicos', icon:'👤', desc:'Elige manualmente quién puede ver este artículo'},
+  ];
+
+  const audLabel = state.publishAudience==='all' ? 'Todos los usuarios'
+    : state.publishAudience==='roles' ? `${state.publishRoles.length} tipo(s) seleccionado(s)`
+    : `${state.publishUsers.length} usuario(s) seleccionado(s)`;
+
+  const canPub = state.publishAudience==='all'
+    || (state.publishAudience==='roles' && state.publishRoles.length>0)
+    || (state.publishAudience==='specific' && state.publishUsers.length>0);
+
+  document.getElementById('app').innerHTML = `
+  <!-- Backdrop -->
+  <div class="fixed inset-0 bg-slate-800/50 backdrop-blur-sm z-40" onclick="goView('editor')"></div>
+
+  <!-- Modal -->
+  <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-slide-up">
+
+      <!-- Header -->
+      <div class="flex items-center justify-between px-6 py-5 border-b border-slate-100">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-teal-50 flex items-center justify-center text-xl">🚀</div>
+          <div>
+            <h2 class="font-extrabold text-slate-800">Publicar Artículo</h2>
+            <p class="text-xs text-slate-500">Define quién podrá ver este contenido</p>
+          </div>
+        </div>
+        <button onclick="goView('editor')" class="p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors text-lg">×</button>
+      </div>
+
+      <!-- Body -->
+      <div class="p-6 space-y-3 max-h-[60vh] overflow-y-auto">
+        <!-- Audience type -->
+        ${audOpts.map(o => `
+          <label class="flex items-start gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all ${state.publishAudience===o.key?'border-teal-500 bg-teal-50':'border-slate-200 hover:border-slate-300'}">
+            <input type="radio" name="aud" value="${o.key}" ${state.publishAudience===o.key?'checked':''}
+              onchange="setAudience('${o.key}')" class="mt-0.5 accent-teal-600" />
+            <div>
+              <p class="text-sm font-bold text-slate-800">${o.icon} ${o.label}</p>
+              <p class="text-xs text-slate-500 mt-0.5">${o.desc}</p>
+            </div>
+          </label>`).join('')}
+
+        <!-- Roles -->
+        ${state.publishAudience==='roles' ? `
+          <div class="mt-1 space-y-1">
+            <p class="text-xs font-bold text-slate-500 uppercase tracking-wide px-1">Selecciona los roles:</p>
+            ${roleChecks}
+          </div>` : ''}
+
+        <!-- Users -->
+        ${state.publishAudience==='specific' ? `
+          <div class="mt-1 space-y-2">
+            <input value="${state.userSearch}" oninput="setUserSearch(this.value)"
+              placeholder="🔍 Buscar usuario..."
+              class="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-teal-500" />
+            <div class="space-y-1 max-h-40 overflow-y-auto">${userChecks}</div>
+            ${state.publishUsers.length>0?`<p class="text-xs text-teal-600 font-bold">${state.publishUsers.length} usuario(s) seleccionado(s)</p>`:''}
+          </div>` : ''}
+      </div>
+
+      <!-- Footer -->
+      <div class="px-6 py-4 border-t border-slate-100 bg-slate-50 flex items-center justify-between">
+        <div class="text-xs text-slate-500">
+          👥 Se publicará para: <strong class="text-slate-700">${audLabel}</strong>
+        </div>
+        <div class="flex gap-2">
+          <button onclick="goView('editor')" class="px-4 py-2 text-sm text-slate-600 hover:bg-slate-200 rounded-xl font-semibold transition-colors">
+            Cancelar
+          </button>
+          <button onclick="${canPub?'doPublish()':'void(0)'}"
+            class="px-4 py-2 text-sm font-bold rounded-xl transition-all active:scale-95 ${canPub?'bg-teal-600 hover:bg-teal-700 text-white shadow-sm hover:shadow-md':'bg-slate-200 text-slate-400 cursor-not-allowed'}">
+            ✓ Publicar ahora
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+// ── Event handlers ────────────────────────────────────────────────
+window.goView = function(v) {
+  state.view = v;
+  render();
+};
+
+window.goNewArticle = function() {
+  state.activeArticle = null;
+  state.editorTitle = '';
+  state.editorExcerpt = '';
+  state.editorContent = '<p>Escribe tu artículo aquí...</p>';
+  state.editorGrad = 'from-teal-400 to-cyan-500';
+  state.editorEmoji = '📢';
+  state.editorTags = [];
+  state.editorTagInput = '';
+  state.editorTemplate = null;
+  state.view = 'template';
+  render();
+};
+
+window.selectTemplate = function(id) {
+  const t = TEMPLATES.find(x => x.id===id);
+  state.editorTemplate = t;
+  state.editorContent = t.content;
+  if(id==='mantenimiento') { state.editorGrad='from-orange-400 to-amber-500'; state.editorEmoji='🔧'; }
+  else if(id==='evento')  { state.editorGrad='from-emerald-400 to-green-500'; state.editorEmoji='🎉'; }
+  else if(id==='reglamento') { state.editorGrad='from-violet-400 to-purple-500'; state.editorEmoji='📋'; }
+  else if(id==='logro')   { state.editorGrad='from-blue-400 to-indigo-500'; state.editorEmoji='🏆'; }
+  else if(id==='aviso')   { state.editorGrad='from-teal-400 to-cyan-500'; state.editorEmoji='📢'; }
+  else                    { state.editorGrad='from-slate-500 to-slate-700'; state.editorEmoji='✏️'; }
+  state.view = 'editor';
+  render();
+};
+
+window.editArticle = function(id) {
+  const a = state.articles.find(x=>x.id===id);
+  if(!a) return;
+  state.activeArticle = a;
+  state.editorTitle   = a.title;
+  state.editorExcerpt = a.excerpt;
+  state.editorContent = a.content;
+  state.editorGrad    = a.coverGrad;
+  state.editorEmoji   = a.coverEmoji;
+  state.editorTags    = [...(a.tags||[])];
+  state.editorTemplate= null;
+  state.view = 'editor';
+  render();
+};
+
+window.viewArticle = function(id) {
+  const a = state.articles.find(x=>x.id===id);
+  if(!a) return;
+  state.activeArticle = a;
+  state.view = 'reader';
+  render();
+};
+
+window.deleteArticle = function(id) {
+  if(!confirm('¿Eliminar este artículo? Esta acción no se puede deshacer.')) return;
+  state.articles = state.articles.filter(a=>a.id!==id);
+  showToast('Artículo eliminado');
+  render();
+};
+
+window.setSearch = function(v) {
+  state.searchQuery = v;
+  renderDashboard();
+};
+
+window.setFilter = function(s) {
+  state.statusFilter = s;
+  renderDashboard();
+};
+
+window.setCategoryFilter = function(c) {
+  state.categoryFilter = c;
+  renderDashboard();
+};
+
+window.clearAllFilters = function() {
+  state.categoryFilter = 'all';
+  state.statusFilter = 'all';
+  state.searchQuery = '';
+  renderDashboard();
+};
+
+window.setCover = function(g, e) {
+  state.editorGrad = g;
+  state.editorEmoji = e;
+  renderEditor();
+};
+
+window.addTag = function() {
+  const v = (document.getElementById('tag-input')?.value || state.editorTagInput).trim().toLowerCase();
+  if(v && !state.editorTags.includes(v)) { state.editorTags.push(v); }
+  state.editorTagInput = '';
+  renderEditor();
+};
+
+window.removeTag = function(t) {
+  state.editorTags = state.editorTags.filter(x=>x!==t);
+  renderEditor();
+};
+
+window.fmt = function(cmd) {
+  document.getElementById('editor-body')?.focus();
+  if(cmd.startsWith('formatBlock')) {
+    document.execCommand('formatBlock', false, cmd.replace('formatBlock',''));
+  } else {
+    document.execCommand(cmd, false, null);
+  }
+};
+
+window.insertImg = function(e) {
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = function(ev) {
+    document.getElementById('editor-body')?.focus();
+    document.execCommand('insertImage', false, ev.target.result);
+  };
+  reader.readAsDataURL(file);
+};
+
+window.insertTenantData = function() {
+  const el = document.getElementById('editor-body');
+  if(!el) return;
+  el.focus();
+  const html = `<p><strong>${TENANT.name}</strong><br>${TENANT.location}<br>📞 ${TENANT.phone}<br>📧 ${TENANT.email}</p>`;
+  document.execCommand('insertHTML', false, html);
+  showToast('Datos del condominio insertados');
+};
+
+window.saveDraft = function() {
+  const title = document.getElementById('editor-title')?.value || state.editorTitle;
+  const excerpt = document.getElementById('editor-excerpt')?.value || state.editorExcerpt;
+  const content = document.getElementById('editor-body')?.innerHTML || state.editorContent;
+
+  if(!title.trim()) { showToast('Escribe un título para el artículo','error'); return; }
+
+  if(state.activeArticle) {
+    const idx = state.articles.findIndex(a=>a.id===state.activeArticle.id);
+    if(idx>-1) {
+      state.articles[idx] = {...state.articles[idx], title, excerpt, content, status:'draft', coverGrad:state.editorGrad, coverEmoji:state.editorEmoji, tags:[...state.editorTags]};
+    }
+  } else {
+    state.articles.unshift({ id: Date.now(), status:'draft', title, excerpt, content,
+      coverGrad:state.editorGrad, coverEmoji:state.editorEmoji, author:'Administración',
+      date: new Date().toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'}),
+      views:0, tags:[...state.editorTags] });
+  }
+  showToast('💾 Borrador guardado correctamente');
+  state.view='dashboard';
+  render();
+};
+
+window.openPublish = function() {
+  const title = document.getElementById('editor-title')?.value || state.editorTitle;
+  if(!title.trim()) { showToast('Escribe un título para el artículo','error'); return; }
+  state.editorTitle = title;
+  state.editorExcerpt = document.getElementById('editor-excerpt')?.value || state.editorExcerpt;
+  state.editorContent = document.getElementById('editor-body')?.innerHTML || state.editorContent;
+  state.view = 'publish';
+  render();
+};
+
+window.setAudience = function(a) {
+  state.publishAudience = a;
+  renderPublish();
+};
+
+window.toggleRole = function(k) {
+  if(state.publishRoles.includes(k)) state.publishRoles = state.publishRoles.filter(r=>r!==k);
+  else state.publishRoles.push(k);
+  renderPublish();
+};
+
+window.toggleUser = function(id) {
+  if(state.publishUsers.includes(id)) state.publishUsers = state.publishUsers.filter(u=>u!==id);
+  else state.publishUsers.push(id);
+  renderPublish();
+};
+
+window.setUserSearch = function(v) {
+  state.userSearch = v;
+  renderPublish();
+};
+
+window.doPublish = function() {
+  const audLabel = state.publishAudience==='all' ? 'todos los usuarios'
+    : state.publishAudience==='roles' ? `${state.publishRoles.length} tipo(s) de usuario`
+    : `${state.publishUsers.length} usuario(s)`;
+
+  const existing = state.activeArticle ? state.articles.findIndex(a=>a.id===state.activeArticle.id) : -1;
+  const newArt = {
+    id: state.activeArticle?.id || Date.now(), status:'published',
+    title: state.editorTitle, excerpt: state.editorExcerpt, content: state.editorContent,
+    coverGrad: state.editorGrad, coverEmoji: state.editorEmoji,
+    author:'Administración',
+    date: new Date().toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'}),
+    views:0, tags:[...state.editorTags],
+    audience: state.publishAudience,
+  };
+  if(existing>-1) state.articles[existing] = newArt;
+  else state.articles.unshift(newArt);
+
+  showToast(`🎉 ¡Artículo publicado! Visible para ${audLabel}`);
+  state.view='dashboard';
+  state.activeArticle = null;
+  render();
+};
+
+window.toggleLike = function(btn) {
+  const span = btn.querySelector('.like-count');
+  const current = parseInt(span.textContent);
+  const liked = btn.dataset.liked==='true';
+  btn.dataset.liked = liked?'false':'true';
+  span.textContent = liked ? current-1 : current+1;
+  btn.classList.toggle('text-rose-500',!liked);
+  btn.classList.toggle('text-slate-400',liked);
+};
+
+// ── Main render ───────────────────────────────────────────────────
+function render() {
+  switch(state.view) {
+    case 'dashboard': renderDashboard(); break;
+    case 'template':  renderTemplate();  break;
+    case 'editor':    renderEditor();    break;
+    case 'reader':    renderReader();    break;
+    case 'publish':   renderPublish();   break;
+  }
+}
+
+render();
+</script>
+</body>
+</html>

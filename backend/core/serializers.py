@@ -16,6 +16,7 @@ from .models import (
     CRMContact, CRMOpportunity, CRMActivity,
     CRMCampaign, CRMCampaignContact, CRMTicket,
     SystemRole,
+    BlogPost, BlogReaction, BlogComment,
 )
 
 
@@ -1467,4 +1468,129 @@ class CRMDashboardSerializer(serializers.Serializer):
     open_tickets         = serializers.IntegerField()
     tickets_by_priority  = serializers.DictField(child=serializers.IntegerField())
     recent_activities    = serializers.ListField(child=serializers.DictField())
+
+
+# ═══════════════════════════════════════════════════════════
+#  BLOG
+# ═══════════════════════════════════════════════════════════
+
+class BlogCommentSerializer(serializers.ModelSerializer):
+    author_name = serializers.SerializerMethodField()
+    author_email = serializers.SerializerMethodField()
+
+    class Meta:
+        model = BlogComment
+        fields = ['id', 'post', 'author', 'author_name', 'author_email', 'content', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'post', 'author', 'author_name', 'author_email', 'created_at', 'updated_at']
+
+    def get_author_name(self, obj):
+        return obj.author.name if obj.author else 'Usuario eliminado'
+
+    def get_author_email(self, obj):
+        return obj.author.email if obj.author else ''
+
+
+class BlogReactionSummarySerializer(serializers.Serializer):
+    """Aggregate reaction counts + whether the current user has reacted."""
+    counts    = serializers.DictField(child=serializers.IntegerField())
+    my_reactions = serializers.ListField(child=serializers.CharField())
+
+
+class BlogPostSerializer(serializers.ModelSerializer):
+    author_name     = serializers.SerializerMethodField()
+    author_email    = serializers.SerializerMethodField()
+    cover_image_url = serializers.SerializerMethodField()
+    comments_count  = serializers.SerializerMethodField()
+    reactions       = serializers.SerializerMethodField()
+
+    class Meta:
+        model  = BlogPost
+        fields = [
+            'id', 'tenant', 'author', 'author_name', 'author_email',
+            'title', 'excerpt', 'content',
+            'cover_gradient', 'cover_emoji', 'cover_image', 'cover_image_url',
+            'status', 'category', 'tags',
+            'audience_type', 'audience_roles', 'audience_user_ids',
+            'views_count', 'published_at',
+            'comments_count', 'reactions',
+            'created_at', 'updated_at',
+        ]
+        read_only_fields = [
+            'id', 'tenant', 'author', 'author_name', 'author_email',
+            'cover_image_url', 'views_count', 'published_at',
+            'comments_count', 'reactions',
+            'created_at', 'updated_at',
+        ]
+
+    def get_author_name(self, obj):
+        return obj.author.name if obj.author else 'Desconocido'
+
+    def get_author_email(self, obj):
+        return obj.author.email if obj.author else ''
+
+    def get_cover_image_url(self, obj):
+        if not obj.cover_image:
+            return None
+        request = self.context.get('request')
+        if request:
+            return request.build_absolute_uri(obj.cover_image.url)
+        return obj.cover_image.url
+
+    def get_comments_count(self, obj):
+        return obj.comments.count()
+
+    def get_reactions(self, obj):
+        """Return { counts: {like:N,...}, my_reactions: [...] }"""
+        request = self.context.get('request')
+        counts = {}
+        for r in obj.reactions.values('reaction').annotate(n=serializers.IntegerField.__class__):
+            pass
+        # Simpler approach using Python
+        from django.db.models import Count
+        qs = obj.reactions.values('reaction').annotate(n=Count('id'))
+        counts = {row['reaction']: row['n'] for row in qs}
+        my_reactions = []
+        if request and request.user and request.user.is_authenticated:
+            my_reactions = list(
+                obj.reactions.filter(user=request.user).values_list('reaction', flat=True)
+            )
+        return {'counts': counts, 'my_reactions': my_reactions}
+
+
+class BlogPostListSerializer(serializers.ModelSerializer):
+    """Lighter serializer for list views (no full content)."""
+    author_name     = serializers.SerializerMethodField()
+    cover_image_url = serializers.SerializerMethodField()
+    comments_count  = serializers.SerializerMethodField()
+    reactions_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model  = BlogPost
+        fields = [
+            'id', 'title', 'excerpt',
+            'cover_gradient', 'cover_emoji', 'cover_image_url',
+            'status', 'category', 'tags',
+            'author', 'author_name',
+            'audience_type',
+            'views_count', 'published_at',
+            'comments_count', 'reactions_count',
+            'created_at', 'updated_at',
+        ]
+
+    def get_author_name(self, obj):
+        return obj.author.name if obj.author else 'Desconocido'
+
+    def get_cover_image_url(self, obj):
+        if not obj.cover_image:
+            return None
+        request = self.context.get('request')
+        if request:
+            return request.build_absolute_uri(obj.cover_image.url)
+        return obj.cover_image.url
+
+    def get_comments_count(self, obj):
+        return obj.comments.count()
+
+    def get_reactions_count(self, obj):
+        return obj.reactions.count()
 

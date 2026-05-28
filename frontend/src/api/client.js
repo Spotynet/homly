@@ -402,4 +402,25 @@ export const crmAPI = {
   },
 };
 
+// ─── Blog ────────────────────────────────────────────────────────────────────
+export const blogAPI = {
+  list:      (tenantId, params) => api.get(`/tenants/${tenantId}/blog-posts/`, { params }),
+  get:       (tenantId, id)     => api.get(`/tenants/${tenantId}/blog-posts/${id}/`),
+  create:    (tenantId, data)   => api.post(`/tenants/${tenantId}/blog-posts/`, data),
+  update:    (tenantId, id, data) => api.patch(`/tenants/${tenantId}/blog-posts/${id}/`, data),
+  destroy:   (tenantId, id)     => api.delete(`/tenants/${tenantId}/blog-posts/${id}/`),
+  publish:   (tenantId, id, data) => api.post(`/tenants/${tenantId}/blog-posts/${id}/publish/`, data),
+  unpublish: (tenantId, id)     => api.post(`/tenants/${tenantId}/blog-posts/${id}/unpublish/`),
+  uploadCover: (tenantId, id, formData) =>
+    api.post(`/tenants/${tenantId}/blog-posts/${id}/cover-image/`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }),
+  react: (tenantId, id, type)   => api.post(`/tenants/${tenantId}/blog-posts/${id}/react/`, { type }),
+  comments: {
+    list:   (tenantId, postId)            => api.get(`/tenants/${tenantId}/blog-posts/${postId}/comments/`),
+    add:    (tenantId, postId, content)   => api.post(`/tenants/${tenantId}/blog-posts/${postId}/comments/add/`, { content }),
+    delete: (tenantId, postId, commentId) => api.delete(`/tenants/${tenantId}/blog-posts/${postId}/comments/${commentId}/delete/`),
+  },
+};
+
 export default api;

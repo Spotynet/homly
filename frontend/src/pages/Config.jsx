@@ -11,7 +11,7 @@ import {
   Calendar, DollarSign, ShieldCheck, Receipt, ShoppingBag,
   AlertCircle, Shield, FileText, Globe, ChevronRight, TrendingUp,
   ShieldAlert, Mail, UserPlus, Bell, Layers, Eye, EyeOff,
-  ListOrdered, ArrowUp, ArrowDown, CheckCircle2, Sparkles,
+  ListOrdered, ArrowUp, ArrowDown, CheckCircle2, Sparkles, Newspaper,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -63,6 +63,7 @@ const MODULE_DEFINITIONS = [
   { key: 'onboarding',      label: 'Guía de Inicio',      icon: Sparkles,     desc: 'Tour interactivo para configurar el tenant paso a paso' },
   { key: 'config',          label: 'Configuración',       icon: Settings,     desc: 'Configuración del condominio' },
   { key: 'my_unit',         label: 'Mi Unidad',           icon: Home,         desc: 'Vista de la unidad del residente (solo Residente)' },
+  { key: 'blog',            label: 'Blog Comunitario',    icon: Newspaper,    desc: 'Publicaciones y comunicados para la comunidad' },
 ];
 
 // ROLE_BASE_MODULES is now imported from '../constants/modulePermissions'

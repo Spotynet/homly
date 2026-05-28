@@ -1739,6 +1739,125 @@ class CRMTicket(models.Model):
 #  SYSTEM ROLES (Homly staff role templates)
 # ═══════════════════════════════════════════════════════════
 
+# ═══════════════════════════════════════════════════════════
+#  BLOG
+# ═══════════════════════════════════════════════════════════
+
+class BlogPost(models.Model):
+    """
+    Community blog post for a tenant. Supports drafts, publishing workflow,
+    audience targeting, and rich-text content with optional cover media.
+    """
+    STATUS_CHOICES = [
+        ('draft',     'Borrador'),
+        ('published', 'Publicado'),
+        ('editing',   'En Edición'),
+    ]
+    AUDIENCE_CHOICES = [
+        ('all',      'Todos los miembros'),
+        ('roles',    'Por Rol'),
+        ('specific', 'Usuarios Específicos'),
+    ]
+    CATEGORY_CHOICES = [
+        ('aviso',        'Aviso'),
+        ('mantenimiento','Mantenimiento'),
+        ('evento',       'Evento'),
+        ('reglamento',   'Reglamento'),
+        ('logro',        'Noticia / Logro'),
+    ]
+
+    id               = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant           = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='blog_posts')
+    author           = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name='blog_posts'
+    )
+    title            = models.CharField(max_length=300)
+    excerpt          = models.CharField(max_length=500, blank=True, default='')
+    content          = models.TextField(blank=True, default='')
+    # Visual cover — gradient theme (Tailwind class strings) + emoji fallback + optional image
+    cover_gradient   = models.CharField(max_length=120, default='from-teal-400 to-cyan-500')
+    cover_emoji      = models.CharField(max_length=10,  default='📰')
+    cover_image      = models.ImageField(upload_to='blog/covers/', null=True, blank=True)
+    status           = models.CharField(max_length=20,  choices=STATUS_CHOICES,   default='draft',  db_index=True)
+    category         = models.CharField(max_length=30,  choices=CATEGORY_CHOICES, blank=True, default='', db_index=True)
+    tags             = models.JSONField(default=list,  blank=True)
+    # Audience targeting
+    audience_type    = models.CharField(max_length=20, choices=AUDIENCE_CHOICES, default='all')
+    audience_roles   = models.JSONField(default=list, blank=True,
+                        help_text='Role keys included when audience_type == "roles"')
+    audience_user_ids = models.JSONField(default=list, blank=True,
+                        help_text='User UUIDs (str) included when audience_type == "specific"')
+    views_count      = models.PositiveIntegerField(default=0)
+    published_at     = models.DateTimeField(null=True, blank=True)
+    created_at       = models.DateTimeField(auto_now_add=True)
+    updated_at       = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'blog_posts'
+        ordering = ['-created_at']
+        indexes  = [
+            models.Index(fields=['tenant', 'status']),
+            models.Index(fields=['tenant', 'category']),
+        ]
+
+    def __str__(self):
+        return f'[{self.status}] {self.title} ({self.tenant})'
+
+    def is_visible_to(self, user, role):
+        """Return True if *user* with *role* can see this post."""
+        if self.status != 'published':
+            # Non-published posts visible only to admins / authors
+            return role in ('superadmin', 'admin') or (user and self.author_id == user.pk)
+        if self.audience_type == 'all':
+            return True
+        if self.audience_type == 'roles':
+            return role in (self.audience_roles or [])
+        if self.audience_type == 'specific':
+            return user and str(user.pk) in (self.audience_user_ids or [])
+        return True
+
+
+class BlogReaction(models.Model):
+    """Emoji reaction on a blog post (one per user per type)."""
+    REACTION_CHOICES = [
+        ('like',    '👍'),
+        ('love',    '❤️'),
+        ('clap',    '👏'),
+        ('idea',    '💡'),
+    ]
+    id       = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    post     = models.ForeignKey(BlogPost, on_delete=models.CASCADE, related_name='reactions')
+    user     = models.ForeignKey(User,     on_delete=models.CASCADE, related_name='blog_reactions')
+    reaction = models.CharField(max_length=10, choices=REACTION_CHOICES)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'blog_reactions'
+        unique_together = ['post', 'user', 'reaction']
+
+    def __str__(self):
+        return f'{self.user} {self.reaction} → {self.post_id}'
+
+
+class BlogComment(models.Model):
+    """Comment thread on a blog post."""
+    id         = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    post       = models.ForeignKey(BlogPost,   on_delete=models.CASCADE, related_name='comments')
+    author     = models.ForeignKey(User,       on_delete=models.SET_NULL, null=True, related_name='blog_comments')
+    content    = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'blog_comments'
+        ordering = ['created_at']
+
+    def __str__(self):
+        return f'Comment by {self.author} on {self.post_id}'
+
+
+# ═══════════════════════════════════════════════════════════
+
 class SystemRole(models.Model):
     """
     Reusable role template for Homly internal staff users.

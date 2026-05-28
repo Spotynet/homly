@@ -10,7 +10,7 @@ import {
   Home, Globe, FileText, ShoppingBag, Receipt, Settings,
   Users, Building, Shield, LogOut, Menu, X, Calendar,
   ChevronDown, Check, Building2, Bell, CheckCheck, Activity, Lock, TrendingDown,
-  Sparkles, CreditCard, DollarSign, Target,
+  Sparkles, CreditCard, DollarSign, Target, Newspaper,
 } from 'lucide-react';
 
 const NAV_ITEMS = {
@@ -45,6 +45,7 @@ const NAV_ITEMS = {
     { section: 'general', label: 'General', items: [
       { path: '/app/dashboard',      icon: Home,      label: 'Dashboard'      },
       { path: '/app/reservas',       icon: Calendar,  label: 'Reservas'       },
+      { path: '/app/blog',           icon: Newspaper, label: 'Blog'           },
       { path: '/app/notificaciones', icon: Bell,      label: 'Notificaciones' },
       { path: '/app/onboarding',     icon: Sparkles,  label: 'Guías de uso'   },
     ]},
@@ -66,6 +67,7 @@ const NAV_ITEMS = {
     { section: 'general', label: 'General', items: [
       { path: '/app/dashboard',      icon: Home,      label: 'Dashboard'      },
       { path: '/app/reservas',       icon: Calendar,  label: 'Reservas'       },
+      { path: '/app/blog',           icon: Newspaper, label: 'Blog'           },
       { path: '/app/notificaciones', icon: Bell,      label: 'Notificaciones' },
       { path: '/app/onboarding',     icon: Sparkles,  label: 'Guías de uso'   },
     ]},
@@ -83,6 +85,7 @@ const NAV_ITEMS = {
     { section: 'general', label: 'General', items: [
       { path: '/app/dashboard',      icon: Home,      label: 'Dashboard'      },
       { path: '/app/reservas',       icon: Calendar,  label: 'Reservas'       },
+      { path: '/app/blog',           icon: Newspaper, label: 'Blog'           },
       { path: '/app/notificaciones', icon: Bell,      label: 'Notificaciones' },
       { path: '/app/onboarding',     icon: Sparkles,  label: 'Guías de uso'   },
     ]},
@@ -100,6 +103,7 @@ const NAV_ITEMS = {
     { section: 'general', label: 'General', items: [
       { path: '/app/dashboard',      icon: Home,      label: 'Dashboard'      },
       { path: '/app/reservas',       icon: Calendar,  label: 'Reservas'       },
+      { path: '/app/blog',           icon: Newspaper, label: 'Blog'           },
       { path: '/app/notificaciones', icon: Bell,      label: 'Notificaciones' },
       { path: '/app/onboarding',     icon: Sparkles,  label: 'Guías de uso'   },
     ]},
@@ -115,18 +119,20 @@ const NAV_ITEMS = {
 
   vigilante: [
     { section: 'general', label: 'General', items: [
-      { path: '/app/dashboard',      icon: Home,     label: 'Dashboard'      },
-      { path: '/app/reservas',       icon: Calendar, label: 'Reservas'       },
-      { path: '/app/notificaciones', icon: Bell,     label: 'Notificaciones' },
+      { path: '/app/dashboard',      icon: Home,      label: 'Dashboard'      },
+      { path: '/app/reservas',       icon: Calendar,  label: 'Reservas'       },
+      { path: '/app/blog',           icon: Newspaper, label: 'Blog'           },
+      { path: '/app/notificaciones', icon: Bell,      label: 'Notificaciones' },
     ]},
   ],
 
   vecino: [
     { section: 'general', label: 'General', items: [
-      { path: '/app/my-unit',        icon: Home,     label: 'Mi Unidad'      },
-      { path: '/app/reservas',       icon: Calendar, label: 'Reservas'       },
-      { path: '/app/notificaciones', icon: Bell,     label: 'Notificaciones' },
-      { path: '/app/onboarding',     icon: Sparkles, label: 'Guías de uso'   },
+      { path: '/app/my-unit',        icon: Home,      label: 'Mi Unidad'      },
+      { path: '/app/reservas',       icon: Calendar,  label: 'Reservas'       },
+      { path: '/app/blog',           icon: Newspaper, label: 'Blog'           },
+      { path: '/app/notificaciones', icon: Bell,      label: 'Notificaciones' },
+      { path: '/app/onboarding',     icon: Sparkles,  label: 'Guías de uso'   },
     ]},
     { section: 'finanzas', label: 'Finanzas', items: [
       { path: '/app/estado-cuenta',  icon: FileText,     label: 'Estado de Cuenta' },
@@ -150,6 +156,7 @@ const PATH_TO_MODULE = {
   '/app/my-unit':         'my_unit',
   '/app/onboarding':      'onboarding',
   '/app/mi-membresia':    'mi_membresia',
+  '/app/blog':            'blog',
 };
 
 const PAGE_TITLES = {
@@ -171,6 +178,7 @@ const PAGE_TITLES = {
   'notificaciones': 'Notificaciones',
   'onboarding': 'Guías de uso',
   'mi-membresia': 'Mi Membresía',
+  'blog': 'Blog Comunitario',
 };
 
 function getPageTitle(pathname) {
