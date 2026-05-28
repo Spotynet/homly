@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
 import { blogAPI, usersAPI } from '../api/client';
@@ -11,7 +11,7 @@ import {
   MoreVertical, Heart, MessageSquare, Share2, Tag, Layout,
   Newspaper, Sparkles, Upload, Check, AlertCircle, ChevronRight,
   Building2, Save, EyeOff, Palette, Type, Minus, Quote, CheckCircle2,
-  Loader2,
+  Loader2, Mail,
 } from 'lucide-react';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -301,7 +301,7 @@ function BlogDashboard({ articles, loading, isAdmin, onNew, onEdit, onView, onDe
               <Newspaper size={20} className="text-white" />
             </div>
             <div>
-              <h1 className="text-xl font-bold text-slate-800">Blog del Condominio</h1>
+              <h1 className="text-xl font-bold text-slate-800">Comunicación</h1>
               <p className="text-xs text-slate-500">{tenantName}</p>
             </div>
           </div>
@@ -563,6 +563,7 @@ function PublishModal({ onClose, onPublish, tenantId }) {
   const [selectedRoles, setSelectedRoles] = useState([]);
   const [selectedUsers, setSelectedUsers] = useState([]);
   const [userSearch, setUserSearch]       = useState('');
+  const [sendEmail, setSendEmail]         = useState(false);
 
   const { data: usersData } = useQuery({
     queryKey: ['tenant-users-blog', tenantId],
@@ -670,6 +671,26 @@ function PublishModal({ onClose, onPublish, tenantId }) {
               )}
             </div>
           )}
+          {/* Email option */}
+          <div className="pt-3 border-t border-slate-100">
+            <label className={`flex items-start gap-3 p-3.5 rounded-xl border-2 cursor-pointer transition-all ${sendEmail ? 'border-teal-500 bg-teal-50' : 'border-slate-200 hover:border-slate-300'}`}>
+              <input
+                type="checkbox"
+                checked={sendEmail}
+                onChange={e => setSendEmail(e.target.checked)}
+                className="mt-0.5 w-4 h-4 accent-teal-600"
+              />
+              <div className="flex-1">
+                <div className="flex items-center gap-2">
+                  <Mail size={14} className={sendEmail ? 'text-teal-600' : 'text-slate-400'} />
+                  <span className="text-sm font-semibold text-slate-800">Enviar por correo electrónico</span>
+                </div>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Notifica a los destinatarios por email con el contenido del artículo
+                </p>
+              </div>
+            </label>
+          </div>
         </div>
 
         <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex items-center justify-between">
@@ -682,7 +703,7 @@ function PublishModal({ onClose, onPublish, tenantId }) {
               className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-200 rounded-lg font-medium transition-colors">
               Cancelar
             </button>
-            <button onClick={() => canPublish && onPublish({ audience_type: audience, audience_roles: selectedRoles, audience_user_ids: selectedUsers.map(String) })}
+            <button onClick={() => canPublish && onPublish({ audience_type: audience, audience_roles: selectedRoles, audience_user_ids: selectedUsers.map(String), send_email: sendEmail })}
               disabled={!canPublish}
               className="px-4 py-2 text-sm bg-teal-600 hover:bg-teal-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg font-semibold transition-all active:scale-95">
               <span className="flex items-center gap-1.5"><CheckCircle2 size={14} /> Publicar ahora</span>
@@ -710,6 +731,17 @@ function ArticleEditor({ article: initialArticle, onBack, onSaved, tenantId, ten
   const [tags,              setTags]              = useState(initialArticle?.tags || []);
   const [tagInput,          setTagInput]          = useState('');
   const [showPublishModal,  setShowPublishModal]  = useState(false);
+
+  // ── Rich-text editor ref ─────────────────────────────────────────────────────
+  // We MUST NOT use dangerouslySetInnerHTML with a state variable on a
+  // contentEditable div — React re-renders reset the cursor on every keystroke.
+  // Instead, we set innerHTML once on mount and then only read it via onInput.
+  const editorRef = useRef(null);
+  useEffect(() => {
+    if (editorRef.current) {
+      editorRef.current.innerHTML = initialArticle?.content || '';
+    }
+  }, []); // intentionally empty: set only once on mount
 
   const invalidate = () => qc.invalidateQueries(['blog-posts', tenantId]);
 
@@ -742,20 +774,31 @@ function ArticleEditor({ article: initialArticle, onBack, onSaved, tenantId, ten
 
   const handlePublish = async (publishConfig) => {
     setShowPublishModal(false);
-    if (isNew || !initialArticle?.id) {
-      // Create first, then publish
-      try {
-        const res = await blogAPI.create(tenantId, { title, excerpt, content, cover_gradient: coverGrad, cover_emoji: emoji, category, tags, status: 'draft' });
-        const postId = res.data?.id;
-        publishMutation.mutate({ postId, publishConfig });
-      } catch {
-        toast.error('Error al crear el artículo');
+    if (!title.trim()) { toast.error('El título es obligatorio'); return; }
+    try {
+      let postId;
+      if (isNew || !initialArticle?.id) {
+        // Create the draft first, then publish it
+        const res = await blogAPI.create(tenantId, {
+          title, excerpt, content,
+          cover_gradient: coverGrad, cover_emoji: emoji,
+          category, tags, status: 'draft',
+        });
+        postId = res.data?.id;
+        if (!postId) throw new Error('No se recibió ID del artículo creado');
+      } else {
+        // Save latest edits before publishing
+        await blogAPI.update(tenantId, initialArticle.id, {
+          title, excerpt, content,
+          cover_gradient: coverGrad, cover_emoji: emoji,
+          category, tags,
+        });
+        postId = initialArticle.id;
       }
-    } else {
-      await blogAPI.update(tenantId, initialArticle.id, { title, excerpt, content, cover_gradient: coverGrad, cover_emoji: emoji, category, tags });
-      publishMutation.mutate({ postId: initialArticle.id, publishConfig });
+      publishMutation.mutate({ postId, publishConfig });
+    } catch {
+      toast.error('Error al publicar el artículo');
     }
-    invalidate();
   };
 
   const addTag = () => {
@@ -902,13 +945,20 @@ function ArticleEditor({ article: initialArticle, onBack, onSaved, tenantId, ten
                 )
               )}
             </div>
-            <div
-              className="min-h-64 p-5 text-slate-700 text-sm leading-relaxed focus:outline-none"
-              contentEditable
-              suppressContentEditableWarning
-              dangerouslySetInnerHTML={{ __html: content || '<p>Escribe tu artículo aquí...</p>' }}
-              onInput={e => setContent(e.currentTarget.innerHTML)}
-            />
+            <div className="relative">
+              {!content && (
+                <span className="absolute top-5 left-5 text-slate-300 text-sm pointer-events-none select-none">
+                  Escribe tu artículo aquí...
+                </span>
+              )}
+              <div
+                ref={editorRef}
+                className="min-h-64 p-5 text-slate-700 text-sm leading-relaxed focus:outline-none"
+                contentEditable
+                suppressContentEditableWarning
+                onInput={e => setContent(e.currentTarget.innerHTML)}
+              />
+            </div>
           </div>
         </div>
 

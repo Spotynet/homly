@@ -7766,6 +7766,44 @@ class BlogPostViewSet(viewsets.ModelViewSet):
         if not post.published_at:
             post.published_at = timezone.now()
         post.save(update_fields=['status', 'audience_type', 'audience_roles', 'audience_user_ids', 'published_at', 'updated_at'])
+
+        # ── Optionally send email notification to audience ──────────────────
+        if request.data.get('send_email'):
+            import threading
+            tid          = self.kwargs['tenant_id']
+            tenant_name  = post.tenant.name if hasattr(post.tenant, 'name') else str(tid)
+            eff_roles    = post.audience_roles
+            eff_user_ids = post.audience_user_ids
+
+            if audience_type == 'all':
+                qs = TenantUser.objects.filter(tenant_id=tid).select_related('user')
+            elif audience_type == 'roles' and isinstance(eff_roles, list) and eff_roles:
+                qs = TenantUser.objects.filter(tenant_id=tid, role__in=eff_roles).select_related('user')
+            elif audience_type == 'specific' and isinstance(eff_user_ids, list) and eff_user_ids:
+                qs = TenantUser.objects.filter(tenant_id=tid, user_id__in=eff_user_ids).select_related('user')
+            else:
+                qs = TenantUser.objects.none()
+
+            recipients = list(qs)
+            post_title   = post.title
+            post_excerpt = post.excerpt or post.title
+
+            def _send_blog_emails():
+                for tu in recipients:
+                    try:
+                        send_notification_email(
+                            email=tu.user.email,
+                            user_name=tu.user.name,
+                            notif_type='general',
+                            title=post_title,
+                            message=post_excerpt,
+                            tenant_name=tenant_name,
+                        )
+                    except Exception:
+                        pass
+
+            threading.Thread(target=_send_blog_emails, daemon=True).start()
+
         return Response(BlogPostSerializer(post, context={'request': request}).data)
 
     @action(detail=True, methods=['post'], url_path='unpublish', permission_classes=[IsTenantAdmin])

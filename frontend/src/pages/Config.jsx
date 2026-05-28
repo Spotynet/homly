@@ -63,7 +63,7 @@ const MODULE_DEFINITIONS = [
   { key: 'onboarding',      label: 'Guía de Inicio',      icon: Sparkles,     desc: 'Tour interactivo para configurar el tenant paso a paso' },
   { key: 'config',          label: 'Configuración',       icon: Settings,     desc: 'Configuración del condominio' },
   { key: 'my_unit',         label: 'Mi Unidad',           icon: Home,         desc: 'Vista de la unidad del residente (solo Residente)' },
-  { key: 'blog',            label: 'Blog Comunitario',    icon: Newspaper,    desc: 'Publicaciones y comunicados para la comunidad' },
+  { key: 'blog',            label: 'Comunicación',        icon: Newspaper,    desc: 'Publicaciones y comunicados para la comunidad' },
 ];
 
 // ROLE_BASE_MODULES is now imported from '../constants/modulePermissions'

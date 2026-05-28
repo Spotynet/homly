@@ -45,7 +45,7 @@ const NAV_ITEMS = {
     { section: 'general', label: 'General', items: [
       { path: '/app/dashboard',      icon: Home,      label: 'Dashboard'      },
       { path: '/app/reservas',       icon: Calendar,  label: 'Reservas'       },
-      { path: '/app/blog',           icon: Newspaper, label: 'Blog'           },
+      { path: '/app/blog',           icon: Newspaper, label: 'Comunicación'   },
       { path: '/app/notificaciones', icon: Bell,      label: 'Notificaciones' },
       { path: '/app/onboarding',     icon: Sparkles,  label: 'Guías de uso'   },
     ]},
@@ -67,7 +67,7 @@ const NAV_ITEMS = {
     { section: 'general', label: 'General', items: [
       { path: '/app/dashboard',      icon: Home,      label: 'Dashboard'      },
       { path: '/app/reservas',       icon: Calendar,  label: 'Reservas'       },
-      { path: '/app/blog',           icon: Newspaper, label: 'Blog'           },
+      { path: '/app/blog',           icon: Newspaper, label: 'Comunicación'   },
       { path: '/app/notificaciones', icon: Bell,      label: 'Notificaciones' },
       { path: '/app/onboarding',     icon: Sparkles,  label: 'Guías de uso'   },
     ]},
@@ -85,7 +85,7 @@ const NAV_ITEMS = {
     { section: 'general', label: 'General', items: [
       { path: '/app/dashboard',      icon: Home,      label: 'Dashboard'      },
       { path: '/app/reservas',       icon: Calendar,  label: 'Reservas'       },
-      { path: '/app/blog',           icon: Newspaper, label: 'Blog'           },
+      { path: '/app/blog',           icon: Newspaper, label: 'Comunicación'   },
       { path: '/app/notificaciones', icon: Bell,      label: 'Notificaciones' },
       { path: '/app/onboarding',     icon: Sparkles,  label: 'Guías de uso'   },
     ]},
@@ -103,7 +103,7 @@ const NAV_ITEMS = {
     { section: 'general', label: 'General', items: [
       { path: '/app/dashboard',      icon: Home,      label: 'Dashboard'      },
       { path: '/app/reservas',       icon: Calendar,  label: 'Reservas'       },
-      { path: '/app/blog',           icon: Newspaper, label: 'Blog'           },
+      { path: '/app/blog',           icon: Newspaper, label: 'Comunicación'   },
       { path: '/app/notificaciones', icon: Bell,      label: 'Notificaciones' },
       { path: '/app/onboarding',     icon: Sparkles,  label: 'Guías de uso'   },
     ]},
@@ -121,7 +121,7 @@ const NAV_ITEMS = {
     { section: 'general', label: 'General', items: [
       { path: '/app/dashboard',      icon: Home,      label: 'Dashboard'      },
       { path: '/app/reservas',       icon: Calendar,  label: 'Reservas'       },
-      { path: '/app/blog',           icon: Newspaper, label: 'Blog'           },
+      { path: '/app/blog',           icon: Newspaper, label: 'Comunicación'   },
       { path: '/app/notificaciones', icon: Bell,      label: 'Notificaciones' },
     ]},
   ],
@@ -130,7 +130,7 @@ const NAV_ITEMS = {
     { section: 'general', label: 'General', items: [
       { path: '/app/my-unit',        icon: Home,      label: 'Mi Unidad'      },
       { path: '/app/reservas',       icon: Calendar,  label: 'Reservas'       },
-      { path: '/app/blog',           icon: Newspaper, label: 'Blog'           },
+      { path: '/app/blog',           icon: Newspaper, label: 'Comunicación'   },
       { path: '/app/notificaciones', icon: Bell,      label: 'Notificaciones' },
       { path: '/app/onboarding',     icon: Sparkles,  label: 'Guías de uso'   },
     ]},
@@ -178,7 +178,7 @@ const PAGE_TITLES = {
   'notificaciones': 'Notificaciones',
   'onboarding': 'Guías de uso',
   'mi-membresia': 'Mi Membresía',
-  'blog': 'Blog Comunitario',
+  'blog': 'Comunicación',
 };
 
 function getPageTitle(pathname) {
