@@ -1541,13 +1541,9 @@ class BlogPostSerializer(serializers.ModelSerializer):
 
     def get_reactions(self, obj):
         """Return { counts: {like:N,...}, my_reactions: [...] }"""
-        request = self.context.get('request')
-        counts = {}
-        for r in obj.reactions.values('reaction').annotate(n=serializers.IntegerField.__class__):
-            pass
-        # Simpler approach using Python
         from django.db.models import Count
-        qs = obj.reactions.values('reaction').annotate(n=Count('id'))
+        request = self.context.get('request')
+        qs     = obj.reactions.values('reaction').annotate(n=Count('id'))
         counts = {row['reaction']: row['n'] for row in qs}
         my_reactions = []
         if request and request.user and request.user.is_authenticated:

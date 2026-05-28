@@ -461,7 +461,7 @@ function ArticleReader({ article, onBack, onEdit, tenantName, isAdmin, tenantId 
 
   const reactMutation = useMutation({
     mutationFn: (type) => blogAPI.react(tenantId, article.id, type),
-    onSuccess: () => qc.invalidateQueries(['blog-posts', tenantId]),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['blog-posts', tenantId] }),
   });
 
   const reactions = article.reactions || { counts: {}, my_reactions: [] };
@@ -743,7 +743,7 @@ function ArticleEditor({ article: initialArticle, onBack, onSaved, tenantId, ten
     }
   }, []); // intentionally empty: set only once on mount
 
-  const invalidate = () => qc.invalidateQueries(['blog-posts', tenantId]);
+  const invalidate = () => qc.invalidateQueries({ queryKey: ['blog-posts', tenantId] });
 
   const saveMutation = useMutation({
     mutationFn: (data) => isNew
@@ -1059,7 +1059,7 @@ export default function Blog() {
   const deleteMutation = useMutation({
     mutationFn: (id) => blogAPI.destroy(tenantId, id),
     onSuccess:  () => {
-      qc.invalidateQueries(['blog-posts', tenantId]);
+      qc.invalidateQueries({ queryKey: ['blog-posts', tenantId] });
       toast.success('Artículo eliminado');
       setView('dashboard');
     },
