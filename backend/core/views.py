@@ -7827,18 +7827,29 @@ class BlogPostViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'], url_path='react', permission_classes=[IsTenantMember])
     def react(self, request, tenant_id=None, pk=None):
-        """Toggle a reaction on a post. If already reacted with this type, removes it."""
+        """Set the user's reaction on a post.
+
+        Rules:
+          - A user can only have ONE reaction per post at a time.
+          - Re-clicking the same reaction type removes it (toggle off).
+          - Clicking a different reaction type replaces the previous one.
+        """
         post          = self.get_object()
         reaction_type = request.data.get('type', 'like')
         valid_types   = [r[0] for r in BlogReaction.REACTION_CHOICES]
         if reaction_type not in valid_types:
             return Response({'detail': f'Invalid reaction. Valid: {valid_types}'}, status=400)
 
-        reaction, created = BlogReaction.objects.get_or_create(
-            post=post, user=request.user, reaction=reaction_type
-        )
-        if not created:
-            reaction.delete()
+        existing = BlogReaction.objects.filter(post=post, user=request.user)
+        # If the user already reacted with this same type → toggle off (remove).
+        # If the user has any other reaction → remove it, add the new one.
+        if existing.filter(reaction=reaction_type).exists():
+            existing.delete()
+        else:
+            existing.delete()
+            BlogReaction.objects.create(
+                post=post, user=request.user, reaction=reaction_type
+            )
 
         return Response(BlogPostSerializer(post, context={'request': request}).data)
 

@@ -1554,22 +1554,25 @@ class BlogPostSerializer(serializers.ModelSerializer):
 
 
 class BlogPostListSerializer(serializers.ModelSerializer):
-    """Lighter serializer for list views (no full content)."""
+    """List serializer for blog dashboard. Includes content + per-type
+    reaction summary so the editor/reader can render the article without
+    a second roundtrip."""
     author_name     = serializers.SerializerMethodField()
     cover_image_url = serializers.SerializerMethodField()
     comments_count  = serializers.SerializerMethodField()
     reactions_count = serializers.SerializerMethodField()
+    reactions       = serializers.SerializerMethodField()
 
     class Meta:
         model  = BlogPost
         fields = [
-            'id', 'title', 'excerpt',
+            'id', 'title', 'excerpt', 'content',
             'cover_gradient', 'cover_emoji', 'cover_image_url',
             'status', 'category', 'tags',
             'author', 'author_name',
-            'audience_type',
+            'audience_type', 'audience_roles', 'audience_user_ids',
             'views_count', 'published_at',
-            'comments_count', 'reactions_count',
+            'comments_count', 'reactions_count', 'reactions',
             'created_at', 'updated_at',
         ]
 
@@ -1589,4 +1592,18 @@ class BlogPostListSerializer(serializers.ModelSerializer):
 
     def get_reactions_count(self, obj):
         return obj.reactions.count()
+
+    def get_reactions(self, obj):
+        """Return { counts: {like:N,...}, my_reactions: [...] } so the
+        dashboard cards can render the per-type interaction numbers."""
+        from django.db.models import Count
+        request = self.context.get('request')
+        qs     = obj.reactions.values('reaction').annotate(n=Count('id'))
+        counts = {row['reaction']: row['n'] for row in qs}
+        my_reactions = []
+        if request and request.user and request.user.is_authenticated:
+            my_reactions = list(
+                obj.reactions.filter(user=request.user).values_list('reaction', flat=True)
+            )
+        return {'counts': counts, 'my_reactions': my_reactions}
 
