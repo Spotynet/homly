@@ -232,6 +232,17 @@ MEDIA_ROOT = BASE_DIR / 'media'
 import os
 os.makedirs(BASE_DIR / 'media', exist_ok=True)
 
+# ─── Upload size limits ────────────────────────────────
+# Defaults (2.5 MB) were too restrictive for the Communication (Blog)
+# module: artículos con imágenes en el cuerpo se serializan como base64
+# dentro del campo `content` y superan el límite por defecto, devolviendo
+# un 400 al guardar.  Subimos a 20 MB para el cuerpo de la petición y
+# 25 MB para uploads de portada — suficiente margen para fotos modernas
+# de móvil + portada + cuerpo, pero conservador frente a abusos.
+DATA_UPLOAD_MAX_MEMORY_SIZE = 20 * 1024 * 1024   # 20 MB JSON / form-data
+FILE_UPLOAD_MAX_MEMORY_SIZE = 25 * 1024 * 1024   # 25 MB multipart per file
+DATA_UPLOAD_MAX_NUMBER_FIELDS = 5000             # extra room for rich-text payloads
+
 # ─── Internationalization ──────────────────────────────
 LANGUAGE_CODE = 'es-mx'
 TIME_ZONE = 'America/Mexico_City'

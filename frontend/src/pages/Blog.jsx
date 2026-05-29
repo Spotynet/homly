@@ -83,6 +83,84 @@ const formatReactionSummary = (article) => REACTIONS
   .map(r => ({ ...r, n: reactionCount(article, r.type) }))
   .filter(r => r.n > 0);
 
+// ─── Image compression ────────────────────────────────────────────────────────
+// Browsers can decode just about any common raster image (JPEG, PNG, GIF,
+// WebP, BMP, AVIF on modern Chrome/Firefox). We re-encode every uploaded
+// image as JPEG at a sane resolution + quality so the payload is light
+// enough to (a) fit comfortably under Django's DATA_UPLOAD_MAX_MEMORY_SIZE
+// when embedded as base64 in the article body, and (b) keep cover-image
+// uploads under the configured backend size limit.
+//
+// `file`       — the raw File from <input type="file">
+// `maxDim`     — longest side, in pixels (default 1600)
+// `quality`    — JPEG quality 0–1 (default 0.78)
+// `asDataUrl`  — when true returns a base64 data: URL (for inline body
+//                images); otherwise returns a Blob (ready for FormData).
+//
+// On any failure (browser can't decode the format, OOM, etc.) the original
+// file is returned unchanged so the user's content is never lost.
+const compressImage = (file, { maxDim = 1600, quality = 0.78, asDataUrl = false } = {}) =>
+  new Promise((resolve) => {
+    if (!file || !file.type?.startsWith('image/')) {
+      return resolve(asDataUrl ? null : file);
+    }
+    // Animated GIFs and SVGs can't be re-encoded safely via canvas
+    // without losing animation / scalability — pass them through.
+    if (file.type === 'image/gif' || file.type === 'image/svg+xml') {
+      if (!asDataUrl) return resolve(file);
+      const r = new FileReader();
+      r.onload = ev => resolve(ev.target.result);
+      r.onerror = () => resolve(null);
+      return r.readAsDataURL(file);
+    }
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const img = new window.Image();
+      img.onload = () => {
+        try {
+          const ratio = Math.min(1, maxDim / Math.max(img.width, img.height));
+          const w = Math.max(1, Math.round(img.width  * ratio));
+          const h = Math.max(1, Math.round(img.height * ratio));
+          const canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          // White background avoids ugly black corners when re-encoding
+          // PNGs with transparency as JPEG.
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, w, h);
+          ctx.drawImage(img, 0, 0, w, h);
+          if (asDataUrl) {
+            resolve(canvas.toDataURL('image/jpeg', quality));
+          } else {
+            canvas.toBlob(
+              (blob) => {
+                if (!blob) return resolve(file);
+                // Wrap as a File so the FormData upload keeps a sensible
+                // filename + mime type on the server.
+                const out = new File(
+                  [blob],
+                  (file.name?.replace(/\.[^.]+$/, '') || 'cover') + '.jpg',
+                  { type: 'image/jpeg', lastModified: Date.now() },
+                );
+                resolve(out);
+              },
+              'image/jpeg',
+              quality,
+            );
+          }
+        } catch {
+          // Canvas tainted / decode error → return original
+          resolve(asDataUrl ? ev.target.result : file);
+        }
+      };
+      img.onerror = () => resolve(asDataUrl ? ev.target.result : file);
+      img.src = ev.target.result;
+    };
+    reader.onerror = () => resolve(asDataUrl ? null : file);
+    reader.readAsDataURL(file);
+  });
+
 // ─── Field helpers ─────────────────────────────────────────────────────────────
 // The API returns snake_case fields; helpers give the component a unified API.
 const coverGradient = a => a.cover_gradient || 'from-teal-400 to-cyan-500';
@@ -847,7 +925,8 @@ function ArticleEditor({ article: initialArticle, onBack, onSaved, tenantId, ten
   });
 
   // Upload the pending cover-image (if any) for a given post id, then return
-  // the updated cover_image_url from the response.
+  // the updated cover_image_url from the response. Surfaces a useful error
+  // when the backend rejects the file (oversized, unsupported, etc.).
   const uploadPendingCover = async (postId) => {
     if (!coverImageFile || !postId) return null;
     const fd = new FormData();
@@ -858,8 +937,13 @@ function ArticleEditor({ article: initialArticle, onBack, onSaved, tenantId, ten
       setCoverImageFile(null);
       if (url) setCoverImageUrl(url);
       return url;
-    } catch {
-      toast.error('No se pudo subir la imagen de portada');
+    } catch (err) {
+      const detail =
+        err?.response?.data?.detail ||
+        err?.response?.data?.image ||
+        err?.message ||
+        '';
+      toast.error(`No se pudo subir la imagen de portada${detail ? `: ${detail}` : ''}`);
       return null;
     }
   };
@@ -930,25 +1014,43 @@ function ArticleEditor({ article: initialArticle, onBack, onSaved, tenantId, ten
     }
   };
 
-  // Cover image: pick a local file → preview immediately. Actual upload to
-  // the backend happens on the next "save draft" / "publish" action because
-  // the upload endpoint requires the post to already exist.
-  const handleCoverPick = (e) => {
+  // Cover image: pick a local file → compress in the browser → preview
+  // immediately. Actual upload to the backend happens on the next
+  // "save draft" / "publish" action because the upload endpoint requires
+  // the post to already exist.
+  //
+  // We accept every image MIME type the browser can read (image/*) and
+  // re-encode to a sane resolution (max 1600 px, JPEG q=0.8) so the
+  // article stays light even when the source is a 12 MP phone photo.
+  const handleCoverPick = async (e) => {
     const file = e.target.files?.[0];
+    // Always clear the input value so picking the same file twice re-triggers onChange.
+    if (e.target) e.target.value = '';
     if (!file) return;
     if (!file.type.startsWith('image/')) {
       toast.error('Selecciona un archivo de imagen');
       return;
     }
-    // Soft size guard (~5 MB) to avoid huge uploads
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error('La imagen es demasiado grande (máx 5 MB)');
+    // Generous hard ceiling — original may be huge; we compress before upload.
+    if (file.size > 25 * 1024 * 1024) {
+      toast.error('La imagen es demasiado grande (máx 25 MB)');
       return;
     }
-    setCoverImageFile(file);
-    const reader = new FileReader();
-    reader.onload = ev => setCoverImageUrl(ev.target.result);
-    reader.readAsDataURL(file);
+    try {
+      const compressed = await compressImage(file, { maxDim: 1600, quality: 0.8 });
+      setCoverImageFile(compressed instanceof File ? compressed : file);
+      // Preview from the compressed file so the editor reflects exactly
+      // what will be uploaded.
+      const reader = new FileReader();
+      reader.onload = ev => setCoverImageUrl(ev.target.result);
+      reader.readAsDataURL(compressed instanceof Blob ? compressed : file);
+    } catch {
+      // Fallback: store the original file uncompressed
+      setCoverImageFile(file);
+      const reader = new FileReader();
+      reader.onload = ev => setCoverImageUrl(ev.target.result);
+      reader.readAsDataURL(file);
+    }
   };
 
   const handleRemoveCover = () => {
@@ -957,24 +1059,37 @@ function ArticleEditor({ article: initialArticle, onBack, onSaved, tenantId, ten
     if (coverInputRef.current) coverInputRef.current.value = '';
   };
 
-  // Body image: pick a local file → insert into the editor as a base64
-  // data URL. This keeps the change self-contained (no extra endpoint
-  // needed) since article content is stored as HTML.
-  const handleInsertBodyImage = (e) => {
+  // Body image: pick a local file → compress aggressively → insert into
+  // the editor as a base64 data URL. Keeping the bytes small is critical
+  // because the whole HTML (incl. base64 images) is sent as a JSON field
+  // on the next save; Django's DATA_UPLOAD_MAX_MEMORY_SIZE rejects
+  // payloads above the configured cap otherwise.
+  //
+  // We accept every image format the browser can read (image/*) and
+  // re-encode to a max long side of 1200 px and JPEG q=0.72.
+  const handleInsertBodyImage = async (e) => {
     const file = e.target.files?.[0];
+    if (e.target) e.target.value = '';
     if (!file) return;
     if (!file.type.startsWith('image/')) {
       toast.error('Selecciona un archivo de imagen');
       return;
     }
-    if (file.size > 3 * 1024 * 1024) {
-      toast.error('Imagen muy grande para el cuerpo (máx 3 MB). Considera comprimirla.');
-      e.target.value = '';
+    // Hard ceiling to avoid OOM during canvas decode of crazy-large files.
+    if (file.size > 25 * 1024 * 1024) {
+      toast.error('La imagen es demasiado grande (máx 25 MB)');
       return;
     }
-    const reader = new FileReader();
-    reader.onload = ev => {
-      const dataUrl = ev.target.result;
+    try {
+      const dataUrl = await compressImage(file, {
+        maxDim: 1200,
+        quality: 0.72,
+        asDataUrl: true,
+      });
+      if (!dataUrl) {
+        toast.error('No se pudo procesar la imagen');
+        return;
+      }
       // Restore focus to the editor so insertImage drops at the cursor
       editorRef.current?.focus();
       const ok = document.execCommand('insertImage', false, dataUrl);
@@ -996,9 +1111,9 @@ function ArticleEditor({ article: initialArticle, onBack, onSaved, tenantId, ten
         });
         setContent(editorRef.current.innerHTML);
       }
-      e.target.value = '';
-    };
-    reader.readAsDataURL(file);
+    } catch {
+      toast.error('No se pudo insertar la imagen');
+    }
   };
 
   const addTag = () => {

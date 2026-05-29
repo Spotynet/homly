@@ -7841,13 +7841,47 @@ class BlogPostViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'], url_path='cover-image', permission_classes=[IsTenantAdmin])
     def cover_image(self, request, tenant_id=None, pk=None):
-        """Upload or replace the cover image of a post."""
+        """Upload or replace the cover image of a post.
+
+        Accepts any browser-readable image format (the frontend
+        compresses every upload to JPEG ≤1600 px before sending, so
+        formats like HEIC/AVIF/WebP/PNG/GIF/BMP all arrive here as a
+        small JPEG). We re-validate type + size here defensively and
+        return a friendly error message so the editor can surface it.
+        """
         post = self.get_object()
         img  = request.FILES.get('image')
         if not img:
-            return Response({'detail': 'No image provided.'}, status=status.HTTP_400_BAD_REQUEST)
-        post.cover_image = img
-        post.save(update_fields=['cover_image', 'updated_at'])
+            return Response(
+                {'detail': 'No se recibió ninguna imagen.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Friendly size cap — matches DATA_UPLOAD/FILE_UPLOAD limits.
+        max_bytes = 25 * 1024 * 1024
+        if getattr(img, 'size', 0) and img.size > max_bytes:
+            return Response(
+                {'detail': f'La imagen es demasiado grande (máx {max_bytes // (1024*1024)} MB).'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # MIME-type whitelist — let any image/* through. We don't enforce
+        # the extension because the frontend re-encodes to JPEG anyway.
+        content_type = (getattr(img, 'content_type', '') or '').lower()
+        if content_type and not content_type.startswith('image/'):
+            return Response(
+                {'detail': 'El archivo seleccionado no es una imagen.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            post.cover_image = img
+            post.save(update_fields=['cover_image', 'updated_at'])
+        except Exception as exc:  # noqa: BLE001 — Pillow raises generic on bad data
+            return Response(
+                {'detail': f'No se pudo guardar la imagen: {exc}'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         return Response(BlogPostSerializer(post, context={'request': request}).data)
 
     @action(detail=True, methods=['post'], url_path='react', permission_classes=[IsTenantMember])
