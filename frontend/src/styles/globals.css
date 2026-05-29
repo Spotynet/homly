@@ -1811,3 +1811,40 @@ tr:hover td { background: rgba(59,185,144,0.02); }
     margin-top: 14px;
   }
 }
+
+/* ─── Comunicación (Blog) — rich-text editor & reader ─── */
+.blog-editor-area img,
+.blog-article-body img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 10px;
+  margin: 10px 0;
+  display: block;
+}
+.blog-editor-area p,
+.blog-article-body p { margin: 0 0 12px; }
+.blog-editor-area h1, .blog-article-body h1,
+.blog-editor-area h2, .blog-article-body h2,
+.blog-editor-area h3, .blog-article-body h3 {
+  font-weight: 700;
+  margin: 18px 0 10px;
+  color: #1e293b;
+}
+.blog-editor-area h1, .blog-article-body h1 { font-size: 22px; }
+.blog-editor-area h2, .blog-article-body h2 { font-size: 18px; }
+.blog-editor-area h3, .blog-article-body h3 { font-size: 16px; }
+.blog-editor-area ul, .blog-article-body ul,
+.blog-editor-area ol, .blog-article-body ol {
+  padding-left: 24px;
+  margin: 0 0 12px;
+}
+.blog-editor-area li, .blog-article-body li { margin: 4px 0; }
+.blog-editor-area a, .blog-article-body a {
+  color: #0d9488;
+  text-decoration: underline;
+}
+.blog-editor-area hr, .blog-article-body hr {
+  border: none;
+  border-top: 1px solid #e2e8f0;
+  margin: 18px 0;
+}

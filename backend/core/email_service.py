@@ -2087,3 +2087,377 @@ def send_trial_rejected_email(
         html=html,
         to_emails=[email],
     )
+
+
+# ═══════════════════════════════════════════════════════════
+#  BLOG ARTICLE — published article delivered by email
+# ═══════════════════════════════════════════════════════════
+
+def _strip_html_to_text(html_content: str) -> str:
+    """Strip HTML tags and decode entities to produce a plain-text version of
+    the article body for the text/plain MIME part of the email."""
+    if not html_content:
+        return ''
+    import re
+    from html import unescape
+    text = html_content
+    text = re.sub(r'<br\s*/?>', '\n', text, flags=re.IGNORECASE)
+    text = re.sub(r'</p\s*>', '\n\n', text, flags=re.IGNORECASE)
+    text = re.sub(r'</li\s*>', '\n', text, flags=re.IGNORECASE)
+    text = re.sub(r'<li[^>]*>', ' • ',  text, flags=re.IGNORECASE)
+    text = re.sub(r'<h[1-6][^>]*>', '\n\n', text, flags=re.IGNORECASE)
+    text = re.sub(r'</h[1-6]\s*>', '\n', text, flags=re.IGNORECASE)
+    text = re.sub(r'<hr\s*/?>', '\n――――――――――\n', text, flags=re.IGNORECASE)
+    text = re.sub(r'<[^>]+>', '', text)
+    text = unescape(text)
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    return text.strip()
+
+
+def _build_article_pdf(
+    *,
+    title: str,
+    excerpt: str,
+    content_html: str,
+    author_name: str,
+    tenant_name: str,
+    published_at: str = '',
+    cover_emoji: str = '📰',
+) -> bytes | None:
+    """Render the article as a one-or-many-page PDF using reportlab.
+
+    The rich-text body is converted to a simplified flow: paragraphs, lists,
+    headings and horizontal rules survive; inline formatting (bold/italic) is
+    preserved because reportlab Paragraph supports a minimal HTML subset.
+
+    Returns the PDF bytes or None if reportlab is unavailable.
+    """
+    try:
+        import io
+        import re
+        from html import unescape
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib import colors
+        from reportlab.lib.units import cm
+        from reportlab.platypus import (
+            SimpleDocTemplate, Paragraph, Spacer, HRFlowable,
+        )
+        from reportlab.lib.styles import ParagraphStyle
+        from reportlab.lib.enums import TA_LEFT, TA_CENTER
+    except ImportError:
+        return None
+
+    COL_TEAL  = colors.HexColor('#0d7c6e')
+    COL_INK   = colors.HexColor('#1a1a2e')
+    COL_INK_2 = colors.HexColor('#475569')
+    COL_INK_3 = colors.HexColor('#94a3b8')
+
+    buf    = io.BytesIO()
+    margin = 2.0 * cm
+    doc = SimpleDocTemplate(
+        buf, pagesize=A4,
+        leftMargin=margin, rightMargin=margin,
+        topMargin=1.6 * cm, bottomMargin=1.6 * cm,
+        title=title, author=author_name,
+    )
+
+    st_brand   = ParagraphStyle('Brand',   fontSize=10, fontName='Helvetica-Bold',
+                                textColor=COL_TEAL, alignment=TA_LEFT, spaceAfter=4)
+    st_tenant  = ParagraphStyle('Tenant',  fontSize=9,  fontName='Helvetica',
+                                textColor=COL_INK_2, alignment=TA_LEFT, spaceAfter=18)
+    st_emoji   = ParagraphStyle('Emoji',   fontSize=40, fontName='Helvetica',
+                                alignment=TA_CENTER, spaceAfter=10)
+    st_title   = ParagraphStyle('Title',   fontSize=22, fontName='Helvetica-Bold',
+                                textColor=COL_INK, alignment=TA_LEFT, leading=26, spaceAfter=8)
+    st_meta    = ParagraphStyle('Meta',    fontSize=9,  fontName='Helvetica',
+                                textColor=COL_INK_3, alignment=TA_LEFT, spaceAfter=14)
+    st_excerpt = ParagraphStyle('Excerpt', fontSize=12, fontName='Helvetica-Oblique',
+                                textColor=COL_INK_2, alignment=TA_LEFT, leading=16, spaceAfter=14)
+    st_body    = ParagraphStyle('Body',    fontSize=11, fontName='Helvetica',
+                                textColor=COL_INK, alignment=TA_LEFT, leading=15, spaceAfter=10)
+    st_h2      = ParagraphStyle('H2',      fontSize=14, fontName='Helvetica-Bold',
+                                textColor=COL_INK, alignment=TA_LEFT, spaceBefore=8, spaceAfter=6)
+    st_bullet  = ParagraphStyle('Bullet',  fontSize=11, fontName='Helvetica',
+                                textColor=COL_INK, alignment=TA_LEFT, leading=15,
+                                leftIndent=14, bulletIndent=2, spaceAfter=4)
+
+    def _clean(t: str) -> str:
+        """Whitelist-only tag cleanup that keeps tags Paragraph supports."""
+        t = re.sub(r'<(?!/?(b|i|u|strong|em|br|font|span)\b)[^>]+>', '', t,
+                   flags=re.IGNORECASE)
+        # Drop class/style attrs but keep tags
+        t = re.sub(r'<(b|i|u|strong|em|br|font|span)([^>]*)>',
+                   lambda m: f'<{m.group(1).lower()}>', t, flags=re.IGNORECASE)
+        return t
+
+    story = []
+    story.append(Paragraph(f'COMUNICACIÓN — {tenant_name}', st_brand))
+    if published_at:
+        story.append(Paragraph(f'Publicado el {published_at}', st_tenant))
+    else:
+        story.append(Spacer(1, 6))
+    story.append(Paragraph(cover_emoji, st_emoji))
+    story.append(Paragraph(title, st_title))
+    meta_bits = [b for b in [author_name and f'Por {author_name}', tenant_name] if b]
+    if meta_bits:
+        story.append(Paragraph(' · '.join(meta_bits), st_meta))
+    if excerpt:
+        story.append(Paragraph(_clean(excerpt), st_excerpt))
+    story.append(HRFlowable(width='100%', thickness=0.8, color=colors.HexColor('#e2e8f0'),
+                            spaceBefore=2, spaceAfter=12))
+
+    # ── Convert the article HTML into a sequence of flowables ────────────
+    # Split on block-level boundaries so each becomes its own Paragraph.
+    body = content_html or ''
+    body = re.sub(r'<hr\s*/?>', '###HR###', body, flags=re.IGNORECASE)
+    # Headings → mark for h2 style
+    body = re.sub(r'<h[1-6][^>]*>(.*?)</h[1-6]\s*>',
+                  lambda m: f'###H2###{m.group(1)}###/H2###', body,
+                  flags=re.IGNORECASE | re.DOTALL)
+    # List items → bullet markers
+    body = re.sub(r'<li[^>]*>(.*?)</li\s*>',
+                  lambda m: f'###LI###{m.group(1)}###/LI###', body,
+                  flags=re.IGNORECASE | re.DOTALL)
+    # Drop list wrappers (markers preserve bullets)
+    body = re.sub(r'</?ul[^>]*>|</?ol[^>]*>', '', body, flags=re.IGNORECASE)
+    # <p> → split markers
+    body = re.sub(r'<p[^>]*>', '###P###', body, flags=re.IGNORECASE)
+    body = re.sub(r'</p\s*>',  '',         body, flags=re.IGNORECASE)
+    body = re.sub(r'<br\s*/?>', '<br/>',   body, flags=re.IGNORECASE)
+    # Drop <img> tags (reportlab can't render inline base64 inside Paragraph
+    # reliably here; PDF still shows the article text)
+    body = re.sub(r'<img[^>]*>', '[imagen]', body, flags=re.IGNORECASE)
+
+    # Now tokenize on our markers
+    tokens = re.split(r'(###HR###|###H2###.*?###/H2###|###LI###.*?###/LI###|###P###)',
+                      body, flags=re.DOTALL)
+    for tok in tokens:
+        if not tok:
+            continue
+        t = tok.strip()
+        if not t:
+            continue
+        if t == '###HR###':
+            story.append(HRFlowable(width='100%', thickness=0.6,
+                                    color=colors.HexColor('#e2e8f0'),
+                                    spaceBefore=6, spaceAfter=6))
+        elif t.startswith('###H2###'):
+            inner = t.replace('###H2###', '').replace('###/H2###', '').strip()
+            inner = _clean(inner)
+            if inner:
+                story.append(Paragraph(inner, st_h2))
+        elif t.startswith('###LI###'):
+            inner = t.replace('###LI###', '').replace('###/LI###', '').strip()
+            inner = _clean(inner)
+            if inner:
+                story.append(Paragraph(f'• {inner}', st_bullet))
+        elif t == '###P###':
+            continue
+        else:
+            cleaned = _clean(t)
+            cleaned = unescape(cleaned).strip()
+            if cleaned:
+                story.append(Paragraph(cleaned, st_body))
+
+    try:
+        doc.build(story)
+    except Exception as e:
+        logger.exception('Failed to build article PDF: %s', e)
+        return None
+    return buf.getvalue()
+
+
+def _build_article_html_email(
+    *,
+    user_name: str,
+    tenant_name: str,
+    title: str,
+    excerpt: str,
+    content_html: str,
+    cover_emoji: str,
+    cover_gradient_css: str,
+    cover_image_url: str,
+    author_name: str,
+    published_at: str,
+    app_url: str,
+) -> str:
+    """Build a branded HTML email that renders the full article body.
+
+    The article content is inserted inside a constrained reading column so
+    it looks consistent with the in-app Reader view.
+    """
+    c = COLORS
+    logo_img = (
+        f'<img src="cid:{LOGO_CID}" alt="Homly" width="160" '
+        f'style="display:block;height:auto;max-width:160px;margin:0 auto;" />'
+    )
+
+    # Cover block: prefer real image; otherwise gradient + emoji
+    if cover_image_url:
+        cover = (
+            f'<tr><td style="padding:0 24px;">'
+            f'<img src="{cover_image_url}" alt="" width="100%" '
+            f'style="display:block;border-radius:14px;max-height:280px;object-fit:cover;width:100%;">'
+            f'</td></tr>'
+        )
+    else:
+        cover = (
+            f'<tr><td style="padding:0 24px;">'
+            f'<div style="background:{cover_gradient_css};border-radius:14px;'
+            f'padding:54px 0;text-align:center;">'
+            f'<div style="font-size:62px;line-height:1;">{cover_emoji}</div>'
+            f'</div></td></tr>'
+        )
+
+    meta_line = ' · '.join([b for b in [
+        author_name and f'Por {author_name}',
+        published_at,
+        tenant_name,
+    ] if b])
+
+    # Article body wrapper: enforces readable typography for any user-supplied
+    # HTML coming from the rich-text editor.
+    article_body = content_html or f'<p>{excerpt}</p>'
+
+    safe_title = (title or '').replace('<', '&lt;').replace('>', '&gt;')
+
+    html = f"""<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8"><title>{safe_title}</title></head>
+<body style="margin:0;padding:0;background:{c['cream_outer']};font-family:Arial,Helvetica,sans-serif;color:{c['ink_800']};">
+  <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:{c['cream_outer']};padding:24px 0;">
+    <tr><td align="center">
+      <table role="presentation" cellpadding="0" cellspacing="0" width="640"
+             style="max-width:640px;width:100%;background:#ffffff;border-radius:16px;
+                    border:1px solid #E8DFD1;overflow:hidden;">
+        {_email_header_html(c, logo_img, 'Nuevo artículo de la comunidad', tenant_name)}
+
+        <tr><td style="padding:24px 28px 8px;">
+          <p style="margin:0 0 12px;font-size:14px;color:{c['ink_600']};">
+            Hola <strong style="color:{c['ink_800']};">{user_name or 'vecino'}</strong>,
+            la administración de <strong>{tenant_name}</strong> publicó un nuevo artículo:
+          </p>
+        </td></tr>
+
+        {cover}
+
+        <tr><td style="padding:18px 28px 0;">
+          <h1 style="margin:0 0 8px;font-size:24px;line-height:1.25;color:{c['ink_800']};">{safe_title}</h1>
+          <p style="margin:0;font-size:12px;color:{c['ink_400']};">{meta_line}</p>
+        </td></tr>
+
+        {f'<tr><td style="padding:14px 28px 0;"><p style="margin:0;font-size:15px;font-style:italic;color:{c["ink_600"]};line-height:1.55;">{excerpt}</p></td></tr>' if excerpt else ''}
+
+        <tr><td style="padding:6px 28px 0;">
+          <hr style="border:none;border-top:1px solid #E8DFD1;margin:14px 0;"/>
+        </td></tr>
+
+        <tr><td style="padding:0 28px 18px;">
+          <div style="font-size:15px;line-height:1.7;color:{c['ink_800']};">
+            {article_body}
+          </div>
+        </td></tr>
+
+        <tr><td style="padding:8px 28px 24px;text-align:center;">
+          <a href="{app_url}"
+             style="display:inline-block;background:{c['green']};color:#ffffff;text-decoration:none;
+                    padding:12px 22px;border-radius:10px;font-size:13px;font-weight:700;">
+            Abrir en Homly
+          </a>
+        </td></tr>
+
+        {_email_footer_html(c)}
+      </table>
+    </td></tr>
+  </table>
+</body></html>"""
+    return html
+
+
+# Map of cover_gradient (tailwind class) → CSS gradient for email rendering.
+_GRADIENT_CSS = {
+    'from-teal-400 to-cyan-500':    'linear-gradient(135deg,#2dd4bf,#06b6d4)',
+    'from-orange-400 to-amber-500': 'linear-gradient(135deg,#fb923c,#f59e0b)',
+    'from-violet-400 to-purple-500':'linear-gradient(135deg,#a78bfa,#a855f7)',
+    'from-pink-400 to-rose-500':    'linear-gradient(135deg,#f472b6,#f43f5e)',
+    'from-emerald-400 to-green-500':'linear-gradient(135deg,#34d399,#22c55e)',
+    'from-blue-400 to-indigo-500':  'linear-gradient(135deg,#60a5fa,#6366f1)',
+    'from-slate-400 to-slate-600':  'linear-gradient(135deg,#94a3b8,#475569)',
+    'from-red-400 to-pink-500':     'linear-gradient(135deg,#f87171,#ec4899)',
+}
+
+
+def send_blog_article_email(
+    *,
+    email: str,
+    user_name: str,
+    tenant_name: str,
+    title: str,
+    excerpt: str,
+    content_html: str,
+    author_name: str = '',
+    cover_emoji: str = '📰',
+    cover_gradient: str = 'from-teal-400 to-cyan-500',
+    cover_image_url: str = '',
+    published_at: str = '',
+    attach_pdf: bool = True,
+) -> bool:
+    """Email a published blog article to a single recipient.
+
+    The full article body is rendered inside the email so the user can read it
+    without opening the app. A PDF copy of the article is also attached for
+    offline reading / printing when ``attach_pdf`` is true.
+    """
+    app_url = getattr(settings, 'HOMLY_APP_URL', 'https://homly.com.mx/login')
+    subject = f'[{tenant_name}] {title}' if tenant_name else f'Nuevo artículo: {title}'
+
+    gradient_css = _GRADIENT_CSS.get(cover_gradient, _GRADIENT_CSS['from-teal-400 to-cyan-500'])
+
+    html = _build_article_html_email(
+        user_name=user_name,
+        tenant_name=tenant_name,
+        title=title,
+        excerpt=excerpt,
+        content_html=content_html,
+        cover_emoji=cover_emoji,
+        cover_gradient_css=gradient_css,
+        cover_image_url=cover_image_url,
+        author_name=author_name,
+        published_at=published_at,
+        app_url=app_url,
+    )
+
+    plain_body = _strip_html_to_text(content_html) or excerpt or title
+    plain = (
+        f'Hola {user_name},\n\n'
+        f'{tenant_name} publicó un nuevo artículo:\n\n'
+        f'{title}\n'
+        f'{("—" * min(60, len(title)))}\n\n'
+        f'{(excerpt + chr(10) + chr(10)) if excerpt else ""}'
+        f'{plain_body}\n\n'
+        f'Abre el artículo completo en Homly: {app_url}\n\n'
+        f'© Homly — La administración que tu hogar se merece'
+    )
+
+    pdf_attachment = None
+    if attach_pdf:
+        pdf_bytes = _build_article_pdf(
+            title=title,
+            excerpt=excerpt,
+            content_html=content_html,
+            author_name=author_name,
+            tenant_name=tenant_name,
+            published_at=published_at,
+            cover_emoji=cover_emoji,
+        )
+        if pdf_bytes:
+            import re as _re
+            safe_name = _re.sub(r'[^A-Za-z0-9_\- ]+', '', title).strip().replace(' ', '_')[:60] or 'articulo'
+            pdf_attachment = (f'{safe_name}.pdf', pdf_bytes, 'application/pdf')
+
+    return _send_branded_email(
+        subject=subject,
+        plain=plain,
+        html=html,
+        to_emails=[email],
+        pdf_attachment=pdf_attachment,
+    )

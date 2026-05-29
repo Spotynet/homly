@@ -7768,8 +7768,11 @@ class BlogPostViewSet(viewsets.ModelViewSet):
         post.save(update_fields=['status', 'audience_type', 'audience_roles', 'audience_user_ids', 'published_at', 'updated_at'])
 
         # ── Optionally send email notification to audience ──────────────────
+        # The email includes the full article body so recipients can read it
+        # directly without opening the app, plus a PDF copy as attachment.
         if request.data.get('send_email'):
             import threading
+            from .email_service import send_blog_article_email
             tid          = self.kwargs['tenant_id']
             tenant_name  = post.tenant.name if hasattr(post.tenant, 'name') else str(tid)
             eff_roles    = post.audience_roles
@@ -7785,19 +7788,41 @@ class BlogPostViewSet(viewsets.ModelViewSet):
                 qs = TenantUser.objects.none()
 
             recipients = list(qs)
-            post_title   = post.title
-            post_excerpt = post.excerpt or post.title
+
+            # Snapshot article fields for the worker thread
+            post_title       = post.title
+            post_excerpt     = post.excerpt or ''
+            post_content     = post.content or ''
+            post_author      = post.author.name if post.author else 'Administración'
+            post_cover_emoji = post.cover_emoji or '📰'
+            post_cover_grad  = post.cover_gradient or 'from-teal-400 to-cyan-500'
+            post_published   = post.published_at.strftime('%d/%m/%Y') if post.published_at else ''
+
+            # Build absolute URL for the cover image (if any) so it renders
+            # correctly in the email even when the recipient is offsite.
+            post_cover_url = ''
+            if post.cover_image:
+                try:
+                    post_cover_url = request.build_absolute_uri(post.cover_image.url)
+                except Exception:
+                    post_cover_url = ''
 
             def _send_blog_emails():
                 for tu in recipients:
                     try:
-                        send_notification_email(
+                        send_blog_article_email(
                             email=tu.user.email,
-                            user_name=tu.user.name,
-                            notif_type='general',
-                            title=post_title,
-                            message=post_excerpt,
+                            user_name=tu.user.name or '',
                             tenant_name=tenant_name,
+                            title=post_title,
+                            excerpt=post_excerpt,
+                            content_html=post_content,
+                            author_name=post_author,
+                            cover_emoji=post_cover_emoji,
+                            cover_gradient=post_cover_grad,
+                            cover_image_url=post_cover_url,
+                            published_at=post_published,
+                            attach_pdf=True,
                         )
                     except Exception:
                         pass

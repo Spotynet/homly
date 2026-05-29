@@ -65,6 +65,24 @@ const COVER_THEMES = [
   { gradient: 'from-red-400 to-pink-500',     emoji: '🚨' },
 ];
 
+// Reaction definitions shared across views.
+const REACTIONS = [
+  { type: 'like', icon: '👍', label: 'Me gusta'   },
+  { type: 'love', icon: '❤️', label: 'Me encanta' },
+  { type: 'clap', icon: '👏', label: 'Aplauso'    },
+  { type: 'idea', icon: '💡', label: 'Buena idea' },
+];
+
+// Read per-type reaction count off either the rich `reactions.counts` payload
+// (returned by the list & detail serializers) or fall back to 0.
+const reactionCount = (article, type) =>
+  article?.reactions?.counts?.[type] ?? 0;
+
+// Build a compact one-line summary of reaction counts for the dashboard cards.
+const formatReactionSummary = (article) => REACTIONS
+  .map(r => ({ ...r, n: reactionCount(article, r.type) }))
+  .filter(r => r.n > 0);
+
 // ─── Field helpers ─────────────────────────────────────────────────────────────
 // The API returns snake_case fields; helpers give the component a unified API.
 const coverGradient = a => a.cover_gradient || 'from-teal-400 to-cyan-500';
@@ -144,12 +162,24 @@ function HeroCard({ article, onEdit, onView, isAdmin }) {
           {article.excerpt}
         </p>
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4 text-xs text-slate-400">
+          <div className="flex items-center gap-4 text-xs text-slate-400 flex-wrap">
             <span className="flex items-center gap-1"><Calendar size={11} /> {createdDate(article)}</span>
             {article.status === 'published' && (
               <span className="flex items-center gap-1"><Eye size={11} /> {viewsCount(article)} vistas</span>
             )}
             <span className="text-slate-500">· {authorName(article)}</span>
+            {/* Reaction counts overlay */}
+            {formatReactionSummary(article).length > 0 && (
+              <span className="flex items-center gap-2 ml-1">
+                {formatReactionSummary(article).map(r => (
+                  <span key={r.type} title={r.label}
+                    className="inline-flex items-center gap-1 text-slate-300">
+                    <span>{r.icon}</span>
+                    <span className="font-semibold">{r.n}</span>
+                  </span>
+                ))}
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
             <button
@@ -207,6 +237,18 @@ function CarouselCard({ article, onEdit, onView, isAdmin }) {
           <span>{createdDate(article)}</span>
           {article.status === 'published' && <span>· {viewsCount(article)} 👁</span>}
         </div>
+        {/* Per-type reaction counts */}
+        {formatReactionSummary(article).length > 0 && (
+          <div className="flex items-center gap-2 mt-1.5 pt-1.5 border-t border-slate-100">
+            {formatReactionSummary(article).map(r => (
+              <span key={r.type} title={r.label}
+                className="inline-flex items-center gap-0.5 text-[11px] text-slate-500">
+                <span>{r.icon}</span>
+                <span className="font-semibold">{r.n}</span>
+              </span>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -235,6 +277,18 @@ function GridCard({ article, onEdit, onView, onDelete, isAdmin }) {
           <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border mb-3 ${cat.color}`}>
             {cat.emoji} {cat.label}
           </span>
+        )}
+        {/* Per-type reaction counts */}
+        {formatReactionSummary(article).length > 0 && (
+          <div className="flex items-center gap-2 mb-2 pb-2 border-b border-slate-100">
+            {formatReactionSummary(article).map(r => (
+              <span key={r.type} title={r.label}
+                className="inline-flex items-center gap-0.5 text-[11px] text-slate-500">
+                <span>{r.icon}</span>
+                <span className="font-semibold">{r.n}</span>
+              </span>
+            ))}
+          </div>
         )}
         <div className="flex items-center justify-between pt-2 border-t border-slate-100">
           <span className="flex items-center gap-1 text-[11px] text-slate-400">
@@ -274,7 +328,14 @@ function BlogDashboard({ articles, loading, isAdmin, onNew, onEdit, onView, onDe
   const [filterStatus, setFilterStatus]   = useState('all');
   const [filterCategory, setFilterCategory] = useState('all');
 
-  const filtered = articles.filter(a => {
+  // Deduplicate by id BEFORE filtering. This is a safety net in case the API
+  // returns the same article twice (e.g. due to JOINs on reactions/comments),
+  // so the same article never shows up twice in "Artículos anteriores".
+  const uniqueArticles = Array.from(
+    new Map((articles || []).map(a => [a.id, a])).values()
+  );
+
+  const filtered = uniqueArticles.filter(a => {
     const matchSearch   = !search || a.title.toLowerCase().includes(search.toLowerCase()) || (a.excerpt || '').toLowerCase().includes(search.toLowerCase());
     const matchStatus   = filterStatus === 'all' || a.status === filterStatus;
     const matchCategory = filterCategory === 'all' || a.category === filterCategory;
@@ -282,20 +343,21 @@ function BlogDashboard({ articles, loading, isAdmin, onNew, onEdit, onView, onDe
   });
 
   const categoryCounts = CATEGORIES.reduce((acc, cat) => {
-    acc[cat.key] = cat.key === 'all' ? articles.length : articles.filter(a => a.category === cat.key).length;
+    acc[cat.key] = cat.key === 'all' ? uniqueArticles.length : uniqueArticles.filter(a => a.category === cat.key).length;
     return acc;
   }, {});
 
-  const published   = articles.filter(a => a.status === 'published').length;
-  const drafts      = articles.filter(a => a.status === 'draft').length;
-  const editing     = articles.filter(a => a.status === 'editing').length;
+  const published   = uniqueArticles.filter(a => a.status === 'published').length;
+  const drafts      = uniqueArticles.filter(a => a.status === 'draft').length;
+  const editing     = uniqueArticles.filter(a => a.status === 'editing').length;
   const isFiltering = filterCategory !== 'all' || filterStatus !== 'all' || search.trim() !== '';
 
   return (
     <div className="min-h-screen bg-slate-50">
-      {/* Header */}
-      <div className="bg-white border-b border-slate-200 px-6 py-5">
-        <div className="max-w-6xl mx-auto flex items-center justify-between">
+      {/* Header — narrower max-width and generous side padding so the
+          content sits centered with comfortable margins on all screens. */}
+      <div className="bg-white border-b border-slate-200 px-4 sm:px-8 py-5">
+        <div className="max-w-5xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-teal-500 to-cyan-600 flex items-center justify-center shadow-md">
               <Newspaper size={20} className="text-white" />
@@ -314,7 +376,7 @@ function BlogDashboard({ articles, loading, isAdmin, onNew, onEdit, onView, onDe
         </div>
       </div>
 
-      <div className="max-w-6xl mx-auto px-6 py-6 space-y-6">
+      <div className="max-w-5xl mx-auto px-4 sm:px-8 py-6 space-y-6">
         {/* Stats */}
         {isAdmin && (
           <div className="grid grid-cols-3 gap-4">
@@ -468,7 +530,7 @@ function ArticleReader({ article, onBack, onEdit, tenantName, isAdmin, tenantId 
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <div className="bg-white border-b border-slate-200 px-6 py-4">
+      <div className="bg-white border-b border-slate-200 px-4 sm:px-8 py-4">
         <div className="max-w-3xl mx-auto flex items-center justify-between">
           <button onClick={onBack}
             className="inline-flex items-center gap-2 text-sm text-slate-600 hover:text-teal-600 font-medium transition-colors">
@@ -486,7 +548,7 @@ function ArticleReader({ article, onBack, onEdit, tenantName, isAdmin, tenantId 
         </div>
       </div>
 
-      <div className="max-w-3xl mx-auto px-6 py-8">
+      <div className="max-w-3xl mx-auto px-4 sm:px-8 py-8">
         {/* Tenant branding */}
         <div className="flex items-center gap-2 mb-6">
           <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-teal-500 to-cyan-600 flex items-center justify-center">
@@ -522,34 +584,51 @@ function ArticleReader({ article, onBack, onEdit, tenantName, isAdmin, tenantId 
             )}
           </div>
 
-          {/* Content */}
-          <div className="prose text-slate-700 leading-relaxed">
+          {/* Content — `blog-article-body` constrains inserted images to the
+              container width and keeps typography readable. */}
+          <div className="blog-article-body prose max-w-none text-slate-700 leading-relaxed">
             {article.content
               ? <div dangerouslySetInnerHTML={{ __html: article.content }} />
               : <p className="text-lg font-medium text-slate-600">{article.excerpt}</p>
             }
           </div>
 
-          {/* Reactions */}
-          <div className="mt-8 pt-6 border-t border-slate-100 flex items-center gap-4">
-            {[
-              { type: 'like', icon: '👍', label: 'Me gusta' },
-              { type: 'love', icon: '❤️', label: 'Me encanta' },
-              { type: 'clap', icon: '👏', label: 'Aplauso' },
-              { type: 'idea', icon: '💡', label: 'Buena idea' },
-            ].map(({ type, icon, label }) => {
-              const count = reactions.counts?.[type] ?? 0;
-              const active = reactions.my_reactions?.includes(type);
-              return (
-                <button key={type}
-                  onClick={() => reactMutation.mutate(type)}
-                  className={`flex items-center gap-1.5 text-sm transition-colors ${active ? 'text-teal-600 font-semibold' : 'text-slate-400 hover:text-teal-500'}`}>
-                  <span className="text-base">{icon}</span>
-                  {count > 0 && <span className="font-semibold">{count}</span>}
-                  <span className="hidden sm:inline text-xs">{label}</span>
-                </button>
-              );
-            })}
+          {/* Reactions — only ONE per user. Clicking the same one again
+              removes it; clicking another replaces it. The current count is
+              always visible (including zero) so users always see how many
+              people have interacted. */}
+          <div className="mt-8 pt-6 border-t border-slate-100">
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">
+              ¿Qué te pareció este artículo?
+            </p>
+            <div className="flex items-center gap-2 flex-wrap">
+              {REACTIONS.map(({ type, icon, label }) => {
+                const count  = reactions.counts?.[type] ?? 0;
+                const active = reactions.my_reactions?.includes(type);
+                const busy   = reactMutation.isPending;
+                return (
+                  <button key={type}
+                    type="button"
+                    disabled={busy}
+                    onClick={() => reactMutation.mutate(type)}
+                    title={label}
+                    className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-sm font-semibold transition-all active:scale-95 disabled:opacity-60 ${
+                      active
+                        ? 'border-teal-400 bg-teal-50 text-teal-700 shadow-sm'
+                        : 'border-slate-200 bg-white text-slate-500 hover:border-teal-300 hover:text-teal-600'
+                    }`}>
+                    <span className="text-lg leading-none">{icon}</span>
+                    <span className="text-xs">{label}</span>
+                    <span className={`inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-[11px] font-bold ${
+                      active ? 'bg-teal-600 text-white' : 'bg-slate-100 text-slate-600'
+                    }`}>
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-[11px] text-slate-400 mt-2">Solo puedes elegir una reacción por artículo.</p>
           </div>
         </div>
       </div>
@@ -732,6 +811,14 @@ function ArticleEditor({ article: initialArticle, onBack, onSaved, tenantId, ten
   const [tagInput,          setTagInput]          = useState('');
   const [showPublishModal,  setShowPublishModal]  = useState(false);
 
+  // ── Cover image (file upload) ───────────────────────────────────────────────
+  // The user may either pick a pre-defined gradient+emoji theme OR upload
+  // a custom image which replaces the gradient cover entirely.
+  const [coverImageUrl,  setCoverImageUrl]  = useState(initialArticle?.cover_image_url || '');
+  const [coverImageFile, setCoverImageFile] = useState(null);    // pending upload (after first save)
+  const coverInputRef = useRef(null);
+  const bodyImageInputRef = useRef(null);
+
   // ── Rich-text editor ref ─────────────────────────────────────────────────────
   // We MUST NOT use dangerouslySetInnerHTML with a state variable on a
   // contentEditable div — React re-renders reset the cursor on every keystroke.
@@ -745,17 +832,9 @@ function ArticleEditor({ article: initialArticle, onBack, onSaved, tenantId, ten
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ['blog-posts', tenantId] });
 
-  const saveMutation = useMutation({
-    mutationFn: (data) => isNew
-      ? blogAPI.create(tenantId, data)
-      : blogAPI.update(tenantId, initialArticle.id, data),
-    onSuccess: () => {
-      invalidate();
-      toast.success(isNew ? 'Borrador creado' : 'Artículo guardado');
-      onSaved();
-    },
-    onError: () => toast.error('Error al guardar el artículo'),
-  });
+  // Local saving flag — used by handleSaveDraft / handlePublish to disable
+  // the toolbar buttons while the post + cover image upload are in flight.
+  const [saving, setSaving] = useState(false);
 
   const publishMutation = useMutation({
     mutationFn: ({ postId, publishConfig }) => blogAPI.publish(tenantId, postId, publishConfig),
@@ -767,9 +846,54 @@ function ArticleEditor({ article: initialArticle, onBack, onSaved, tenantId, ten
     onError: () => toast.error('Error al publicar el artículo'),
   });
 
-  const handleSaveDraft = () => {
+  // Upload the pending cover-image (if any) for a given post id, then return
+  // the updated cover_image_url from the response.
+  const uploadPendingCover = async (postId) => {
+    if (!coverImageFile || !postId) return null;
+    const fd = new FormData();
+    fd.append('image', coverImageFile);
+    try {
+      const res = await blogAPI.uploadCover(tenantId, postId, fd);
+      const url = res?.data?.cover_image_url || null;
+      setCoverImageFile(null);
+      if (url) setCoverImageUrl(url);
+      return url;
+    } catch {
+      toast.error('No se pudo subir la imagen de portada');
+      return null;
+    }
+  };
+
+  const handleSaveDraft = async () => {
     if (!title.trim()) return toast.error('El título es obligatorio');
-    saveMutation.mutate({ title, excerpt, content, cover_gradient: coverGrad, cover_emoji: emoji, category, tags, status: 'draft' });
+    setSaving(true);
+    try {
+      let postId = initialArticle?.id;
+      if (isNew || !postId) {
+        const res = await blogAPI.create(tenantId, {
+          title, excerpt, content,
+          cover_gradient: coverGrad, cover_emoji: emoji,
+          category, tags, status: 'draft',
+        });
+        postId = res?.data?.id;
+      } else {
+        await blogAPI.update(tenantId, postId, {
+          title, excerpt, content,
+          cover_gradient: coverGrad, cover_emoji: emoji,
+          category, tags,
+        });
+      }
+      if (coverImageFile && postId) {
+        await uploadPendingCover(postId);
+      }
+      invalidate();
+      toast.success(isNew ? 'Borrador creado' : 'Artículo guardado');
+      onSaved();
+    } catch {
+      toast.error('Error al guardar el artículo');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handlePublish = async (publishConfig) => {
@@ -795,10 +919,86 @@ function ArticleEditor({ article: initialArticle, onBack, onSaved, tenantId, ten
         });
         postId = initialArticle.id;
       }
+      // Upload pending cover image (if any) before publishing so recipients
+      // get the right cover both in-app and in the email.
+      if (coverImageFile && postId) {
+        await uploadPendingCover(postId);
+      }
       publishMutation.mutate({ postId, publishConfig });
     } catch {
       toast.error('Error al publicar el artículo');
     }
+  };
+
+  // Cover image: pick a local file → preview immediately. Actual upload to
+  // the backend happens on the next "save draft" / "publish" action because
+  // the upload endpoint requires the post to already exist.
+  const handleCoverPick = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      toast.error('Selecciona un archivo de imagen');
+      return;
+    }
+    // Soft size guard (~5 MB) to avoid huge uploads
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('La imagen es demasiado grande (máx 5 MB)');
+      return;
+    }
+    setCoverImageFile(file);
+    const reader = new FileReader();
+    reader.onload = ev => setCoverImageUrl(ev.target.result);
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemoveCover = () => {
+    setCoverImageFile(null);
+    setCoverImageUrl('');
+    if (coverInputRef.current) coverInputRef.current.value = '';
+  };
+
+  // Body image: pick a local file → insert into the editor as a base64
+  // data URL. This keeps the change self-contained (no extra endpoint
+  // needed) since article content is stored as HTML.
+  const handleInsertBodyImage = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      toast.error('Selecciona un archivo de imagen');
+      return;
+    }
+    if (file.size > 3 * 1024 * 1024) {
+      toast.error('Imagen muy grande para el cuerpo (máx 3 MB). Considera comprimirla.');
+      e.target.value = '';
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const dataUrl = ev.target.result;
+      // Restore focus to the editor so insertImage drops at the cursor
+      editorRef.current?.focus();
+      const ok = document.execCommand('insertImage', false, dataUrl);
+      if (!ok && editorRef.current) {
+        // Fallback for browsers where execCommand returns false
+        const img = document.createElement('img');
+        img.src = dataUrl;
+        img.style.maxWidth = '100%';
+        img.style.height   = 'auto';
+        editorRef.current.appendChild(img);
+      }
+      // Apply responsive styling to every newly-inserted image
+      if (editorRef.current) {
+        editorRef.current.querySelectorAll('img').forEach(img => {
+          img.style.maxWidth = '100%';
+          img.style.height   = 'auto';
+          img.style.borderRadius = '8px';
+          img.style.margin   = '8px 0';
+        });
+        setContent(editorRef.current.innerHTML);
+      }
+      e.target.value = '';
+    };
+    reader.readAsDataURL(file);
   };
 
   const addTag = () => {
@@ -853,12 +1053,12 @@ function ArticleEditor({ article: initialArticle, onBack, onSaved, tenantId, ten
     );
   }
 
-  const isSaving = saveMutation.isPending || publishMutation.isPending;
+  const isSaving = saving || publishMutation.isPending;
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
       {/* Toolbar */}
-      <div className="bg-white border-b border-slate-200 px-6 py-3 sticky top-0 z-20">
+      <div className="bg-white border-b border-slate-200 px-4 sm:px-8 py-3 sticky top-0 z-20">
         <div className="max-w-5xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
             <button onClick={onBack} className="p-2 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors">
@@ -879,25 +1079,64 @@ function ArticleEditor({ article: initialArticle, onBack, onSaved, tenantId, ten
         </div>
       </div>
 
-      <div className="flex flex-1 max-w-5xl mx-auto w-full px-6 py-6 gap-6">
+      <div className="flex flex-1 max-w-5xl mx-auto w-full px-4 sm:px-8 py-6 gap-6">
         {/* Main editor */}
-        <div className="flex-1 space-y-4">
-          {/* Cover selector */}
+        <div className="flex-1 space-y-4 min-w-0">
+          {/* Cover selector — supports either a pre-defined gradient+emoji
+              template OR a custom uploaded image which replaces the template
+              entirely. The actual upload happens on the next save. */}
           <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-            <div className={`h-48 bg-gradient-to-br ${coverGrad} flex items-center justify-center`}>
-              <span className="text-6xl">{emoji}</span>
+            <div className={`relative h-48 flex items-center justify-center ${coverImageUrl ? '' : `bg-gradient-to-br ${coverGrad}`}`}>
+              {coverImageUrl
+                ? <img src={coverImageUrl} alt="Portada" className="absolute inset-0 w-full h-full object-cover" />
+                : <span className="text-6xl">{emoji}</span>
+              }
+              {coverImageUrl && (
+                <button
+                  type="button"
+                  onClick={handleRemoveCover}
+                  className="absolute top-2 right-2 inline-flex items-center gap-1 px-2.5 py-1.5 bg-white/90 backdrop-blur-sm rounded-lg text-xs font-semibold text-slate-700 hover:bg-white shadow-md transition-all">
+                  <X size={12} /> Quitar
+                </button>
+              )}
             </div>
-            <div className="p-4">
-              <p className="text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wide">Portada del artículo</p>
-              <div className="flex flex-wrap gap-2">
-                {COVER_THEMES.map((th, i) => (
-                  <button key={i}
-                    onClick={() => { setCoverGrad(th.gradient); setEmoji(th.emoji); }}
-                    className={`w-8 h-8 rounded-lg bg-gradient-to-br ${th.gradient} transition-all hover:scale-110 ${coverGrad === th.gradient ? 'ring-2 ring-offset-1 ring-teal-500 scale-110' : ''}`}
-                    title={th.emoji}
-                  />
-                ))}
+            <div className="p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Portada del artículo</p>
+                <input
+                  ref={coverInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleCoverPick}
+                  className="hidden"
+                />
+                <button
+                  type="button"
+                  onClick={() => coverInputRef.current?.click()}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-teal-50 text-teal-700 hover:bg-teal-100 rounded-lg text-xs font-semibold transition-colors">
+                  <Upload size={12} /> {coverImageUrl ? 'Cambiar foto' : 'Subir foto'}
+                </button>
               </div>
+              {!coverImageUrl && (
+                <>
+                  <p className="text-[11px] text-slate-400">O elige una plantilla:</p>
+                  <div className="flex flex-wrap gap-2">
+                    {COVER_THEMES.map((th, i) => (
+                      <button key={i}
+                        type="button"
+                        onClick={() => { setCoverGrad(th.gradient); setEmoji(th.emoji); }}
+                        className={`w-8 h-8 rounded-lg bg-gradient-to-br ${th.gradient} transition-all hover:scale-110 ${coverGrad === th.gradient ? 'ring-2 ring-offset-1 ring-teal-500 scale-110' : ''}`}
+                        title={th.emoji}
+                      />
+                    ))}
+                  </div>
+                </>
+              )}
+              {coverImageFile && (
+                <p className="text-[11px] text-amber-600 font-medium">
+                  La foto se subirá al guardar el artículo.
+                </p>
+              )}
             </div>
           </div>
 
@@ -931,19 +1170,47 @@ function ArticleEditor({ article: initialArticle, onBack, onSaved, tenantId, ten
                 { icon: List,         title: 'Lista',            cmd: 'insertUnorderedList' },
                 { icon: ListOrdered,  title: 'Lista numerada',   cmd: 'insertOrderedList' },
                 null,
-                { icon: Link2,        title: 'Enlace',           cmd: 'createLink' },
+                { icon: Link2,        title: 'Enlace',           cmd: 'createLink', prompt: 'Pega la URL del enlace:' },
                 { icon: Minus,        title: 'Divisor',          cmd: 'insertHorizontalRule' },
               ].map((item, i) =>
                 item === null ? (
                   <div key={`sep-${i}`} className="w-px h-5 bg-slate-200 mx-1" />
                 ) : (
                   <button key={item.title} title={item.title}
-                    onMouseDown={e => { e.preventDefault(); document.execCommand(item.cmd, false, null); }}
+                    type="button"
+                    onMouseDown={e => {
+                      e.preventDefault();
+                      editorRef.current?.focus();
+                      if (item.prompt) {
+                        const url = window.prompt(item.prompt, 'https://');
+                        if (url) document.execCommand(item.cmd, false, url);
+                      } else {
+                        document.execCommand(item.cmd, false, null);
+                      }
+                      if (editorRef.current) setContent(editorRef.current.innerHTML);
+                    }}
                     className="p-1.5 rounded text-slate-500 hover:text-teal-600 hover:bg-teal-50 transition-colors">
                     <item.icon size={15} />
                   </button>
                 )
               )}
+              {/* Separator + Image upload button */}
+              <div className="w-px h-5 bg-slate-200 mx-1" />
+              <input
+                ref={bodyImageInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleInsertBodyImage}
+                className="hidden"
+              />
+              <button
+                type="button"
+                title="Insertar imagen"
+                onMouseDown={e => e.preventDefault()}
+                onClick={() => bodyImageInputRef.current?.click()}
+                className="p-1.5 rounded text-slate-500 hover:text-teal-600 hover:bg-teal-50 transition-colors">
+                <Image size={15} />
+              </button>
             </div>
             <div className="relative">
               {!content && (
@@ -953,10 +1220,12 @@ function ArticleEditor({ article: initialArticle, onBack, onSaved, tenantId, ten
               )}
               <div
                 ref={editorRef}
-                className="min-h-64 p-5 text-slate-700 text-sm leading-relaxed focus:outline-none"
+                className="blog-editor-area min-h-[320px] p-5 text-slate-700 text-sm leading-relaxed focus:outline-none"
                 contentEditable
                 suppressContentEditableWarning
                 onInput={e => setContent(e.currentTarget.innerHTML)}
+                onBlur={e => setContent(e.currentTarget.innerHTML)}
+                style={{ overflowWrap: 'break-word' }}
               />
             </div>
           </div>
