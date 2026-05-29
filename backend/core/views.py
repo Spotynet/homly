@@ -7713,21 +7713,45 @@ class BlogPostViewSet(viewsets.ModelViewSet):
             return None
 
     def get_queryset(self):
+        """Visibility rules for the Communication (Blog) module:
+
+        - Drafts and "Editing" articles → ONLY visible to their author.
+          Other admins, other members and even superadmins cannot list,
+          retrieve, update or delete an article that is not yet
+          published unless they wrote it.
+        - Published articles → visible to every user that matches the
+          audience (all / role / specific user-id list) of that post,
+          AND always visible to the original author.
+
+        Using a single queryset for every action means
+        update/destroy/publish/etc. inherit these rules automatically
+        through DRF's lookup → no extra checks needed.
+        """
         user   = self.request.user
         role   = self._get_role()
         tid    = self.kwargs['tenant_id']
         qs     = BlogPost.objects.filter(tenant_id=tid).select_related('author')
 
-        # Admins & superadmins see everything; regular members see only published+visible
-        if role not in ('superadmin', 'admin'):
-            qs = qs.filter(status='published')
-            # Audience filtering
-            audience_q = Q(audience_type='all')
-            if role:
-                audience_q |= Q(audience_type='roles', audience_roles__contains=[role])
-            if user and user.is_authenticated:
-                audience_q |= Q(audience_type='specific', audience_user_ids__contains=[str(user.pk)])
-            qs = qs.filter(audience_q)
+        # Audience predicate (only meaningful for status='published')
+        audience_q = Q(audience_type='all')
+        if role:
+            audience_q |= Q(audience_type='roles', audience_roles__contains=[role])
+        if user and user.is_authenticated:
+            audience_q |= Q(audience_type='specific',
+                            audience_user_ids__contains=[str(user.pk)])
+
+        # Published articles the current user is allowed to see.
+        published_visible = Q(status='published') & audience_q
+
+        # Author can always see (and edit / delete) anything they wrote,
+        # regardless of status. This is the ONLY way to surface drafts /
+        # editing posts.
+        if user and user.is_authenticated:
+            owned = Q(author=user)
+        else:
+            owned = Q(pk__in=[])  # never matches
+
+        qs = qs.filter(published_visible | owned).distinct()
 
         # Optional filters from query params
         status_filter   = self.request.query_params.get('status')

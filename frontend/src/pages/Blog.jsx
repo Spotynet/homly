@@ -211,9 +211,13 @@ function HeroCard({ article, onEdit, onView, isAdmin }) {
         <div className={`absolute inset-0 bg-gradient-to-br ${coverGradient(article)} transition-transform duration-500 group-hover:scale-105`} />
       )}
 
-      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-        <span className="text-9xl opacity-30 select-none">{coverEmoji(article)}</span>
-      </div>
+      {/* Decorative emoji ONLY when there is no uploaded cover photo —
+          otherwise it covered (and washed out) the user's image. */}
+      {!article.cover_image_url && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <span className="text-9xl opacity-30 select-none">{coverEmoji(article)}</span>
+        </div>
+      )}
 
       <div className="absolute inset-0 bg-gradient-to-t from-slate-900/95 via-slate-900/50 to-transparent" />
 
@@ -599,12 +603,30 @@ function BlogDashboard({ articles, loading, isAdmin, onNew, onEdit, onView, onDe
 function ArticleReader({ article, onBack, onEdit, tenantName, isAdmin, tenantId }) {
   const qc = useQueryClient();
 
+  // ── Live article state ──────────────────────────────────────────────
+  // The parent passes `article` from a stale snapshot (set when the user
+  // clicked "View"). After a reaction the dashboard list is re-fetched,
+  // but the prop reference doesn't update — so counts and "selected"
+  // state appeared frozen until you closed and re-opened the article.
+  //
+  // We keep a local copy and update it from the server response of every
+  // reaction so the count + selection both refresh in real time.
+  const [liveArticle, setLiveArticle] = useState(article);
+  useEffect(() => { setLiveArticle(article); }, [article]);
+
   const reactMutation = useMutation({
     mutationFn: (type) => blogAPI.react(tenantId, article.id, type),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['blog-posts', tenantId] }),
+    onSuccess: (res) => {
+      // The /react/ endpoint returns the full updated post — use it to
+      // refresh both counts and `my_reactions` immediately.
+      if (res?.data) setLiveArticle(res.data);
+      // Keep the dashboard cards consistent on the next render.
+      qc.invalidateQueries({ queryKey: ['blog-posts', tenantId] });
+    },
+    onError: () => toast.error('No se pudo registrar tu reacción'),
   });
 
-  const reactions = article.reactions || { counts: {}, my_reactions: [] };
+  const reactions = liveArticle.reactions || { counts: {}, my_reactions: [] };
 
   return (
     <div className="min-h-screen bg-slate-50">
