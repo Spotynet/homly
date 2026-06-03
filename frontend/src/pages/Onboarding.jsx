@@ -34,10 +34,39 @@ function mapUserRoleToCatalog(role) {
   return 'admin';
 }
 
+// Módulo requerido por chapter id (null = sin restricción de membresía)
+const CHAPTER_MODULE = {
+  'admin-setup':       null,
+  'admin-units':       null,
+  'admin-users':       null,
+  'admin-committee':   null,
+  'tes-cobranza':      'cobranza',
+  'tes-plan-pagos':    'plan_pagos',
+  'tes-gastos':        'gastos',
+  'tes-estado-cuenta': 'estado_cuenta',
+  'tes-cierre':        'cierre_periodo',
+  'cont-dashboard':    'dashboard',
+  'cont-reportes':     'estado_cuenta',
+  'cont-categorias':   null,
+  'cont-cierre':       'cierre_periodo',
+  'vec-my-unit':       'my_unit',
+  'vec-estado-cuenta': 'estado_cuenta',
+  'vec-reservas':      'reservas',
+  'vec-notificaciones':'notificaciones',
+};
+
 // Admin and superadmin see all role sections; everyone else sees only their own.
-function visibleSections(roleKey, isAdmin, isSuperAdmin) {
-  if (isAdmin || isSuperAdmin) return GUIDE_ROLES;
-  return GUIDE_ROLES.filter(s => s.key === roleKey);
+// allowedModules: list from subscription plan (empty = no restriction)
+function visibleSections(roleKey, isAdmin, isSuperAdmin, allowedModules) {
+  const sections = (isAdmin || isSuperAdmin) ? GUIDE_ROLES : GUIDE_ROLES.filter(s => s.key === roleKey);
+  if (!allowedModules || allowedModules.length === 0) return sections;
+  return sections.map(section => ({
+    ...section,
+    chapters: section.chapters.filter(ch => {
+      const mod = CHAPTER_MODULE[ch.id];
+      return !mod || allowedModules.includes(mod);
+    }),
+  })).filter(section => section.chapters.length > 0);
 }
 
 export default function Onboarding() {
@@ -71,6 +100,7 @@ export default function Onboarding() {
 
   const completed = !!tenant?.onboarding_completed;
   const tenantName = tenant?.name || 'tu condominio';
+  const allowedModules = Array.isArray(tenant?.subscription_allowed_modules) ? tenant.subscription_allowed_modules : [];
 
   const startAdminTour = () => navigate('/app/config?tour=1');
 
@@ -203,7 +233,7 @@ export default function Onboarding() {
 
       {/* ── Secciones colapsables por rol ────────────────────────── */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 20 }}>
-        {visibleSections(userRoleKey, isAdmin, isSuperAdmin).map(section => (
+        {visibleSections(userRoleKey, isAdmin, isSuperAdmin, allowedModules).map(section => (
           <RoleSection
             key={section.key}
             section={section}

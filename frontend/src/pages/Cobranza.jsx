@@ -145,6 +145,7 @@ export default function Cobranza() {
   const [viewEvidencePay, setViewEvidencePay]         = useState(null); // { files: [...], loading: bool }
   const [captureUnitPeriods, setCaptureUnitPeriods]   = useState([]);
   const [captureUnitPeriodsLoading, setCaptureUnitPeriodsLoading] = useState(false);
+  const [captureStatementPrevDebt, setCaptureStatementPrevDebt] = useState(null); // net prev debt from estado de cuenta
   // Voucher ID que originó la captura actual; si existe, se marca como "received" al guardar
   const [pendingVoucherId, setPendingVoucherId]       = useState(null);
 
@@ -176,11 +177,15 @@ export default function Cobranza() {
 
   // Cargar períodos con adeudo cuando se abre el modal de captura
   useEffect(() => {
-    if (!showCapture || !tenantId) { setCaptureUnitPeriods([]); return; }
+    if (!showCapture || !tenantId) { setCaptureUnitPeriods([]); setCaptureStatementPrevDebt(null); return; }
     setCaptureUnitPeriodsLoading(true);
     reportsAPI.estadoCuenta(tenantId, { unit_id: showCapture.id })
       .then(res => {
         const rawPeriods = res.data?.periods || [];
+        // Sincronizar deuda anterior con saldo neto del estado de cuenta
+        const stmtPrevDebt  = parseFloat(res.data?.previous_debt  ?? showCapture.previous_debt ?? 0);
+        const stmtPaidDebt  = parseFloat(res.data?.prev_debt_adeudo ?? 0);
+        setCaptureStatementPrevDebt(Math.max(0, stmtPrevDebt - stmtPaidDebt));
         // Solo períodos anteriores al período actual con saldo pendiente
         const withDebt = rawPeriods
           .filter(p => p.period < period && (parseFloat(p.charge) - parseFloat(p.paid)) > 0.01)
@@ -194,7 +199,7 @@ export default function Cobranza() {
           .sort((a, b) => a.period.localeCompare(b.period));
         setCaptureUnitPeriods(withDebt);
       })
-      .catch(() => setCaptureUnitPeriods([]))
+      .catch(() => { setCaptureUnitPeriods([]); setCaptureStatementPrevDebt(null); })
       .finally(() => setCaptureUnitPeriodsLoading(false));
   }, [showCapture, tenantId, period]);
 
@@ -1325,8 +1330,11 @@ export default function Cobranza() {
           : (maintCaptured === 0 && hasNonMaintPayment ? 'parcial' : 'pendiente'));
         const obligFields = [{ id: 'maintenance', label: 'Mantenimiento', charge: maintCharge }, ...reqEFs.map(ef => ({ id: ef.id, label: ef.label, charge: parseFloat(ef.default_amount) || 0 }))];
         const totalAdelantoCount = obligFields.reduce((s, fd) => s + Object.keys(captureForm.field_payments?.[fd.id]?.adelantoTargets || {}).length, 0);
-        const prevDebt = parseFloat(showCapture.previous_debt) || 0;
-        // Abono ya capturado a deuda anterior
+        // Usar saldo neto sincronizado con estado de cuenta; si aún no cargó, usar el campo de la unidad
+        const prevDebt = captureStatementPrevDebt !== null
+          ? captureStatementPrevDebt
+          : (parseFloat(showCapture.previous_debt) || 0);
+        // Abono ya capturado a deuda anterior en esta sesión
         const prevDebtCaptured = Object.values(captureForm.adeudo_payments?.__prevDebt || {})
           .reduce((s, v) => s + (parseFloat(v) || 0), 0);
         const netPrevDebt = Math.max(0, prevDebt - prevDebtCaptured);

@@ -584,12 +584,13 @@ export default function Gastos() {
         {/* ── Period nav + Action buttons ── */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 20 }}>
           <div className="period-nav">
-            <button className="period-nav-btn" onClick={() => setPeriod(prevPeriod(period))}><ChevronLeft size={16} /></button>
+            <button className="period-nav-btn" onClick={() => setPeriod(prevPeriod(period))} disabled={!!tenant?.operation_start_date && period <= tenant.operation_start_date}><ChevronLeft size={16} /></button>
             <input
               type="month"
               className="period-month-select"
               style={{ fontSize: 15, fontWeight: 700 }}
               value={period}
+              min={tenant?.operation_start_date || undefined}
               onChange={e => setPeriod(e.target.value)}
             />
             <button className="period-nav-btn" onClick={() => setPeriod(nextPeriod(period))}><ChevronRight size={16} /></button>
