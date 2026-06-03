@@ -620,6 +620,9 @@ class BlogCoverPublicView(APIView):
     Sirve portadas de artículos del blog sin autenticación.
     Las imágenes de portada NO son datos sensibles (son fotos decorativas
     elegidas por el admin para comunicados de la comunidad).
+    Se sirven directamente desde Django (sin X-Accel-Redirect) para garantizar
+    que el cliente reciba el contenido del archivo en la respuesta HTTP,
+    independientemente de la configuración de nginx en el entorno desplegado.
     Sólo sirve archivos del directorio blog/covers/ para evitar path traversal.
     """
     permission_classes = [permissions.AllowAny]
@@ -633,19 +636,13 @@ class BlogCoverPublicView(APIView):
         full_path = os.path.join(str(settings.MEDIA_ROOT), 'blog', 'covers', safe_name)
         if not os.path.exists(full_path):
             return Response({'detail': 'Imagen no encontrada.'}, status=404)
-        if settings.DEBUG:
-            with open(full_path, 'rb') as f:
-                content = f.read()
-            content_type, _ = mimetypes.guess_type(full_path)
-            resp = HttpResponse(content, content_type=content_type or 'image/jpeg')
-            resp['Cache-Control'] = 'public, max-age=86400'
-            return resp
-        else:
-            resp = HttpResponse()
-            resp['X-Accel-Redirect'] = f'/protected-media/blog/covers/{safe_name}'
-            resp['Content-Type'] = ''
-            resp['Cache-Control'] = 'public, max-age=86400'
-            return resp
+        with open(full_path, 'rb') as f:
+            content = f.read()
+        content_type, _ = mimetypes.guess_type(full_path)
+        resp = HttpResponse(content, content_type=content_type or 'image/jpeg')
+        resp['Cache-Control'] = 'public, max-age=86400'
+        resp['Access-Control-Allow-Origin'] = '*'
+        return resp
 
 
 class TenantListForLoginView(APIView):

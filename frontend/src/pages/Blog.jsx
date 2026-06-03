@@ -194,15 +194,20 @@ function useBlogCover(url) {
     let cancelled = false;
     (async () => {
       try {
-        const res = await api.get(url, { responseType: 'blob' });
+        // Usar fetch nativo (sin interceptores de axios) para recursos públicos.
+        // credentials:'include' preserva la cookie de sesión por si el endpoint
+        // requiere autenticación en algún entorno.
+        const res = await fetch(url, { credentials: 'include' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const blob = await res.blob();
         if (cancelled) return;
-        const blob = res.data;
-        const ext  = (url.split('?')[0].split('.').pop() || '').toLowerCase();
-        const isPdf = blob.type === 'application/pdf' || ext === 'pdf';
-        // Si el blob llega sin MIME (octet-stream), inferir imagen por extensión
+        // Blob vacío = X-Accel-Redirect sin cuerpo: tratar como error
+        if (!blob || blob.size === 0) throw new Error('empty blob');
+        // Inferir MIME desde extensión cuando llega como octet-stream
+        const ext = (url.split('?')[0].split('.').pop() || '').toLowerCase();
         const mime = (blob.type && blob.type !== 'application/octet-stream')
           ? blob.type
-          : isPdf ? 'application/pdf' : 'image/jpeg';
+          : ext === 'pdf' ? 'application/pdf' : 'image/jpeg';
         const typedBlob = blob.type === mime ? blob : new Blob([blob], { type: mime });
         const objUrl = URL.createObjectURL(typedBlob);
         _coverCache.set(url, objUrl);
@@ -235,10 +240,12 @@ const publishedDate = a => (a.published_at  || '').slice(0, 10);
 //   children      — contenido superpuesto (badges, botones, etc.)
 function ArticleCover({ article, className = '', style, imgClassName, emojiSize = 'text-5xl', emojiOpacity = 'opacity-70', children }) {
   const objectUrl = useBlogCover(article?.cover_image_url);
+  const [imgFailed, setImgFailed] = React.useState(false);
+  React.useEffect(() => { setImgFailed(false); }, [objectUrl]);
 
   const gradient = coverGradient(article);
   const emoji    = coverEmoji(article);
-  const hasImg   = !!objectUrl;
+  const hasImg   = !!objectUrl && !imgFailed;
 
   return (
     <div className={`relative overflow-hidden ${hasImg ? '' : `bg-gradient-to-br ${gradient}`} ${className}`} style={style}>
@@ -247,6 +254,7 @@ function ArticleCover({ article, className = '', style, imgClassName, emojiSize 
           src={objectUrl}
           alt={article?.title || ''}
           className={imgClassName || 'absolute inset-0 w-full h-full object-cover'}
+          onError={() => setImgFailed(true)}
         />
       )}
       {!hasImg && (
@@ -975,8 +983,10 @@ function PublishModal({ onClose, onPublish, tenantId }) {
 // Usa useBlogCover para las URLs del servidor para mayor consistencia.
 function EditorCoverPreview({ url, gradient, emoji }) {
   const objectUrl = useBlogCover(url);
+  const [imgFailed, setImgFailed] = React.useState(false);
+  React.useEffect(() => { setImgFailed(false); }, [objectUrl]);
 
-  if (!objectUrl) {
+  if (!objectUrl || imgFailed) {
     return (
       <div className={`absolute inset-0 bg-gradient-to-br ${gradient} flex items-center justify-center`}>
         <span className="text-6xl">{emoji}</span>
@@ -988,6 +998,7 @@ function EditorCoverPreview({ url, gradient, emoji }) {
       src={objectUrl}
       alt="Portada"
       className="absolute inset-0 w-full h-full object-cover"
+      onError={() => setImgFailed(true)}
     />
   );
 }
