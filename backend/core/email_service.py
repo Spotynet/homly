@@ -2267,6 +2267,118 @@ def _build_article_pdf(
     return buf.getvalue()
 
 
+def _preprocess_article_html_for_email(html_content: str, ink: str, ink_dim: str) -> str:
+    """
+    Transform the rich-text editor's raw innerHTML into email-safe HTML.
+
+    The editor produces a mix of <div>, <p>, <h1-6>, <ul>, <ol>, <li>,
+    <b>, <i>, <u>, <a>, <hr>, <img src="data:..."> etc.  Email clients
+    render inline styles only; class/id attributes are stripped.  We:
+      1. Add inline styles to every block element.
+      2. Strip base64 data-URI images (they can be several MB; replace with
+         a small grey placeholder row so the reader knows an image existed).
+      3. Normalise <br> and whitespace.
+    """
+    import re
+    if not html_content:
+        return ''
+
+    body = html_content
+
+    # ── Strip base64 images — replace with placeholder ─────────────────────
+    body = re.sub(
+        r'<img[^>]+src=["\']data:[^"\']+["\'][^>]*>',
+        '<table width="100%" cellpadding="0" cellspacing="0" style="margin:10px 0;">'
+        '<tr><td style="background:#f1f5f9;border-radius:8px;padding:18px;text-align:center;'
+        f'font-size:12px;color:{ink_dim};">'
+        '📷 Imagen adjunta — disponible en la plataforma'
+        '</td></tr></table>',
+        body, flags=re.IGNORECASE | re.DOTALL,
+    )
+
+    # ── External images — add email-safe attributes ────────────────────────
+    body = re.sub(
+        r'<img([^>]+)>',
+        lambda m: (
+            '<img' + m.group(1)
+            + ' style="display:block;max-width:100%;height:auto;border-radius:8px;margin:10px 0;">'
+            if 'style=' not in m.group(1) else '<img' + m.group(1) + '>'
+        ),
+        body, flags=re.IGNORECASE,
+    )
+
+    # ── Headings ─────────────────────────────────────────────────────────────
+    for tag, sz, fw in [('h1','22px','800'), ('h2','18px','700'), ('h3','15px','700'),
+                        ('h4','14px','700'), ('h5','13px','700'), ('h6','12px','700')]:
+        body = re.sub(
+            rf'<{tag}([^>]*)>',
+            f'<{tag} style="margin:18px 0 8px;font-size:{sz};font-weight:{fw};'
+            f'line-height:1.3;color:{ink};">',
+            body, flags=re.IGNORECASE,
+        )
+
+    # ── Paragraphs ───────────────────────────────────────────────────────────
+    body = re.sub(
+        r'<p([^>]*)>',
+        f'<p style="margin:0 0 14px;font-size:15px;line-height:1.7;color:{ink};">',
+        body, flags=re.IGNORECASE,
+    )
+
+    # ── Divs → paragraphs (editor wraps lines in <div>) ──────────────────────
+    body = re.sub(
+        r'<div([^>]*)>',
+        f'<div style="margin:0 0 10px;font-size:15px;line-height:1.7;color:{ink};">',
+        body, flags=re.IGNORECASE,
+    )
+
+    # ── Lists ────────────────────────────────────────────────────────────────
+    body = re.sub(r'<ul([^>]*)>',
+                  '<ul style="margin:0 0 14px;padding-left:22px;">',
+                  body, flags=re.IGNORECASE)
+    body = re.sub(r'<ol([^>]*)>',
+                  '<ol style="margin:0 0 14px;padding-left:22px;">',
+                  body, flags=re.IGNORECASE)
+    body = re.sub(r'<li([^>]*)>',
+                  f'<li style="margin:0 0 6px;font-size:15px;line-height:1.6;color:{ink};">',
+                  body, flags=re.IGNORECASE)
+
+    # ── Inline links ──────────────────────────────────────────────────────────
+    body = re.sub(
+        r'<a([^>]*)>',
+        '<a\\1 style="color:#0d9488;text-decoration:underline;">',
+        body, flags=re.IGNORECASE,
+    )
+
+    # ── Horizontal rules ────────────────────────────────────────────────────
+    body = re.sub(
+        r'<hr[^>]*>',
+        '<hr style="border:none;border-top:1px solid #E8DFD1;margin:18px 0;">',
+        body, flags=re.IGNORECASE,
+    )
+
+    # ── Blockquote ───────────────────────────────────────────────────────────
+    body = re.sub(
+        r'<blockquote([^>]*)>',
+        f'<blockquote style="margin:14px 0;padding:12px 16px;border-left:3px solid #0d9488;'
+        f'background:#f0fdfa;font-size:15px;color:{ink_dim};">',
+        body, flags=re.IGNORECASE,
+    )
+
+    # ── Tables (basic) ───────────────────────────────────────────────────────
+    body = re.sub(r'<table([^>]*)>',
+                  '<table\\1 style="border-collapse:collapse;width:100%;margin:14px 0;">',
+                  body, flags=re.IGNORECASE)
+    body = re.sub(r'<td([^>]*)>',
+                  f'<td\\1 style="padding:8px 10px;border:1px solid #E8DFD1;font-size:14px;color:{ink};">',
+                  body, flags=re.IGNORECASE)
+    body = re.sub(r'<th([^>]*)>',
+                  f'<th\\1 style="padding:8px 10px;border:1px solid #E8DFD1;'
+                  f'background:#f8fafc;font-size:13px;font-weight:700;color:{ink};">',
+                  body, flags=re.IGNORECASE)
+
+    return body
+
+
 def _build_article_html_email(
     *,
     user_name: str,
@@ -2283,92 +2395,137 @@ def _build_article_html_email(
 ) -> str:
     """Build a branded HTML email that renders the full article body.
 
-    The article content is inserted inside a constrained reading column so
-    it looks consistent with the in-app Reader view.
+    The article content is preprocessed for email-client compatibility
+    (inline styles on every element, base64 images stripped, etc.) and
+    wrapped in a constrained reading column matching the in-app reader.
     """
     c = COLORS
+    ink     = c['ink_800']
+    ink_dim = c['ink_600']
+
     logo_img = (
-        f'<img src="cid:{LOGO_CID}" alt="Homly" width="160" '
-        f'style="display:block;height:auto;max-width:160px;margin:0 auto;" />'
+        f'<img src="cid:{LOGO_CID}" alt="Homly" width="140" '
+        f'style="display:block;height:auto;max-width:140px;margin:0 auto;" />'
     )
 
-    # Cover block: prefer real image; otherwise gradient + emoji
+    # ── Cover block ─────────────────────────────────────────────────────────
     if cover_image_url:
         cover = (
-            f'<tr><td style="padding:0 24px;">'
-            f'<img src="{cover_image_url}" alt="" width="100%" '
-            f'style="display:block;border-radius:14px;max-height:280px;object-fit:cover;width:100%;">'
+            f'<tr><td style="padding:0 24px 0;">'
+            f'<img src="{cover_image_url}" alt="{title}" width="100%"'
+            f' style="display:block;border-radius:12px;max-height:280px;'
+            f'object-fit:cover;width:100%;height:auto;">'
             f'</td></tr>'
         )
     else:
         cover = (
             f'<tr><td style="padding:0 24px;">'
-            f'<div style="background:{cover_gradient_css};border-radius:14px;'
-            f'padding:54px 0;text-align:center;">'
-            f'<div style="font-size:62px;line-height:1;">{cover_emoji}</div>'
+            f'<div style="background:{cover_gradient_css};border-radius:12px;'
+            f'padding:52px 0;text-align:center;">'
+            f'<div style="font-size:64px;line-height:1;">{cover_emoji}</div>'
             f'</div></td></tr>'
         )
 
-    meta_line = ' · '.join([b for b in [
-        author_name and f'Por {author_name}',
+    # ── Meta line ────────────────────────────────────────────────────────────
+    meta_parts = [p for p in [
+        f'Por {author_name}' if author_name else '',
         published_at,
         tenant_name,
-    ] if b])
-
-    # Article body wrapper: enforces readable typography for any user-supplied
-    # HTML coming from the rich-text editor.
-    article_body = content_html or f'<p>{excerpt}</p>'
+    ] if p]
+    meta_line = ' &nbsp;·&nbsp; '.join(meta_parts)
 
     safe_title = (title or '').replace('<', '&lt;').replace('>', '&gt;')
 
+    # ── Preprocess the article HTML for email clients ─────────────────────────
+    email_body = _preprocess_article_html_for_email(
+        content_html or (f'<p>{excerpt}</p>' if excerpt else ''),
+        ink=ink,
+        ink_dim=ink_dim,
+    )
+
     html = f"""<!DOCTYPE html>
-<html lang="es"><head><meta charset="UTF-8"><title>{safe_title}</title></head>
-<body style="margin:0;padding:0;background:{c['cream_outer']};font-family:Arial,Helvetica,sans-serif;color:{c['ink_800']};">
-  <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:{c['cream_outer']};padding:24px 0;">
-    <tr><td align="center">
-      <table role="presentation" cellpadding="0" cellspacing="0" width="640"
-             style="max-width:640px;width:100%;background:#ffffff;border-radius:16px;
-                    border:1px solid #E8DFD1;overflow:hidden;">
-        {_email_header_html(c, logo_img, 'Nuevo artículo de la comunidad', tenant_name)}
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{safe_title}</title>
+</head>
+<body style="margin:0;padding:0;background:{c['cream_outer']};font-family:Arial,Helvetica,sans-serif;color:{ink};">
+<table role="presentation" cellpadding="0" cellspacing="0" width="100%"
+       style="background:{c['cream_outer']};padding:28px 0;">
+  <tr><td align="center" style="padding:0 12px;">
 
-        <tr><td style="padding:24px 28px 8px;">
-          <p style="margin:0 0 12px;font-size:14px;color:{c['ink_600']};">
-            Hola <strong style="color:{c['ink_800']};">{user_name or 'vecino'}</strong>,
-            la administración de <strong>{tenant_name}</strong> publicó un nuevo artículo:
-          </p>
-        </td></tr>
+    <table role="presentation" cellpadding="0" cellspacing="0" width="620"
+           style="max-width:620px;width:100%;background:#ffffff;border-radius:18px;
+                  border:1px solid #E8DFD1;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.06);">
 
-        {cover}
+      <!-- HEADER -->
+      {_email_header_html(c, logo_img, 'Comunicado de tu comunidad', tenant_name)}
 
-        <tr><td style="padding:18px 28px 0;">
-          <h1 style="margin:0 0 8px;font-size:24px;line-height:1.25;color:{c['ink_800']};">{safe_title}</h1>
-          <p style="margin:0;font-size:12px;color:{c['ink_400']};">{meta_line}</p>
-        </td></tr>
+      <!-- GREETING -->
+      <tr><td style="padding:24px 32px 16px;">
+        <p style="margin:0;font-size:14px;line-height:1.6;color:{c['ink_600']};">
+          Hola <strong style="color:{ink};">{user_name or 'Residente'}</strong>,<br>
+          <strong style="color:{ink};">{tenant_name}</strong> publicó un nuevo artículo
+          en el módulo de Comunicación:
+        </p>
+      </td></tr>
 
-        {f'<tr><td style="padding:14px 28px 0;"><p style="margin:0;font-size:15px;font-style:italic;color:{c["ink_600"]};line-height:1.55;">{excerpt}</p></td></tr>' if excerpt else ''}
+      <!-- COVER -->
+      {cover}
 
-        <tr><td style="padding:6px 28px 0;">
-          <hr style="border:none;border-top:1px solid #E8DFD1;margin:14px 0;"/>
-        </td></tr>
+      <!-- TITLE + META -->
+      <tr><td style="padding:20px 32px 0;">
+        <h1 style="margin:0 0 8px;font-size:26px;font-weight:800;line-height:1.2;color:{ink};">{safe_title}</h1>
+        {f'<p style="margin:0;font-size:12px;color:{ink_dim};line-height:1.5;">{meta_line}</p>' if meta_line else ''}
+      </td></tr>
 
-        <tr><td style="padding:0 28px 18px;">
-          <div style="font-size:15px;line-height:1.7;color:{c['ink_800']};">
-            {article_body}
-          </div>
-        </td></tr>
+      <!-- EXCERPT -->
+      {f"""<tr><td style="padding:14px 32px 0;">
+        <p style="margin:0;font-size:15px;font-style:italic;color:{c['ink_600']};
+                  line-height:1.65;border-left:3px solid #0d9488;padding-left:14px;">{excerpt}</p>
+      </td></tr>""" if excerpt else ''}
 
-        <tr><td style="padding:8px 28px 24px;text-align:center;">
-          <a href="{app_url}"
-             style="display:inline-block;background:{c['green']};color:#ffffff;text-decoration:none;
-                    padding:12px 22px;border-radius:10px;font-size:13px;font-weight:700;">
-            Abrir en Homly
-          </a>
-        </td></tr>
+      <!-- DIVIDER -->
+      <tr><td style="padding:18px 32px 6px;">
+        <hr style="border:none;border-top:2px solid #E8DFD1;margin:0;">
+      </td></tr>
 
-        {_email_footer_html(c)}
-      </table>
-    </td></tr>
-  </table>
+      <!-- ARTICLE BODY -->
+      <tr><td style="padding:4px 32px 20px;">
+        {email_body}
+      </td></tr>
+
+      <!-- DIVIDER -->
+      <tr><td style="padding:0 32px;">
+        <hr style="border:none;border-top:1px solid #E8DFD1;margin:0;">
+      </td></tr>
+
+      <!-- CTA -->
+      <tr><td style="padding:28px 32px;text-align:center;background:#f0fdfa;border-radius:0 0 0 0;">
+        <p style="margin:0 0 16px;font-size:14px;color:{c['ink_600']};line-height:1.5;">
+          ¿Quieres ver el artículo completo, comentar o reaccionar?<br>
+          Accede a la plataforma con tu cuenta de <strong>{tenant_name}</strong>.
+        </p>
+        <a href="{app_url}"
+           style="display:inline-block;background:linear-gradient(135deg,#0d9488,#06b6d4);
+                  color:#ffffff;text-decoration:none;padding:14px 32px;border-radius:12px;
+                  font-size:15px;font-weight:700;letter-spacing:0.02em;
+                  box-shadow:0 3px 10px rgba(13,148,136,0.35);">
+          Ingresar a Homly →
+        </a>
+        <p style="margin:14px 0 0;font-size:11px;color:{ink_dim};">
+          O copia este enlace en tu navegador:<br>
+          <a href="{app_url}" style="color:#0d9488;text-decoration:none;">{app_url}</a>
+        </p>
+      </td></tr>
+
+      <!-- FOOTER -->
+      {_email_footer_html(c)}
+
+    </table>
+  </td></tr>
+</table>
 </body></html>"""
     return html
 
@@ -2440,19 +2597,22 @@ def send_blog_article_email(
 
     pdf_attachment = None
     if attach_pdf:
-        pdf_bytes = _build_article_pdf(
-            title=title,
-            excerpt=excerpt,
-            content_html=content_html,
-            author_name=author_name,
-            tenant_name=tenant_name,
-            published_at=published_at,
-            cover_emoji=cover_emoji,
-        )
-        if pdf_bytes:
-            import re as _re
-            safe_name = _re.sub(r'[^A-Za-z0-9_\- ]+', '', title).strip().replace(' ', '_')[:60] or 'articulo'
-            pdf_attachment = (f'{safe_name}.pdf', pdf_bytes, 'application/pdf')
+        try:
+            pdf_bytes = _build_article_pdf(
+                title=title,
+                excerpt=excerpt,
+                content_html=content_html,
+                author_name=author_name,
+                tenant_name=tenant_name,
+                published_at=published_at,
+                cover_emoji=cover_emoji,
+            )
+            if pdf_bytes:
+                import re as _re
+                safe_name = _re.sub(r'[^A-Za-z0-9_\- ]+', '', title).strip().replace(' ', '_')[:60] or 'articulo'
+                pdf_attachment = (f'{safe_name}.pdf', pdf_bytes, 'application/pdf')
+        except Exception as _pdf_err:
+            logger.warning('Could not generate article PDF (email will be sent without it): %s', _pdf_err)
 
     return _send_branded_email(
         subject=subject,

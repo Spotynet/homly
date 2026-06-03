@@ -76,6 +76,12 @@ const IconBuilding = () => (
     <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/>
   </svg>
 );
+const IconNewspaper = () => (
+  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#E85D43" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"/>
+    <path d="M18 14h-8M15 18h-5M10 6h8v4h-8z"/>
+  </svg>
+);
 const IconStar = ({ color = '#E85D43', size = 14 }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill={color} stroke={color} strokeWidth="1" strokeLinecap="round" strokeLinejoin="round">
     <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
@@ -379,6 +385,12 @@ export default function Landing() {
               icon: <IconBell />,
               title: 'Notificaciones y Avisos',
               desc: 'Centraliza la comunicación: avisos generales, recordatorios de cobranza y alertas del sistema directamente en la plataforma.',
+            },
+            {
+              icon: <IconNewspaper />,
+              title: 'Comunicación',
+              desc: 'Publica artículos y comunicados para tu comunidad. Categorías, portadas, reacciones y envío por correo. Los residentes reciben todo en un solo lugar.',
+              badge: 'Nuevo',
             },
             {
               icon: <IconUsers />,

@@ -160,7 +160,7 @@ export const paymentsAPI = {
 export const voucherAPI = {
   list:   (tenantId, params) => api.get(`/tenants/${tenantId}/payment-vouchers/`, { params }),
   create: (tenantId, formData) => api.post(`/tenants/${tenantId}/payment-vouchers/`, formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
+    headers: { 'Content-Type': undefined },   // let axios set multipart/form-data + boundary
   }),
   review: (tenantId, id, data) => api.patch(`/tenants/${tenantId}/payment-vouchers/${id}/review/`, data),
 };
@@ -425,7 +425,7 @@ export const blogAPI = {
   unpublish: (tenantId, id)     => api.post(`/tenants/${tenantId}/blog-posts/${id}/unpublish/`),
   uploadCover: (tenantId, id, formData) =>
     api.post(`/tenants/${tenantId}/blog-posts/${id}/cover-image/`, formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
+      headers: { 'Content-Type': undefined },  // let axios set multipart/form-data + boundary
     }),
   react: (tenantId, id, type)   => api.post(`/tenants/${tenantId}/blog-posts/${id}/react/`, { type }),
   comments: {

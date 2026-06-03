@@ -23,10 +23,11 @@ const NAV_ITEMS = {
       { path: '/app/sistema/logs',             icon: Activity,   label: 'Logs del Sistema'  },
     ]},
     { section: 'tenant_general', label: 'General', items: [
-      { path: '/app/dashboard',      icon: Home,      label: 'Dashboard'     },
-      { path: '/app/reservas',       icon: Calendar,  label: 'Reservas'      },
+      { path: '/app/dashboard',      icon: Home,      label: 'Dashboard'      },
+      { path: '/app/reservas',       icon: Calendar,  label: 'Reservas'       },
+      { path: '/app/blog',           icon: Newspaper, label: 'Comunicación'   },
       { path: '/app/notificaciones', icon: Bell,      label: 'Notificaciones' },
-      { path: '/app/onboarding',     icon: Sparkles,  label: 'Guías de uso'  },
+      { path: '/app/onboarding',     icon: Sparkles,  label: 'Guías de uso'   },
     ]},
     { section: 'tenant_finanzas', label: 'Finanzas', items: [
       { path: '/app/cobranza',       icon: Receipt,      label: 'Cobranza'          },
@@ -37,7 +38,8 @@ const NAV_ITEMS = {
       { path: '/app/cierre-periodo', icon: Lock,         label: 'Cierre de Período' },
     ]},
     { section: 'tenant_ajustes', label: 'Ajustes', items: [
-      { path: '/app/config', icon: Settings, label: 'Configuración' },
+      { path: '/app/mi-membresia', icon: CreditCard, label: 'Mi Membresía'  },
+      { path: '/app/config',       icon: Settings,   label: 'Configuración' },
     ]},
   ],
 

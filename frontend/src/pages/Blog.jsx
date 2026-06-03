@@ -170,6 +170,46 @@ const viewsCount    = a => a.views_count    ?? 0;
 const createdDate   = a => (a.created_at    || '').slice(0, 10);
 const publishedDate = a => (a.published_at  || '').slice(0, 10);
 
+// ─── ArticleCover ──────────────────────────────────────────────────────────────
+// Componente centralizado para mostrar la portada de un artículo.
+// Si hay cover_image_url la muestra como <img>. Si falla la carga (onError)
+// o no existe, muestra el gradiente con emoji como fallback.
+//
+// Props:
+//   article       — objeto artículo con cover_image_url, cover_gradient, cover_emoji, title
+//   className     — clases para el <img> o el div gradiente (tamaño, rounded, etc.)
+//   style         — estilos adicionales opcionales
+//   imgClassName  — override de clases sólo para el <img> (default: className)
+//   children      — contenido superpuesto (badges, botones, etc.)
+function ArticleCover({ article, className = '', style, imgClassName, emojiSize = 'text-5xl', emojiOpacity = 'opacity-70', children }) {
+  const [failed, setFailed] = React.useState(false);
+
+  React.useEffect(() => { setFailed(false); }, [article?.cover_image_url]);
+
+  const gradient = coverGradient(article);
+  const emoji    = coverEmoji(article);
+  const hasImg   = !!article?.cover_image_url && !failed;
+
+  return (
+    <div className={`relative overflow-hidden ${hasImg ? '' : `bg-gradient-to-br ${gradient}`} ${className}`} style={style}>
+      {hasImg && (
+        <img
+          src={article.cover_image_url}
+          alt={article.title || ''}
+          className={imgClassName || 'absolute inset-0 w-full h-full object-cover'}
+          onError={() => setFailed(true)}
+        />
+      )}
+      {!hasImg && (
+        <div className={`absolute inset-0 flex items-center justify-center pointer-events-none select-none ${emojiOpacity}`}>
+          <span className={emojiSize}>{emoji}</span>
+        </div>
+      )}
+      {children}
+    </div>
+  );
+}
+
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function StatusBadge({ status }) {
@@ -185,19 +225,12 @@ function StatusBadge({ status }) {
 
 function CoverBlock({ article, large = false }) {
   const sz = large ? 'h-64' : 'h-44';
-  if (article.cover_image_url) {
-    return (
-      <img
-        src={article.cover_image_url}
-        alt={article.title}
-        className={`w-full ${sz} object-cover rounded-xl`}
-      />
-    );
-  }
   return (
-    <div className={`w-full ${sz} bg-gradient-to-br ${coverGradient(article)} flex items-center justify-center rounded-xl`}>
-      <span className={large ? 'text-7xl' : 'text-5xl'}>{coverEmoji(article)}</span>
-    </div>
+    <ArticleCover
+      article={article}
+      className={`w-full ${sz} rounded-xl`}
+      imgClassName={`absolute inset-0 w-full h-full object-cover rounded-xl`}
+    />
   );
 }
 
@@ -210,23 +243,13 @@ function HeroCard({ article, onEdit, onView, isAdmin }) {
       style={{ height: '420px' }}
       onClick={() => onView(article)}
     >
-      {article.cover_image_url ? (
-        <img
-          src={article.cover_image_url}
-          alt={article.title}
-          className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-        />
-      ) : (
-        <div className={`absolute inset-0 bg-gradient-to-br ${coverGradient(article)} transition-transform duration-500 group-hover:scale-105`} />
-      )}
-
-      {/* Decorative emoji ONLY when there is no uploaded cover photo —
-          otherwise it covered (and washed out) the user's image. */}
-      {!article.cover_image_url && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <span className="text-9xl opacity-30 select-none">{coverEmoji(article)}</span>
-        </div>
-      )}
+      <ArticleCover
+        article={article}
+        className="absolute inset-0 w-full h-full transition-transform duration-500 group-hover:scale-105"
+        imgClassName="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+        emojiSize="text-9xl"
+        emojiOpacity="opacity-20"
+      />
 
       <div className="absolute inset-0 bg-gradient-to-t from-slate-900/95 via-slate-900/50 to-transparent" />
 
@@ -300,13 +323,9 @@ function CarouselCard({ article, onEdit, onView, isAdmin }) {
       className="flex-shrink-0 w-52 bg-white rounded-xl border border-slate-200 overflow-hidden hover:shadow-lg hover:-translate-y-1 transition-all duration-200 group cursor-pointer"
       onClick={() => onView(article)}
     >
-      <div className={`relative h-32 bg-gradient-to-br ${coverGradient(article)} flex items-center justify-center overflow-hidden`}>
-        {article.cover_image_url
-          ? <img src={article.cover_image_url} alt={article.title} className="absolute inset-0 w-full h-full object-cover" />
-          : <span className="text-4xl group-hover:scale-110 transition-transform duration-300">{coverEmoji(article)}</span>
-        }
-        <div className="absolute top-2 right-2"><StatusBadge status={article.status} /></div>
-        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+      <ArticleCover article={article} className="relative h-32">
+        <div className="absolute top-2 right-2 z-10"><StatusBadge status={article.status} /></div>
+        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 z-10">
           <button onClick={e => { e.stopPropagation(); onView(article); }}
             className="p-2 bg-white/90 rounded-lg text-slate-700 hover:bg-white transition-colors shadow-md"><Eye size={14} /></button>
           {isAdmin && (
@@ -314,7 +333,7 @@ function CarouselCard({ article, onEdit, onView, isAdmin }) {
               className="p-2 bg-white/90 rounded-lg text-slate-700 hover:bg-white transition-colors shadow-md"><Edit3 size={14} /></button>
           )}
         </div>
-      </div>
+      </ArticleCover>
       <div className="p-3">
         {cat && (
           <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border mb-2 ${cat.color}`}>
@@ -352,13 +371,9 @@ function GridCard({ article, onEdit, onView, onDelete, isAdmin }) {
   return (
     <div className="bg-white rounded-xl border border-slate-200 overflow-hidden hover:shadow-md transition-all group">
       <div className="relative cursor-pointer" onClick={() => onView(article)}>
-        <div className={`relative w-full h-40 bg-gradient-to-br ${coverGradient(article)} flex items-center justify-center overflow-hidden`}>
-          {article.cover_image_url
-            ? <img src={article.cover_image_url} alt={article.title} className="absolute inset-0 w-full h-full object-cover" />
-            : <span className="text-5xl group-hover:scale-105 transition-transform duration-200">{coverEmoji(article)}</span>
-          }
-        </div>
-        <div className="absolute top-2.5 right-2.5"><StatusBadge status={article.status} /></div>
+        <ArticleCover article={article} className="w-full h-40">
+          <div className="absolute top-2.5 right-2.5 z-10"><StatusBadge status={article.status} /></div>
+        </ArticleCover>
       </div>
       <div className="p-4">
         <h3 className="font-bold text-slate-800 text-sm leading-snug mb-1 cursor-pointer hover:text-teal-600 transition-colors line-clamp-2"
@@ -904,6 +919,29 @@ function PublishModal({ onClose, onPublish, tenantId }) {
 }
 
 // ─── View: Editor ──────────────────────────────────────────────────────────────
+// Preview de portada en el editor — maneja tanto data: URLs (preview local)
+// como URLs públicas del servidor (artículo ya guardado).
+function EditorCoverPreview({ url, gradient, emoji, onError }) {
+  const [failed, setFailed] = React.useState(false);
+  React.useEffect(() => { setFailed(false); }, [url]);
+
+  if (!url || failed) {
+    return (
+      <div className={`absolute inset-0 bg-gradient-to-br ${gradient} flex items-center justify-center`}>
+        <span className="text-6xl">{emoji}</span>
+      </div>
+    );
+  }
+  return (
+    <img
+      src={url}
+      alt="Portada"
+      className="absolute inset-0 w-full h-full object-cover"
+      onError={() => { setFailed(true); onError?.(); }}
+    />
+  );
+}
+
 function ArticleEditor({ article: initialArticle, onBack, onSaved, tenantId, tenantName }) {
   const isNew = !initialArticle?.id;
   const qc    = useQueryClient();
@@ -1232,16 +1270,26 @@ function ArticleEditor({ article: initialArticle, onBack, onSaved, tenantId, ten
               template OR a custom uploaded image which replaces the template
               entirely. The actual upload happens on the next save. */}
           <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-            <div className={`relative h-48 flex items-center justify-center ${coverImageUrl ? '' : `bg-gradient-to-br ${coverGrad}`}`}>
-              {coverImageUrl
-                ? <img src={coverImageUrl} alt="Portada" className="absolute inset-0 w-full h-full object-cover" />
-                : <span className="text-6xl">{emoji}</span>
-              }
+            {/* Preview de portada: usa ArticleCover para artículos existentes (URL pública),
+                o <img> directo para la preview local (data: URL) antes de subir. */}
+            <div className={`relative h-48 ${!coverImageUrl ? `bg-gradient-to-br ${coverGrad}` : ''}`}>
+              {coverImageUrl ? (
+                <EditorCoverPreview
+                  url={coverImageUrl}
+                  gradient={coverGrad}
+                  emoji={emoji}
+                  onError={() => setCoverImageUrl('')}
+                />
+              ) : (
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <span className="text-6xl">{emoji}</span>
+                </div>
+              )}
               {coverImageUrl && (
                 <button
                   type="button"
                   onClick={handleRemoveCover}
-                  className="absolute top-2 right-2 inline-flex items-center gap-1 px-2.5 py-1.5 bg-white/90 backdrop-blur-sm rounded-lg text-xs font-semibold text-slate-700 hover:bg-white shadow-md transition-all">
+                  className="absolute top-2 right-2 z-10 inline-flex items-center gap-1 px-2.5 py-1.5 bg-white/90 backdrop-blur-sm rounded-lg text-xs font-semibold text-slate-700 hover:bg-white shadow-md transition-all">
                   <X size={12} /> Quitar
                 </button>
               )}
