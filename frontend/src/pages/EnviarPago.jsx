@@ -17,11 +17,16 @@ const STATUS = {
   rejected: { label: 'Rechazado', icon: XCircle,     color: 'text-rose-600',    bg: 'bg-rose-50',    border: 'border-rose-200' },
 };
 
-const ACCEPTED_MIME = new Set([
-  'image/jpeg', 'image/jpg', 'image/png', 'image/gif',
-  'image/webp', 'application/pdf',
-]);
-const ACCEPTED_EXT = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'pdf'];
+// Aceptamos cualquier imagen (incluye HEIC/HEIF de iPhone) y PDF
+const ACCEPTED_EXT = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif', 'pdf'];
+
+function isAcceptedFile(f) {
+  if (!f) return false;
+  if (f.type?.startsWith('image/')) return true;
+  if (f.type === 'application/pdf') return true;
+  const ext = (f.name?.split('.').pop() || '').toLowerCase();
+  return ACCEPTED_EXT.includes(ext);
+}
 
 function StatusBadge({ status }) {
   const s = STATUS[status];
@@ -80,54 +85,45 @@ function normalizeFile(f) {
 }
 
 // ─── Evidence popup (exported for reuse in Cobranza) ─────────────────────────
-// Fetches any protected or public URL via the authenticated api instance,
-// converts the blob to base64 and shows it inline in a modal.
+// Fetches any protected URL via the authenticated api instance and shows it inline.
+// Uses URL.createObjectURL for efficiency — no base64 conversion needed.
 export function EvidencePopup({ url, fileName, onClose }) {
-  const [state, setState] = useState({ loading: true, b64: null, mime: null, error: null });
+  const [state, setState] = useState({ loading: true, objectUrl: null, isPdf: false, error: null });
+  const objUrlRef = useRef(null);
 
   useEffect(() => {
     if (!url) {
-      setState({ loading: false, b64: null, mime: null, error: 'URL no disponible.' });
+      setState({ loading: false, objectUrl: null, isPdf: false, error: 'URL no disponible.' });
       return;
     }
     let cancelled = false;
     (async () => {
       try {
         const res = await api.get(url, { responseType: 'blob' });
+        if (cancelled) return;
         const blob = res.data;
-        const mime = blob.type || 'application/octet-stream';
-        const reader = new FileReader();
-        reader.onload = (ev) => {
-          if (cancelled) return;
-          const b64 = (ev.target.result || '').split(',')[1] || '';
-          setState({ loading: false, b64, mime, error: null });
-        };
-        reader.onerror = () => {
-          if (!cancelled) setState({ loading: false, b64: null, mime: null, error: 'No se pudo leer el archivo.' });
-        };
-        reader.readAsDataURL(blob);
+        // Detect type from blob.type, fallback to filename extension
+        const mimeFromBlob = blob.type && blob.type !== 'application/octet-stream' ? blob.type : '';
+        const ext = (fileName || url || '').split('.').pop()?.toLowerCase() || '';
+        const isPdf = mimeFromBlob === 'application/pdf' || ext === 'pdf';
+        // Rebuild blob with correct MIME when browser returns octet-stream
+        const effectiveMime = mimeFromBlob || (isPdf ? 'application/pdf' : 'image/jpeg');
+        const typedBlob = mimeFromBlob ? blob : new Blob([blob], { type: effectiveMime });
+        const objectUrl = URL.createObjectURL(typedBlob);
+        objUrlRef.current = objectUrl;
+        setState({ loading: false, objectUrl, isPdf, error: null });
       } catch {
-        if (!cancelled) setState({ loading: false, b64: null, mime: null, error: 'No se pudo cargar el comprobante.' });
+        if (!cancelled) setState({ loading: false, objectUrl: null, isPdf: false, error: 'No se pudo cargar el comprobante.' });
       }
     })();
-    return () => { cancelled = true; };
-  }, [url]);
+    return () => {
+      cancelled = true;
+      if (objUrlRef.current) { URL.revokeObjectURL(objUrlRef.current); objUrlRef.current = null; }
+    };
+  }, [url, fileName]);
 
-  const { loading, b64, mime, error } = state;
-
-  const isPdf   = mime === 'application/pdf' || /\.pdf$/i.test(fileName || '');
-  const isImage = mime?.startsWith('image/')
-    || b64?.startsWith('iVBOR')   // PNG
-    || b64?.startsWith('/9j/')    // JPEG
-    || b64?.startsWith('R0lGO')   // GIF
-    || b64?.startsWith('UklGR');  // WebP
-  const effectiveMime = isPdf ? 'application/pdf'
-    : mime && mime !== 'application/octet-stream' ? mime
-    : b64?.startsWith('iVBOR') ? 'image/png'
-    : b64?.startsWith('/9j/')  ? 'image/jpeg'
-    : b64?.startsWith('R0lGO') ? 'image/gif'
-    : b64?.startsWith('UklGR') ? 'image/webp'
-    : 'application/octet-stream';
+  const { loading, objectUrl, isPdf, error } = state;
+  const isImage = !isPdf;
 
   return (
     <div className="modal-bg open" style={{ zIndex: 9999 }} onClick={onClose}>
@@ -151,11 +147,11 @@ export function EvidencePopup({ url, fileName, onClose }) {
               {error}
             </div>
           )}
-          {!loading && !error && b64 && (
+          {!loading && !error && objectUrl && (
             isPdf ? (
               <div style={{ height: '72vh', border: '1px solid var(--sand-200)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
                 <iframe
-                  src={`data:application/pdf;base64,${b64}`}
+                  src={objectUrl}
                   style={{ width: '100%', height: '100%', border: 'none' }}
                   title="Comprobante PDF"
                 />
@@ -163,17 +159,17 @@ export function EvidencePopup({ url, fileName, onClose }) {
             ) : isImage ? (
               <div style={{ textAlign: 'center', background: 'var(--sand-50)', borderRadius: 'var(--radius-md)', padding: 8, maxHeight: '75vh', overflow: 'auto' }}>
                 <img
-                  src={`data:${effectiveMime};base64,${b64}`}
+                  src={objectUrl}
                   alt="Comprobante"
                   style={{ maxWidth: '100%', borderRadius: 'var(--radius-sm)', display: 'inline-block' }}
+                  onError={() => setState(s => ({ ...s, error: 'No se pudo mostrar la imagen.' }))}
                 />
               </div>
             ) : (
               <div style={{ textAlign: 'center', padding: 48 }}>
                 <FileText size={52} style={{ color: 'var(--ink-300)', marginBottom: 16, display: 'block', margin: '0 auto 16px' }} />
                 <p style={{ color: 'var(--ink-500)', marginBottom: 20 }}>Vista previa no disponible.</p>
-                <a href={`data:${effectiveMime};base64,${b64}`} download={fileName || 'comprobante'}
-                  className="btn btn-primary">Descargar archivo</a>
+                <a href={objectUrl} download={fileName || 'comprobante'} className="btn btn-primary">Descargar archivo</a>
               </div>
             )
           )}
@@ -253,10 +249,8 @@ function NewVoucherForm({ tenantId, onSuccess, onFileChange }) {
     if (e.target) e.target.value = '';
     if (!raw) return;
     const f = normalizeFile(raw);
-    const mime = f.type || '';
-    const ext  = (f.name.split('.').pop() || '').toLowerCase();
-    if (!ACCEPTED_MIME.has(mime) && !ACCEPTED_EXT.includes(ext)) {
-      toast.error('Formato no permitido. Usa JPG, JPEG, PNG, GIF o PDF');
+    if (!isAcceptedFile(f)) {
+      toast.error('Formato no permitido. Usa una imagen (JPG, PNG, HEIC) o PDF');
       return;
     }
     if (f.size > 15 * 1024 * 1024) { toast.error('Archivo demasiado grande (máx 15 MB)'); return; }
@@ -311,7 +305,7 @@ function NewVoucherForm({ tenantId, onSuccess, onFileChange }) {
             <input
               ref={fileInputRef}
               type="file"
-              accept=".jpg,.jpeg,.png,.gif,.pdf"
+              accept="image/*,.pdf"
               onChange={handleFile}
               className="hidden"
             />
