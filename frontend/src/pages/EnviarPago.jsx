@@ -6,8 +6,8 @@ import { todayPeriod, prevPeriod, periodLabel } from '../utils/helpers';
 import toast from 'react-hot-toast';
 import {
   Upload, Camera, FileText, Clock, CheckCircle, XCircle,
-  Send, Loader2, Eye, Calendar,
-  Receipt, AlertCircle, X, Image as ImageIcon,
+  Send, Loader2, Eye, Calendar, Receipt, AlertCircle, X,
+  Image as ImageIcon,
 } from 'lucide-react';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -16,6 +16,12 @@ const STATUS = {
   received: { label: 'Recibido',  icon: CheckCircle, color: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-200' },
   rejected: { label: 'Rechazado', icon: XCircle,     color: 'text-rose-600',    bg: 'bg-rose-50',    border: 'border-rose-200' },
 };
+
+const ACCEPTED_MIME = new Set([
+  'image/jpeg', 'image/jpg', 'image/png', 'image/gif',
+  'image/webp', 'application/pdf',
+]);
+const ACCEPTED_EXT = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'pdf'];
 
 function StatusBadge({ status }) {
   const s = STATUS[status];
@@ -39,13 +45,51 @@ function buildPeriodOptions() {
   return options;
 }
 
-// ─── Evidence popup (mirrors Cobranza's evidencePopup) — exported for reuse ──
-// Fetches the protected media URL via axios (sends auth cookies), then
-// converts the blob to a data URL for display.
+// Normalise a File from camera or picker:
+// - Ensures MIME type is detected and set
+// - Gives an explicit name when the browser provides a generic/empty one
+function normalizeFile(f) {
+  if (!f) return f;
+  let mime = f.type || '';
+  let name = f.name || '';
+
+  // Camera captures often have name like "image.jpg", "photo.jpg" or empty
+  // Normalise empty name
+  if (!name || name === 'blob') {
+    const ext = mime === 'application/pdf' ? 'pdf'
+      : mime === 'image/png'  ? 'png'
+      : mime === 'image/gif'  ? 'gif'
+      : mime === 'image/webp' ? 'webp'
+      : 'jpg';
+    name = `comprobante_${Date.now()}.${ext}`;
+  }
+
+  // If MIME is missing but extension tells us what it is, infer it
+  if (!mime) {
+    const ext = name.split('.').pop()?.toLowerCase() || '';
+    mime = ext === 'pdf' ? 'application/pdf'
+      : ext === 'png'   ? 'image/png'
+      : ext === 'gif'   ? 'image/gif'
+      : ext === 'webp'  ? 'image/webp'
+      : 'image/jpeg';
+  }
+
+  // Only rebuild if something changed
+  if (mime === f.type && name === f.name) return f;
+  return new File([f], name, { type: mime, lastModified: f.lastModified || Date.now() });
+}
+
+// ─── Evidence popup (exported for reuse in Cobranza) ─────────────────────────
+// Fetches any protected or public URL via the authenticated api instance,
+// converts the blob to base64 and shows it inline in a modal.
 export function EvidencePopup({ url, fileName, onClose }) {
   const [state, setState] = useState({ loading: true, b64: null, mime: null, error: null });
 
   useEffect(() => {
+    if (!url) {
+      setState({ loading: false, b64: null, mime: null, error: 'URL no disponible.' });
+      return;
+    }
     let cancelled = false;
     (async () => {
       try {
@@ -55,9 +99,7 @@ export function EvidencePopup({ url, fileName, onClose }) {
         const reader = new FileReader();
         reader.onload = (ev) => {
           if (cancelled) return;
-          // ev.target.result is "data:mime;base64,XXXX" — extract just the base64 part
-          const dataUrl = ev.target.result;
-          const b64 = dataUrl.split(',')[1] || '';
+          const b64 = (ev.target.result || '').split(',')[1] || '';
           setState({ loading: false, b64, mime, error: null });
         };
         reader.onerror = () => {
@@ -99,12 +141,13 @@ export function EvidencePopup({ url, fileName, onClose }) {
         <div className="modal-body" style={{ padding: 16 }}>
           {loading && (
             <div style={{ textAlign: 'center', padding: 48, color: 'var(--ink-400)', fontSize: 13 }}>
-              <Loader2 size={28} className="animate-spin" style={{ margin: '0 auto 10px' }} />
+              <Loader2 size={28} className="animate-spin" style={{ margin: '0 auto 10px', display: 'block' }} />
               Cargando comprobante…
             </div>
           )}
           {error && (
             <div style={{ textAlign: 'center', padding: 48, color: 'var(--coral-600)', fontSize: 13 }}>
+              <AlertCircle size={32} style={{ margin: '0 auto 10px', display: 'block', opacity: 0.5 }} />
               {error}
             </div>
           )}
@@ -118,7 +161,7 @@ export function EvidencePopup({ url, fileName, onClose }) {
                 />
               </div>
             ) : isImage ? (
-              <div style={{ textAlign: 'center', background: 'var(--sand-50)', borderRadius: 'var(--radius-md)', padding: 8, maxHeight: '72vh', overflow: 'auto' }}>
+              <div style={{ textAlign: 'center', background: 'var(--sand-50)', borderRadius: 'var(--radius-md)', padding: 8, maxHeight: '75vh', overflow: 'auto' }}>
                 <img
                   src={`data:${effectiveMime};base64,${b64}`}
                   alt="Comprobante"
@@ -127,15 +170,10 @@ export function EvidencePopup({ url, fileName, onClose }) {
               </div>
             ) : (
               <div style={{ textAlign: 'center', padding: 48 }}>
-                <FileText size={52} style={{ color: 'var(--ink-300)', marginBottom: 16 }} />
-                <p style={{ color: 'var(--ink-500)', marginBottom: 20 }}>Vista previa no disponible para este tipo de archivo.</p>
-                <a
-                  href={`data:${effectiveMime};base64,${b64}`}
-                  download={fileName || 'comprobante'}
-                  className="btn btn-primary"
-                >
-                  Descargar archivo
-                </a>
+                <FileText size={52} style={{ color: 'var(--ink-300)', marginBottom: 16, display: 'block', margin: '0 auto 16px' }} />
+                <p style={{ color: 'var(--ink-500)', marginBottom: 20 }}>Vista previa no disponible.</p>
+                <a href={`data:${effectiveMime};base64,${b64}`} download={fileName || 'comprobante'}
+                  className="btn btn-primary">Descargar archivo</a>
               </div>
             )
           )}
@@ -145,35 +183,43 @@ export function EvidencePopup({ url, fileName, onClose }) {
   );
 }
 
-// ─── Image/file preview (local file before upload) ────────────────────────────
+// ─── Local file preview (before upload) ──────────────────────────────────────
 function FilePreview({ file, onRemove }) {
-  const isImage = file?.type?.startsWith('image/');
-  const url = file ? URL.createObjectURL(file) : null;
+  const [previewUrl, setPreviewUrl] = useState(null);
+  const isImg = file?.type?.startsWith('image/');
+
+  useEffect(() => {
+    if (!file) { setPreviewUrl(null); return; }
+    const url = URL.createObjectURL(file);
+    setPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
+
   return (
     <div className="relative border-2 border-teal-200 rounded-xl overflow-hidden bg-slate-50">
-      {isImage ? (
-        <img src={url} alt="Comprobante" className="w-full max-h-56 object-contain" />
+      {isImg && previewUrl ? (
+        <img src={previewUrl} alt="Comprobante" className="w-full max-h-56 object-contain" />
       ) : (
         <div className="flex items-center gap-3 p-4">
           <FileText size={32} className="text-teal-600 flex-shrink-0" />
           <div className="min-w-0">
-            <p className="text-sm font-semibold text-slate-700 truncate">{file.name}</p>
-            <p className="text-xs text-slate-400">{(file.size / 1024).toFixed(1)} KB</p>
+            <p className="text-sm font-semibold text-slate-700 truncate">{file?.name || 'Archivo adjunto'}</p>
+            <p className="text-xs text-slate-400">{file ? `${(file.size / 1024).toFixed(1)} KB` : ''}</p>
           </div>
         </div>
       )}
       <button
         type="button"
         onClick={onRemove}
-        className="absolute top-2 right-2 p-1 bg-white/90 rounded-full shadow text-slate-500 hover:text-rose-500 transition-colors">
-        <X size={14} />
+        className="absolute top-2 right-2 p-1.5 bg-white/90 rounded-full shadow text-slate-500 hover:text-rose-600 transition-colors">
+        <X size={13} />
       </button>
     </div>
   );
 }
 
 // ─── New Voucher Form ─────────────────────────────────────────────────────────
-function NewVoucherForm({ tenantId, onSuccess }) {
+function NewVoucherForm({ tenantId, onSuccess, onFileChange }) {
   const periodOptions = buildPeriodOptions();
   const [period, setPeriod] = useState(periodOptions[0]);
   const [notes, setNotes]   = useState('');
@@ -181,6 +227,9 @@ function NewVoucherForm({ tenantId, onSuccess }) {
   const fileInputRef   = useRef(null);
   const cameraInputRef = useRef(null);
   const qc = useQueryClient();
+
+  // Notify parent when file state changes (for red cancel button)
+  useEffect(() => { onFileChange?.(!!file); }, [file, onFileChange]);
 
   const mutation = useMutation({
     mutationFn: (fd) => voucherAPI.create(tenantId, fd),
@@ -190,6 +239,7 @@ function NewVoucherForm({ tenantId, onSuccess }) {
       setFile(null);
       setNotes('');
       setPeriod(periodOptions[0]);
+      onFileChange?.(false);
       onSuccess?.();
     },
     onError: (err) => {
@@ -198,19 +248,14 @@ function NewVoucherForm({ tenantId, onSuccess }) {
     },
   });
 
-  const ACCEPTED_MIME = new Set([
-    'image/jpeg', 'image/jpg', 'image/png', 'image/gif',
-    'image/webp', 'application/pdf',
-  ]);
-
   const handleFile = (e) => {
-    const f = e.target.files?.[0];
+    const raw = e.target.files?.[0];
     if (e.target) e.target.value = '';
-    if (!f) return;
+    if (!raw) return;
+    const f = normalizeFile(raw);
     const mime = f.type || '';
-    const ext  = f.name.split('.').pop()?.toLowerCase() || '';
-    const allowedExt = ['jpg','jpeg','png','gif','pdf','webp'].includes(ext);
-    if (!ACCEPTED_MIME.has(mime) && !allowedExt) {
+    const ext  = (f.name.split('.').pop() || '').toLowerCase();
+    if (!ACCEPTED_MIME.has(mime) && !ACCEPTED_EXT.includes(ext)) {
       toast.error('Formato no permitido. Usa JPG, JPEG, PNG, GIF o PDF');
       return;
     }
@@ -223,26 +268,26 @@ function NewVoucherForm({ tenantId, onSuccess }) {
     const fd = new FormData();
     fd.append('period', period);
     fd.append('notes', notes);
-    fd.append('evidence_file', file);
+    fd.append('evidence_file', file, file.name);
     mutation.mutate(fd);
   };
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 p-6 space-y-5">
-      <div className="flex items-center gap-3 pb-4 border-b border-slate-100">
-        <div className="w-9 h-9 rounded-xl bg-teal-50 flex items-center justify-center">
+    <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-6 space-y-4 sm:space-y-5">
+      <div className="flex items-center gap-3 pb-3 sm:pb-4 border-b border-slate-100">
+        <div className="w-9 h-9 rounded-xl bg-teal-50 flex items-center justify-center flex-shrink-0">
           <Receipt size={18} className="text-teal-600" />
         </div>
         <div>
-          <h2 className="font-bold text-slate-800">Enviar comprobante de pago</h2>
-          <p className="text-xs text-slate-500">Adjunta tu evidencia de pago para el período seleccionado</p>
+          <h2 className="font-bold text-slate-800 text-sm sm:text-base">Enviar comprobante de pago</h2>
+          <p className="text-xs text-slate-500">Adjunta tu evidencia para el período seleccionado</p>
         </div>
       </div>
 
       {/* Period selector */}
       <div>
-        <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-2">
-          <Calendar size={11} className="inline mr-1" /> Período de pago
+        <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide flex items-center gap-1 mb-2">
+          <Calendar size={11} /> Período de pago
         </label>
         <select
           value={period}
@@ -254,39 +299,56 @@ function NewVoucherForm({ tenantId, onSuccess }) {
         </select>
       </div>
 
-      {/* File upload area */}
+      {/* File/camera area */}
       <div>
-        <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-2">
-          <ImageIcon size={11} className="inline mr-1" /> Comprobante / Evidencia
+        <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide flex items-center gap-1 mb-2">
+          <ImageIcon size={11} /> Comprobante / Evidencia
         </label>
         {file ? (
           <FilePreview file={file} onRemove={() => setFile(null)} />
         ) : (
-          <div className="border-2 border-dashed border-slate-200 rounded-xl p-6 text-center space-y-3 hover:border-teal-300 transition-colors">
-            <div className="flex items-center justify-center gap-3">
-              <input ref={fileInputRef}   type="file" accept=".jpg,.jpeg,.png,.gif,.pdf" onChange={handleFile} className="hidden" />
-              <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" onChange={handleFile} className="hidden" />
+          <div className="border-2 border-dashed border-slate-200 rounded-xl p-5 sm:p-6 text-center hover:border-teal-300 transition-colors">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".jpg,.jpeg,.png,.gif,.pdf"
+              onChange={handleFile}
+              className="hidden"
+            />
+            {/* Camera input: capture="environment" opens rear camera on mobile */}
+            <input
+              ref={cameraInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              onChange={handleFile}
+              className="hidden"
+            />
+            {/* Buttons — stack on mobile, side by side on sm+ */}
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="inline-flex items-center gap-2 px-4 py-2.5 bg-teal-600 text-white rounded-xl text-sm font-semibold hover:bg-teal-700 transition-colors active:scale-95">
-                <Upload size={15} /> Adjuntar archivo
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-3 bg-teal-600 text-white rounded-xl text-sm font-semibold hover:bg-teal-700 transition-colors active:scale-95">
+                <Upload size={16} /> Adjuntar archivo
               </button>
               <button
                 type="button"
                 onClick={() => cameraInputRef.current?.click()}
-                className="inline-flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm font-semibold hover:border-teal-400 hover:text-teal-600 transition-colors active:scale-95">
-                <Camera size={15} /> Tomar foto
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-3 border-2 border-slate-200 text-slate-600 rounded-xl text-sm font-semibold hover:border-teal-400 hover:text-teal-600 transition-colors active:scale-95">
+                <Camera size={16} /> Tomar foto
               </button>
             </div>
-            <p className="text-xs text-slate-400">JPG, JPEG, PNG, GIF o PDF · Máx 15 MB</p>
+            <p className="text-xs text-slate-400 mt-3">JPG, PNG, GIF o PDF · Máx 15 MB</p>
           </div>
         )}
       </div>
 
       {/* Notes */}
       <div>
-        <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-2">Notas (opcional)</label>
+        <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-2">
+          Notas (opcional)
+        </label>
         <textarea
           value={notes}
           onChange={e => setNotes(e.target.value)}
@@ -295,6 +357,7 @@ function NewVoucherForm({ tenantId, onSuccess }) {
           className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 resize-none" />
       </div>
 
+      {/* Submit */}
       <button
         type="button"
         disabled={!file || mutation.isPending}
@@ -311,7 +374,7 @@ function NewVoucherForm({ tenantId, onSuccess }) {
 function VoucherCard({ voucher, onViewEvidence }) {
   return (
     <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-3">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
         <span className="text-sm font-bold text-slate-700">{periodLabel(voucher.period)}</span>
         <StatusBadge status={voucher.status} />
       </div>
@@ -324,7 +387,7 @@ function VoucherCard({ voucher, onViewEvidence }) {
         <button
           type="button"
           onClick={() => onViewEvidence(voucher)}
-          className="inline-flex items-center gap-1.5 text-xs text-teal-600 font-semibold hover:text-teal-700 transition-colors">
+          className="inline-flex items-center gap-1.5 text-xs font-semibold text-teal-600 hover:text-teal-700 transition-colors">
           <Eye size={12} /> Ver comprobante
         </button>
       )}
@@ -338,7 +401,7 @@ function VoucherCard({ voucher, onViewEvidence }) {
 
       {voucher.status === 'received' && (
         <div className="flex items-center gap-2 p-3 bg-emerald-50 rounded-lg border border-emerald-200">
-          <CheckCircle size={14} className="text-emerald-500" />
+          <CheckCircle size={14} className="text-emerald-500 flex-shrink-0" />
           <p className="text-xs text-emerald-700 font-medium">Tu comprobante fue recibido y validado.</p>
         </div>
       )}
@@ -353,8 +416,9 @@ function VoucherCard({ voucher, onViewEvidence }) {
 // ─── Main component (Resident view) ──────────────────────────────────────────
 export default function EnviarPago() {
   const { tenantId, tenant } = useAuth();
-  const [showForm, setShowForm]         = useState(false);
-  const [evidencePopup, setEvidencePopup] = useState(null); // { url, fileName }
+  const [showForm, setShowForm]           = useState(false);
+  const [formHasFile, setFormHasFile]     = useState(false); // elevado de NewVoucherForm
+  const [evidencePopup, setEvidencePopup] = useState(null);  // { url, fileName }
 
   const { data, isLoading } = useQuery({
     queryKey: ['vouchers', tenantId],
@@ -363,54 +427,72 @@ export default function EnviarPago() {
     select:   res => res.data?.results || res.data || [],
   });
 
-  const vouchers = data || [];
-  const pending  = vouchers.filter(v => v.status === 'pending').length;
+  const vouchers  = data || [];
+  const pending   = vouchers.filter(v => v.status === 'pending').length;
+  const received  = vouchers.filter(v => v.status === 'received').length;
+
+  // Cancelar y limpiar: si hay archivo seleccionado, pedir confirmación
+  const handleCancel = () => {
+    if (formHasFile) {
+      if (!window.confirm('¿Descartar el comprobante seleccionado?')) return;
+    }
+    setShowForm(false);
+    setFormHasFile(false);
+  };
 
   const handleViewEvidence = (voucher) => {
-    // Extract a readable filename from the URL path
-    const urlPath = voucher.evidence_file_url || '';
+    const urlPath  = voucher.evidence_file_url || '';
     const fileName = decodeURIComponent(urlPath.split('/').pop()) || 'comprobante';
-    setEvidencePopup({ url: voucher.evidence_file_url, fileName });
+    setEvidencePopup({ url: urlPath, fileName });
   };
+
+  // Botón principal: rojo cuando hay archivo pendiente, teal cuando no
+  const cancelBtnClass = formHasFile
+    ? 'bg-rose-600 hover:bg-rose-700 text-white'
+    : 'bg-teal-600 hover:bg-teal-700 text-white';
 
   return (
     <div className="min-h-screen bg-slate-50">
       {/* Header */}
-      <div className="bg-white border-b border-slate-200 px-4 sm:px-8 py-5">
-        <div className="max-w-2xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-teal-500 to-cyan-600 flex items-center justify-center shadow-md">
+      <div className="bg-white border-b border-slate-200 px-4 sm:px-8 py-4 sm:py-5">
+        <div className="max-w-2xl mx-auto flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-teal-500 to-cyan-600 flex items-center justify-center shadow-md flex-shrink-0">
               <Receipt size={20} className="text-white" />
             </div>
-            <div>
-              <h1 className="text-xl font-bold text-slate-800">Enviar pago</h1>
-              <p className="text-xs text-slate-500">{tenant?.name || 'Mi condominio'}</p>
+            <div className="min-w-0">
+              <h1 className="text-lg sm:text-xl font-bold text-slate-800 leading-tight">Enviar pago</h1>
+              <p className="text-xs text-slate-500 truncate">{tenant?.name || 'Mi condominio'}</p>
             </div>
           </div>
+
           <button
-            onClick={() => setShowForm(v => !v)}
-            className="inline-flex items-center gap-2 bg-teal-600 hover:bg-teal-700 text-white px-4 py-2.5 rounded-xl text-sm font-semibold shadow-sm transition-all hover:shadow-md active:scale-95">
-            {showForm ? <X size={16} /> : <Send size={16} />}
-            {showForm ? 'Cancelar' : 'Nuevo comprobante'}
+            onClick={showForm ? handleCancel : () => setShowForm(true)}
+            className={`flex-shrink-0 inline-flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl text-sm font-semibold shadow-sm transition-all hover:shadow-md active:scale-95 ${cancelBtnClass}`}>
+            {showForm
+              ? <><X size={15} /><span className="hidden sm:inline">Cancelar</span><span className="sm:hidden">✕</span></>
+              : <><Send size={15} /><span className="hidden sm:inline">Nuevo comprobante</span><span className="sm:hidden">Nuevo</span></>
+            }
           </button>
         </div>
       </div>
 
-      <div className="max-w-2xl mx-auto px-4 sm:px-8 py-6 space-y-6">
-        {/* Stats */}
-        <div className="grid grid-cols-3 gap-4">
+      <div className="max-w-2xl mx-auto px-3 sm:px-8 py-4 sm:py-6 space-y-4 sm:space-y-6">
+
+        {/* Stats — compactos en mobile */}
+        <div className="grid grid-cols-3 gap-2 sm:gap-4">
           {[
-            { label: 'Enviados',   value: vouchers.length,                                      color: 'text-slate-700',   bg: 'bg-slate-50',   icon: Send },
-            { label: 'Pendientes', value: pending,                                               color: 'text-amber-600',   bg: 'bg-amber-50',   icon: Clock },
-            { label: 'Recibidos',  value: vouchers.filter(v => v.status === 'received').length, color: 'text-emerald-600', bg: 'bg-emerald-50', icon: CheckCircle },
+            { label: 'Enviados',   value: vouchers.length, color: 'text-slate-700',   bg: 'bg-slate-50',   icon: Send },
+            { label: 'Pendientes', value: pending,          color: 'text-amber-600',   bg: 'bg-amber-50',   icon: Clock },
+            { label: 'Recibidos',  value: received,         color: 'text-emerald-600', bg: 'bg-emerald-50', icon: CheckCircle },
           ].map(({ label, value, color, bg, icon: Icon }) => (
-            <div key={label} className="bg-white rounded-xl border border-slate-200 p-4 flex items-center gap-3">
-              <div className={`w-10 h-10 rounded-lg ${bg} flex items-center justify-center flex-shrink-0`}>
-                <Icon size={18} className={color} />
+            <div key={label} className="bg-white rounded-xl border border-slate-200 p-3 sm:p-4 flex items-center gap-2 sm:gap-3">
+              <div className={`w-8 h-8 sm:w-10 sm:h-10 rounded-lg ${bg} flex items-center justify-center flex-shrink-0`}>
+                <Icon size={16} className={color} />
               </div>
-              <div>
-                <div className="text-2xl font-bold text-slate-800">{value}</div>
-                <div className="text-xs text-slate-500">{label}</div>
+              <div className="min-w-0">
+                <div className="text-xl sm:text-2xl font-bold text-slate-800 leading-none">{value}</div>
+                <div className="text-[10px] sm:text-xs text-slate-500 mt-0.5 truncate">{label}</div>
               </div>
             </div>
           ))}
@@ -418,21 +500,25 @@ export default function EnviarPago() {
 
         {/* Form */}
         {showForm && (
-          <NewVoucherForm tenantId={tenantId} onSuccess={() => setShowForm(false)} />
+          <NewVoucherForm
+            tenantId={tenantId}
+            onSuccess={() => { setShowForm(false); setFormHasFile(false); }}
+            onFileChange={setFormHasFile}
+          />
         )}
 
         {/* History */}
         <div>
           <h3 className="text-sm font-bold text-slate-700 mb-3">Mis envíos</h3>
           {isLoading ? (
-            <div className="flex items-center justify-center py-16 text-slate-400">
-              <Loader2 size={28} className="animate-spin mr-2" /> Cargando...
+            <div className="flex items-center justify-center py-12 text-slate-400">
+              <Loader2 size={26} className="animate-spin mr-2" /> Cargando...
             </div>
           ) : vouchers.length === 0 ? (
-            <div className="text-center py-16 text-slate-400">
-              <Receipt size={40} className="mx-auto mb-3 opacity-30" />
-              <p className="font-semibold">Aún no has enviado comprobantes</p>
-              <p className="text-sm mt-1">Usa el botón de arriba para enviar tu primer pago</p>
+            <div className="text-center py-12 text-slate-400">
+              <Receipt size={38} className="mx-auto mb-3 opacity-30" />
+              <p className="font-semibold text-sm">Aún no has enviado comprobantes</p>
+              <p className="text-xs mt-1">Usa "Nuevo comprobante" para enviar tu primer pago</p>
             </div>
           ) : (
             <div className="space-y-3">
@@ -444,7 +530,7 @@ export default function EnviarPago() {
         </div>
       </div>
 
-      {/* Evidence popup — fetches file with auth and renders inline */}
+      {/* Evidence popup */}
       {evidencePopup && (
         <EvidencePopup
           url={evidencePopup.url}

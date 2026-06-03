@@ -240,7 +240,7 @@ function HeroCard({ article, onEdit, onView, isAdmin }) {
   return (
     <div
       className="relative w-full rounded-2xl overflow-hidden cursor-pointer group"
-      style={{ height: '420px' }}
+      style={{ height: 'clamp(220px, 50vw, 420px)' }}
       onClick={() => onView(article)}
     >
       <ArticleCover
@@ -298,14 +298,14 @@ function HeroCard({ article, onEdit, onView, isAdmin }) {
           <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
             <button
               onClick={() => onView(article)}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-white text-slate-800 rounded-xl text-sm font-bold hover:bg-slate-100 transition-all active:scale-95 shadow-md">
-              <Eye size={14} /> Leer artículo
+              className="inline-flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-white text-slate-800 rounded-xl text-xs sm:text-sm font-bold hover:bg-slate-100 transition-all active:scale-95 shadow-md">
+              <Eye size={13} /> <span className="hidden xs:inline">Leer artículo</span><span className="xs:hidden">Leer</span>
             </button>
             {isAdmin && (
               <button
                 onClick={() => onEdit(article)}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-white/15 backdrop-blur-sm border border-white/25 text-white rounded-xl text-sm font-bold hover:bg-white/25 transition-all active:scale-95">
-                <Edit3 size={14} /> Editar
+                className="inline-flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-white/15 backdrop-blur-sm border border-white/25 text-white rounded-xl text-xs sm:text-sm font-bold hover:bg-white/25 transition-all active:scale-95">
+                <Edit3 size={13} /> <span className="hidden sm:inline">Editar</span>
               </button>
             )}
           </div>
@@ -462,61 +462,63 @@ function BlogDashboard({ articles, loading, isAdmin, onNew, onEdit, onView, onDe
     <div className="min-h-screen bg-slate-50">
       {/* Header — narrower max-width and generous side padding so the
           content sits centered with comfortable margins on all screens. */}
-      <div className="bg-white border-b border-slate-200 px-4 sm:px-8 py-5">
-        <div className="max-w-5xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-teal-500 to-cyan-600 flex items-center justify-center shadow-md">
-              <Newspaper size={20} className="text-white" />
+      <div className="bg-white border-b border-slate-200 px-4 sm:px-8 py-4 sm:py-5">
+        <div className="max-w-5xl mx-auto flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-br from-teal-500 to-cyan-600 flex items-center justify-center shadow-md flex-shrink-0">
+              <Newspaper size={18} className="text-white" />
             </div>
-            <div>
-              <h1 className="text-xl font-bold text-slate-800">Comunicación</h1>
-              <p className="text-xs font-semibold text-teal-600">{tenantName}</p>
+            <div className="min-w-0">
+              <h1 className="text-lg sm:text-xl font-bold text-slate-800 leading-tight">Comunicación</h1>
+              <p className="text-xs font-semibold text-teal-600 truncate">{tenantName}</p>
             </div>
           </div>
           {isAdmin && (
             <button onClick={onNew}
-              className="inline-flex items-center gap-2 bg-teal-600 hover:bg-teal-700 text-white px-4 py-2.5 rounded-xl text-sm font-semibold shadow-sm transition-all hover:shadow-md active:scale-95">
-              <Plus size={16} /> Nuevo Artículo
+              className="flex-shrink-0 inline-flex items-center gap-1.5 sm:gap-2 bg-teal-600 hover:bg-teal-700 text-white px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl text-sm font-semibold shadow-sm transition-all hover:shadow-md active:scale-95">
+              <Plus size={15} />
+              <span className="hidden sm:inline">Nuevo Artículo</span>
+              <span className="sm:hidden">Nuevo</span>
             </button>
           )}
         </div>
       </div>
 
-      <div className="max-w-5xl mx-auto px-4 sm:px-8 py-6 space-y-6">
+      <div className="max-w-5xl mx-auto px-3 sm:px-8 py-4 sm:py-6 space-y-4 sm:space-y-6">
         {/* Stats */}
         {isAdmin && (
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-3 gap-2 sm:gap-4">
             {[
               { label: 'Publicados', value: published, color: 'text-emerald-600', bg: 'bg-emerald-50', icon: CheckCircle },
               { label: 'Borradores', value: drafts,    color: 'text-amber-600',   bg: 'bg-amber-50',   icon: Clock },
               { label: 'En Edición', value: editing,   color: 'text-blue-600',    bg: 'bg-blue-50',    icon: FileEdit },
             ].map(({ label, value, color, bg, icon: Icon }) => (
-              <div key={label} className="bg-white rounded-xl border border-slate-200 p-4 flex items-center gap-3">
-                <div className={`w-10 h-10 rounded-lg ${bg} flex items-center justify-center`}>
-                  <Icon size={18} className={color} />
+              <div key={label} className="bg-white rounded-xl border border-slate-200 p-2.5 sm:p-4 flex items-center gap-2 sm:gap-3">
+                <div className={`w-8 h-8 sm:w-10 sm:h-10 rounded-lg ${bg} flex items-center justify-center flex-shrink-0`}>
+                  <Icon size={15} className={color} />
                 </div>
-                <div>
-                  <div className="text-2xl font-bold text-slate-800">{value}</div>
-                  <div className="text-xs text-slate-500">{label}</div>
+                <div className="min-w-0">
+                  <div className="text-xl sm:text-2xl font-bold text-slate-800 leading-none">{value}</div>
+                  <div className="text-[10px] sm:text-xs text-slate-500 mt-0.5 truncate">{label}</div>
                 </div>
               </div>
             ))}
           </div>
         )}
 
-        {/* Search + Status filter */}
-        <div className="flex gap-3">
+        {/* Search + Status filter — stack en mobile */}
+        <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
           <div className="flex-1 relative">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input value={search} onChange={e => setSearch(e.target.value)}
               placeholder="Buscar artículos..."
               className="w-full pl-9 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent" />
           </div>
           {isAdmin && (
-            <div className="flex gap-2">
+            <div className="flex gap-1.5 sm:gap-2 overflow-x-auto pb-0.5 sm:pb-0" style={{ scrollbarWidth: 'none' }}>
               {['all', 'published', 'draft', 'editing'].map(s => (
                 <button key={s} onClick={() => setFilterStatus(s)}
-                  className={`px-3 py-2 rounded-xl text-xs font-semibold border transition-all ${filterStatus === s
+                  className={`flex-shrink-0 px-2.5 sm:px-3 py-2 rounded-xl text-xs font-semibold border transition-all ${filterStatus === s
                     ? 'bg-teal-600 text-white border-teal-600'
                     : 'bg-white text-slate-600 border-slate-200 hover:border-teal-300'}`}>
                   {s === 'all' ? 'Todos' : STATUS[s]?.label}
@@ -526,12 +528,12 @@ function BlogDashboard({ articles, loading, isAdmin, onNew, onEdit, onView, onDe
           )}
         </div>
 
-        {/* Category filter bar */}
+        {/* Category filter bar — scrollable en mobile */}
         <div className="flex items-center gap-2">
-          <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-400 uppercase tracking-wide flex-shrink-0">
-            <Filter size={12} /> Categoría
+          <span className="hidden sm:flex items-center gap-1.5 text-xs font-semibold text-slate-400 uppercase tracking-wide flex-shrink-0">
+            <Filter size={12} /> Cat.
           </span>
-          <div className="flex gap-2 flex-wrap">
+          <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
             {CATEGORIES.map(cat => {
               const isActive = filterCategory === cat.key;
               const count = categoryCounts[cat.key] ?? 0;
@@ -592,7 +594,7 @@ function BlogDashboard({ articles, loading, isAdmin, onNew, onEdit, onView, onDe
             <p className="text-sm mt-1">{isAdmin ? 'Intenta con otro filtro o crea un nuevo artículo' : 'Aún no hay artículos publicados'}</p>
           </div>
         ) : isFiltering ? (
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
             {filtered.map(article => (
               <GridCard key={article.id} article={article} onEdit={onEdit} onView={onView} onDelete={onDelete} isAdmin={isAdmin} />
             ))}
@@ -684,10 +686,10 @@ function ArticleReader({ article, onBack, onEdit, tenantName, isAdmin, tenantId 
         {/* Cover */}
         <CoverBlock article={article} large />
 
-        <div className="mt-6 bg-white rounded-2xl border border-slate-200 p-8">
+        <div className="mt-4 sm:mt-6 bg-white rounded-2xl border border-slate-200 p-4 sm:p-8">
           {/* Tags */}
           {article.tags?.length > 0 && (
-            <div className="flex gap-2 mb-4">
+            <div className="flex gap-2 flex-wrap mb-4">
               {article.tags.map(t => (
                 <span key={t} className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-teal-50 text-teal-700 text-xs font-medium rounded-full border border-teal-200">
                   <Tag size={10} /> {t}
@@ -696,15 +698,15 @@ function ArticleReader({ article, onBack, onEdit, tenantName, isAdmin, tenantId 
             </div>
           )}
 
-          <h1 className="text-3xl font-extrabold text-slate-900 leading-tight mb-3">{article.title}</h1>
+          <h1 className="text-xl sm:text-3xl font-extrabold text-slate-900 leading-tight mb-3">{article.title}</h1>
 
-          <div className="flex items-center gap-4 text-sm text-slate-400 pb-5 border-b border-slate-100 mb-6">
-            <span className="flex items-center gap-1.5"><User size={13} /> {authorName(article)}</span>
-            <span className="flex items-center gap-1.5"><Calendar size={13} />
+          <div className="flex flex-wrap items-center gap-3 text-xs sm:text-sm text-slate-400 pb-4 sm:pb-5 border-b border-slate-100 mb-4 sm:mb-6">
+            <span className="flex items-center gap-1.5"><User size={12} /> {authorName(article)}</span>
+            <span className="flex items-center gap-1.5"><Calendar size={12} />
               {publishedDate(article) || createdDate(article)}
             </span>
             {article.status === 'published' && (
-              <span className="flex items-center gap-1.5"><Eye size={13} /> {viewsCount(article)} vistas</span>
+              <span className="flex items-center gap-1.5"><Eye size={12} /> {viewsCount(article)} vistas</span>
             )}
           </div>
 
@@ -725,7 +727,7 @@ function ArticleReader({ article, onBack, onEdit, tenantName, isAdmin, tenantId 
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">
               ¿Qué te pareció este artículo?
             </p>
-            <div className="flex items-center gap-2 flex-wrap">
+            <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2">
               {REACTIONS.map(({ type, icon, label }) => {
                 const count  = reactions.counts?.[type] ?? 0;
                 const active = reactions.my_reactions?.includes(type);
@@ -1205,9 +1207,9 @@ function ArticleEditor({ article: initialArticle, onBack, onSaved, tenantId, ten
             </div>
           </div>
         </div>
-        <div className="max-w-3xl mx-auto px-6 py-8">
-          <div className="flex items-center gap-2 mb-6">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-teal-500 to-cyan-600 flex items-center justify-center">
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+          <div className="flex items-center gap-2 mb-5 sm:mb-6">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-teal-500 to-cyan-600 flex items-center justify-center flex-shrink-0">
               <Sparkles size={16} className="text-white" />
             </div>
             <div>
@@ -1215,7 +1217,7 @@ function ArticleEditor({ article: initialArticle, onBack, onSaved, tenantId, ten
               <p className="text-xs text-slate-500">Las plantillas te ayudan a crear artículos más rápido</p>
             </div>
           </div>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
             {TEMPLATES.map(t => (
               <button key={t.id}
                 onClick={() => {
@@ -1252,20 +1254,22 @@ function ArticleEditor({ article: initialArticle, onBack, onSaved, tenantId, ten
           </div>
           <div className="flex items-center gap-2">
             <button onClick={handleSaveDraft} disabled={isSaving}
-              className="inline-flex items-center gap-2 px-3 py-2 text-sm text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 font-medium transition-colors disabled:opacity-50">
-              {isSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Guardar borrador
+              className="inline-flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-2 text-sm text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 font-medium transition-colors disabled:opacity-50">
+              {isSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+              <span className="hidden sm:inline">Guardar borrador</span>
+              <span className="sm:hidden">Guardar</span>
             </button>
             <button onClick={() => setShowPublishModal(true)} disabled={isSaving || !title.trim()}
-              className="inline-flex items-center gap-2 px-4 py-2 text-sm bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-semibold shadow-sm transition-all hover:shadow-md active:scale-95 disabled:opacity-50">
+              className="inline-flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 text-sm bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-semibold shadow-sm transition-all hover:shadow-md active:scale-95 disabled:opacity-50">
               <Send size={14} /> Publicar
             </button>
           </div>
         </div>
       </div>
 
-      <div className="flex flex-1 max-w-5xl mx-auto w-full px-4 sm:px-8 py-6 gap-6">
+      <div className="flex flex-col lg:flex-row flex-1 max-w-5xl mx-auto w-full px-3 sm:px-8 py-4 sm:py-6 gap-4 sm:gap-6">
         {/* Main editor */}
-        <div className="flex-1 space-y-4 min-w-0">
+        <div className="flex-1 space-y-4 min-w-0 order-1">
           {/* Cover selector — supports either a pre-defined gradient+emoji
               template OR a custom uploaded image which replaces the template
               entirely. The actual upload happens on the next save. */}
@@ -1425,8 +1429,10 @@ function ArticleEditor({ article: initialArticle, onBack, onSaved, tenantId, ten
           </div>
         </div>
 
-        {/* Sidebar */}
-        <div className="w-64 space-y-4 flex-shrink-0">
+        {/* Sidebar — full width on mobile (grid), fixed 256px on desktop */}
+        <div className="w-full lg:w-64 lg:flex-shrink-0 order-2 lg:order-2">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-1 gap-3 lg:space-y-0 lg:block">
+          <div className="lg:space-y-4">
           {/* Tenant info */}
           <div className="bg-white rounded-xl border border-slate-200 p-4">
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Condominio</p>
@@ -1484,7 +1490,9 @@ function ArticleEditor({ article: initialArticle, onBack, onSaved, tenantId, ten
               <p className="text-sm font-bold text-amber-800">{selectedTemplate.icon} {selectedTemplate.label}</p>
             </div>
           )}
-        </div>
+          </div>{/* lg:space-y-4 */}
+          </div>{/* grid */}
+        </div>{/* sidebar outer */}
       </div>
 
       {showPublishModal && (

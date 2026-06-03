@@ -143,6 +143,11 @@ export default function Landing() {
             </Link>
           </div>
 
+          {/* Login button visible en mobile sin abrir menú */}
+          <Link to="/login" style={{ ...btnOutlineStyle, fontSize: 13, padding: '8px 16px' }} className="show-mobile">
+            Iniciar sesión
+          </Link>
+
           {/* Mobile menu btn */}
           <button
             onClick={() => setMobileOpen(v => !v)}
@@ -211,6 +216,7 @@ export default function Landing() {
                 'Cuentas claras',
                 'Sin hojas de cálculo',
                 'Roles por perfil',
+                'Comunicación efectiva',
               ].map(t => (
                 <div key={t} style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#5C5347', fontSize: 13, fontWeight: 600 }}>
                   <IconCheck color="#1F7D5B" size={16} /> {t}
@@ -304,8 +310,8 @@ export default function Landing() {
           {[
             { num: '+500', label: 'Unidades gestionadas' },
             { num: '98%', label: 'Satisfacción de usuarios' },
-            { num: '+20', label: 'Condominios activos' },
-            { num: '4 países', label: 'Presencia regional' },
+            { num: '+12', label: 'Condominios activos' },
+            { num: '2 países', label: 'Presencia regional' },
           ].map((s, i) => (
             <div key={i}>
               <div style={{ fontSize: 36, fontWeight: 800, color: '#E85D43', letterSpacing: '-1px', lineHeight: 1 }}>{s.num}</div>
@@ -522,16 +528,16 @@ export default function Landing() {
               condo: 'Privada Jardines · Monterrey',
             },
             {
-              quote: 'El cierre de período y el flujo de aprobaciones nos da la seguridad que necesitábamos. Los reportes PDF son excelentes.',
-              name: 'Claudia Herrera',
-              role: 'Administradora Externa',
-              condo: 'Torre Mirador · Guadalajara',
+              quote: 'Llevábamos años buscando una plataforma que funcionara bien en Colombia. Homly se adaptó perfecto a nuestra operación. El módulo de cobranza y los reportes PDF son exactamente lo que necesitábamos.',
+              name: 'Catalina Ospina',
+              role: 'Administradora de Propiedad Horizontal',
+              condo: 'Unidad Residencial El Cañaveral · Cali',
             },
             {
-              quote: 'Como residente, puedo ver mi estado de cuenta, mis pagos y reservar áreas comunes sin tener que hablarle a nadie. Muy conveniente.',
-              name: 'Jorge Medina',
-              role: 'Propietario · Unidad 3B',
-              condo: 'Condominio Arboledas · Querétaro',
+              quote: 'La transparencia que da Homly a los copropietarios es invaluable. Todos pueden ver el estado de cuenta y la cartera del conjunto en tiempo real. Le recomiendo Homly a cualquier administrador en Colombia.',
+              name: 'Santiago Ríos',
+              role: 'Presidente de Consejo de Administración',
+              condo: 'Unidad Residencial Los Cedros · Medellín',
             },
             {
               quote: 'Administro 4 condominios y con Homly los tengo todos en una sola plataforma. Me ahorra horas cada semana.',
@@ -756,7 +762,7 @@ export default function Landing() {
           </Link>
 
           <div style={{ marginTop: 32, display: 'flex', gap: 24, justifyContent: 'center', flexWrap: 'wrap' }}>
-            {['Sin tarjeta de crédito', 'Soporte incluido', 'Datos seguros'].map(t => (
+            {['Sin tarjeta de crédito', 'Soporte incluido', 'Datos seguros', 'Sin plazos forzosos'].map(t => (
               <div key={t} style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'rgba(253,251,247,0.6)', fontSize: 13, fontWeight: 600 }}>
                 <IconCheck color="#3BB990" size={15} /> {t}
               </div>
