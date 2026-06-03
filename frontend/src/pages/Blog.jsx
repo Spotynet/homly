@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
-import { blogAPI, usersAPI } from '../api/client';
+import { blogAPI, usersAPI, api } from '../api/client';
 import toast from 'react-hot-toast';
 import {
   BookOpen, Plus, Search, Filter, Eye, Edit3, Trash2, Send,
@@ -165,6 +165,57 @@ const compressImage = (file, { maxDim = 1600, quality = 0.78, asDataUrl = false 
 // The API returns snake_case fields; helpers give the component a unified API.
 const coverGradient = a => a.cover_gradient || 'from-teal-400 to-cyan-500';
 const coverEmoji    = a => a.cover_emoji    || '📰';
+
+// ─── Cover image loader ───────────────────────────────────────────────────────
+// Cache de sesión: evita re-fetches del mismo URL en la misma página.
+// Las keys son cover_image_url; los values son object URLs ya resueltos.
+const _coverCache = new Map();
+
+/**
+ * Carga la portada de un artículo vía el cliente API autenticado y
+ * devuelve un objectURL listo para usar en <img>.
+ *
+ * - Data URLs (preview local del editor) se devuelven directamente sin fetch.
+ * - URLs de servidor se fetean una vez y se cachean por sesión.
+ * - Si la URL es nula/vacía devuelve null (se muestra el gradiente).
+ */
+function useBlogCover(url) {
+  const [objectUrl, setObjectUrl] = React.useState(() => {
+    if (!url) return null;
+    if (url.startsWith('data:')) return url;
+    return _coverCache.get(url) || null;
+  });
+
+  React.useEffect(() => {
+    if (!url) { setObjectUrl(null); return; }
+    if (url.startsWith('data:')) { setObjectUrl(url); return; }
+    if (_coverCache.has(url)) { setObjectUrl(_coverCache.get(url)); return; }
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api.get(url, { responseType: 'blob' });
+        if (cancelled) return;
+        const blob = res.data;
+        const ext  = (url.split('?')[0].split('.').pop() || '').toLowerCase();
+        const isPdf = blob.type === 'application/pdf' || ext === 'pdf';
+        // Si el blob llega sin MIME (octet-stream), inferir imagen por extensión
+        const mime = (blob.type && blob.type !== 'application/octet-stream')
+          ? blob.type
+          : isPdf ? 'application/pdf' : 'image/jpeg';
+        const typedBlob = blob.type === mime ? blob : new Blob([blob], { type: mime });
+        const objUrl = URL.createObjectURL(typedBlob);
+        _coverCache.set(url, objUrl);
+        setObjectUrl(objUrl);
+      } catch {
+        if (!cancelled) setObjectUrl(null); // fallback → gradient
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [url]);
+
+  return objectUrl;
+}
 const authorName    = a => a.author_name    || 'Administración';
 const viewsCount    = a => a.views_count    ?? 0;
 const createdDate   = a => (a.created_at    || '').slice(0, 10);
@@ -172,32 +223,30 @@ const publishedDate = a => (a.published_at  || '').slice(0, 10);
 
 // ─── ArticleCover ──────────────────────────────────────────────────────────────
 // Componente centralizado para mostrar la portada de un artículo.
-// Si hay cover_image_url la muestra como <img>. Si falla la carga (onError)
-// o no existe, muestra el gradiente con emoji como fallback.
+// Carga la imagen vía el cliente API autenticado (resuelve problemas de
+// X-Accel-Redirect y Content-Type vacío en producción). Si no hay imagen
+// o la carga falla, muestra el gradiente con emoji como fallback.
 //
 // Props:
 //   article       — objeto artículo con cover_image_url, cover_gradient, cover_emoji, title
-//   className     — clases para el <img> o el div gradiente (tamaño, rounded, etc.)
+//   className     — clases para el contenedor (tamaño, rounded, etc.)
 //   style         — estilos adicionales opcionales
-//   imgClassName  — override de clases sólo para el <img> (default: className)
+//   imgClassName  — override de clases sólo para el <img>
 //   children      — contenido superpuesto (badges, botones, etc.)
 function ArticleCover({ article, className = '', style, imgClassName, emojiSize = 'text-5xl', emojiOpacity = 'opacity-70', children }) {
-  const [failed, setFailed] = React.useState(false);
-
-  React.useEffect(() => { setFailed(false); }, [article?.cover_image_url]);
+  const objectUrl = useBlogCover(article?.cover_image_url);
 
   const gradient = coverGradient(article);
   const emoji    = coverEmoji(article);
-  const hasImg   = !!article?.cover_image_url && !failed;
+  const hasImg   = !!objectUrl;
 
   return (
     <div className={`relative overflow-hidden ${hasImg ? '' : `bg-gradient-to-br ${gradient}`} ${className}`} style={style}>
       {hasImg && (
         <img
-          src={article.cover_image_url}
-          alt={article.title || ''}
+          src={objectUrl}
+          alt={article?.title || ''}
           className={imgClassName || 'absolute inset-0 w-full h-full object-cover'}
-          onError={() => setFailed(true)}
         />
       )}
       {!hasImg && (
@@ -684,7 +733,7 @@ function ArticleReader({ article, onBack, onEdit, tenantName, isAdmin, tenantId 
         </div>
 
         {/* Cover */}
-        <CoverBlock article={article} large />
+        <CoverBlock article={liveArticle} large />
 
         <div className="mt-4 sm:mt-6 bg-white rounded-2xl border border-slate-200 p-4 sm:p-8">
           {/* Tags */}
@@ -921,13 +970,13 @@ function PublishModal({ onClose, onPublish, tenantId }) {
 }
 
 // ─── View: Editor ──────────────────────────────────────────────────────────────
-// Preview de portada en el editor — maneja tanto data: URLs (preview local)
-// como URLs públicas del servidor (artículo ya guardado).
-function EditorCoverPreview({ url, gradient, emoji, onError }) {
-  const [failed, setFailed] = React.useState(false);
-  React.useEffect(() => { setFailed(false); }, [url]);
+// Preview de portada en el editor — maneja tanto data: URLs (preview local
+// inmediato) como URLs del servidor (artículo ya guardado con portada).
+// Usa useBlogCover para las URLs del servidor para mayor consistencia.
+function EditorCoverPreview({ url, gradient, emoji }) {
+  const objectUrl = useBlogCover(url);
 
-  if (!url || failed) {
+  if (!objectUrl) {
     return (
       <div className={`absolute inset-0 bg-gradient-to-br ${gradient} flex items-center justify-center`}>
         <span className="text-6xl">{emoji}</span>
@@ -936,10 +985,9 @@ function EditorCoverPreview({ url, gradient, emoji, onError }) {
   }
   return (
     <img
-      src={url}
+      src={objectUrl}
       alt="Portada"
       className="absolute inset-0 w-full h-full object-cover"
-      onError={() => { setFailed(true); onError?.(); }}
     />
   );
 }
@@ -1282,7 +1330,6 @@ function ArticleEditor({ article: initialArticle, onBack, onSaved, tenantId, ten
                   url={coverImageUrl}
                   gradient={coverGrad}
                   emoji={emoji}
-                  onError={() => setCoverImageUrl('')}
                 />
               ) : (
                 <div className="absolute inset-0 flex items-center justify-center">
