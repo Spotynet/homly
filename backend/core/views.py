@@ -614,6 +614,40 @@ class ProtectedMediaView(APIView):
             return resp
 
 
+class BlogCoverPublicView(APIView):
+    """
+    GET /api/public/blog-covers/<filename>
+    Sirve portadas de artículos del blog sin autenticación.
+    Las imágenes de portada NO son datos sensibles (son fotos decorativas
+    elegidas por el admin para comunicados de la comunidad).
+    Sólo sirve archivos del directorio blog/covers/ para evitar path traversal.
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, filename):
+        import os, mimetypes
+        # Sanitize: reject filenames with path separators
+        safe_name = os.path.basename(filename)
+        if not safe_name or safe_name != filename:
+            return Response({'detail': 'Nombre de archivo inválido.'}, status=400)
+        full_path = os.path.join(str(settings.MEDIA_ROOT), 'blog', 'covers', safe_name)
+        if not os.path.exists(full_path):
+            return Response({'detail': 'Imagen no encontrada.'}, status=404)
+        if settings.DEBUG:
+            with open(full_path, 'rb') as f:
+                content = f.read()
+            content_type, _ = mimetypes.guess_type(full_path)
+            resp = HttpResponse(content, content_type=content_type or 'image/jpeg')
+            resp['Cache-Control'] = 'public, max-age=86400'
+            return resp
+        else:
+            resp = HttpResponse()
+            resp['X-Accel-Redirect'] = f'/protected-media/blog/covers/{safe_name}'
+            resp['Content-Type'] = ''
+            resp['Cache-Control'] = 'public, max-age=86400'
+            return resp
+
+
 class TenantListForLoginView(APIView):
     """GET /api/auth/tenants/ — List tenants for login dropdown (legacy)"""
     permission_classes = [permissions.AllowAny]
@@ -7829,7 +7863,10 @@ class BlogPostViewSet(viewsets.ModelViewSet):
             post_cover_url = ''
             if post.cover_image:
                 try:
-                    post_cover_url = request.build_absolute_uri(f'/api/media/{post.cover_image.name}')
+                    import os as _os
+                    post_cover_url = request.build_absolute_uri(
+                        f'/api/public/blog-covers/{_os.path.basename(post.cover_image.name)}'
+                    )
                 except Exception:
                     post_cover_url = ''
 

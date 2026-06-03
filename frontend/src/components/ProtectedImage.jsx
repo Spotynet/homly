@@ -9,7 +9,7 @@
  * A module-level cache avoids re-fetching the same URL across renders/components.
  */
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import { api } from '../api/client';
 
 // Module-level blob URL cache: protectedUrl → blobUrl
 const _cache = new Map();
@@ -33,7 +33,7 @@ export default function ProtectedImage({ src, alt = '', className = '', style, f
     // Re-use in-flight promise if already fetching this URL
     const existing = _inflight.get(src);
     const promise = existing || (async () => {
-      const res = await axios.get(src, { responseType: 'blob', withCredentials: true });
+      const res = await api.get(src, { responseType: 'blob' });
       return URL.createObjectURL(res.data);
     })();
 

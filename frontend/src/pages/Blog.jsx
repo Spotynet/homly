@@ -3,7 +3,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
 import { blogAPI, usersAPI } from '../api/client';
 import toast from 'react-hot-toast';
-import ProtectedImage from '../components/ProtectedImage';
 import {
   BookOpen, Plus, Search, Filter, Eye, Edit3, Trash2, Send,
   Clock, CheckCircle, FileEdit, Image, Bold, Italic, Underline,
@@ -187,17 +186,11 @@ function StatusBadge({ status }) {
 function CoverBlock({ article, large = false }) {
   const sz = large ? 'h-64' : 'h-44';
   if (article.cover_image_url) {
-    const gradient = (
-      <div className={`w-full ${sz} bg-gradient-to-br ${coverGradient(article)} flex items-center justify-center rounded-xl`}>
-        <span className={large ? 'text-7xl' : 'text-5xl'}>{coverEmoji(article)}</span>
-      </div>
-    );
     return (
-      <ProtectedImage
+      <img
         src={article.cover_image_url}
         alt={article.title}
         className={`w-full ${sz} object-cover rounded-xl`}
-        fallback={gradient}
       />
     );
   }
@@ -218,11 +211,10 @@ function HeroCard({ article, onEdit, onView, isAdmin }) {
       onClick={() => onView(article)}
     >
       {article.cover_image_url ? (
-        <ProtectedImage
+        <img
           src={article.cover_image_url}
           alt={article.title}
           className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-          fallback={<div className={`absolute inset-0 bg-gradient-to-br ${coverGradient(article)} transition-transform duration-500 group-hover:scale-105`} />}
         />
       ) : (
         <div className={`absolute inset-0 bg-gradient-to-br ${coverGradient(article)} transition-transform duration-500 group-hover:scale-105`} />
@@ -310,12 +302,7 @@ function CarouselCard({ article, onEdit, onView, isAdmin }) {
     >
       <div className={`relative h-32 bg-gradient-to-br ${coverGradient(article)} flex items-center justify-center overflow-hidden`}>
         {article.cover_image_url
-          ? <ProtectedImage
-              src={article.cover_image_url}
-              alt={article.title}
-              className="absolute inset-0 w-full h-full object-cover"
-              fallback={<span className="text-4xl">{coverEmoji(article)}</span>}
-            />
+          ? <img src={article.cover_image_url} alt={article.title} className="absolute inset-0 w-full h-full object-cover" />
           : <span className="text-4xl group-hover:scale-110 transition-transform duration-300">{coverEmoji(article)}</span>
         }
         <div className="absolute top-2 right-2"><StatusBadge status={article.status} /></div>
@@ -367,12 +354,7 @@ function GridCard({ article, onEdit, onView, onDelete, isAdmin }) {
       <div className="relative cursor-pointer" onClick={() => onView(article)}>
         <div className={`relative w-full h-40 bg-gradient-to-br ${coverGradient(article)} flex items-center justify-center overflow-hidden`}>
           {article.cover_image_url
-            ? <ProtectedImage
-                src={article.cover_image_url}
-                alt={article.title}
-                className="absolute inset-0 w-full h-full object-cover"
-                fallback={<span className="text-5xl">{coverEmoji(article)}</span>}
-              />
+            ? <img src={article.cover_image_url} alt={article.title} className="absolute inset-0 w-full h-full object-cover" />
             : <span className="text-5xl group-hover:scale-105 transition-transform duration-200">{coverEmoji(article)}</span>
           }
         </div>
@@ -473,7 +455,7 @@ function BlogDashboard({ articles, loading, isAdmin, onNew, onEdit, onView, onDe
             </div>
             <div>
               <h1 className="text-xl font-bold text-slate-800">Comunicación</h1>
-              <p className="text-xs text-slate-500">{tenantName}</p>
+              <p className="text-xs font-semibold text-teal-600">{tenantName}</p>
             </div>
           </div>
           {isAdmin && (
@@ -1252,14 +1234,7 @@ function ArticleEditor({ article: initialArticle, onBack, onSaved, tenantId, ten
           <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
             <div className={`relative h-48 flex items-center justify-center ${coverImageUrl ? '' : `bg-gradient-to-br ${coverGrad}`}`}>
               {coverImageUrl
-                ? coverImageUrl.startsWith('data:')
-                  ? <img src={coverImageUrl} alt="Portada" className="absolute inset-0 w-full h-full object-cover" />
-                  : <ProtectedImage
-                      src={coverImageUrl}
-                      alt="Portada"
-                      className="absolute inset-0 w-full h-full object-cover"
-                      fallback={<span className="text-6xl">{emoji}</span>}
-                    />
+                ? <img src={coverImageUrl} alt="Portada" className="absolute inset-0 w-full h-full object-cover" />
                 : <span className="text-6xl">{emoji}</span>
               }
               {coverImageUrl && (

@@ -63,6 +63,9 @@ urlpatterns = [
     # M-04: endpoint de media protegido (requiere autenticación, sirve via X-Accel-Redirect)
     path('media/<path:media_path>', views.ProtectedMediaView.as_view(), name='protected-media'),
 
+    # Portadas de blog — públicas (no son datos sensibles; sólo imágenes decorativas)
+    path('public/blog-covers/<str:filename>', views.BlogCoverPublicView.as_view(), name='blog-cover-public'),
+
     # Users
     path('users/', views.UserCreateView.as_view(), name='user-create'),
 

@@ -1,10 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
-import { voucherAPI } from '../api/client';
+import { voucherAPI, api } from '../api/client';
 import { todayPeriod, prevPeriod, periodLabel } from '../utils/helpers';
 import toast from 'react-hot-toast';
-import axios from 'axios';
 import {
   Upload, Camera, FileText, Clock, CheckCircle, XCircle,
   Send, Loader2, Eye, Calendar,
@@ -50,10 +49,7 @@ export function EvidencePopup({ url, fileName, onClose }) {
     let cancelled = false;
     (async () => {
       try {
-        const res = await axios.get(url, {
-          responseType: 'blob',
-          withCredentials: true,
-        });
+        const res = await api.get(url, { responseType: 'blob' });
         const blob = res.data;
         const mime = blob.type || 'application/octet-stream';
         const reader = new FileReader();

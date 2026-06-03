@@ -1,10 +1,9 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
-import { paymentsAPI, unrecognizedIncomeAPI, reservationsAPI, reportsAPI, voucherAPI } from '../api/client';
+import { paymentsAPI, unrecognizedIncomeAPI, reservationsAPI, reportsAPI, voucherAPI, api } from '../api/client';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { EvidencePopup } from './EnviarPago';
-import axios from 'axios';
 import { usePaymentsData } from '../hooks/usePaymentsData';
 import { queryKeys }        from '../hooks/queryKeys';
 import PaginationBar from '../components/PaginationBar';
@@ -325,17 +324,14 @@ export default function Cobranza() {
   // enviado por el residente. Después del guardado exitoso, el voucher se marca
   // como "received" automáticamente.
   const handleAcceptVoucher = async (voucher) => {
-    const unit = units.find(u => u.id === voucher.unit_id || String(u.id) === String(voucher.unit_id));
-    if (!unit) {
-      // Intentar buscar por unit_name como fallback
-      const byName = units.find(u => String(u) === voucher.unit_name || u.number === voucher.unit_name || u.name === voucher.unit_name);
-      if (!byName) {
-        toast.error('No se encontró la unidad del comprobante en el período actual.');
-        return;
-      }
+    // Buscar la unidad por ID (campo unit_id del serializer) o por nombre como fallback
+    const targetUnit =
+      units.find(u => String(u.id) === String(voucher.unit_id)) ||
+      units.find(u => u.unit_id_code === voucher.unit_name || u.unit_name === voucher.unit_name);
+    if (!targetUnit) {
+      toast.error('No se encontró la unidad del comprobante. Verifica que la unidad esté registrada.');
+      return;
     }
-    const targetUnit = unit || units.find(u => u.number === voucher.unit_name);
-    if (!targetUnit) { toast.error('Unidad no encontrada.'); return; }
 
     setPendingVoucherId(voucher.id);
 
@@ -343,7 +339,7 @@ export default function Cobranza() {
     let voucherEvidence = [];
     if (voucher.evidence_file_url) {
       try {
-        const res = await axios.get(voucher.evidence_file_url, { responseType: 'blob', withCredentials: true });
+        const res = await api.get(voucher.evidence_file_url, { responseType: 'blob' });
         const blob = res.data;
         const mime = blob.type || 'application/octet-stream';
         const fileName = decodeURIComponent((voucher.evidence_file_url || '').split('/').pop()) || 'comprobante';
@@ -507,7 +503,7 @@ export default function Cobranza() {
       if (voucherId) {
         try {
           await voucherAPI.review(tenantId, voucherId, { action: 'received', review_notes: '' });
-          queryClient.invalidateQueries({ queryKey: ['vouchers-admin', tenantId] });
+          queryClient.invalidateQueries({ queryKey: ['vouchers-admin', tenantId], exact: false });
           toast.success('Comprobante marcado como Recibido');
         } catch {
           toast('El pago se registró pero no se pudo cerrar el comprobante.', { icon: '⚠️' });
@@ -1969,14 +1965,14 @@ export default function Cobranza() {
 
       {/* Voucher submissions panel — visible only to admin/tesorero */}
       {(role === 'admin' || role === 'tesorero') && (
-        <VoucherReviewPanel tenantId={tenantId} onAccept={handleAcceptVoucher} />
+        <VoucherReviewPanel tenantId={tenantId} period={period} onAccept={handleAcceptVoucher} />
       )}
     </div>
   );
 }
 
 // ─── Voucher Review Panel (used inside Cobranza for admin/tesorero) ────────────
-export function VoucherReviewPanel({ tenantId, onAccept }) {
+export function VoucherReviewPanel({ tenantId, period, onAccept }) {
   const qc = useQueryClient();
   const [filterStatus, setFilterStatus]   = useState('pending');
   const [reviewModal, setReviewModal]     = useState(null); // { voucher, action }
@@ -1984,8 +1980,11 @@ export function VoucherReviewPanel({ tenantId, onAccept }) {
   const [evidencePopup, setEvidencePopup] = useState(null); // { url, fileName }
 
   const { data, isLoading, refetch } = useQuery({
-    queryKey: ['vouchers-admin', tenantId, filterStatus],
-    queryFn:  () => voucherAPI.list(tenantId, filterStatus !== 'all' ? { status: filterStatus } : {}),
+    queryKey: ['vouchers-admin', tenantId, period, filterStatus],
+    queryFn:  () => voucherAPI.list(tenantId, {
+      ...(period ? { period } : {}),
+      ...(filterStatus !== 'all' ? { status: filterStatus } : {}),
+    }),
     enabled:  !!tenantId,
     select:   res => res.data?.results || res.data || [],
   });
@@ -1995,7 +1994,7 @@ export function VoucherReviewPanel({ tenantId, onAccept }) {
       voucherAPI.review(tenantId, id, { action, review_notes: notes }),
     onSuccess: () => {
       toast.success(reviewModal?.action === 'received' ? 'Comprobante aceptado' : 'Comprobante rechazado');
-      qc.invalidateQueries({ queryKey: ['vouchers-admin', tenantId] });
+      qc.invalidateQueries({ queryKey: ['vouchers-admin', tenantId], exact: false });
       setReviewModal(null);
       setReviewNotes('');
     },
@@ -2019,7 +2018,9 @@ export function VoucherReviewPanel({ tenantId, onAccept }) {
           </div>
           <div>
             <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--ink-800)' }}>Comprobantes de pago</div>
-            <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>Enviados por residentes</div>
+            <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>
+              {period ? periodLabel(period) : 'Todos los períodos'} · Enviados por residentes
+            </div>
           </div>
         </div>
         <div style={{ display: 'flex', gap: 6 }}>

@@ -1531,13 +1531,14 @@ class BlogPostSerializer(serializers.ModelSerializer):
     def get_cover_image_url(self, obj):
         if not obj.cover_image:
             return None
+        import os
+        filename = os.path.basename(obj.cover_image.name)
+        # Public endpoint — no auth required; blog covers are decorative, not sensitive.
+        public_path = f'/api/public/blog-covers/{filename}'
         request = self.context.get('request')
-        # Must route through /api/media/ (ProtectedMediaView) — direct /media/ is
-        # blocked by nginx (M-04 security rule: deny all on /media/).
-        protected_path = f'/api/media/{obj.cover_image.name}'
         if request:
-            return request.build_absolute_uri(protected_path)
-        return protected_path
+            return request.build_absolute_uri(public_path)
+        return public_path
 
     def get_comments_count(self, obj):
         return obj.comments.count()
@@ -1585,11 +1586,13 @@ class BlogPostListSerializer(serializers.ModelSerializer):
     def get_cover_image_url(self, obj):
         if not obj.cover_image:
             return None
+        import os
+        filename = os.path.basename(obj.cover_image.name)
+        public_path = f'/api/public/blog-covers/{filename}'
         request = self.context.get('request')
-        protected_path = f'/api/media/{obj.cover_image.name}'
         if request:
-            return request.build_absolute_uri(protected_path)
-        return protected_path
+            return request.build_absolute_uri(public_path)
+        return public_path
 
     def get_comments_count(self, obj):
         return obj.comments.count()
@@ -1638,7 +1641,10 @@ class PaymentVoucherSubmissionSerializer(serializers.ModelSerializer):
         return obj.reviewed_by.name if obj.reviewed_by else ''
 
     def get_unit_name(self, obj):
-        return str(obj.unit) if obj.unit else ''
+        if not obj.unit:
+            return ''
+        parts = [p for p in [obj.unit.unit_id_code, obj.unit.unit_name] if p]
+        return ' — '.join(parts) if parts else str(obj.unit)
 
     def get_evidence_file_url(self, obj):
         if not obj.evidence_file:

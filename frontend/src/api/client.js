@@ -76,6 +76,9 @@ api.interceptors.response.use(
   }
 );
 
+// ─── Export api instance for authenticated binary fetches (blobs, images) ──
+export { api };
+
 // ─── Auth ───────────────────────────────────────
 export const authAPI = {
   login:               (data)     => api.post('/auth/login/', data),
