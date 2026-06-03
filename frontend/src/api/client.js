@@ -25,10 +25,19 @@ const isAuthEndpoint = (url = '') =>
   url.includes('/auth/switch-tenant/');
 
 // Request interceptor: attach JWT desde memoria (no localStorage)
+// En axios 1.7.x, `headers: { 'Content-Type': undefined }` NO elimina el default
+// 'application/json' de la instancia — lo ignora. Para FormData (multipart) hay
+// que eliminar Content-Type explícitamente aquí y dejar que axios/browser lo fije
+// con el boundary correcto.
 api.interceptors.request.use((config) => {
   const token = getAccessToken();  // M-06: leer desde tokenStore (memoria)
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
+  }
+  if (typeof FormData !== 'undefined' && config.data instanceof FormData) {
+    delete config.headers['Content-Type'];
+    if (config.headers.common) delete config.headers.common['Content-Type'];
+    if (config.headers.post)   delete config.headers.post['Content-Type'];
   }
   return config;
 });
@@ -159,9 +168,7 @@ export const paymentsAPI = {
 // ─── Payment Voucher Submissions ────────────────
 export const voucherAPI = {
   list:   (tenantId, params) => api.get(`/tenants/${tenantId}/payment-vouchers/`, { params }),
-  create: (tenantId, formData) => api.post(`/tenants/${tenantId}/payment-vouchers/`, formData, {
-    headers: { 'Content-Type': undefined },   // let axios set multipart/form-data + boundary
-  }),
+  create: (tenantId, formData) => api.post(`/tenants/${tenantId}/payment-vouchers/`, formData),
   review: (tenantId, id, data) => api.patch(`/tenants/${tenantId}/payment-vouchers/${id}/review/`, data),
 };
 
@@ -424,9 +431,7 @@ export const blogAPI = {
   publish:   (tenantId, id, data) => api.post(`/tenants/${tenantId}/blog-posts/${id}/publish/`, data),
   unpublish: (tenantId, id)     => api.post(`/tenants/${tenantId}/blog-posts/${id}/unpublish/`),
   uploadCover: (tenantId, id, formData) =>
-    api.post(`/tenants/${tenantId}/blog-posts/${id}/cover-image/`, formData, {
-      headers: { 'Content-Type': undefined },  // let axios set multipart/form-data + boundary
-    }),
+    api.post(`/tenants/${tenantId}/blog-posts/${id}/cover-image/`, formData),
   react: (tenantId, id, type)   => api.post(`/tenants/${tenantId}/blog-posts/${id}/react/`, { type }),
   comments: {
     list:   (tenantId, postId)            => api.get(`/tenants/${tenantId}/blog-posts/${postId}/comments/`),
