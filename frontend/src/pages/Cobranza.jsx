@@ -1,13 +1,14 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
-import { paymentsAPI, unrecognizedIncomeAPI, reservationsAPI, reportsAPI } from '../api/client';
+import { paymentsAPI, unrecognizedIncomeAPI, reservationsAPI, reportsAPI, voucherAPI } from '../api/client';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import { usePaymentsData } from '../hooks/usePaymentsData';
 import { queryKeys }        from '../hooks/queryKeys';
 import PaginationBar from '../components/PaginationBar';
 import PaymentReceiptModal from '../components/PaymentReceiptModal';
 import { todayPeriod, periodLabel, prevPeriod, nextPeriod, tenantStartPeriod, fmtCurrency, statusClass, statusLabel, PAYMENT_TYPES, fmtDate, ROLES, CURRENCIES, APP_VERSION } from '../utils/helpers';
-import { ChevronLeft, ChevronRight, Search, Receipt, X, Users, CheckCircle, Clock, AlertCircle, DollarSign, Calendar, Building2, Upload, FileText, Check, Plus, Edit, Edit2, Trash2, Banknote, Mail, Lock } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Search, Receipt, X, Users, CheckCircle, Clock, AlertCircle, DollarSign, Calendar, Building2, Upload, FileText, Check, Plus, Edit, Edit2, Trash2, Banknote, Mail, Lock, Send, XCircle, Eye, ChevronDown as ChevronDownIcon } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 // Derive the FieldPayment key for a PaymentPlan.
@@ -119,7 +120,7 @@ function getUnitRecaudo(pay) {
 }
 
 export default function Cobranza() {
-  const { tenantId, isReadOnly, user } = useAuth();
+  const { tenantId, isReadOnly, user, role } = useAuth();
   const queryClient = useQueryClient();
 
   // ── Estado de UI ────────────────────────────────────────────────────────────
@@ -1891,6 +1892,204 @@ export default function Cobranza() {
           </div>
         );
       })()}
+
+      {/* Voucher submissions panel — visible only to admin/tesorero */}
+      {(role === 'admin' || role === 'tesorero') && (
+        <VoucherReviewPanel tenantId={tenantId} />
+      )}
+    </div>
+  );
+}
+
+// ─── Voucher Review Panel (used inside Cobranza for admin/tesorero) ────────────
+export function VoucherReviewPanel({ tenantId }) {
+  const qc = useQueryClient();
+  const [filterStatus, setFilterStatus] = useState('pending');
+  const [reviewModal, setReviewModal]   = useState(null); // { voucher, action }
+  const [reviewNotes, setReviewNotes]   = useState('');
+  const [expandedId, setExpandedId]     = useState(null);
+
+  const { data, isLoading, refetch } = useQuery({
+    queryKey: ['vouchers-admin', tenantId, filterStatus],
+    queryFn:  () => voucherAPI.list(tenantId, filterStatus !== 'all' ? { status: filterStatus } : {}),
+    enabled:  !!tenantId,
+    select:   res => res.data?.results || res.data || [],
+  });
+
+  const reviewMutation = useMutation({
+    mutationFn: ({ id, action, notes }) =>
+      voucherAPI.review(tenantId, id, { action, review_notes: notes }),
+    onSuccess: () => {
+      toast.success(reviewModal?.action === 'received' ? 'Comprobante aceptado' : 'Comprobante rechazado');
+      qc.invalidateQueries({ queryKey: ['vouchers-admin', tenantId] });
+      setReviewModal(null);
+      setReviewNotes('');
+    },
+    onError: () => toast.error('Error al procesar el comprobante'),
+  });
+
+  const STATUS_STYLES = {
+    pending:  { label: 'Pendiente', color: 'text-amber-600',  bg: 'bg-amber-50',  border: 'border-amber-200' },
+    received: { label: 'Recibido',  color: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-200' },
+    rejected: { label: 'Rechazado', color: 'text-rose-600',   bg: 'bg-rose-50',   border: 'border-rose-200' },
+  };
+
+  const vouchers = data || [];
+
+  return (
+    <div className="content-fade" style={{ marginTop: 32 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ width: 36, height: 36, borderRadius: 10, background: 'linear-gradient(135deg,#0d9488,#06b6d4)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Send size={16} color="white" />
+          </div>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--ink-800)' }}>Comprobantes de pago</div>
+            <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>Enviados por residentes</div>
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 6 }}>
+          {['pending', 'received', 'rejected', 'all'].map(s => (
+            <button key={s}
+              onClick={() => setFilterStatus(s)}
+              style={{
+                padding: '5px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                border: filterStatus === s ? '1.5px solid #0d9488' : '1.5px solid #e2e8f0',
+                background: filterStatus === s ? '#0d9488' : 'white',
+                color: filterStatus === s ? 'white' : '#475569',
+              }}>
+              {s === 'pending' ? 'Pendientes' : s === 'received' ? 'Recibidos' : s === 'rejected' ? 'Rechazados' : 'Todos'}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {isLoading ? (
+        <div style={{ textAlign: 'center', padding: 40, color: 'var(--ink-400)' }}>Cargando comprobantes...</div>
+      ) : vouchers.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: 48, color: 'var(--ink-400)' }}>
+          <Send size={36} style={{ margin: '0 auto 12px', opacity: 0.3 }} />
+          <p style={{ fontWeight: 600 }}>No hay comprobantes {filterStatus !== 'all' ? `con estado "${STATUS_STYLES[filterStatus]?.label}"` : ''}</p>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {vouchers.map(v => {
+            const st = STATUS_STYLES[v.status] || STATUS_STYLES.pending;
+            const isExpanded = expandedId === v.id;
+            return (
+              <div key={v.id} style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: 12, overflow: 'hidden' }}>
+                {/* Row */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', flexWrap: 'wrap' }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--ink-800)' }}>{v.unit_name}</span>
+                      <span style={{ fontSize: 12, color: 'var(--ink-500)' }}>{periodLabel(v.period)}</span>
+                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold border ${st.color} ${st.bg} ${st.border}`}>
+                        {st.label}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--ink-400)', marginTop: 2 }}>
+                      {v.submitted_by_name} · {new Date(v.created_at).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' })}
+                    </div>
+                    {v.notes && <div style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: 2, fontStyle: 'italic' }}>"{v.notes}"</div>}
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                    {v.evidence_file_url && (
+                      <button
+                        onClick={() => setExpandedId(isExpanded ? null : v.id)}
+                        style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 10px', borderRadius: 7, border: '1px solid #e2e8f0', background: 'white', color: '#0d9488', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                        <Eye size={13} /> {isExpanded ? 'Ocultar' : 'Ver'}
+                      </button>
+                    )}
+                    {v.status === 'pending' && (
+                      <>
+                        <button
+                          onClick={() => { setReviewModal({ voucher: v, action: 'received' }); setReviewNotes(''); }}
+                          style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 10px', borderRadius: 7, border: 'none', background: '#ecfdf5', color: '#059669', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                          <CheckCircle size={13} /> Aceptar
+                        </button>
+                        <button
+                          onClick={() => { setReviewModal({ voucher: v, action: 'rejected' }); setReviewNotes(''); }}
+                          style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 10px', borderRadius: 7, border: 'none', background: '#fff1f2', color: '#e11d48', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                          <XCircle size={13} /> Rechazar
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+                {/* Expandable image */}
+                {isExpanded && v.evidence_file_url && (
+                  <div style={{ borderTop: '1px solid #f1f5f9', padding: 12, background: '#f8fafc' }}>
+                    {v.evidence_file_url.match(/\.(pdf)$/i) ? (
+                      <a href={v.evidence_file_url} target="_blank" rel="noreferrer"
+                        style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#0d9488', fontSize: 13, fontWeight: 600, textDecoration: 'none' }}>
+                        <FileText size={15} /> Abrir PDF en nueva pestaña
+                      </a>
+                    ) : (
+                      <img src={v.evidence_file_url} alt="Comprobante" style={{ maxWidth: '100%', maxHeight: 320, objectFit: 'contain', borderRadius: 8 }} />
+                    )}
+                  </div>
+                )}
+                {/* Review notes if rejected */}
+                {v.status === 'rejected' && v.review_notes && (
+                  <div style={{ borderTop: '1px solid #fecdd3', padding: '8px 16px', background: '#fff1f2', fontSize: 12, color: '#be123c' }}>
+                    <strong>Motivo de rechazo:</strong> {v.review_notes}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Review confirmation modal */}
+      {reviewModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 16 }}>
+          <div style={{ background: 'white', borderRadius: 16, width: '100%', maxWidth: 420, overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
+            <div style={{ padding: '20px 24px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ fontWeight: 700, fontSize: 16, color: reviewModal.action === 'received' ? '#059669' : '#e11d48' }}>
+                {reviewModal.action === 'received' ? '✓ Aceptar comprobante' : '✗ Rechazar comprobante'}
+              </div>
+              <button onClick={() => setReviewModal(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8' }}>
+                <X size={18} />
+              </button>
+            </div>
+            <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div style={{ fontSize: 13, color: 'var(--ink-600)' }}>
+                <strong>{reviewModal.voucher.unit_name}</strong> — {periodLabel(reviewModal.voucher.period)}
+              </div>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-500)', display: 'block', marginBottom: 6 }}>
+                  {reviewModal.action === 'rejected' ? 'Motivo del rechazo (recomendado)' : 'Notas adicionales (opcional)'}
+                </label>
+                <textarea
+                  value={reviewNotes}
+                  onChange={e => setReviewNotes(e.target.value)}
+                  rows={3}
+                  placeholder={reviewModal.action === 'rejected' ? 'Ej: El monto no coincide, imagen ilegible...' : 'Ej: Pago confirmado en banco...'}
+                  style={{ width: '100%', border: '1px solid #e2e8f0', borderRadius: 8, padding: '8px 10px', fontSize: 13, resize: 'none', boxSizing: 'border-box' }}
+                />
+              </div>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button onClick={() => setReviewModal(null)}
+                  style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #e2e8f0', background: 'white', color: '#475569', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                  Cancelar
+                </button>
+                <button
+                  disabled={reviewMutation.isPending}
+                  onClick={() => reviewMutation.mutate({ id: reviewModal.voucher.id, action: reviewModal.action, notes: reviewNotes })}
+                  style={{
+                    padding: '8px 18px', borderRadius: 8, border: 'none',
+                    background: reviewModal.action === 'received' ? '#059669' : '#e11d48',
+                    color: 'white', fontSize: 13, fontWeight: 700, cursor: 'pointer', opacity: reviewMutation.isPending ? 0.6 : 1,
+                  }}>
+                  {reviewMutation.isPending ? 'Procesando...' : reviewModal.action === 'received' ? 'Confirmar recepción' : 'Rechazar'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

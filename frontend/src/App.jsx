@@ -33,6 +33,7 @@ import PlanPagos from './pages/PlanPagos';
 import Onboarding from './pages/Onboarding';
 import MiMembresia from './pages/MiMembresia';
 import Blog from './pages/Blog';
+import EnviarPago from './pages/EnviarPago';
 
 const LOADER = (
   <div className="flex items-center justify-center h-screen bg-white">
@@ -132,6 +133,7 @@ function AppRoutes() {
         <Route path="onboarding"    element={<RoleRoute module="onboarding">    <Onboarding />    </RoleRoute>} />
         <Route path="mi-membresia"  element={<RoleRoute module="mi_membresia">  <MiMembresia />   </RoleRoute>} />
         <Route path="blog"          element={<RoleRoute module="blog">          <Blog />          </RoleRoute>} />
+        <Route path="enviar-pago"   element={<RoleRoute module="enviar_pago">   <EnviarPago />    </RoleRoute>} />
       </Route>
 
       {/* Fallback */}

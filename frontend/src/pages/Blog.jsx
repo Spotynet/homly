@@ -343,9 +343,9 @@ function GridCard({ article, onEdit, onView, onDelete, isAdmin }) {
   return (
     <div className="bg-white rounded-xl border border-slate-200 overflow-hidden hover:shadow-md transition-all group">
       <div className="relative cursor-pointer" onClick={() => onView(article)}>
-        <div className={`w-full h-40 bg-gradient-to-br ${coverGradient(article)} flex items-center justify-center`}>
+        <div className={`relative w-full h-40 bg-gradient-to-br ${coverGradient(article)} flex items-center justify-center overflow-hidden`}>
           {article.cover_image_url
-            ? <img src={article.cover_image_url} alt={article.title} className="w-full h-full object-cover" />
+            ? <img src={article.cover_image_url} alt={article.title} className="absolute inset-0 w-full h-full object-cover" />
             : <span className="text-5xl group-hover:scale-105 transition-transform duration-200">{coverEmoji(article)}</span>
           }
         </div>

@@ -153,6 +153,15 @@ export const paymentsAPI = {
   receiptPDF: (tenantId, paymentId) => api.get(`/tenants/${tenantId}/payments/${paymentId}/receipt-pdf/`, { responseType: 'blob' }),
 };
 
+// ─── Payment Voucher Submissions ────────────────
+export const voucherAPI = {
+  list:   (tenantId, params) => api.get(`/tenants/${tenantId}/payment-vouchers/`, { params }),
+  create: (tenantId, formData) => api.post(`/tenants/${tenantId}/payment-vouchers/`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
+  review: (tenantId, id, data) => api.patch(`/tenants/${tenantId}/payment-vouchers/${id}/review/`, data),
+};
+
 // ─── Extra Fields ───────────────────────────────
 export const extraFieldsAPI = {
   list: (tenantId, params) => api.get(`/tenants/${tenantId}/extra-fields/`, { params: params || {} }),

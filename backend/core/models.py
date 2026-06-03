@@ -1881,3 +1881,49 @@ class SystemRole(models.Model):
     def __str__(self):
         return self.name
 
+
+# ═══════════════════════════════════════════════════════════
+#  PAYMENT VOUCHER SUBMISSION (Comprobantes de pago de residentes)
+# ═══════════════════════════════════════════════════════════
+
+class PaymentVoucherSubmission(models.Model):
+    """
+    Comprobante de pago enviado por un residente.
+    El residente adjunta una imagen/archivo como evidencia de pago para un
+    período determinado. El admin/tesorero puede aceptar o rechazar el envío.
+    """
+    STATUS_CHOICES = [
+        ('pending',  'Pendiente'),
+        ('received', 'Recibido'),
+        ('rejected', 'Rechazado'),
+    ]
+
+    id           = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant       = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='voucher_submissions')
+    unit         = models.ForeignKey(Unit,   on_delete=models.CASCADE, related_name='voucher_submissions')
+    submitted_by = models.ForeignKey(User,   on_delete=models.SET_NULL, null=True, related_name='voucher_submissions')
+    period       = models.CharField(max_length=7, help_text='YYYY-MM')
+    notes        = models.TextField(blank=True, default='')
+    evidence_file = models.FileField(
+        upload_to='voucher_submissions/', null=True, blank=True,
+        help_text='Imagen o PDF del comprobante de pago'
+    )
+    status       = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending', db_index=True)
+    reviewed_by  = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True,
+                                     related_name='reviewed_vouchers')
+    reviewed_at  = models.DateTimeField(null=True, blank=True)
+    review_notes = models.TextField(blank=True, default='')
+    created_at   = models.DateTimeField(auto_now_add=True)
+    updated_at   = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'payment_voucher_submissions'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['tenant', 'status']),
+            models.Index(fields=['tenant', 'unit', 'period']),
+        ]
+
+    def __str__(self):
+        return f'Voucher {self.unit} {self.period} [{self.status}]'
+

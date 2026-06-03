@@ -1607,3 +1607,40 @@ class BlogPostListSerializer(serializers.ModelSerializer):
             )
         return {'counts': counts, 'my_reactions': my_reactions}
 
+
+# ─── Payment Voucher Submission ────────────────────────────────────────────────
+
+class PaymentVoucherSubmissionSerializer(serializers.ModelSerializer):
+    submitted_by_name = serializers.SerializerMethodField()
+    reviewed_by_name  = serializers.SerializerMethodField()
+    unit_name         = serializers.SerializerMethodField()
+    evidence_file_url = serializers.SerializerMethodField()
+
+    class Meta:
+        from .models import PaymentVoucherSubmission
+        model  = PaymentVoucherSubmission
+        fields = [
+            'id', 'period', 'notes', 'evidence_file', 'evidence_file_url',
+            'status', 'review_notes', 'reviewed_at',
+            'submitted_by_name', 'reviewed_by_name', 'unit_name',
+            'created_at', 'updated_at',
+        ]
+        read_only_fields = ['id', 'status', 'reviewed_at', 'created_at', 'updated_at']
+
+    def get_submitted_by_name(self, obj):
+        return obj.submitted_by.name if obj.submitted_by else ''
+
+    def get_reviewed_by_name(self, obj):
+        return obj.reviewed_by.name if obj.reviewed_by else ''
+
+    def get_unit_name(self, obj):
+        return str(obj.unit) if obj.unit else ''
+
+    def get_evidence_file_url(self, obj):
+        if not obj.evidence_file:
+            return None
+        request = self.context.get('request')
+        if request:
+            return request.build_absolute_uri(f'/api/media/{obj.evidence_file.name}')
+        return obj.evidence_file.url
+

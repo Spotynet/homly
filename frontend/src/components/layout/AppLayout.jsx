@@ -10,7 +10,7 @@ import {
   Home, Globe, FileText, ShoppingBag, Receipt, Settings,
   Users, Building, Shield, LogOut, Menu, X, Calendar,
   ChevronDown, Check, Building2, Bell, CheckCheck, Activity, Lock, TrendingDown,
-  Sparkles, CreditCard, DollarSign, Target, Newspaper,
+  Sparkles, CreditCard, DollarSign, Target, Newspaper, Send,
 } from 'lucide-react';
 
 const NAV_ITEMS = {
@@ -135,6 +135,7 @@ const NAV_ITEMS = {
       { path: '/app/onboarding',     icon: Sparkles,  label: 'Guías de uso'   },
     ]},
     { section: 'finanzas', label: 'Finanzas', items: [
+      { path: '/app/enviar-pago',    icon: Send,         label: 'Enviar pago'      },
       { path: '/app/estado-cuenta',  icon: FileText,     label: 'Estado de Cuenta' },
       { path: '/app/plan-pagos',     icon: TrendingDown, label: 'Plan de Pagos'    },
     ]},
@@ -157,6 +158,7 @@ const PATH_TO_MODULE = {
   '/app/onboarding':      'onboarding',
   '/app/mi-membresia':    'mi_membresia',
   '/app/blog':            'blog',
+  '/app/enviar-pago':     'enviar_pago',
 };
 
 const PAGE_TITLES = {
@@ -179,6 +181,7 @@ const PAGE_TITLES = {
   'onboarding': 'Guías de uso',
   'mi-membresia': 'Mi Membresía',
   'blog': 'Comunicación',
+  'enviar-pago': 'Enviar pago',
 };
 
 function getPageTitle(pathname) {

@@ -43,7 +43,8 @@ tenant_router.register(r'unrecognized-income', views.UnrecognizedIncomeViewSet, 
 tenant_router.register(r'amenity-reservations', views.AmenityReservationViewSet, basename='amenity-reservations')
 tenant_router.register(r'notifications', views.NotificationViewSet, basename='notifications')
 tenant_router.register(r'payment-plans', views.PaymentPlanViewSet, basename='payment-plans')
-tenant_router.register(r'blog-posts',    views.BlogPostViewSet,    basename='blog-posts')
+tenant_router.register(r'blog-posts',        views.BlogPostViewSet,                basename='blog-posts')
+tenant_router.register(r'payment-vouchers',  views.PaymentVoucherSubmissionViewSet, basename='payment-vouchers')
 
 urlpatterns = [
     # Auth

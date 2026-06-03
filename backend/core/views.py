@@ -30,6 +30,7 @@ from .models import (
     CRMCampaign, CRMCampaignContact, CRMTicket,
     SystemRole,
     BlogPost, BlogReaction, BlogComment,
+    PaymentVoucherSubmission,
 )
 from .email_service import (
     send_verification_email, send_notification_email, CODE_EXPIRY_MINUTES,
@@ -55,6 +56,7 @@ from .serializers import (
     SystemUserSerializer, SystemUserCreateSerializer,
     SystemRoleSerializer,
     BlogPostSerializer, BlogPostListSerializer, BlogCommentSerializer,
+    PaymentVoucherSubmissionSerializer,
 )
 from .permissions import IsSuperAdmin, IsTenantAdmin, IsTenantMember, IsAdminOrTesorero, IsAdminOrTesOrAuditor, CanApproveReservation
 
@@ -7976,5 +7978,135 @@ class BlogPostViewSet(viewsets.ModelViewSet):
         BlogPost.objects.filter(pk=instance.pk).update(views_count=F('views_count') + 1)
         instance.refresh_from_db(fields=['views_count'])
         serializer = self.get_serializer(instance)
+        return Response(serializer.data)
+
+
+# ═══════════════════════════════════════════════════════════
+#  PAYMENT VOUCHER SUBMISSIONS
+# ═══════════════════════════════════════════════════════════
+
+class PaymentVoucherSubmissionViewSet(viewsets.ModelViewSet):
+    """
+    CRUD /api/tenants/{tenant_id}/payment-vouchers/
+
+    Residentes: crean (POST) y listan sus propios envíos (GET).
+    Admin / tesorero: lista todos los envíos del tenant, puede aceptar o rechazar.
+    """
+    from .serializers import PaymentVoucherSubmissionSerializer as _PVS
+    serializer_class = _PVS
+    permission_classes = [IsTenantMember]
+    http_method_names = ['get', 'post', 'patch', 'head', 'options']
+
+    def _get_tenant_user(self):
+        try:
+            return TenantUser.objects.get(
+                user=self.request.user,
+                tenant_id=self.kwargs['tenant_id'],
+            )
+        except TenantUser.DoesNotExist:
+            return None
+
+    def get_queryset(self):
+        from .models import PaymentVoucherSubmission
+        qs = PaymentVoucherSubmission.objects.filter(
+            tenant_id=self.kwargs['tenant_id']
+        ).select_related('unit', 'submitted_by', 'reviewed_by')
+
+        if self.request.user.is_super_admin:
+            pass
+        else:
+            tu = self._get_tenant_user()
+            if not tu:
+                return PaymentVoucherSubmission.objects.none()
+            if tu.role == 'vecino':
+                # Residente solo ve sus propios envíos
+                qs = qs.filter(submitted_by=self.request.user)
+
+        # Filtros opcionales
+        period = self.request.query_params.get('period')
+        if period:
+            qs = qs.filter(period=period)
+        status_f = self.request.query_params.get('status')
+        if status_f:
+            qs = qs.filter(status=status_f)
+        unit_id = self.request.query_params.get('unit_id')
+        if unit_id:
+            qs = qs.filter(unit_id=unit_id)
+
+        return qs
+
+    def create(self, request, *args, **kwargs):
+        """Solo residentes pueden crear envíos (para su propia unidad)."""
+        if not request.user.is_super_admin:
+            tu = self._get_tenant_user()
+            if not tu or tu.role != 'vecino':
+                return Response(
+                    {'detail': 'Solo los residentes pueden enviar comprobantes.'},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+            if not tu.unit_id:
+                return Response(
+                    {'detail': 'Tu cuenta no tiene una unidad asignada.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            unit_id = tu.unit_id
+        else:
+            unit_id = request.data.get('unit_id')
+            if not unit_id:
+                return Response({'detail': 'unit_id es obligatorio.'}, status=400)
+
+        period = request.data.get('period', '').strip()
+        if not period or len(period) != 7:
+            return Response({'detail': 'Período inválido (formato YYYY-MM).'}, status=400)
+
+        from .models import PaymentVoucherSubmission
+        instance = PaymentVoucherSubmission(
+            tenant_id=self.kwargs['tenant_id'],
+            unit_id=unit_id,
+            submitted_by=request.user,
+            period=period,
+            notes=request.data.get('notes', ''),
+            status='pending',
+        )
+        if 'evidence_file' in request.FILES:
+            instance.evidence_file = request.FILES['evidence_file']
+        instance.save()
+
+        from .serializers import PaymentVoucherSubmissionSerializer
+        serializer = PaymentVoucherSubmissionSerializer(instance, context={'request': request})
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['patch'], url_path='review')
+    def review(self, request, tenant_id=None, pk=None):
+        """
+        PATCH /api/tenants/{tenant_id}/payment-vouchers/{id}/review/
+        Solo admin / tesorero. Acepta o rechaza el comprobante.
+        action: 'received' | 'rejected'
+        """
+        if not request.user.is_super_admin:
+            tu = self._get_tenant_user()
+            if not tu or tu.role not in ('admin', 'tesorero'):
+                return Response({'detail': 'Sin permiso.'}, status=status.HTTP_403_FORBIDDEN)
+
+        from .models import PaymentVoucherSubmission
+        try:
+            voucher = PaymentVoucherSubmission.objects.get(
+                id=pk, tenant_id=tenant_id
+            )
+        except PaymentVoucherSubmission.DoesNotExist:
+            return Response({'detail': 'No encontrado.'}, status=404)
+
+        action_val = request.data.get('action')
+        if action_val not in ('received', 'rejected'):
+            return Response({'detail': 'action debe ser "received" o "rejected".'}, status=400)
+
+        voucher.status       = action_val
+        voucher.reviewed_by  = request.user
+        voucher.reviewed_at  = timezone.now()
+        voucher.review_notes = request.data.get('review_notes', '')
+        voucher.save()
+
+        from .serializers import PaymentVoucherSubmissionSerializer
+        serializer = PaymentVoucherSubmissionSerializer(voucher, context={'request': request})
         return Response(serializer.data)
 
