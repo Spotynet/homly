@@ -198,12 +198,22 @@ function NewVoucherForm({ tenantId, onSuccess }) {
     },
   });
 
+  const ACCEPTED_MIME = new Set([
+    'image/jpeg', 'image/jpg', 'image/png', 'image/gif',
+    'image/webp', 'application/pdf',
+  ]);
+
   const handleFile = (e) => {
     const f = e.target.files?.[0];
     if (e.target) e.target.value = '';
     if (!f) return;
-    const allowed = f.type.startsWith('image/') || f.type === 'application/pdf';
-    if (!allowed) { toast.error('Solo se aceptan imágenes o PDF'); return; }
+    const mime = f.type || '';
+    const ext  = f.name.split('.').pop()?.toLowerCase() || '';
+    const allowedExt = ['jpg','jpeg','png','gif','pdf','webp'].includes(ext);
+    if (!ACCEPTED_MIME.has(mime) && !allowedExt) {
+      toast.error('Formato no permitido. Usa JPG, JPEG, PNG, GIF o PDF');
+      return;
+    }
     if (f.size > 15 * 1024 * 1024) { toast.error('Archivo demasiado grande (máx 15 MB)'); return; }
     setFile(f);
   };
@@ -254,7 +264,7 @@ function NewVoucherForm({ tenantId, onSuccess }) {
         ) : (
           <div className="border-2 border-dashed border-slate-200 rounded-xl p-6 text-center space-y-3 hover:border-teal-300 transition-colors">
             <div className="flex items-center justify-center gap-3">
-              <input ref={fileInputRef}   type="file" accept="image/*,application/pdf" onChange={handleFile} className="hidden" />
+              <input ref={fileInputRef}   type="file" accept=".jpg,.jpeg,.png,.gif,.pdf" onChange={handleFile} className="hidden" />
               <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" onChange={handleFile} className="hidden" />
               <button
                 type="button"
@@ -269,7 +279,7 @@ function NewVoucherForm({ tenantId, onSuccess }) {
                 <Camera size={15} /> Tomar foto
               </button>
             </div>
-            <p className="text-xs text-slate-400">Imagen o PDF · Máx 15 MB</p>
+            <p className="text-xs text-slate-400">JPG, JPEG, PNG, GIF o PDF · Máx 15 MB</p>
           </div>
         )}
       </div>
