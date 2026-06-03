@@ -1,20 +1,21 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
 import { voucherAPI } from '../api/client';
 import { todayPeriod, prevPeriod, periodLabel } from '../utils/helpers';
 import toast from 'react-hot-toast';
+import axios from 'axios';
 import {
   Upload, Camera, FileText, Clock, CheckCircle, XCircle,
-  ChevronLeft, ChevronRight, Send, Loader2, Eye, Calendar,
+  Send, Loader2, Eye, Calendar,
   Receipt, AlertCircle, X, Image as ImageIcon,
 } from 'lucide-react';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const STATUS = {
-  pending:  { label: 'Pendiente', icon: Clock,         color: 'text-amber-600',  bg: 'bg-amber-50',  border: 'border-amber-200' },
-  received: { label: 'Recibido',  icon: CheckCircle,   color: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-200' },
-  rejected: { label: 'Rechazado', icon: XCircle,       color: 'text-rose-600',   bg: 'bg-rose-50',   border: 'border-rose-200' },
+  pending:  { label: 'Pendiente', icon: Clock,       color: 'text-amber-600',   bg: 'bg-amber-50',   border: 'border-amber-200' },
+  received: { label: 'Recibido',  icon: CheckCircle, color: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-200' },
+  rejected: { label: 'Rechazado', icon: XCircle,     color: 'text-rose-600',    bg: 'bg-rose-50',    border: 'border-rose-200' },
 };
 
 function StatusBadge({ status }) {
@@ -39,7 +40,116 @@ function buildPeriodOptions() {
   return options;
 }
 
-// ─── Image/file preview ───────────────────────────────────────────────────────
+// ─── Evidence popup (mirrors Cobranza's evidencePopup) — exported for reuse ──
+// Fetches the protected media URL via axios (sends auth cookies), then
+// converts the blob to a data URL for display.
+export function EvidencePopup({ url, fileName, onClose }) {
+  const [state, setState] = useState({ loading: true, b64: null, mime: null, error: null });
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await axios.get(url, {
+          responseType: 'blob',
+          withCredentials: true,
+        });
+        const blob = res.data;
+        const mime = blob.type || 'application/octet-stream';
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          if (cancelled) return;
+          // ev.target.result is "data:mime;base64,XXXX" — extract just the base64 part
+          const dataUrl = ev.target.result;
+          const b64 = dataUrl.split(',')[1] || '';
+          setState({ loading: false, b64, mime, error: null });
+        };
+        reader.onerror = () => {
+          if (!cancelled) setState({ loading: false, b64: null, mime: null, error: 'No se pudo leer el archivo.' });
+        };
+        reader.readAsDataURL(blob);
+      } catch {
+        if (!cancelled) setState({ loading: false, b64: null, mime: null, error: 'No se pudo cargar el comprobante.' });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [url]);
+
+  const { loading, b64, mime, error } = state;
+
+  const isPdf   = mime === 'application/pdf' || /\.pdf$/i.test(fileName || '');
+  const isImage = mime?.startsWith('image/')
+    || b64?.startsWith('iVBOR')   // PNG
+    || b64?.startsWith('/9j/')    // JPEG
+    || b64?.startsWith('R0lGO')   // GIF
+    || b64?.startsWith('UklGR');  // WebP
+  const effectiveMime = isPdf ? 'application/pdf'
+    : mime && mime !== 'application/octet-stream' ? mime
+    : b64?.startsWith('iVBOR') ? 'image/png'
+    : b64?.startsWith('/9j/')  ? 'image/jpeg'
+    : b64?.startsWith('R0lGO') ? 'image/gif'
+    : b64?.startsWith('UklGR') ? 'image/webp'
+    : 'application/octet-stream';
+
+  return (
+    <div className="modal-bg open" style={{ zIndex: 9999 }} onClick={onClose}>
+      <div className="modal lg" onClick={e => e.stopPropagation()} style={{ maxWidth: 820, width: '92vw' }}>
+        <div className="modal-head">
+          <h3 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <FileText size={16} /> {fileName || 'Comprobante de pago'}
+          </h3>
+          <button className="modal-close" onClick={onClose}><X size={16} /></button>
+        </div>
+        <div className="modal-body" style={{ padding: 16 }}>
+          {loading && (
+            <div style={{ textAlign: 'center', padding: 48, color: 'var(--ink-400)', fontSize: 13 }}>
+              <Loader2 size={28} className="animate-spin" style={{ margin: '0 auto 10px' }} />
+              Cargando comprobante…
+            </div>
+          )}
+          {error && (
+            <div style={{ textAlign: 'center', padding: 48, color: 'var(--coral-600)', fontSize: 13 }}>
+              {error}
+            </div>
+          )}
+          {!loading && !error && b64 && (
+            isPdf ? (
+              <div style={{ height: '72vh', border: '1px solid var(--sand-200)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+                <iframe
+                  src={`data:application/pdf;base64,${b64}`}
+                  style={{ width: '100%', height: '100%', border: 'none' }}
+                  title="Comprobante PDF"
+                />
+              </div>
+            ) : isImage ? (
+              <div style={{ textAlign: 'center', background: 'var(--sand-50)', borderRadius: 'var(--radius-md)', padding: 8, maxHeight: '72vh', overflow: 'auto' }}>
+                <img
+                  src={`data:${effectiveMime};base64,${b64}`}
+                  alt="Comprobante"
+                  style={{ maxWidth: '100%', borderRadius: 'var(--radius-sm)', display: 'inline-block' }}
+                />
+              </div>
+            ) : (
+              <div style={{ textAlign: 'center', padding: 48 }}>
+                <FileText size={52} style={{ color: 'var(--ink-300)', marginBottom: 16 }} />
+                <p style={{ color: 'var(--ink-500)', marginBottom: 20 }}>Vista previa no disponible para este tipo de archivo.</p>
+                <a
+                  href={`data:${effectiveMime};base64,${b64}`}
+                  download={fileName || 'comprobante'}
+                  className="btn btn-primary"
+                >
+                  Descargar archivo
+                </a>
+              </div>
+            )
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Image/file preview (local file before upload) ────────────────────────────
 function FilePreview({ file, onRemove }) {
   const isImage = file?.type?.startsWith('image/');
   const url = file ? URL.createObjectURL(file) : null;
@@ -72,7 +182,7 @@ function NewVoucherForm({ tenantId, onSuccess }) {
   const [period, setPeriod] = useState(periodOptions[0]);
   const [notes, setNotes]   = useState('');
   const [file, setFile]     = useState(null);
-  const fileInputRef  = useRef(null);
+  const fileInputRef   = useRef(null);
   const cameraInputRef = useRef(null);
   const qc = useQueryClient();
 
@@ -192,8 +302,7 @@ function NewVoucherForm({ tenantId, onSuccess }) {
 }
 
 // ─── Voucher history card ─────────────────────────────────────────────────────
-function VoucherCard({ voucher }) {
-  const [showImg, setShowImg] = useState(false);
+function VoucherCard({ voucher, onViewEvidence }) {
   return (
     <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-3">
       <div className="flex items-center justify-between">
@@ -208,23 +317,10 @@ function VoucherCard({ voucher }) {
       {voucher.evidence_file_url && (
         <button
           type="button"
-          onClick={() => setShowImg(v => !v)}
+          onClick={() => onViewEvidence(voucher)}
           className="inline-flex items-center gap-1.5 text-xs text-teal-600 font-semibold hover:text-teal-700 transition-colors">
-          <Eye size={12} /> {showImg ? 'Ocultar comprobante' : 'Ver comprobante'}
+          <Eye size={12} /> Ver comprobante
         </button>
-      )}
-
-      {showImg && voucher.evidence_file_url && (
-        <div className="rounded-xl overflow-hidden border border-slate-200">
-          {voucher.evidence_file_url.match(/\.(pdf)$/i) ? (
-            <a href={voucher.evidence_file_url} target="_blank" rel="noreferrer"
-              className="flex items-center gap-2 p-3 text-sm text-teal-600 hover:underline">
-              <FileText size={16} /> Abrir PDF
-            </a>
-          ) : (
-            <img src={voucher.evidence_file_url} alt="Comprobante" className="w-full max-h-64 object-contain bg-slate-50" />
-          )}
-        </div>
       )}
 
       {voucher.status === 'rejected' && voucher.review_notes && (
@@ -251,7 +347,8 @@ function VoucherCard({ voucher }) {
 // ─── Main component (Resident view) ──────────────────────────────────────────
 export default function EnviarPago() {
   const { tenantId, tenant } = useAuth();
-  const [showForm, setShowForm] = useState(false);
+  const [showForm, setShowForm]         = useState(false);
+  const [evidencePopup, setEvidencePopup] = useState(null); // { url, fileName }
 
   const { data, isLoading } = useQuery({
     queryKey: ['vouchers', tenantId],
@@ -262,6 +359,13 @@ export default function EnviarPago() {
 
   const vouchers = data || [];
   const pending  = vouchers.filter(v => v.status === 'pending').length;
+
+  const handleViewEvidence = (voucher) => {
+    // Extract a readable filename from the URL path
+    const urlPath = voucher.evidence_file_url || '';
+    const fileName = decodeURIComponent(urlPath.split('/').pop()) || 'comprobante';
+    setEvidencePopup({ url: voucher.evidence_file_url, fileName });
+  };
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -290,8 +394,8 @@ export default function EnviarPago() {
         {/* Stats */}
         <div className="grid grid-cols-3 gap-4">
           {[
-            { label: 'Enviados',   value: vouchers.length,                                   color: 'text-slate-700',   bg: 'bg-slate-50',   icon: Send },
-            { label: 'Pendientes', value: pending,                                            color: 'text-amber-600',   bg: 'bg-amber-50',   icon: Clock },
+            { label: 'Enviados',   value: vouchers.length,                                      color: 'text-slate-700',   bg: 'bg-slate-50',   icon: Send },
+            { label: 'Pendientes', value: pending,                                               color: 'text-amber-600',   bg: 'bg-amber-50',   icon: Clock },
             { label: 'Recibidos',  value: vouchers.filter(v => v.status === 'received').length, color: 'text-emerald-600', bg: 'bg-emerald-50', icon: CheckCircle },
           ].map(({ label, value, color, bg, icon: Icon }) => (
             <div key={label} className="bg-white rounded-xl border border-slate-200 p-4 flex items-center gap-3">
@@ -326,11 +430,22 @@ export default function EnviarPago() {
             </div>
           ) : (
             <div className="space-y-3">
-              {vouchers.map(v => <VoucherCard key={v.id} voucher={v} />)}
+              {vouchers.map(v => (
+                <VoucherCard key={v.id} voucher={v} onViewEvidence={handleViewEvidence} />
+              ))}
             </div>
           )}
         </div>
       </div>
+
+      {/* Evidence popup — fetches file with auth and renders inline */}
+      {evidencePopup && (
+        <EvidencePopup
+          url={evidencePopup.url}
+          fileName={evidencePopup.fileName}
+          onClose={() => setEvidencePopup(null)}
+        />
+      )}
     </div>
   );
 }

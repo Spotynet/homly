@@ -7829,7 +7829,7 @@ class BlogPostViewSet(viewsets.ModelViewSet):
             post_cover_url = ''
             if post.cover_image:
                 try:
-                    post_cover_url = request.build_absolute_uri(post.cover_image.url)
+                    post_cover_url = request.build_absolute_uri(f'/api/media/{post.cover_image.name}')
                 except Exception:
                     post_cover_url = ''
 

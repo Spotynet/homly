@@ -1532,9 +1532,12 @@ class BlogPostSerializer(serializers.ModelSerializer):
         if not obj.cover_image:
             return None
         request = self.context.get('request')
+        # Must route through /api/media/ (ProtectedMediaView) — direct /media/ is
+        # blocked by nginx (M-04 security rule: deny all on /media/).
+        protected_path = f'/api/media/{obj.cover_image.name}'
         if request:
-            return request.build_absolute_uri(obj.cover_image.url)
-        return obj.cover_image.url
+            return request.build_absolute_uri(protected_path)
+        return protected_path
 
     def get_comments_count(self, obj):
         return obj.comments.count()
@@ -1583,9 +1586,10 @@ class BlogPostListSerializer(serializers.ModelSerializer):
         if not obj.cover_image:
             return None
         request = self.context.get('request')
+        protected_path = f'/api/media/{obj.cover_image.name}'
         if request:
-            return request.build_absolute_uri(obj.cover_image.url)
-        return obj.cover_image.url
+            return request.build_absolute_uri(protected_path)
+        return protected_path
 
     def get_comments_count(self, obj):
         return obj.comments.count()
@@ -1620,7 +1624,7 @@ class PaymentVoucherSubmissionSerializer(serializers.ModelSerializer):
         from .models import PaymentVoucherSubmission
         model  = PaymentVoucherSubmission
         fields = [
-            'id', 'period', 'notes', 'evidence_file', 'evidence_file_url',
+            'id', 'unit_id', 'period', 'notes', 'evidence_file', 'evidence_file_url',
             'status', 'review_notes', 'reviewed_at',
             'submitted_by_name', 'reviewed_by_name', 'unit_name',
             'created_at', 'updated_at',

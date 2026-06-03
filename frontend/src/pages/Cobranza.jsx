@@ -3,6 +3,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
 import { paymentsAPI, unrecognizedIncomeAPI, reservationsAPI, reportsAPI, voucherAPI } from '../api/client';
 import { useQuery, useMutation } from '@tanstack/react-query';
+import { EvidencePopup } from './EnviarPago';
+import axios from 'axios';
 import { usePaymentsData } from '../hooks/usePaymentsData';
 import { queryKeys }        from '../hooks/queryKeys';
 import PaginationBar from '../components/PaginationBar';
@@ -144,6 +146,8 @@ export default function Cobranza() {
   const [viewEvidencePay, setViewEvidencePay]         = useState(null); // { files: [...], loading: bool }
   const [captureUnitPeriods, setCaptureUnitPeriods]   = useState([]);
   const [captureUnitPeriodsLoading, setCaptureUnitPeriodsLoading] = useState(false);
+  // Voucher ID que originó la captura actual; si existe, se marca como "received" al guardar
+  const [pendingVoucherId, setPendingVoucherId]       = useState(null);
 
   // ── Datos del módulo vía React Query ────────────────────────────────────────
   const {
@@ -241,7 +245,8 @@ export default function Cobranza() {
   const totalPages = Math.ceil(filtered.length / perPage);
   const paged = filtered.slice((page - 1) * perPage, page * perPage);
 
-  const openCapture = (unit) => {
+  const openCapture = (unit, overridePeriod, preloadedEvidences) => {
+    const capPeriod = overridePeriod || period;
     const existing = paymentMap[unit.id];
     const fp = {};
     if (existing?.field_payments) {
@@ -287,14 +292,14 @@ export default function Cobranza() {
     });
     setCaptureForm({
       unit_id: unit.id,
-      period,
+      period: capPeriod,
       payment_type: existing?.payment_type || (!!unit.admin_exempt ? 'excento' : ''),
       payment_date: existing?.payment_date || new Date().toISOString().slice(0, 10),
       notes: existing?.notes || '',
       folio: existing?.folio || '',
       // La evidence no viene en el listado (se omite para ahorrar tráfico).
-      // Se inicializa vacía y se carga lazy desde el endpoint de detalle.
-      evidences: [],
+      // Se inicializa con evidencias pre-cargadas del comprobante (si las hay).
+      evidences: preloadedEvidences || [],
       bank_reconciled: !!existing?.bank_reconciled,
       field_payments: fieldPayments,
       adeudo_payments: existingAp,
@@ -314,6 +319,52 @@ export default function Cobranza() {
         })
         .catch(() => {});
     }
+  };
+
+  // Abre el form de captura de pago pre-cargado con la evidencia del comprobante
+  // enviado por el residente. Después del guardado exitoso, el voucher se marca
+  // como "received" automáticamente.
+  const handleAcceptVoucher = async (voucher) => {
+    const unit = units.find(u => u.id === voucher.unit_id || String(u.id) === String(voucher.unit_id));
+    if (!unit) {
+      // Intentar buscar por unit_name como fallback
+      const byName = units.find(u => String(u) === voucher.unit_name || u.number === voucher.unit_name || u.name === voucher.unit_name);
+      if (!byName) {
+        toast.error('No se encontró la unidad del comprobante en el período actual.');
+        return;
+      }
+    }
+    const targetUnit = unit || units.find(u => u.number === voucher.unit_name);
+    if (!targetUnit) { toast.error('Unidad no encontrada.'); return; }
+
+    setPendingVoucherId(voucher.id);
+
+    // Descargar el comprobante y convertirlo a base64 para pre-cargarlo en la captura
+    let voucherEvidence = [];
+    if (voucher.evidence_file_url) {
+      try {
+        const res = await axios.get(voucher.evidence_file_url, { responseType: 'blob', withCredentials: true });
+        const blob = res.data;
+        const mime = blob.type || 'application/octet-stream';
+        const fileName = decodeURIComponent((voucher.evidence_file_url || '').split('/').pop()) || 'comprobante';
+        await new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onload = (ev) => {
+            const b64 = (ev.target.result || '').split(',')[1] || '';
+            voucherEvidence = [{ data: b64, mime, name: fileName }];
+            resolve();
+          };
+          reader.onerror = resolve;
+          reader.readAsDataURL(blob);
+        });
+      } catch {
+        // Si no se puede descargar, abre el form igual pero sin evidencia pre-cargada
+        toast('No se pudo adjuntar el comprobante automáticamente.', { icon: '⚠️' });
+      }
+    }
+
+    // Abrir form de captura con la evidencia pre-cargada y el período del voucher
+    openCapture(targetUnit, voucher.period, voucherEvidence);
   };
 
   const setReceived = (key, val) => {
@@ -444,11 +495,25 @@ export default function Cobranza() {
     setSaving(true);
     // Keep a ref to the unit before closing the capture modal
     const capturedUnit = showCapture;
+    const voucherId    = pendingVoucherId;
     try {
       const res = await paymentsAPI.capture(tenantId, buildCapturePayload());
       toast.success('Pago registrado');
       setShowCapture(null);
+      setPendingVoucherId(null);
       queryClient.invalidateQueries({ queryKey: queryKeys.payments(tenantId, period) });
+
+      // Si la captura vino de un comprobante, marcarlo como "recibido"
+      if (voucherId) {
+        try {
+          await voucherAPI.review(tenantId, voucherId, { action: 'received', review_notes: '' });
+          queryClient.invalidateQueries({ queryKey: ['vouchers-admin', tenantId] });
+          toast.success('Comprobante marcado como Recibido');
+        } catch {
+          toast('El pago se registró pero no se pudo cerrar el comprobante.', { icon: '⚠️' });
+        }
+      }
+
       // Automatically open the receipt so the admin can verify the captured data
       // and decide whether to send an email or print.
       if (res?.data) {
@@ -1278,15 +1343,24 @@ export default function Cobranza() {
           : `${showCapture.owner_first_name || ''} ${showCapture.owner_last_name || ''}`.trim() || showCapture.responsible_name;
 
         return (
-          <div className="modal-bg open" onClick={() => setShowCapture(null)}>
+          <div className="modal-bg open" onClick={() => { setShowCapture(null); setPendingVoucherId(null); }}>
             <div className="modal lg" onClick={e => e.stopPropagation()} style={{ maxWidth: 620 }}>
               <div className="modal-head">
                 <div>
-                  <h3>Captura de Pago — {periodLabel(period)}</h3>
+                  <h3>Captura de Pago — {periodLabel(captureForm.period || period)}</h3>
                 </div>
-                <button className="modal-close" onClick={() => setShowCapture(null)}><X size={16} /></button>
+                <button className="modal-close" onClick={() => { setShowCapture(null); setPendingVoucherId(null); }}><X size={16} /></button>
               </div>
               <div className="modal-body" style={{ maxHeight: 'calc(100vh - 140px)', overflowY: 'auto' }}>
+                {/* Banner cuando viene de un comprobante de residente */}
+                {pendingVoucherId && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', marginBottom: 12, background: '#f0fdf4', border: '1.5px solid #86efac', borderRadius: 8 }}>
+                    <CheckCircle size={16} style={{ color: '#16a34a', flexShrink: 0 }} />
+                    <div style={{ fontSize: 13, color: '#15803d' }}>
+                      <strong>Comprobante adjunto.</strong> El comprobante enviado por el residente ya está incluido como evidencia. Al guardar, el envío quedará marcado como <strong>Recibido</strong>.
+                    </div>
+                  </div>
+                )}
                 {/* Unit header */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', background: 'var(--sand-50)', border: '1px solid var(--sand-100)', borderRadius: 'var(--radius-md)' }}>
                   <span style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--teal-600)', background: 'var(--teal-50)', padding: '4px 10px', borderRadius: 6, fontSize: 12 }}>{showCapture.unit_id_code}</span>
@@ -1775,7 +1849,7 @@ export default function Cobranza() {
                 )}
               </div>
               <div className="modal-foot">
-                <button className="btn btn-secondary" onClick={() => setShowCapture(null)}>Cancelar</button>
+                <button className="btn btn-secondary" onClick={() => { setShowCapture(null); setPendingVoucherId(null); }}>Cancelar</button>
                 <button className="btn btn-primary" onClick={handleCapture} disabled={saving}>
                   {saving ? 'Guardando…' : 'Guardar Pago'}
                 </button>
@@ -1895,19 +1969,19 @@ export default function Cobranza() {
 
       {/* Voucher submissions panel — visible only to admin/tesorero */}
       {(role === 'admin' || role === 'tesorero') && (
-        <VoucherReviewPanel tenantId={tenantId} />
+        <VoucherReviewPanel tenantId={tenantId} onAccept={handleAcceptVoucher} />
       )}
     </div>
   );
 }
 
 // ─── Voucher Review Panel (used inside Cobranza for admin/tesorero) ────────────
-export function VoucherReviewPanel({ tenantId }) {
+export function VoucherReviewPanel({ tenantId, onAccept }) {
   const qc = useQueryClient();
-  const [filterStatus, setFilterStatus] = useState('pending');
-  const [reviewModal, setReviewModal]   = useState(null); // { voucher, action }
-  const [reviewNotes, setReviewNotes]   = useState('');
-  const [expandedId, setExpandedId]     = useState(null);
+  const [filterStatus, setFilterStatus]   = useState('pending');
+  const [reviewModal, setReviewModal]     = useState(null); // { voucher, action }
+  const [reviewNotes, setReviewNotes]     = useState('');
+  const [evidencePopup, setEvidencePopup] = useState(null); // { url, fileName }
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['vouchers-admin', tenantId, filterStatus],
@@ -1975,7 +2049,6 @@ export function VoucherReviewPanel({ tenantId }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {vouchers.map(v => {
             const st = STATUS_STYLES[v.status] || STATUS_STYLES.pending;
-            const isExpanded = expandedId === v.id;
             return (
               <div key={v.id} style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: 12, overflow: 'hidden' }}>
                 {/* Row */}
@@ -1996,17 +2069,21 @@ export function VoucherReviewPanel({ tenantId }) {
                   <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                     {v.evidence_file_url && (
                       <button
-                        onClick={() => setExpandedId(isExpanded ? null : v.id)}
+                        onClick={() => {
+                          const fileName = decodeURIComponent((v.evidence_file_url || '').split('/').pop()) || 'comprobante';
+                          setEvidencePopup({ url: v.evidence_file_url, fileName });
+                        }}
                         style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 10px', borderRadius: 7, border: '1px solid #e2e8f0', background: 'white', color: '#0d9488', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
-                        <Eye size={13} /> {isExpanded ? 'Ocultar' : 'Ver'}
+                        <Eye size={13} /> Ver
                       </button>
                     )}
                     {v.status === 'pending' && (
                       <>
                         <button
-                          onClick={() => { setReviewModal({ voucher: v, action: 'received' }); setReviewNotes(''); }}
-                          style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 10px', borderRadius: 7, border: 'none', background: '#ecfdf5', color: '#059669', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-                          <CheckCircle size={13} /> Aceptar
+                          onClick={() => onAccept?.(v)}
+                          style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 10px', borderRadius: 7, border: 'none', background: '#ecfdf5', color: '#059669', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
+                          title="Abre el form de captura de pago con el comprobante adjunto">
+                          <CheckCircle size={13} /> Registrar pago
                         </button>
                         <button
                           onClick={() => { setReviewModal({ voucher: v, action: 'rejected' }); setReviewNotes(''); }}
@@ -2017,19 +2094,6 @@ export function VoucherReviewPanel({ tenantId }) {
                     )}
                   </div>
                 </div>
-                {/* Expandable image */}
-                {isExpanded && v.evidence_file_url && (
-                  <div style={{ borderTop: '1px solid #f1f5f9', padding: 12, background: '#f8fafc' }}>
-                    {v.evidence_file_url.match(/\.(pdf)$/i) ? (
-                      <a href={v.evidence_file_url} target="_blank" rel="noreferrer"
-                        style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#0d9488', fontSize: 13, fontWeight: 600, textDecoration: 'none' }}>
-                        <FileText size={15} /> Abrir PDF en nueva pestaña
-                      </a>
-                    ) : (
-                      <img src={v.evidence_file_url} alt="Comprobante" style={{ maxWidth: '100%', maxHeight: 320, objectFit: 'contain', borderRadius: 8 }} />
-                    )}
-                  </div>
-                )}
                 {/* Review notes if rejected */}
                 {v.status === 'rejected' && v.review_notes && (
                   <div style={{ borderTop: '1px solid #fecdd3', padding: '8px 16px', background: '#fff1f2', fontSize: 12, color: '#be123c' }}>
@@ -2040,6 +2104,15 @@ export function VoucherReviewPanel({ tenantId }) {
             );
           })}
         </div>
+      )}
+
+      {/* Evidence popup — fetches file with auth and renders inline */}
+      {evidencePopup && (
+        <EvidencePopup
+          url={evidencePopup.url}
+          fileName={evidencePopup.fileName}
+          onClose={() => setEvidencePopup(null)}
+        />
       )}
 
       {/* Review confirmation modal */}
