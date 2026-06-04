@@ -1193,6 +1193,7 @@ function buildBillingNoteHTML({ cycle, sub, tenantData, planName, tenantAdmin })
   })();
   const now     = new Date().toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   const cycleNo = String(cycle.number).padStart(2, '0');
+  const logoUrl = (typeof window !== 'undefined' ? window.location.origin : '') + '/img/homly-full.png';
 
   return `<!DOCTYPE html>
 <html lang="es"><head><meta charset="UTF-8">
@@ -1225,7 +1226,7 @@ function buildBillingNoteHTML({ cycle, sub, tenantData, planName, tenantAdmin })
 <body><div class="wrap">
   <div class="header">
     <div>
-      <div class="brand">Homly</div>
+      <img src="${logoUrl}" alt="Homly" style="height:38px;width:auto;object-fit:contain;display:block;margin-bottom:6px">
       <div class="brand-sub">by Spotynet · Property Management<br>contacto@spotynet.com · www.homly.com.mx</div>
     </div>
     <div>
