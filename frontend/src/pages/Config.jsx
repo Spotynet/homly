@@ -2313,6 +2313,16 @@ export default function Config() {
           </div>
 
           {/* Matrix card */}
+          {(() => {
+            // Módulos disponibles en la membresía del tenant.
+            // Lista vacía = sin restricción (plan sin límites o superadmin).
+            const planModules = Array.isArray(tenant?.subscription_allowed_modules)
+              ? tenant.subscription_allowed_modules
+              : [];
+            const hasRestriction = planModules.length > 0;
+            const isModuleInPlan = (key) => !hasRestriction || planModules.includes(key);
+
+            return (
           <div className="card" style={{ overflowX:'auto' }}>
             <table style={{ width:'100%', borderCollapse:'collapse', minWidth:700 }}>
               <thead>
@@ -2337,16 +2347,37 @@ export default function Config() {
               <tbody>
                 {MODULE_DEFINITIONS.map((mod, idx) => {
                   const Icon = mod.icon;
+                  const inPlan = isModuleInPlan(mod.key);
+                  // Fila bloqueada: visible pero opacada, sin interacción
+                  const rowStyle = {
+                    borderBottom: '1px solid var(--sand-100)',
+                    background: idx % 2 === 0 ? 'var(--white)' : 'var(--sand-50)',
+                    position: 'relative',
+                    opacity: inPlan ? 1 : 0.55,
+                    pointerEvents: inPlan ? 'auto' : 'none',
+                  };
                   return (
-                    <tr key={mod.key} style={{ borderBottom:'1px solid var(--sand-100)', background: idx % 2 === 0 ? 'var(--white)' : 'var(--sand-50)' }}>
+                    <tr key={mod.key} style={rowStyle}>
                       {/* Module name + description */}
                       <td style={{ padding:'14px 16px' }}>
                         <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                          <span style={{ display:'inline-flex', alignItems:'center', justifyContent:'center', width:30, height:30, borderRadius:'var(--radius-sm)', background:'var(--teal-50)', flexShrink:0 }}>
-                            <Icon size={14} color="var(--teal-600)" />
+                          <span style={{ display:'inline-flex', alignItems:'center', justifyContent:'center', width:30, height:30, borderRadius:'var(--radius-sm)', background: inPlan ? 'var(--teal-50)' : 'var(--sand-100)', flexShrink:0 }}>
+                            <Icon size={14} color={inPlan ? 'var(--teal-600)' : 'var(--ink-300)'} />
                           </span>
                           <div>
-                            <div style={{ fontSize:13, fontWeight:600, color:'var(--ink-800)' }}>{mod.label}</div>
+                            <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                              <span style={{ fontSize:13, fontWeight:600, color: inPlan ? 'var(--ink-800)' : 'var(--ink-400)' }}>{mod.label}</span>
+                              {!inPlan && (
+                                <span style={{
+                                  fontSize:9, fontWeight:700, letterSpacing:'0.04em',
+                                  padding:'1px 6px', borderRadius:'var(--radius-full)',
+                                  background:'var(--amber-100)', color:'var(--amber-700)',
+                                  border:'1px solid var(--amber-200)', whiteSpace:'nowrap',
+                                }}>
+                                  ✦ Solicitar upgrade
+                                </span>
+                              )}
+                            </div>
                             <div style={{ fontSize:11, color:'var(--ink-400)', marginTop:1 }}>{mod.desc}</div>
                           </div>
                         </div>
@@ -2378,13 +2409,13 @@ export default function Config() {
                                     return (
                                       <button key={key} type="button"
                                         title={label}
-                                        onClick={() => isAdmin && setModuleAccess(roleKey, mod.key, key)}
+                                        onClick={() => isAdmin && inPlan && setModuleAccess(roleKey, mod.key, key)}
                                         style={{
                                           width:22, height:22, border:'none', padding:0,
                                           display:'flex', alignItems:'center', justifyContent:'center',
                                           background: isActive ? activeBg : 'var(--white)',
                                           color: isActive ? activeColor : 'var(--ink-200)',
-                                          cursor: isAdmin ? 'pointer' : 'default',
+                                          cursor: isAdmin && inPlan ? 'pointer' : 'default',
                                           transition:'all 0.12s',
                                           borderRight: key !== 'write' ? '1px solid var(--sand-200)' : 'none',
                                         }}>
@@ -2407,6 +2438,8 @@ export default function Config() {
               </tbody>
             </table>
           </div>
+            );
+          })()}
 
           {/* Legend */}
           <div style={{ display:'flex', alignItems:'center', gap:16, marginTop:14, fontSize:11, color:'var(--ink-500)', flexWrap:'wrap' }}>
@@ -2425,6 +2458,10 @@ export default function Config() {
             <span style={{ display:'flex', alignItems:'center', gap:5 }}>
               <Lock size={12} color="var(--ink-300)"/>
               <span style={{ color:'var(--ink-400)' }}>N/A</span> — no aplica para este rol
+            </span>
+            <span style={{ display:'flex', alignItems:'center', gap:5 }}>
+              <span style={{ fontSize:9, fontWeight:700, padding:'1px 6px', borderRadius:'var(--radius-full)', background:'var(--amber-100)', color:'var(--amber-700)', border:'1px solid var(--amber-200)' }}>✦ Solicitar upgrade</span>
+              <span style={{ color:'var(--ink-400)' }}>— módulo no incluido en el plan actual</span>
             </span>
           </div>
 
