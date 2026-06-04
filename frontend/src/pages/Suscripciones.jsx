@@ -6,6 +6,7 @@ import {
   DollarSign, Users, Clock, Zap, Star, AlertCircle, RefreshCw,
   CheckCircle, XCircle, ShieldCheck, Building2, CreditCard,
   Calculator, History, PowerOff, Receipt, Eye, FileText, Printer,
+  Mail, Download, FileOutput,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import SubscriptionReceiptModal from '../components/SubscriptionReceiptModal';
@@ -1166,6 +1167,278 @@ function printKardexPDF({ cycles, sub, tenantData, adminName, adminEmail }) {
   setTimeout(() => { w.print(); }, 600);
 }
 
+// ─── Nota de Cobro ────────────────────────────────────────────────────────────
+
+function buildBillingNoteHTML({ cycle, sub, tenantData, planName }) {
+  const sym = { MXN: '$', USD: 'US$', EUR: '€', COP: 'COP$' };
+  const cs  = sym[cycle.currency] || '$';
+  const fmtM = (n) => `${cs}${Number(n || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })} ${cycle.currency}`;
+  const fmtD = (d) => {
+    if (!d) return '—';
+    try { return new Date(d + 'T00:00:00').toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }); }
+    catch { return d; }
+  };
+  const tn      = tenantData?.name || '—';
+  const rfc     = tenantData?.rfc  || '';
+  const addr    = [tenantData?.info_calle, tenantData?.info_num_externo].filter(Boolean).join(' ');
+  const city    = [tenantData?.info_colonia, tenantData?.info_ciudad, tenantData?.info_codigo_postal ? `C.P. ${tenantData.info_codigo_postal}` : ''].filter(Boolean).join(', ');
+  const now     = new Date().toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const cycleNo = String(cycle.number).padStart(2, '0');
+
+  return `<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8">
+<title>Nota de Cobro — ${tn} — ${cycle.periodLabel}</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;font-size:13px;color:#1E293B;background:#fff}
+  @page{size:A4;margin:16mm 18mm}
+  @media print{body{print-color-adjust:exact;-webkit-print-color-adjust:exact}}
+  .wrap{max-width:680px;margin:0 auto;padding:32px 28px}
+  .header{display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:18px;border-bottom:3px solid #0D9488;margin-bottom:22px}
+  .brand{font-size:22px;font-weight:900;color:#0D9488;letter-spacing:-0.5px}
+  .brand-sub{font-size:11px;color:#64748B;margin-top:2px;line-height:1.4}
+  .note-title{font-size:19px;font-weight:800;color:#0F172A;margin-bottom:2px;text-align:right}
+  .note-meta{font-size:11px;color:#64748B;text-align:right;line-height:1.5}
+  .parties{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:22px}
+  .party-box{background:#F8FAFC;border:1px solid #E2E8F0;border-radius:10px;padding:14px}
+  .party-label{font-size:9px;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;color:#94A3B8;margin-bottom:5px}
+  .party-name{font-size:14px;font-weight:700;color:#0F172A;margin-bottom:3px}
+  .party-detail{font-size:11px;color:#64748B;line-height:1.5}
+  table{width:100%;border-collapse:collapse;margin-bottom:20px}
+  th{background:#F1F5F9;padding:9px 12px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:#64748B}
+  td{padding:11px 12px;border-bottom:1px solid #F1F5F9;font-size:13px;color:#334155;vertical-align:top}
+  .total td{background:#0D9488;color:#fff!important;font-weight:800;font-size:15px;padding:13px 12px;border-bottom:none}
+  .info-box{background:#F0FDF4;border:1px solid #BBF7D0;border-radius:10px;padding:14px;margin-bottom:20px}
+  .info-title{font-size:11px;font-weight:800;color:#15803D;margin-bottom:5px}
+  .info-body{font-size:11px;color:#166534;line-height:1.6}
+  .footer{font-size:10px;color:#94A3B8;text-align:center;border-top:1px solid #E2E8F0;padding-top:14px;line-height:1.6}
+</style></head>
+<body><div class="wrap">
+  <div class="header">
+    <div>
+      <div class="brand">Homly</div>
+      <div class="brand-sub">by Spotynet · Property Management<br>contacto@spotynet.com · www.homly.com.mx</div>
+    </div>
+    <div>
+      <div class="note-title">Nota de Cobro</div>
+      <div class="note-meta">N° ${cycleNo} · ${cycle.periodLabel}<br>Emitida: ${now}</div>
+    </div>
+  </div>
+
+  <div class="parties">
+    <div class="party-box">
+      <div class="party-label">Cobrador / Proveedor</div>
+      <div class="party-name">Spotynet</div>
+      <div class="party-detail">Homly — Sistema de Administración<br>contacto@spotynet.com<br>www.homly.com.mx</div>
+    </div>
+    <div class="party-box">
+      <div class="party-label">Cliente / Condominio</div>
+      <div class="party-name">${tn}</div>
+      <div class="party-detail">${rfc ? `RFC: ${rfc}<br>` : ''}${addr ? `${addr}<br>` : ''}${city || ''}</div>
+    </div>
+  </div>
+
+  <table>
+    <thead><tr>
+      <th style="width:38%">Concepto</th>
+      <th>Período</th>
+      <th>Inicio</th>
+      <th>Vencimiento</th>
+      <th style="text-align:right">Importe</th>
+    </tr></thead>
+    <tbody>
+      <tr>
+        <td><strong>Membresía Homly</strong><br><span style="font-size:11px;color:#64748B">${planName}</span></td>
+        <td>${cycle.periodLabel}</td>
+        <td>${fmtD(cycle.cycleStart)}</td>
+        <td>${fmtD(cycle.dueDate)}</td>
+        <td style="text-align:right;font-weight:700">${fmtM(cycle.expectedAmount)}</td>
+      </tr>
+      <tr class="total">
+        <td colspan="4">Total a pagar</td>
+        <td style="text-align:right">${fmtM(cycle.expectedAmount)}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="info-box">
+    <div class="info-title">Instrucciones de pago</div>
+    <div class="info-body">
+      Realiza tu pago por transferencia bancaria o cualquier método acordado con Spotynet.<br>
+      Indica en la referencia: <strong>${tn} — ${cycle.periodLabel}</strong><br>
+      Al realizar el pago, notifica a tu asesor de Homly para registrarlo en el sistema.
+    </div>
+  </div>
+
+  <div class="footer">
+    Nota de cobro generada automáticamente por Homly para el condominio <strong>${tn}</strong>.<br>
+    ${now} · Homly — Sistema de Administración de Condominios · www.homly.com.mx
+  </div>
+</div></body></html>`;
+}
+
+function BillingNoteModal({ cycle, sub, tenantData, planName, adminEmail, onClose }) {
+  const [emailTo,   setEmailTo]   = useState(adminEmail || '');
+  const [sending,   setSending]   = useState(false);
+
+  const html = React.useMemo(
+    () => buildBillingNoteHTML({ cycle, sub, tenantData, planName }),
+    [cycle, sub, tenantData, planName]
+  );
+
+  const handlePreview = () => {
+    const w = window.open('', '_blank', 'width=820,height=900');
+    if (!w) { alert('Permite ventanas emergentes para previsualizar.'); return; }
+    w.document.open(); w.document.write(html); w.document.close();
+  };
+
+  const handleDownload = () => {
+    const w = window.open('', '_blank', 'width=820,height=900');
+    if (!w) { alert('Permite ventanas emergentes para descargar.'); return; }
+    w.document.open(); w.document.write(html); w.document.close();
+    setTimeout(() => w.print(), 600);
+  };
+
+  const handleSendEmail = async () => {
+    if (!emailTo.trim()) { toast.error('Ingresa el email destino'); return; }
+    setSending(true);
+    try {
+      await tenantSubscriptionsAPI.sendBillingNote(sub.id, {
+        period_label:  cycle.periodLabel,
+        cycle_start:   cycle.cycleStart,
+        cycle_end:     cycle.cycleEnd,
+        due_date:      cycle.dueDate,
+        amount:        cycle.expectedAmount,
+        currency:      cycle.currency,
+        cycle_number:  cycle.number,
+        to_email:      emailTo.trim(),
+      });
+      toast.success(`Nota de cobro enviada a ${emailTo.trim()}`);
+      onClose();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'No se pudo enviar el correo');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const sym  = { MXN: '$', USD: 'US$', EUR: '€', COP: 'COP$' };
+  const cs   = sym[cycle.currency] || '$';
+  const fmtM = (n) => `${cs}${Number(n || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })} ${cycle.currency}`;
+  const fmtD = (d) => {
+    if (!d) return '—';
+    try { return new Date(d + 'T00:00:00').toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }); }
+    catch { return d; }
+  };
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 9000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+      onClick={onClose}>
+      <div style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 680, maxHeight: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 24px 64px rgba(0,0,0,0.25)' }}
+        onClick={e => e.stopPropagation()}>
+
+        {/* Header */}
+        <div style={{ padding: '18px 24px', borderBottom: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ width: 36, height: 36, borderRadius: 10, background: '#F0FDF4', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <FileOutput size={18} color="#0D9488" />
+            </div>
+            <div>
+              <div style={{ fontWeight: 800, fontSize: 15, color: '#0F172A' }}>Nota de Cobro</div>
+              <div style={{ fontSize: 12, color: '#64748B' }}>N° {String(cycle.number).padStart(2,'0')} · {cycle.periodLabel}</div>
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94A3B8', padding: 4 }}>
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Preview */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px' }}>
+
+          {/* Datos resumen */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 20 }}>
+            {[
+              { label: 'Condominio', value: tenantData?.name || '—' },
+              { label: 'Plan', value: planName },
+              { label: 'Período', value: cycle.periodLabel },
+              { label: 'Vencimiento', value: fmtD(cycle.dueDate) },
+              { label: 'Importe', value: fmtM(cycle.expectedAmount) },
+              { label: 'Estatus', value: { paid: '✓ Pagado', current: '⏳ Vigente', grace: '⚠ En gracia', overdue: '✗ Vencido' }[cycle.status] || cycle.status },
+            ].map(({ label, value }) => (
+              <div key={label} style={{ background: '#F8FAFC', borderRadius: 8, padding: '10px 14px', border: '1px solid #E2E8F0' }}>
+                <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#94A3B8', marginBottom: 3 }}>{label}</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#0F172A' }}>{value}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Partes */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 20 }}>
+            <div style={{ background: '#F0FDF4', borderRadius: 10, padding: 14, border: '1px solid #BBF7D0' }}>
+              <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#16A34A', marginBottom: 5 }}>Cobrador / Proveedor</div>
+              <div style={{ fontWeight: 700, fontSize: 14, color: '#0F172A', marginBottom: 2 }}>Spotynet</div>
+              <div style={{ fontSize: 12, color: '#15803D', lineHeight: 1.5 }}>Homly — Sistema de Administración<br />contacto@spotynet.com<br />www.homly.com.mx</div>
+            </div>
+            <div style={{ background: '#EFF6FF', borderRadius: 10, padding: 14, border: '1px solid #BFDBFE' }}>
+              <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#2563EB', marginBottom: 5 }}>Cliente / Condominio</div>
+              <div style={{ fontWeight: 700, fontSize: 14, color: '#0F172A', marginBottom: 2 }}>{tenantData?.name || '—'}</div>
+              <div style={{ fontSize: 12, color: '#1D4ED8', lineHeight: 1.5 }}>
+                {tenantData?.rfc && <>{`RFC: ${tenantData.rfc}`}<br /></>}
+                {[tenantData?.info_calle, tenantData?.info_num_externo].filter(Boolean).join(' ')}
+              </div>
+            </div>
+          </div>
+
+          {/* Importe */}
+          <div style={{ background: '#0D9488', borderRadius: 10, padding: '14px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+            <div style={{ color: '#fff', fontSize: 13, fontWeight: 600 }}>Total a pagar — {cycle.periodLabel}</div>
+            <div style={{ color: '#fff', fontSize: 20, fontWeight: 900 }}>{fmtM(cycle.expectedAmount)}</div>
+          </div>
+
+          {/* Acciones: preview + download */}
+          <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
+            <button onClick={handlePreview}
+              style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '9px 16px', borderRadius: 8, border: '1.5px solid #E2E8F0', background: '#fff', color: '#475569', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
+              <Eye size={14} /> Vista previa
+            </button>
+            <button onClick={handleDownload}
+              style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '9px 16px', borderRadius: 8, border: '1.5px solid #0D9488', background: '#F0FDF4', color: '#0D9488', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+              <Download size={14} /> Descargar PDF
+            </button>
+          </div>
+
+          {/* Enviar por correo */}
+          <div style={{ background: '#FAFAFA', borderRadius: 10, padding: 16, border: '1px solid #E2E8F0' }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#334155', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Mail size={13} color="#0D9488" /> Enviar por correo electrónico
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input
+                type="email"
+                value={emailTo}
+                onChange={e => setEmailTo(e.target.value)}
+                placeholder="correo@condominio.com"
+                style={{ flex: 1, border: '1.5px solid #E2E8F0', borderRadius: 8, padding: '8px 12px', fontSize: 13, outline: 'none' }}
+              />
+              <button
+                onClick={handleSendEmail}
+                disabled={sending || !emailTo.trim()}
+                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderRadius: 8, border: 'none', background: sending ? '#94A3B8' : '#0D9488', color: '#fff', fontWeight: 700, fontSize: 13, cursor: sending ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap' }}>
+                {sending ? <RefreshCw size={13} className="animate-spin" /> : <Mail size={13} />}
+                {sending ? 'Enviando…' : 'Enviar'}
+              </button>
+            </div>
+            <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 6 }}>
+              La nota de cobro se enviará con los datos del período al correo indicado.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Row Panel (inline status edit + payment + deactivate) ────────────────────
 
 function RowPanel({ sub, plans, onRefresh }) {
@@ -1227,6 +1500,9 @@ function RowPanel({ sub, plans, onRefresh }) {
 
   // ── History panel ────────────────────────────────────────────────────────
   const [showHistory, setShowHistory] = useState(false);
+
+  // ── Nota de Cobro modal ───────────────────────────────────────────────────
+  const [billingNoteCycle, setBillingNoteCycle] = useState(null);
 
   // Auto-calculate preview when plan or units change
   const selectedPlanObj = plans.find(p => String(p.id) === String(plan));
@@ -1780,6 +2056,13 @@ function RowPanel({ sub, plans, onRefresh }) {
                                 {isPayingThis ? 'Cancelar' : 'Registrar'}
                               </button>
                             )}
+                            {/* Nota de Cobro */}
+                            <button
+                              onClick={() => setBillingNoteCycle(cycle)}
+                              title="Ver / enviar nota de cobro"
+                              className="inline-flex items-center gap-1 px-2 py-1 text-xs text-violet-700 bg-violet-50 border border-violet-200 rounded-lg hover:bg-violet-100 transition-colors font-semibold mt-1">
+                              <FileOutput size={11} /> Nota
+                            </button>
                           </td>
                         </tr>
                       );
@@ -2174,6 +2457,18 @@ function RowPanel({ sub, plans, onRefresh }) {
         tenant={tenantData}
         sub={sub}
         onClose={() => setReceiptPayment(null)}
+      />
+    )}
+
+    {/* ── Nota de Cobro modal ── */}
+    {billingNoteCycle && tenantData && (
+      <BillingNoteModal
+        cycle={billingNoteCycle}
+        sub={subAugmented}
+        tenantData={tenantData}
+        planName={subAugmented.plan_name || (plans.find(p => String(p.id) === String(sub.plan))?.name) || '—'}
+        adminEmail={authUser?.email || ''}
+        onClose={() => setBillingNoteCycle(null)}
       />
     )}
     </>

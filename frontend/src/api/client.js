@@ -322,6 +322,8 @@ export const tenantSubscriptionsAPI = {
   forceDeactivate: (id, data) => api.post(`/tenant-subscriptions/${id}/force-deactivate/`, data || {}),
   // Run the monthly billing check across all tenants (marks overdue as past_due)
   runBillingCheck: ()         => api.post('/tenant-subscriptions/run-billing-check/'),
+  // Enviar nota de cobro de un período por email al admin del tenant
+  sendBillingNote: (id, data) => api.post(`/tenant-subscriptions/${id}/send-billing-note/`, data),
 };
 
 // ─── Subscription Payments (individual edit/delete) ──

@@ -7018,6 +7018,189 @@ class TenantSubscriptionViewSet(viewsets.ModelViewSet):
             'tenant_is_active': sub.tenant.is_active,
         })
 
+    @action(detail=True, methods=['post'], url_path='send-billing-note')
+    def send_billing_note(self, request, pk=None):
+        """
+        POST /api/tenant-subscriptions/{id}/send-billing-note/
+        Genera y envía una nota de cobro por email para un período específico.
+        Body: {
+            period_label: "Junio 2026",
+            cycle_start:  "2026-06-01",
+            cycle_end:    "2026-06-30",
+            due_date:     "2026-06-01",
+            amount:       1500.00,
+            currency:     "MXN",
+            cycle_number: 3,
+            to_email:     "admin@condominio.com",   # email destino
+        }
+        """
+        import datetime, mimetypes
+        from .email_service import _send_branded_email
+
+        sub  = self.get_object()
+        data = request.data
+
+        period_label  = data.get('period_label', '')
+        cycle_start   = data.get('cycle_start', '')
+        cycle_end     = data.get('cycle_end', '')
+        due_date      = data.get('due_date', '')
+        amount        = float(data.get('amount', 0))
+        currency      = data.get('currency', 'MXN') or 'MXN'
+        cycle_number  = data.get('cycle_number', '')
+        to_email      = (data.get('to_email') or '').strip()
+
+        if not to_email:
+            return Response({'detail': 'to_email es requerido.'}, status=400)
+
+        sym = {'MXN': '$', 'USD': 'US$', 'EUR': '€', 'COP': 'COP$'}
+        curr_sym = sym.get(currency, '$')
+        fmt_money = lambda n: f"{curr_sym}{float(n or 0):,.2f} {currency}"
+        def fmt_date(d):
+            if not d:
+                return '—'
+            try:
+                return datetime.date.fromisoformat(str(d)).strftime('%d/%m/%Y')
+            except Exception:
+                return str(d)
+
+        tenant       = sub.tenant
+        plan         = sub.plan
+        plan_name    = plan.name if plan else '—'
+        tenant_name  = tenant.name or '—'
+        tenant_rfc   = getattr(tenant, 'rfc', '') or ''
+        tenant_addr_parts = [
+            getattr(tenant, 'info_calle', '') or '',
+            getattr(tenant, 'info_num_externo', '') or '',
+        ]
+        tenant_addr  = ' '.join(p for p in tenant_addr_parts if p).strip()
+        city_parts   = [
+            getattr(tenant, 'info_colonia', '') or '',
+            getattr(tenant, 'info_ciudad', '') or '',
+            getattr(tenant, 'info_codigo_postal', '') or '',
+        ]
+        tenant_city  = ', '.join(p for p in city_parts if p).strip()
+
+        generated_at = datetime.datetime.now().strftime('%d/%m/%Y %H:%M')
+
+        html_note = f"""<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8">
+<style>
+  *{{margin:0;padding:0;box-sizing:border-box}}
+  body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;font-size:13px;color:#1E293B;background:#fff}}
+  .wrap{{max-width:700px;margin:0 auto;padding:40px 30px}}
+  .header{{display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:20px;border-bottom:3px solid #0D9488;margin-bottom:24px}}
+  .brand{{font-size:22px;font-weight:900;color:#0D9488;letter-spacing:-0.5px}}
+  .brand-sub{{font-size:11px;color:#64748B;margin-top:2px}}
+  .note-title{{font-size:20px;font-weight:800;color:#0F172A;margin-bottom:4px}}
+  .note-num{{font-size:12px;color:#64748B}}
+  .parties{{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:24px}}
+  .party-box{{background:#F8FAFC;border:1px solid #E2E8F0;border-radius:10px;padding:16px}}
+  .party-label{{font-size:10px;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;color:#94A3B8;margin-bottom:6px}}
+  .party-name{{font-size:14px;font-weight:700;color:#0F172A;margin-bottom:2px}}
+  .party-detail{{font-size:12px;color:#64748B;line-height:1.5}}
+  .detail-table{{width:100%;border-collapse:collapse;margin-bottom:24px}}
+  .detail-table th{{background:#F1F5F9;padding:9px 12px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:#64748B}}
+  .detail-table td{{padding:11px 12px;border-bottom:1px solid #F1F5F9;font-size:13px;color:#334155}}
+  .detail-table tr:last-child td{{border-bottom:none}}
+  .total-row{{background:#0D9488!important}}
+  .total-row td{{color:#fff!important;font-weight:800!important;font-size:15px!important;padding:13px 12px!important;border-bottom:none!important}}
+  .footer-note{{font-size:11px;color:#94A3B8;text-align:center;border-top:1px solid #E2E8F0;padding-top:16px;margin-top:24px;line-height:1.6}}
+</style></head>
+<body><div class="wrap">
+  <div class="header">
+    <div>
+      <div class="brand">Homly</div>
+      <div class="brand-sub">by Spotynet · Sistema de administración de condominios</div>
+      <div style="margin-top:8px;font-size:11px;color:#64748B">RFC: SPO-XXXXXX-XXX · contacto@spotynet.com</div>
+    </div>
+    <div style="text-align:right">
+      <div class="note-title">Nota de Cobro</div>
+      <div class="note-num">N° {cycle_number:02d if isinstance(cycle_number, int) else cycle_number} · {period_label}</div>
+      <div style="margin-top:6px;font-size:12px;color:#64748B">Emitida: {generated_at}</div>
+    </div>
+  </div>
+
+  <div class="parties">
+    <div class="party-box">
+      <div class="party-label">Cobrador / Proveedor</div>
+      <div class="party-name">Spotynet</div>
+      <div class="party-detail">
+        Homly — Sistema de Administración<br>
+        contacto@spotynet.com<br>
+        www.homly.com.mx
+      </div>
+    </div>
+    <div class="party-box">
+      <div class="party-label">Cliente / Tenant</div>
+      <div class="party-name">{tenant_name}</div>
+      <div class="party-detail">
+        {f'RFC: {tenant_rfc}<br>' if tenant_rfc else ''}{f'{tenant_addr}<br>' if tenant_addr else ''}{f'{tenant_city}' if tenant_city else ''}
+      </div>
+    </div>
+  </div>
+
+  <table class="detail-table">
+    <thead><tr>
+      <th>Concepto</th><th>Período</th><th>Inicio</th><th>Vencimiento</th><th style="text-align:right">Importe</th>
+    </tr></thead>
+    <tbody>
+      <tr>
+        <td><strong>Membresía Homly</strong><br><span style="font-size:11px;color:#64748B">{plan_name}</span></td>
+        <td>{period_label}</td>
+        <td>{fmt_date(cycle_start)}</td>
+        <td>{fmt_date(due_date)}</td>
+        <td style="text-align:right;font-weight:700">{fmt_money(amount)}</td>
+      </tr>
+      <tr class="total-row">
+        <td colspan="4"><strong>Total a pagar</strong></td>
+        <td style="text-align:right"><strong>{fmt_money(amount)}</strong></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:10px;padding:16px;margin-bottom:20px">
+    <div style="font-size:12px;font-weight:700;color:#15803D;margin-bottom:6px">Instrucciones de pago</div>
+    <div style="font-size:12px;color:#166534;line-height:1.6">
+      Realiza tu pago por transferencia bancaria o cualquier método acordado con Spotynet.<br>
+      Indica en la referencia: <strong>{tenant_name} — {period_label}</strong><br>
+      Al realizar el pago, notifica a tu asesor de Homly para registrarlo en el sistema.
+    </div>
+  </div>
+
+  <div class="footer-note">
+    Este documento es una nota de cobro generada por Homly v{__import__('django').conf.settings.get if False else ''} para el condominio <strong>{tenant_name}</strong>.<br>
+    Generado automáticamente el {generated_at} · Homly — Sistema de Administración de Condominios · www.homly.com.mx
+  </div>
+</div></body></html>"""
+
+        subject = f"Nota de Cobro — {tenant_name} — {period_label}"
+        plain   = (
+            f"Nota de Cobro | Homly\n\n"
+            f"Cliente: {tenant_name}\n"
+            f"Período: {period_label}\n"
+            f"Plan: {plan_name}\n"
+            f"Importe: {fmt_money(amount)}\n"
+            f"Vencimiento: {fmt_date(due_date)}\n\n"
+            f"Emitida por Spotynet — www.homly.com.mx"
+        )
+
+        sent = _send_branded_email(
+            subject=subject,
+            plain=plain,
+            html=f"""
+            <p>Adjuntamos la nota de cobro correspondiente al período <strong>{period_label}</strong>
+            para el condominio <strong>{tenant_name}</strong>.</p>
+            <p>Importe: <strong>{fmt_money(amount)}</strong></p>
+            <p>Si tienes alguna pregunta, comunícate con tu asesor de Homly.</p>
+            """,
+            to_emails=[to_email],
+        )
+
+        if not sent:
+            return Response({'detail': 'No se pudo enviar el correo. Verifica la configuración SMTP.'}, status=500)
+
+        return Response({'detail': f'Nota de cobro enviada a {to_email}.'})
+
     def create(self, request, *args, **kwargs):
         """
         Override create to support re-subscribing a tenant that has a cancelled
