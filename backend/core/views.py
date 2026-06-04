@@ -584,34 +584,27 @@ class UserTenantsView(APIView):
 class ProtectedMediaView(APIView):
     """
     GET /api/media/<path>/
-    M-04: Sirve archivos de media solo a usuarios autenticados.
-    Delega la entrega real del archivo a Nginx via X-Accel-Redirect
-    (la respuesta real viene de Nginx desde el location /protected-media/ internal).
-    En desarrollo (DEBUG=True) sirve el archivo directamente desde MEDIA_ROOT.
+    Sirve archivos de media solo a usuarios autenticados.
+    Sirve el archivo directamente desde MEDIA_ROOT con el Content-Type correcto.
     """
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request, media_path):
         import os
         import mimetypes
-        full_path = os.path.join(str(settings.MEDIA_ROOT), media_path)
-        if not os.path.exists(full_path):
+        # Prevenir path traversal
+        safe_path = os.path.normpath(media_path).lstrip('/')
+        full_path = os.path.join(str(settings.MEDIA_ROOT), safe_path)
+        if not os.path.exists(full_path) or not os.path.isfile(full_path):
             return Response({'detail': 'Archivo no encontrado.'}, status=404)
 
-        if settings.DEBUG:
-            # Desarrollo: servir directamente
-            with open(full_path, 'rb') as f:
-                content = f.read()
-            content_type, _ = mimetypes.guess_type(full_path)
-            resp = HttpResponse(content, content_type=content_type or 'application/octet-stream')
-            resp['Content-Disposition'] = f'inline; filename="{os.path.basename(full_path)}"'
-            return resp
-        else:
-            # Producción: X-Accel-Redirect — Nginx entrega el archivo desde /protected-media/
-            resp = HttpResponse()
-            resp['X-Accel-Redirect'] = f'/protected-media/{media_path}'
-            resp['Content-Type'] = ''  # Nginx infiere el Content-Type
-            return resp
+        with open(full_path, 'rb') as f:
+            content = f.read()
+        content_type, _ = mimetypes.guess_type(full_path)
+        resp = HttpResponse(content, content_type=content_type or 'application/octet-stream')
+        resp['Content-Disposition'] = f'inline; filename="{os.path.basename(full_path)}"'
+        resp['Cache-Control'] = 'private, no-store'
+        return resp
 
 
 class BlogCoverPublicView(APIView):
