@@ -733,7 +733,8 @@ export default function Config() {
     { key: 'users',    label: 'Usuarios' },
     { key: 'roles',    label: 'Roles y Perfiles' },
     { key: 'org',      label: 'Organización' },
-    { key: 'modules',  label: 'Módulos' },
+    { key: 'modules',  label: 'Permisos' },
+    { key: 'flujos',   label: 'Flujos' },
   ];
 
   // ────────────────────────────────────────────────────────────────────────────
@@ -1894,13 +1895,18 @@ export default function Config() {
               )}
               {isAdmin && customProfiles.length > 0 && (
                 <div style={{ marginTop:12, padding:'8px 0', fontSize:12, color:'var(--ink-400)', borderTop:'1px solid var(--sand-100)' }}>
-                  Los cambios en perfiles se guardan al hacer clic en <strong>Guardar Cambios</strong> en el tab de Módulos.
+                  Los cambios en perfiles se guardan al hacer clic en <strong>Guardar Cambios</strong> en el tab de Permisos.
                 </div>
               )}
             </div>
           </div>
 
-          {/* ── Flujo de Cierre de Período ──────────────────────────── */}
+        </div>
+      )}
+
+      {/* ════ FLUJOS ════ */}
+      {tab === 'flujos' && (
+        <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
           <div className="card">
             <div className="card-head">
               <h3 style={{ display:'flex', alignItems:'center', gap:8 }}>
