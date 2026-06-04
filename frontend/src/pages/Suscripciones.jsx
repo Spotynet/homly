@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { subscriptionPlansAPI, trialRequestsAPI, tenantSubscriptionsAPI, tenantsAPI, subscriptionPaymentsAPI } from '../api/client';
+import { subscriptionPlansAPI, trialRequestsAPI, tenantSubscriptionsAPI, tenantsAPI, subscriptionPaymentsAPI, usersAPI } from '../api/client';
 import {
   Plus, Edit, Trash2, Check, X, ChevronDown, ChevronUp,
   DollarSign, Users, Clock, Zap, Star, AlertCircle, RefreshCw,
@@ -1169,7 +1169,7 @@ function printKardexPDF({ cycles, sub, tenantData, adminName, adminEmail }) {
 
 // ─── Nota de Cobro ────────────────────────────────────────────────────────────
 
-function buildBillingNoteHTML({ cycle, sub, tenantData, planName }) {
+function buildBillingNoteHTML({ cycle, sub, tenantData, planName, tenantAdmin }) {
   const sym = { MXN: '$', USD: 'US$', EUR: '€', COP: 'COP$' };
   const cs  = sym[cycle.currency] || '$';
   const fmtM = (n) => `${cs}${Number(n || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })} ${cycle.currency}`;
@@ -1178,10 +1178,12 @@ function buildBillingNoteHTML({ cycle, sub, tenantData, planName }) {
     try { return new Date(d + 'T00:00:00').toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }); }
     catch { return d; }
   };
-  const tn      = tenantData?.name || '—';
-  const rfc     = tenantData?.rfc  || '';
-  const addr    = [tenantData?.info_calle, tenantData?.info_num_externo].filter(Boolean).join(' ');
-  const city    = [tenantData?.info_colonia, tenantData?.info_ciudad, tenantData?.info_codigo_postal ? `C.P. ${tenantData.info_codigo_postal}` : ''].filter(Boolean).join(', ');
+  const tn        = tenantData?.name || '—';
+  const rfc       = tenantData?.rfc  || '';
+  const addr      = [tenantData?.info_calle, tenantData?.info_num_externo].filter(Boolean).join(' ');
+  const city      = [tenantData?.info_colonia, tenantData?.info_ciudad, tenantData?.info_codigo_postal ? `C.P. ${tenantData.info_codigo_postal}` : ''].filter(Boolean).join(', ');
+  const adminName  = tenantAdmin?.name  || '';
+  const adminEmail = tenantAdmin?.email || '';
   const now     = new Date().toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   const cycleNo = String(cycle.number).padStart(2, '0');
 
@@ -1234,7 +1236,11 @@ function buildBillingNoteHTML({ cycle, sub, tenantData, planName }) {
     <div class="party-box">
       <div class="party-label">Cliente / Condominio</div>
       <div class="party-name">${tn}</div>
-      <div class="party-detail">${rfc ? `RFC: ${rfc}<br>` : ''}${addr ? `${addr}<br>` : ''}${city || ''}</div>
+      <div class="party-detail">
+        ${rfc ? `RFC: ${rfc}<br>` : ''}${addr ? `${addr}<br>` : ''}${city ? `${city}<br>` : ''}
+        ${adminName  ? `Contacto: ${adminName}<br>` : ''}
+        ${adminEmail ? `${adminEmail}` : ''}
+      </div>
     </div>
   </div>
 
@@ -1277,13 +1283,13 @@ function buildBillingNoteHTML({ cycle, sub, tenantData, planName }) {
 </div></body></html>`;
 }
 
-function BillingNoteModal({ cycle, sub, tenantData, planName, adminEmail, onClose }) {
-  const [emailTo,   setEmailTo]   = useState(adminEmail || '');
+function BillingNoteModal({ cycle, sub, tenantData, planName, tenantAdmin, onClose }) {
+  const [emailTo,   setEmailTo]   = useState(tenantAdmin?.email || '');
   const [sending,   setSending]   = useState(false);
 
   const html = React.useMemo(
-    () => buildBillingNoteHTML({ cycle, sub, tenantData, planName }),
-    [cycle, sub, tenantData, planName]
+    () => buildBillingNoteHTML({ cycle, sub, tenantData, planName, tenantAdmin }),
+    [cycle, sub, tenantData, planName, tenantAdmin]
   );
 
   const handlePreview = () => {
@@ -1386,6 +1392,8 @@ function BillingNoteModal({ cycle, sub, tenantData, planName, adminEmail, onClos
               <div style={{ fontSize: 12, color: '#1D4ED8', lineHeight: 1.5 }}>
                 {tenantData?.rfc && <>{`RFC: ${tenantData.rfc}`}<br /></>}
                 {[tenantData?.info_calle, tenantData?.info_num_externo].filter(Boolean).join(' ')}
+                {tenantAdmin?.name  && <><br />{`Contacto: ${tenantAdmin.name}`}</>}
+                {tenantAdmin?.email && <><br />{tenantAdmin.email}</>}
               </div>
             </div>
           </div>
@@ -1504,6 +1512,9 @@ function RowPanel({ sub, plans, onRefresh }) {
   // ── Nota de Cobro modal ───────────────────────────────────────────────────
   const [billingNoteCycle, setBillingNoteCycle] = useState(null);
 
+  // ── Admin del tenant (para PDFs/notas de cobro) ───────────────────────────
+  const [tenantAdminUser, setTenantAdminUser] = useState(null);
+
   // Auto-calculate preview when plan or units change
   const selectedPlanObj = plans.find(p => String(p.id) === String(plan));
   const preview = computeAmountPreview(selectedPlanObj, unitsCount);
@@ -1576,16 +1587,28 @@ function RowPanel({ sub, plans, onRefresh }) {
     } finally { setRecalculating(false); }
   };
 
-  // Load tenant detail + payment history (for receipts)
+  // Load tenant detail + payment history (for receipts) + admin user del tenant
   const loadPaymentHistory = useCallback(async () => {
     setLoadingPayments(true);
     try {
-      const [paymentsRes, tenantRes] = await Promise.all([
+      const [paymentsRes, tenantRes, usersRes] = await Promise.all([
         tenantSubscriptionsAPI.payments(sub.id),
         tenantsAPI.get(sub.tenant),
+        usersAPI.list(sub.tenant, { page_size: 100 }).catch(() => ({ data: [] })),
       ]);
       setPaymentHistory(Array.isArray(paymentsRes.data) ? paymentsRes.data : []);
       setTenantData(tenantRes.data || null);
+      // Extraer el usuario administrador del tenant
+      const users = Array.isArray(usersRes.data)
+        ? usersRes.data
+        : (usersRes.data?.results || []);
+      const admin = users.find(u => u.role === 'admin') || users[0] || null;
+      // El serializer devuelve user_name y user_email; normalizamos a name/email
+      setTenantAdminUser(admin ? {
+        name:  admin.user_name  || admin.name  || '',
+        email: admin.user_email || admin.email || '',
+        role:  admin.role,
+      } : null);
     } catch {
       setPaymentHistory([]);
     } finally {
@@ -1922,8 +1945,8 @@ function RowPanel({ sub, plans, onRefresh }) {
               <button
                 onClick={() => printKardexPDF({
                   cycles, sub: subAugmented, tenantData,
-                  adminName:  authUser?.name  || 'Super Admin',
-                  adminEmail: authUser?.email || '',
+                  adminName:  tenantAdminUser?.name  || tenantAdminUser?.email || 'Administrador',
+                  adminEmail: tenantAdminUser?.email || '',
                 })}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">
                 <Printer size={12} /> PDF
@@ -2467,7 +2490,7 @@ function RowPanel({ sub, plans, onRefresh }) {
         sub={subAugmented}
         tenantData={tenantData}
         planName={subAugmented.plan_name || (plans.find(p => String(p.id) === String(sub.plan))?.name) || '—'}
-        adminEmail={authUser?.email || ''}
+        tenantAdmin={tenantAdminUser}
         onClose={() => setBillingNoteCycle(null)}
       />
     )}
