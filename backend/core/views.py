@@ -7999,13 +7999,17 @@ class BlogPostViewSet(viewsets.ModelViewSet):
         comment.delete()
         return Response(status=204)
 
-    def retrieve(self, request, *args, **kwargs):
-        """Override to increment views_count on detail fetch."""
-        instance = self.get_object()
-        BlogPost.objects.filter(pk=instance.pk).update(views_count=F('views_count') + 1)
-        instance.refresh_from_db(fields=['views_count'])
-        serializer = self.get_serializer(instance)
-        return Response(serializer.data)
+    @action(detail=True, methods=['post'], url_path='view', permission_classes=[IsTenantMember])
+    def record_view(self, request, tenant_id=None, pk=None):
+        """
+        POST /api/tenants/{tenant_id}/blog-posts/{id}/view/
+        Registra una vista del artículo. Sin cuerpo, sin respuesta de datos.
+        El frontend lo llama en cuanto el usuario abre el lector del artículo.
+        """
+        BlogPost.objects.filter(pk=pk, tenant_id=tenant_id).update(
+            views_count=F('views_count') + 1
+        )
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 # ═══════════════════════════════════════════════════════════

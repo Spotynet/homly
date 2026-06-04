@@ -432,6 +432,7 @@ export const blogAPI = {
   unpublish: (tenantId, id)     => api.post(`/tenants/${tenantId}/blog-posts/${id}/unpublish/`),
   uploadCover: (tenantId, id, formData) =>
     api.post(`/tenants/${tenantId}/blog-posts/${id}/cover-image/`, formData),
+  recordView: (tenantId, id)    => api.post(`/tenants/${tenantId}/blog-posts/${id}/view/`),
   react: (tenantId, id, type)   => api.post(`/tenants/${tenantId}/blog-posts/${id}/react/`, { type }),
   comments: {
     list:   (tenantId, postId)            => api.get(`/tenants/${tenantId}/blog-posts/${postId}/comments/`),

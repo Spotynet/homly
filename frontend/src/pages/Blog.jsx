@@ -959,6 +959,13 @@ function ArticleReader({ article, onBack, onEdit, tenantName, isAdmin, tenantId 
   const [liveArticle, setLiveArticle] = useState(article);
   useEffect(() => { setLiveArticle(article); }, [article]);
 
+  // Registrar vista al abrir el artículo (solo artículos publicados)
+  useEffect(() => {
+    if (article?.id && article?.status === 'published') {
+      blogAPI.recordView(tenantId, article.id).catch(() => {});
+    }
+  }, [article?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const reactMutation = useMutation({
     mutationFn: (type) => blogAPI.react(tenantId, article.id, type),
     onSuccess: (res) => {
