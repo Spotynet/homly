@@ -17,8 +17,8 @@ const STATUS = {
   rejected: { label: 'Rechazado', icon: XCircle,     color: 'text-rose-600',    bg: 'bg-rose-50',    border: 'border-rose-200' },
 };
 
-// Aceptamos cualquier imagen (incluye HEIC/HEIF de iPhone) y PDF
 const ACCEPTED_EXT = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif', 'pdf'];
+const MAX_SIZE_BYTES = 15 * 1024 * 1024; // 15 MB
 
 function isAcceptedFile(f) {
   if (!f) return false;
@@ -26,6 +26,46 @@ function isAcceptedFile(f) {
   if (f.type === 'application/pdf') return true;
   const ext = (f.name?.split('.').pop() || '').toLowerCase();
   return ACCEPTED_EXT.includes(ext);
+}
+
+// Convierte una imagen a JPEG vía canvas (reduce tamaño y garantiza compatibilidad
+// del preview en el browser). No funciona para HEIC (browser no puede decodificar),
+// en ese caso rechaza la promesa y el caller usa el archivo original.
+function compressToJpeg(file, maxDim = 1600, quality = 0.82) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('read-error'));
+    reader.onload = (ev) => {
+      const img = new window.Image();
+      img.onerror = () => reject(new Error('decode-error'));
+      img.onload = () => {
+        try {
+          const ratio = Math.min(1, maxDim / Math.max(img.width || 1, img.height || 1));
+          const w = Math.max(1, Math.round(img.width * ratio));
+          const h = Math.max(1, Math.round(img.height * ratio));
+          const canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, w, h);
+          ctx.drawImage(img, 0, 0, w, h);
+          canvas.toBlob((blob) => {
+            if (!blob) { reject(new Error('blob-null')); return; }
+            const baseName = (file.name || 'comprobante').replace(/\.[^.]+$/, '');
+            resolve(new File([blob], `${baseName}.jpg`, {
+              type: 'image/jpeg',
+              lastModified: Date.now(),
+            }));
+          }, 'image/jpeg', quality);
+        } catch (err) {
+          reject(err);
+        }
+      };
+      img.src = ev.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
 }
 
 function StatusBadge({ status }) {
@@ -50,36 +90,35 @@ function buildPeriodOptions() {
   return options;
 }
 
-// Normalise a File from camera or picker:
-// - Ensures MIME type is detected and set
-// - Gives an explicit name when the browser provides a generic/empty one
-function normalizeFile(f) {
+// Asegura nombre y MIME coherentes para el archivo que se sube.
+// Para fotos de cámara sin nombre o MIME vacío los infiere del contexto.
+function sanitizeFile(f) {
   if (!f) return f;
   let mime = f.type || '';
-  let name = f.name || '';
+  let name = f.name?.trim() || '';
 
-  // Camera captures often have name like "image.jpg", "photo.jpg" or empty
-  // Normalise empty name
-  if (!name || name === 'blob') {
+  // Nombre genérico o vacío → generar uno con timestamp
+  if (!name || name === 'blob' || name === 'image' || name === 'photo') {
     const ext = mime === 'application/pdf' ? 'pdf'
       : mime === 'image/png'  ? 'png'
       : mime === 'image/gif'  ? 'gif'
       : mime === 'image/webp' ? 'webp'
+      : mime === 'image/heic' || mime === 'image/heif' ? 'heic'
       : 'jpg';
     name = `comprobante_${Date.now()}.${ext}`;
   }
 
-  // If MIME is missing but extension tells us what it is, infer it
+  // MIME vacío → inferir desde extensión
   if (!mime) {
     const ext = name.split('.').pop()?.toLowerCase() || '';
-    mime = ext === 'pdf' ? 'application/pdf'
-      : ext === 'png'   ? 'image/png'
-      : ext === 'gif'   ? 'image/gif'
-      : ext === 'webp'  ? 'image/webp'
+    mime = ext === 'pdf'  ? 'application/pdf'
+      : ext === 'png'    ? 'image/png'
+      : ext === 'gif'    ? 'image/gif'
+      : ext === 'webp'   ? 'image/webp'
+      : ext === 'heic' || ext === 'heif' ? 'image/heic'
       : 'image/jpeg';
   }
 
-  // Only rebuild if something changed
   if (mime === f.type && name === f.name) return f;
   return new File([f], name, { type: mime, lastModified: f.lastModified || Date.now() });
 }
@@ -180,27 +219,56 @@ export function EvidencePopup({ url, fileName, onClose }) {
 }
 
 // ─── Local file preview (before upload) ──────────────────────────────────────
+// Muestra preview de imagen cuando el browser puede renderizarla (JPEG, PNG, WebP…).
+// Para HEIC u otros formatos no renderizables muestra icono + nombre + tamaño.
 function FilePreview({ file, onRemove }) {
   const [previewUrl, setPreviewUrl] = useState(null);
-  const isImg = file?.type?.startsWith('image/');
+  const [imgFailed, setImgFailed]   = useState(false);
+
+  const isPdf  = file?.type === 'application/pdf';
+  const isImgType = !isPdf && file?.type?.startsWith('image/');
+  // HEIC/HEIF: el browser no puede renderizarlos → mostrar solo icono
+  const isHeic = file?.type === 'image/heic' || file?.type === 'image/heif'
+    || /\.(heic|heif)$/i.test(file?.name || '');
 
   useEffect(() => {
-    if (!file) { setPreviewUrl(null); return; }
+    setImgFailed(false);
+    if (!file || !isImgType || isHeic) { setPreviewUrl(null); return; }
     const url = URL.createObjectURL(file);
     setPreviewUrl(url);
     return () => URL.revokeObjectURL(url);
-  }, [file]);
+  }, [file, isImgType, isHeic]);
+
+  const showImg = isImgType && !isHeic && previewUrl && !imgFailed;
+  const sizeKb  = file ? (file.size / 1024) : 0;
+  const sizeStr = sizeKb >= 1024
+    ? `${(sizeKb / 1024).toFixed(1)} MB`
+    : `${sizeKb.toFixed(0)} KB`;
 
   return (
     <div className="relative border-2 border-teal-200 rounded-xl overflow-hidden bg-slate-50">
-      {isImg && previewUrl ? (
-        <img src={previewUrl} alt="Comprobante" className="w-full max-h-56 object-contain" />
+      {showImg ? (
+        <img
+          src={previewUrl}
+          alt="Comprobante"
+          className="w-full max-h-56 object-contain"
+          onError={() => setImgFailed(true)}
+        />
       ) : (
         <div className="flex items-center gap-3 p-4">
-          <FileText size={32} className="text-teal-600 flex-shrink-0" />
+          {isPdf
+            ? <FileText size={36} className="text-rose-500 flex-shrink-0" />
+            : <ImageIcon size={36} className="text-teal-500 flex-shrink-0" />}
           <div className="min-w-0">
-            <p className="text-sm font-semibold text-slate-700 truncate">{file?.name || 'Archivo adjunto'}</p>
-            <p className="text-xs text-slate-400">{file ? `${(file.size / 1024).toFixed(1)} KB` : ''}</p>
+            <p className="text-sm font-semibold text-slate-700 truncate max-w-[220px]">
+              {file?.name || 'Archivo adjunto'}
+            </p>
+            <p className="text-xs text-slate-400 mt-0.5">{sizeStr}</p>
+            {isHeic && (
+              <p className="text-[11px] text-amber-600 mt-0.5">
+                Foto HEIC — se enviará tal cual
+              </p>
+            )}
           </div>
         </div>
       )}
@@ -217,14 +285,14 @@ function FilePreview({ file, onRemove }) {
 // ─── New Voucher Form ─────────────────────────────────────────────────────────
 function NewVoucherForm({ tenantId, onSuccess, onFileChange }) {
   const periodOptions = buildPeriodOptions();
-  const [period, setPeriod] = useState(periodOptions[0]);
-  const [notes, setNotes]   = useState('');
-  const [file, setFile]     = useState(null);
+  const [period, setPeriod]       = useState(periodOptions[0]);
+  const [notes, setNotes]         = useState('');
+  const [file, setFile]           = useState(null);
+  const [processing, setProcessing] = useState(false); // compresión en curso
   const fileInputRef   = useRef(null);
   const cameraInputRef = useRef(null);
   const qc = useQueryClient();
 
-  // Notify parent when file state changes (for red cancel button)
   useEffect(() => { onFileChange?.(!!file); }, [file, onFileChange]);
 
   const mutation = useMutation({
@@ -239,32 +307,73 @@ function NewVoucherForm({ tenantId, onSuccess, onFileChange }) {
       onSuccess?.();
     },
     onError: (err) => {
-      const detail = err?.response?.data?.detail || 'Error al enviar el comprobante';
-      toast.error(detail);
+      const data   = err?.response?.data;
+      const detail = (typeof data === 'string' ? data : data?.detail)
+        || Object.values(data || {}).flat()[0]
+        || 'Error al enviar el comprobante';
+      toast.error(String(detail));
     },
   });
 
-  const handleFile = (e) => {
-    const raw = e.target.files?.[0];
-    if (e.target) e.target.value = '';
+  // Procesa el archivo seleccionado:
+  // 1. Sanea nombre/MIME
+  // 2. Valida formato y tamaño
+  // 3. Intenta comprimir a JPEG via canvas para imágenes compatibles
+  //    (reduce tamaño y garantiza que el browser pueda mostrar el preview)
+  // 4. Para HEIC/HEIF o si la compresión falla, usa el original
+  const processFile = async (raw) => {
     if (!raw) return;
-    const f = normalizeFile(raw);
+    const f = sanitizeFile(raw);
+
     if (!isAcceptedFile(f)) {
-      toast.error('Formato no permitido. Usa una imagen (JPG, PNG, HEIC) o PDF');
+      toast.error('Formato no permitido. Adjunta una imagen (JPG, PNG, HEIC) o PDF');
       return;
     }
-    if (f.size > 15 * 1024 * 1024) { toast.error('Archivo demasiado grande (máx 15 MB)'); return; }
-    setFile(f);
+    if (f.size > MAX_SIZE_BYTES) {
+      toast.error('Archivo demasiado grande. El máximo es 15 MB');
+      return;
+    }
+
+    const isHeic = f.type === 'image/heic' || f.type === 'image/heif'
+      || /\.(heic|heif)$/i.test(f.name);
+    const isImg  = f.type?.startsWith('image/');
+
+    // Intentar compresión solo para imágenes que el canvas puede decodificar
+    if (isImg && !isHeic) {
+      setProcessing(true);
+      try {
+        const compressed = await compressToJpeg(f);
+        setFile(compressed);
+      } catch {
+        // Canvas no pudo decodificar (e.g. formato exótico) → usar original
+        setFile(f);
+      } finally {
+        setProcessing(false);
+      }
+    } else {
+      setFile(f);
+    }
+  };
+
+  const handleFileInput = async (e) => {
+    const raw = e.target.files?.[0];
+    // Limpiar input DESPUÉS de capturar el archivo para permitir
+    // volver a seleccionar el mismo archivo si el usuario lo necesita
+    try { if (e.target) e.target.value = ''; } catch {}
+    await processFile(raw);
   };
 
   const handleSubmit = () => {
     if (!file) { toast.error('Adjunta el comprobante de pago'); return; }
+    if (processing) { toast.error('Espera, procesando imagen…'); return; }
     const fd = new FormData();
     fd.append('period', period);
     fd.append('notes', notes);
     fd.append('evidence_file', file, file.name);
     mutation.mutate(fd);
   };
+
+  const isBusy = processing || mutation.isPending;
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-6 space-y-4 sm:space-y-5">
@@ -293,47 +402,61 @@ function NewVoucherForm({ tenantId, onSuccess, onFileChange }) {
         </select>
       </div>
 
-      {/* File/camera area */}
+      {/* File / camera area */}
       <div>
         <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide flex items-center gap-1 mb-2">
           <ImageIcon size={11} /> Comprobante / Evidencia
         </label>
-        {file ? (
-          <FilePreview file={file} onRemove={() => setFile(null)} />
+
+        {/* Inputs hidden — un input por tipo para máxima compatibilidad en móvil */}
+        <input
+          key="file-picker"
+          ref={fileInputRef}
+          type="file"
+          accept="image/*,.pdf"
+          onChange={handleFileInput}
+          className="hidden"
+        />
+        <input
+          key="camera-capture"
+          ref={cameraInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          onChange={handleFileInput}
+          className="hidden"
+        />
+
+        {processing ? (
+          /* Estado de procesamiento / compresión */
+          <div className="border-2 border-teal-200 rounded-xl p-6 flex flex-col items-center gap-2 bg-teal-50">
+            <Loader2 size={28} className="animate-spin text-teal-500" />
+            <p className="text-sm font-semibold text-teal-700">Procesando imagen…</p>
+            <p className="text-xs text-teal-500">Optimizando para envío</p>
+          </div>
+        ) : file ? (
+          <FilePreview file={file} onRemove={() => { setFile(null); onFileChange?.(false); }} />
         ) : (
-          <div className="border-2 border-dashed border-slate-200 rounded-xl p-5 sm:p-6 text-center hover:border-teal-300 transition-colors">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*,.pdf"
-              onChange={handleFile}
-              className="hidden"
-            />
-            {/* Camera input: capture="environment" opens rear camera on mobile */}
-            <input
-              ref={cameraInputRef}
-              type="file"
-              accept="image/*"
-              capture="environment"
-              onChange={handleFile}
-              className="hidden"
-            />
-            {/* Buttons — stack on mobile, side by side on sm+ */}
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+          <div className="border-2 border-dashed border-slate-200 rounded-xl p-5 sm:p-6 text-center hover:border-teal-300 transition-colors bg-slate-50/50">
+            <div className="w-12 h-12 rounded-2xl bg-teal-50 flex items-center justify-center mx-auto mb-3">
+              <ImageIcon size={22} className="text-teal-500" />
+            </div>
+            <p className="text-sm font-semibold text-slate-600 mb-1">Adjunta tu comprobante</p>
+            <p className="text-xs text-slate-400 mb-4">Foto, captura de pantalla o PDF · Máx 15 MB</p>
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-2.5">
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-3 bg-teal-600 text-white rounded-xl text-sm font-semibold hover:bg-teal-700 transition-colors active:scale-95">
-                <Upload size={16} /> Adjuntar archivo
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-teal-600 text-white rounded-xl text-sm font-semibold hover:bg-teal-700 transition-colors active:scale-95 shadow-sm">
+                <Upload size={15} /> Adjuntar archivo
               </button>
               <button
                 type="button"
                 onClick={() => cameraInputRef.current?.click()}
-                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-3 border-2 border-slate-200 text-slate-600 rounded-xl text-sm font-semibold hover:border-teal-400 hover:text-teal-600 transition-colors active:scale-95">
-                <Camera size={16} /> Tomar foto
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 border-2 border-slate-200 bg-white text-slate-600 rounded-xl text-sm font-semibold hover:border-teal-400 hover:text-teal-600 transition-colors active:scale-95">
+                <Camera size={15} /> Tomar foto
               </button>
             </div>
-            <p className="text-xs text-slate-400 mt-3">JPG, PNG, GIF o PDF · Máx 15 MB</p>
           </div>
         )}
       </div>
@@ -347,18 +470,19 @@ function NewVoucherForm({ tenantId, onSuccess, onFileChange }) {
           value={notes}
           onChange={e => setNotes(e.target.value)}
           rows={2}
-          placeholder="Ej: Transferencia del 1 de junio, banco BBVA..."
+          placeholder="Ej: Transferencia del 1 de junio, banco BBVA…"
           className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 resize-none" />
       </div>
 
       {/* Submit */}
       <button
         type="button"
-        disabled={!file || mutation.isPending}
+        disabled={!file || isBusy}
         onClick={handleSubmit}
         className="w-full inline-flex items-center justify-center gap-2 py-3 bg-teal-600 hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-sm font-bold transition-all active:scale-95 shadow-sm">
-        {mutation.isPending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
-        {mutation.isPending ? 'Enviando...' : 'Enviar comprobante'}
+        {isBusy
+          ? <><Loader2 size={16} className="animate-spin" /> {processing ? 'Procesando…' : 'Enviando…'}</>
+          : <><Send size={16} /> Enviar comprobante</>}
       </button>
     </div>
   );
