@@ -1922,47 +1922,110 @@ export default function Cobranza() {
         </div>
       )}
 
-      {/* ── Popup visor de evidencia (adjuntos) ── */}
+      {/* ── Popup visor de evidencia (adjuntos base64 de captura de pago) ── */}
       {evidencePopup && (() => {
         const { b64, mime, fileName } = evidencePopup;
-        const isPdf = mime === 'application/pdf' || b64.startsWith('JVBER') || /\.pdf$/i.test(fileName || '');
-        const isImage = (mime && mime.startsWith('image/'))
-          || b64.startsWith('iVBOR')   // PNG
-          || b64.startsWith('/9j/')    // JPEG
-          || b64.startsWith('R0lGO')   // GIF
-          || b64.startsWith('UklGR');  // WebP
+        const displayName = fileName || 'Evidencia de Pago';
+
+        // Guardia: b64 puede ser undefined/null si el objeto de evidencia está incompleto
+        if (!b64) {
+          return (
+            <div className="modal-bg open" style={{ zIndex: 9999 }} onClick={() => setEvidencePopup(null)}>
+              <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 420, width: '90vw' }}>
+                <div className="modal-head">
+                  <h3><FileText size={15} /> {displayName}</h3>
+                  <button className="modal-close" onClick={() => setEvidencePopup(null)}><X size={16} /></button>
+                </div>
+                <div className="modal-body" style={{ padding: 32, textAlign: 'center', color: 'var(--coral-600)', fontSize: 13 }}>
+                  <AlertCircle size={32} style={{ margin: '0 auto 12px', display: 'block', opacity: 0.6 }} />
+                  No se puede mostrar esta evidencia.
+                </div>
+              </div>
+            </div>
+          );
+        }
+
+        // Detectar tipo desde MIME o desde firma base64
+        const b64str   = String(b64);
+        const isPdf    = mime === 'application/pdf'
+          || b64str.startsWith('JVBER')
+          || /\.pdf$/i.test(displayName);
+        const isImage  = (mime && mime.startsWith('image/'))
+          || b64str.startsWith('iVBOR')   // PNG
+          || b64str.startsWith('/9j/')    // JPEG
+          || b64str.startsWith('R0lGO')   // GIF
+          || b64str.startsWith('UklGR');  // WebP
         const effectiveMime = isPdf ? 'application/pdf'
-          : mime && mime !== 'application/octet-stream' ? mime
-          : b64.startsWith('iVBOR') ? 'image/png'
-          : b64.startsWith('/9j/')  ? 'image/jpeg'
-          : b64.startsWith('R0lGO') ? 'image/gif'
-          : b64.startsWith('UklGR') ? 'image/webp'
+          : (mime && mime !== 'application/octet-stream') ? mime
+          : b64str.startsWith('iVBOR') ? 'image/png'
+          : b64str.startsWith('/9j/')  ? 'image/jpeg'
+          : b64str.startsWith('R0lGO') ? 'image/gif'
+          : b64str.startsWith('UklGR') ? 'image/webp'
           : 'application/octet-stream';
+
+        // Convertir base64 a objectUrl para mejor rendimiento
+        const byteChars = atob(b64str);
+        const bytes = new Uint8Array(byteChars.length);
+        for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i);
+        const blob      = new Blob([bytes], { type: effectiveMime });
+        const objectUrl = URL.createObjectURL(blob);
+
         return (
-          <div className="modal-bg open" style={{ zIndex: 9999 }} onClick={() => setEvidencePopup(null)}>
-            <div className="modal lg" onClick={e => e.stopPropagation()} style={{ maxWidth: 820, width: '92vw' }}>
+          <div className="modal-bg open" style={{ zIndex: 9999 }} onClick={() => { URL.revokeObjectURL(objectUrl); setEvidencePopup(null); }}>
+            <div className="modal lg" onClick={e => e.stopPropagation()} style={{ maxWidth: 860, width: '94vw' }}>
               <div className="modal-head">
-                <h3 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <FileText size={16} /> {fileName || 'Evidencia de Pago'}
+                <h3 style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, minWidth: 0 }}>
+                  <FileText size={15} style={{ flexShrink: 0 }} />
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayName}</span>
                 </h3>
-                <button className="modal-close" onClick={() => setEvidencePopup(null)}><X size={16} /></button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                  <a href={objectUrl} download={displayName}
+                    style={{ fontSize: 12, fontWeight: 600, color: 'var(--teal-600)', textDecoration: 'none',
+                             display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px',
+                             border: '1px solid var(--teal-200)', borderRadius: 'var(--radius-sm)',
+                             background: 'var(--teal-50)' }}>
+                    ⬇ Descargar
+                  </a>
+                  <button className="modal-close" onClick={() => { URL.revokeObjectURL(objectUrl); setEvidencePopup(null); }}><X size={16} /></button>
+                </div>
               </div>
               <div className="modal-body" style={{ padding: 16 }}>
                 {isPdf ? (
-                  <div style={{ height: '72vh', border: '1px solid var(--sand-200)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
-                    <iframe src={`data:application/pdf;base64,${b64}`} style={{ width: '100%', height: '100%', border: 'none' }} title="Evidencia PDF" />
+                  <div style={{ height: '72vh', display: 'flex', flexDirection: 'column' }}>
+                    <object data={objectUrl} type="application/pdf"
+                      style={{ width: '100%', flex: 1, border: '1px solid var(--sand-200)', borderRadius: 'var(--radius-md)' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                                    height: '100%', gap: 16, padding: 32, background: 'var(--sand-50)',
+                                    borderRadius: 'var(--radius-md)', border: '1px solid var(--sand-200)' }}>
+                        <FileText size={48} style={{ color: 'var(--ink-300)' }} />
+                        <p style={{ fontSize: 13, color: 'var(--ink-500)', textAlign: 'center' }}>
+                          Tu dispositivo no puede mostrar PDFs aquí.<br />Usa el botón "Descargar".
+                        </p>
+                        <a href={objectUrl} download={displayName} className="btn btn-primary" style={{ fontSize: 13 }}>⬇ Descargar PDF</a>
+                      </div>
+                    </object>
                   </div>
                 ) : isImage ? (
-                  <div style={{ textAlign: 'center', background: 'var(--sand-50)', borderRadius: 'var(--radius-md)', padding: 8, maxHeight: '72vh', overflow: 'auto' }}>
-                    <img src={`data:${effectiveMime};base64,${b64}`} alt="Evidencia" style={{ maxWidth: '100%', borderRadius: 'var(--radius-sm)', display: 'inline-block' }} />
+                  <div style={{ textAlign: 'center', background: 'var(--sand-50)', borderRadius: 'var(--radius-md)', padding: 8, maxHeight: '76vh', overflow: 'auto' }}>
+                    <img
+                      src={objectUrl}
+                      alt={displayName}
+                      style={{ maxWidth: '100%', borderRadius: 'var(--radius-sm)', display: 'inline-block' }}
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none';
+                        e.currentTarget.nextSibling.style.display = 'block';
+                      }}
+                    />
+                    <div style={{ display: 'none', padding: '32px 16px' }}>
+                      <p style={{ fontSize: 13, color: 'var(--ink-500)', marginBottom: 12 }}>No se pudo mostrar la imagen.</p>
+                      <a href={objectUrl} download={displayName} className="btn btn-primary" style={{ fontSize: 13 }}>⬇ Descargar imagen</a>
+                    </div>
                   </div>
                 ) : (
                   <div style={{ textAlign: 'center', padding: 48 }}>
-                    <FileText size={52} style={{ color: 'var(--ink-300)', marginBottom: 16 }} />
-                    <p style={{ color: 'var(--ink-500)', marginBottom: 20 }}>Vista previa no disponible para este tipo de archivo.</p>
-                    <a href={`data:${effectiveMime};base64,${b64}`} download={fileName || 'evidencia'} className="btn btn-primary">
-                      Descargar archivo
-                    </a>
+                    <FileText size={52} style={{ color: 'var(--ink-300)', display: 'block', margin: '0 auto 16px' }} />
+                    <p style={{ color: 'var(--ink-500)', marginBottom: 20, fontSize: 13 }}>Vista previa no disponible.</p>
+                    <a href={objectUrl} download={displayName} className="btn btn-primary" style={{ fontSize: 13 }}>⬇ Descargar archivo</a>
                   </div>
                 )}
               </div>

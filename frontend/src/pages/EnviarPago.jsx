@@ -124,15 +124,18 @@ function sanitizeFile(f) {
 }
 
 // ─── Evidence popup (exported for reuse in Cobranza) ─────────────────────────
-// Fetches any protected URL via the authenticated api instance and shows it inline.
-// Uses URL.createObjectURL for efficiency — no base64 conversion needed.
+// Descarga el archivo via el cliente API autenticado y lo muestra en un modal.
+// Soporta imágenes (JPEG, PNG, WebP, GIF) y PDF.
+// Para PDF usa <object> con fallback a enlace de descarga (compatible con iOS Safari).
 export function EvidencePopup({ url, fileName, onClose }) {
-  const [state, setState] = useState({ loading: true, objectUrl: null, isPdf: false, error: null });
+  const [state, setState] = useState({ loading: true, objectUrl: null, mime: '', error: null });
+  const [imgFailed, setImgFailed] = useState(false);
   const objUrlRef = useRef(null);
 
   useEffect(() => {
+    setImgFailed(false);
     if (!url) {
-      setState({ loading: false, objectUrl: null, isPdf: false, error: 'URL no disponible.' });
+      setState({ loading: false, objectUrl: null, mime: '', error: 'URL no disponible.' });
       return;
     }
     let cancelled = false;
@@ -141,18 +144,32 @@ export function EvidencePopup({ url, fileName, onClose }) {
         const res = await api.get(url, { responseType: 'blob' });
         if (cancelled) return;
         const blob = res.data;
-        // Detect type from blob.type, fallback to filename extension
-        const mimeFromBlob = blob.type && blob.type !== 'application/octet-stream' ? blob.type : '';
-        const ext = (fileName || url || '').split('.').pop()?.toLowerCase() || '';
-        const isPdf = mimeFromBlob === 'application/pdf' || ext === 'pdf';
-        // Rebuild blob with correct MIME when browser returns octet-stream
-        const effectiveMime = mimeFromBlob || (isPdf ? 'application/pdf' : 'image/jpeg');
-        const typedBlob = mimeFromBlob ? blob : new Blob([blob], { type: effectiveMime });
-        const objectUrl = URL.createObjectURL(typedBlob);
+
+        if (!blob || blob.size === 0) throw new Error('empty');
+
+        // Inferir MIME desde blob o extensión del nombre
+        const mimeFromBlob = (blob.type && blob.type !== 'application/octet-stream') ? blob.type : '';
+        const ext = ((fileName || url).split('?')[0].split('.').pop() || '').toLowerCase();
+        const mime = mimeFromBlob
+          || (ext === 'pdf'  ? 'application/pdf'
+          :   ext === 'png'  ? 'image/png'
+          :   ext === 'gif'  ? 'image/gif'
+          :   ext === 'webp' ? 'image/webp'
+          :   'image/jpeg');
+
+        const typedBlob  = blob.type === mime ? blob : new Blob([blob], { type: mime });
+        const objectUrl  = URL.createObjectURL(typedBlob);
         objUrlRef.current = objectUrl;
-        setState({ loading: false, objectUrl, isPdf, error: null });
-      } catch {
-        if (!cancelled) setState({ loading: false, objectUrl: null, isPdf: false, error: 'No se pudo cargar el comprobante.' });
+        setState({ loading: false, objectUrl, mime, error: null });
+      } catch (err) {
+        if (!cancelled) {
+          const msg = err?.response?.status === 404
+            ? 'Archivo no encontrado en el servidor.'
+            : err?.response?.status === 401
+            ? 'Sin permiso para ver este archivo.'
+            : 'No se pudo cargar el comprobante.';
+          setState({ loading: false, objectUrl: null, mime: '', error: msg });
+        }
       }
     })();
     return () => {
@@ -161,56 +178,132 @@ export function EvidencePopup({ url, fileName, onClose }) {
     };
   }, [url, fileName]);
 
-  const { loading, objectUrl, isPdf, error } = state;
-  const isImage = !isPdf;
+  const { loading, objectUrl, mime, error } = state;
+  const isPdf   = mime === 'application/pdf';
+  const isImage = !isPdf && mime.startsWith('image/');
+  const isHeic  = mime === 'image/heic' || mime === 'image/heif';
+
+  const displayName = fileName || 'comprobante';
 
   return (
     <div className="modal-bg open" style={{ zIndex: 9999 }} onClick={onClose}>
-      <div className="modal lg" onClick={e => e.stopPropagation()} style={{ maxWidth: 820, width: '92vw' }}>
+      <div className="modal lg" onClick={e => e.stopPropagation()} style={{ maxWidth: 860, width: '94vw' }}>
         <div className="modal-head">
-          <h3 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <FileText size={16} /> {fileName || 'Comprobante de pago'}
+          <h3 style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, minWidth: 0 }}>
+            <FileText size={15} style={{ flexShrink: 0 }} />
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {displayName}
+            </span>
           </h3>
-          <button className="modal-close" onClick={onClose}><X size={16} /></button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+            {objectUrl && (
+              <a
+                href={objectUrl}
+                download={displayName}
+                style={{ fontSize: 12, fontWeight: 600, color: 'var(--teal-600)', textDecoration: 'none',
+                         display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px',
+                         border: '1px solid var(--teal-200)', borderRadius: 'var(--radius-sm)',
+                         background: 'var(--teal-50)' }}>
+                ⬇ Descargar
+              </a>
+            )}
+            <button className="modal-close" onClick={onClose}><X size={16} /></button>
+          </div>
         </div>
-        <div className="modal-body" style={{ padding: 16 }}>
+
+        <div className="modal-body" style={{ padding: 16, minHeight: 180 }}>
+          {/* ── Cargando ── */}
           {loading && (
-            <div style={{ textAlign: 'center', padding: 48, color: 'var(--ink-400)', fontSize: 13 }}>
-              <Loader2 size={28} className="animate-spin" style={{ margin: '0 auto 10px', display: 'block' }} />
-              Cargando comprobante…
+            <div style={{ textAlign: 'center', padding: '48px 24px', color: 'var(--ink-400)' }}>
+              <Loader2 size={30} className="animate-spin" style={{ margin: '0 auto 12px', display: 'block' }} />
+              <div style={{ fontSize: 13 }}>Cargando comprobante…</div>
             </div>
           )}
+
+          {/* ── Error ── */}
           {error && (
-            <div style={{ textAlign: 'center', padding: 48, color: 'var(--coral-600)', fontSize: 13 }}>
-              <AlertCircle size={32} style={{ margin: '0 auto 10px', display: 'block', opacity: 0.5 }} />
-              {error}
+            <div style={{ textAlign: 'center', padding: '48px 24px' }}>
+              <AlertCircle size={36} style={{ color: 'var(--coral-400)', margin: '0 auto 12px', display: 'block' }} />
+              <div style={{ fontSize: 13, color: 'var(--coral-600)', marginBottom: 8 }}>{error}</div>
+              {url && (
+                <a href={url} target="_blank" rel="noreferrer"
+                  style={{ fontSize: 12, color: 'var(--teal-600)', textDecoration: 'underline' }}>
+                  Intentar abrir en nueva pestaña
+                </a>
+              )}
             </div>
           )}
+
+          {/* ── Contenido ── */}
           {!loading && !error && objectUrl && (
-            isPdf ? (
-              <div style={{ height: '72vh', border: '1px solid var(--sand-200)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
-                <iframe
-                  src={objectUrl}
-                  style={{ width: '100%', height: '100%', border: 'none' }}
-                  title="Comprobante PDF"
-                />
-              </div>
-            ) : isImage ? (
-              <div style={{ textAlign: 'center', background: 'var(--sand-50)', borderRadius: 'var(--radius-md)', padding: 8, maxHeight: '75vh', overflow: 'auto' }}>
-                <img
-                  src={objectUrl}
-                  alt="Comprobante"
-                  style={{ maxWidth: '100%', borderRadius: 'var(--radius-sm)', display: 'inline-block' }}
-                  onError={() => setState(s => ({ ...s, error: 'No se pudo mostrar la imagen.' }))}
-                />
-              </div>
-            ) : (
-              <div style={{ textAlign: 'center', padding: 48 }}>
-                <FileText size={52} style={{ color: 'var(--ink-300)', marginBottom: 16, display: 'block', margin: '0 auto 16px' }} />
-                <p style={{ color: 'var(--ink-500)', marginBottom: 20 }}>Vista previa no disponible.</p>
-                <a href={objectUrl} download={fileName || 'comprobante'} className="btn btn-primary">Descargar archivo</a>
-              </div>
-            )
+            <>
+              {/* PDF — usa <object> + fallback enlace (compatible iOS Safari) */}
+              {isPdf && (
+                <div style={{ height: '72vh', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <object
+                    data={objectUrl}
+                    type="application/pdf"
+                    style={{ width: '100%', flex: 1, border: '1px solid var(--sand-200)', borderRadius: 'var(--radius-md)' }}
+                  >
+                    {/* Fallback cuando el browser no puede mostrar PDF inline (iOS Safari) */}
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center',
+                                  justifyContent: 'center', height: '100%', gap: 16, padding: 32,
+                                  background: 'var(--sand-50)', borderRadius: 'var(--radius-md)',
+                                  border: '1px solid var(--sand-200)' }}>
+                      <FileText size={48} style={{ color: 'var(--ink-300)' }} />
+                      <p style={{ fontSize: 13, color: 'var(--ink-500)', textAlign: 'center' }}>
+                        Tu dispositivo no puede mostrar PDFs aquí.<br />
+                        Usa el botón "Descargar" para abrirlo.
+                      </p>
+                      <a href={objectUrl} download={displayName} className="btn btn-primary" style={{ fontSize: 13 }}>
+                        ⬇ Descargar PDF
+                      </a>
+                    </div>
+                  </object>
+                </div>
+              )}
+
+              {/* Imagen — con fallback para HEIC u otros formatos no renderizables */}
+              {isImage && !isHeic && !imgFailed && (
+                <div style={{ textAlign: 'center', background: 'var(--sand-50)',
+                              borderRadius: 'var(--radius-md)', padding: 8, maxHeight: '76vh', overflow: 'auto' }}>
+                  <img
+                    src={objectUrl}
+                    alt={displayName}
+                    style={{ maxWidth: '100%', borderRadius: 'var(--radius-sm)', display: 'inline-block' }}
+                    onError={() => setImgFailed(true)}
+                  />
+                </div>
+              )}
+
+              {/* HEIC o imagen que falló al renderizar → mostrar descarga */}
+              {(isHeic || (isImage && imgFailed)) && (
+                <div style={{ textAlign: 'center', padding: '48px 24px' }}>
+                  <div style={{ fontSize: 40, marginBottom: 12 }}>📷</div>
+                  <p style={{ fontSize: 13, color: 'var(--ink-500)', marginBottom: 20 }}>
+                    {isHeic
+                      ? 'Formato HEIC — descárgala para verla en tu dispositivo.'
+                      : 'No se pudo mostrar la imagen en el navegador.'}
+                  </p>
+                  <a href={objectUrl} download={displayName} className="btn btn-primary" style={{ fontSize: 13 }}>
+                    ⬇ Descargar imagen
+                  </a>
+                </div>
+              )}
+
+              {/* Formato desconocido */}
+              {!isPdf && !isImage && (
+                <div style={{ textAlign: 'center', padding: '48px 24px' }}>
+                  <FileText size={48} style={{ color: 'var(--ink-300)', margin: '0 auto 16px', display: 'block' }} />
+                  <p style={{ fontSize: 13, color: 'var(--ink-500)', marginBottom: 20 }}>
+                    Vista previa no disponible para este tipo de archivo.
+                  </p>
+                  <a href={objectUrl} download={displayName} className="btn btn-primary" style={{ fontSize: 13 }}>
+                    ⬇ Descargar archivo
+                  </a>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
