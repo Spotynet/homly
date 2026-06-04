@@ -11,7 +11,7 @@ import {
   MoreVertical, Heart, MessageSquare, Share2, Tag, Layout,
   Newspaper, Sparkles, Upload, Check, AlertCircle, ChevronRight,
   Building2, Save, EyeOff, Palette, Type, Minus, Quote, CheckCircle2,
-  Loader2, Mail,
+  Loader2, Mail, LayoutList, LayoutGrid,
 } from 'lucide-react';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -485,15 +485,101 @@ function GridCard({ article, onEdit, onView, onDelete, isAdmin }) {
   );
 }
 
+// ─── Mobile List Card ─────────────────────────────────────────────────────────
+// Tarjeta horizontal compacta para la vista de lista en móvil.
+// Cover thumbnail a la izquierda (80 × 80 px cuadrado), texto a la derecha.
+function MobileListCard({ article, onView, onEdit, onDelete, isAdmin }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const cat = CATEGORIES.find(c => c.key === article.category);
+  const reactions = formatReactionSummary(article);
+
+  return (
+    <div
+      className="flex gap-3 bg-white rounded-2xl border border-slate-200 p-3 active:bg-slate-50 transition-colors cursor-pointer"
+      onClick={() => onView(article)}
+    >
+      {/* Thumbnail */}
+      <div className="flex-shrink-0 w-20 h-20 rounded-xl overflow-hidden">
+        <ArticleCover
+          article={article}
+          className="w-full h-full"
+          imgClassName="absolute inset-0 w-full h-full object-cover"
+          emojiSize="text-3xl"
+          emojiOpacity="opacity-60"
+        />
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 min-w-0 flex flex-col justify-between">
+        <div>
+          {/* Category + status row */}
+          <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+            {cat && (
+              <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold border ${cat.color}`}>
+                {cat.emoji} {cat.label}
+              </span>
+            )}
+            <StatusBadge status={article.status} />
+          </div>
+          {/* Title */}
+          <h4 className="font-bold text-slate-800 text-sm leading-snug line-clamp-2 group-hover:text-teal-600">
+            {article.title}
+          </h4>
+        </div>
+
+        {/* Bottom row: date + reactions + actions */}
+        <div className="flex items-center justify-between mt-1.5">
+          <div className="flex items-center gap-2 text-[11px] text-slate-400">
+            <span className="flex items-center gap-0.5">
+              <Calendar size={10} /> {createdDate(article)}
+            </span>
+            {reactions.length > 0 && (
+              <span className="flex items-center gap-1">
+                {reactions.map(r => (
+                  <span key={r.type} className="flex items-center gap-0.5">
+                    <span>{r.icon}</span>
+                    <span className="font-semibold text-slate-500">{r.n}</span>
+                  </span>
+                ))}
+              </span>
+            )}
+          </div>
+
+          {isAdmin && (
+            <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+              <button onClick={() => onEdit(article)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">
+                <Edit3 size={13} />
+              </button>
+              <div className="relative">
+                <button onClick={() => setMenuOpen(o => !o)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors">
+                  <MoreVertical size={13} />
+                </button>
+                {menuOpen && (
+                  <div className="absolute right-0 top-8 w-32 bg-white border border-slate-200 rounded-xl shadow-lg z-20 py-1">
+                    <button onClick={() => { setMenuOpen(false); onDelete(article); }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-xs text-rose-600 hover:bg-rose-50">
+                      <Trash2 size={12} /> Eliminar
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── View: Dashboard ──────────────────────────────────────────────────────────
 function BlogDashboard({ articles, loading, isAdmin, onNew, onEdit, onView, onDelete, tenantName }) {
   const [search, setSearch]               = useState('');
   const [filterStatus, setFilterStatus]   = useState('all');
   const [filterCategory, setFilterCategory] = useState('all');
+  const [mobileView, setMobileView]       = useState('list'); // 'list' | 'grid'
 
-  // Deduplicate by id BEFORE filtering. This is a safety net in case the API
-  // returns the same article twice (e.g. due to JOINs on reactions/comments),
-  // so the same article never shows up twice in "Artículos anteriores".
   const uniqueArticles = Array.from(
     new Map((articles || []).map(a => [a.id, a])).values()
   );
@@ -515,10 +601,12 @@ function BlogDashboard({ articles, loading, isAdmin, onNew, onEdit, onView, onDe
   const editing     = uniqueArticles.filter(a => a.status === 'editing').length;
   const isFiltering = filterCategory !== 'all' || filterStatus !== 'all' || search.trim() !== '';
 
+  const clearAll = () => { setFilterCategory('all'); setFilterStatus('all'); setSearch(''); };
+
   return (
-    <div className="min-h-screen bg-slate-50">
-      {/* Header — narrower max-width and generous side padding so the
-          content sits centered with comfortable margins on all screens. */}
+    <div className="min-h-screen bg-slate-50 pb-24 sm:pb-0">
+
+      {/* ── HEADER ────────────────────────────────────────────────── */}
       <div className="bg-white border-b border-slate-200 px-4 sm:px-8 py-4 sm:py-5">
         <div className="max-w-5xl mx-auto flex items-center justify-between gap-3">
           <div className="flex items-center gap-2 sm:gap-3 min-w-0">
@@ -530,19 +618,19 @@ function BlogDashboard({ articles, loading, isAdmin, onNew, onEdit, onView, onDe
               <p className="text-xs font-semibold text-teal-600 truncate">{tenantName}</p>
             </div>
           </div>
+          {/* Desktop new-article button */}
           {isAdmin && (
             <button onClick={onNew}
-              className="flex-shrink-0 inline-flex items-center gap-1.5 sm:gap-2 bg-teal-600 hover:bg-teal-700 text-white px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl text-sm font-semibold shadow-sm transition-all hover:shadow-md active:scale-95">
-              <Plus size={15} />
-              <span className="hidden sm:inline">Nuevo Artículo</span>
-              <span className="sm:hidden">Nuevo</span>
+              className="hidden sm:inline-flex items-center gap-2 bg-teal-600 hover:bg-teal-700 text-white px-4 py-2.5 rounded-xl text-sm font-semibold shadow-sm transition-all hover:shadow-md active:scale-95">
+              <Plus size={15} /> Nuevo Artículo
             </button>
           )}
         </div>
       </div>
 
-      <div className="max-w-5xl mx-auto px-3 sm:px-8 py-4 sm:py-6 space-y-4 sm:space-y-6">
-        {/* Stats */}
+      <div className="max-w-5xl mx-auto px-3 sm:px-8 py-4 sm:py-6 space-y-3 sm:space-y-6">
+
+        {/* ── STATS (admin only) ─────────────────────────────────── */}
         {isAdmin && (
           <div className="grid grid-cols-3 gap-2 sm:gap-4">
             {[
@@ -563,19 +651,41 @@ function BlogDashboard({ articles, loading, isAdmin, onNew, onEdit, onView, onDe
           </div>
         )}
 
-        {/* Search + Status filter — stack en mobile */}
-        <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
+        {/* ── SEARCH BAR ────────────────────────────────────────────
+            Mobile: search + view-toggle en una sola fila
+            Desktop: search + status pills en una fila             */}
+        <div className="flex gap-2">
           <div className="flex-1 relative">
-            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
             <input value={search} onChange={e => setSearch(e.target.value)}
               placeholder="Buscar artículos..."
-              className="w-full pl-9 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent" />
+              className="w-full pl-9 pr-9 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent" />
+            {search && (
+              <button onClick={() => setSearch('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                <X size={14} />
+              </button>
+            )}
           </div>
+
+          {/* Mobile: list/grid toggle */}
+          <div className="sm:hidden flex rounded-xl border border-slate-200 bg-white overflow-hidden">
+            <button onClick={() => setMobileView('list')}
+              className={`px-3 py-2.5 transition-colors ${mobileView === 'list' ? 'bg-teal-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}>
+              <LayoutList size={16} />
+            </button>
+            <button onClick={() => setMobileView('grid')}
+              className={`px-3 py-2.5 transition-colors ${mobileView === 'grid' ? 'bg-teal-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}>
+              <LayoutGrid size={16} />
+            </button>
+          </div>
+
+          {/* Desktop: status filter */}
           {isAdmin && (
-            <div className="flex gap-1.5 sm:gap-2 overflow-x-auto pb-0.5 sm:pb-0" style={{ scrollbarWidth: 'none' }}>
+            <div className="hidden sm:flex gap-2">
               {['all', 'published', 'draft', 'editing'].map(s => (
                 <button key={s} onClick={() => setFilterStatus(s)}
-                  className={`flex-shrink-0 px-2.5 sm:px-3 py-2 rounded-xl text-xs font-semibold border transition-all ${filterStatus === s
+                  className={`px-3 py-2 rounded-xl text-xs font-semibold border transition-all ${filterStatus === s
                     ? 'bg-teal-600 text-white border-teal-600'
                     : 'bg-white text-slate-600 border-slate-200 hover:border-teal-300'}`}>
                   {s === 'all' ? 'Todos' : STATUS[s]?.label}
@@ -585,10 +695,24 @@ function BlogDashboard({ articles, loading, isAdmin, onNew, onEdit, onView, onDe
           )}
         </div>
 
-        {/* Category filter bar — scrollable en mobile */}
+        {/* ── MOBILE STATUS FILTER (admin) ──────────────────────── */}
+        {isAdmin && (
+          <div className="sm:hidden flex gap-1.5 overflow-x-auto pb-0.5" style={{ scrollbarWidth: 'none' }}>
+            {['all', 'published', 'draft', 'editing'].map(s => (
+              <button key={s} onClick={() => setFilterStatus(s)}
+                className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all ${filterStatus === s
+                  ? 'bg-teal-600 text-white border-teal-600'
+                  : 'bg-white text-slate-600 border-slate-200'}`}>
+                {s === 'all' ? 'Todos' : STATUS[s]?.label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* ── CATEGORY CHIPS ────────────────────────────────────── */}
         <div className="flex items-center gap-2">
-          <span className="hidden sm:flex items-center gap-1.5 text-xs font-semibold text-slate-400 uppercase tracking-wide flex-shrink-0">
-            <Filter size={12} /> Cat.
+          <span className="hidden sm:flex items-center gap-1 text-xs font-semibold text-slate-400 uppercase tracking-wide flex-shrink-0">
+            <Filter size={11} /> Cat.
           </span>
           <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
             {CATEGORIES.map(cat => {
@@ -597,10 +721,10 @@ function BlogDashboard({ articles, loading, isAdmin, onNew, onEdit, onView, onDe
               if (cat.key !== 'all' && count === 0) return null;
               return (
                 <button key={cat.key} onClick={() => setFilterCategory(cat.key)}
-                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all active:scale-95 ${isActive ? cat.active : cat.color} hover:shadow-sm`}>
+                  className={`inline-flex items-center gap-1 flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all active:scale-95 ${isActive ? cat.active : cat.color}`}>
                   <span>{cat.emoji}</span>
-                  {cat.label}
-                  <span className={`inline-flex items-center justify-center w-4 h-4 rounded-full text-[10px] font-bold ${isActive ? 'bg-white/25' : 'bg-black/8'}`}>
+                  <span>{cat.label}</span>
+                  <span className={`inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full text-[10px] font-bold ${isActive ? 'bg-white/30' : 'bg-black/8'}`}>
                     {count}
                   </span>
                 </button>
@@ -609,36 +733,36 @@ function BlogDashboard({ articles, loading, isAdmin, onNew, onEdit, onView, onDe
           </div>
         </div>
 
-        {/* Active filters summary */}
-        {(filterCategory !== 'all' || filterStatus !== 'all' || search) && (
-          <div className="flex items-center gap-2 -mt-2">
+        {/* ── ACTIVE FILTERS SUMMARY ────────────────────────────── */}
+        {isFiltering && (
+          <div className="flex items-center gap-2 flex-wrap -mt-1">
             <span className="text-xs text-slate-400">{filtered.length} resultado{filtered.length !== 1 ? 's' : ''}</span>
             {filterCategory !== 'all' && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-100 rounded-full text-xs text-slate-600">
+              <button onClick={() => setFilterCategory('all')}
+                className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-100 rounded-full text-xs text-slate-600 hover:bg-red-50 hover:text-red-600 transition-colors">
                 {CATEGORIES.find(c => c.key === filterCategory)?.emoji} {CATEGORIES.find(c => c.key === filterCategory)?.label}
-                <button onClick={() => setFilterCategory('all')} className="ml-0.5 hover:text-red-500 font-bold"><X size={10} /></button>
-              </span>
+                <X size={10} />
+              </button>
             )}
             {filterStatus !== 'all' && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-100 rounded-full text-xs text-slate-600">
-                {STATUS[filterStatus]?.label}
-                <button onClick={() => setFilterStatus('all')} className="ml-0.5 hover:text-red-500 font-bold"><X size={10} /></button>
-              </span>
+              <button onClick={() => setFilterStatus('all')}
+                className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-100 rounded-full text-xs text-slate-600 hover:bg-red-50 hover:text-red-600 transition-colors">
+                {STATUS[filterStatus]?.label} <X size={10} />
+              </button>
             )}
             {search && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-100 rounded-full text-xs text-slate-600">
-                "{search}"
-                <button onClick={() => setSearch('')} className="ml-0.5 hover:text-red-500 font-bold"><X size={10} /></button>
-              </span>
+              <button onClick={() => setSearch('')}
+                className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-100 rounded-full text-xs text-slate-600 hover:bg-red-50 hover:text-red-600 transition-colors">
+                "{search}" <X size={10} />
+              </button>
             )}
-            <button onClick={() => { setFilterCategory('all'); setFilterStatus('all'); setSearch(''); }}
-              className="text-xs text-teal-600 hover:text-teal-700 font-semibold hover:underline ml-1">
+            <button onClick={clearAll} className="text-xs text-teal-600 font-semibold hover:underline ml-1">
               Limpiar todo
             </button>
           </div>
         )}
 
-        {/* Article layout */}
+        {/* ── ARTICLE LAYOUT ────────────────────────────────────── */}
         {loading ? (
           <div className="flex items-center justify-center py-24 text-slate-400">
             <Loader2 size={32} className="animate-spin mr-3" />
@@ -648,36 +772,174 @@ function BlogDashboard({ articles, loading, isAdmin, onNew, onEdit, onView, onDe
           <div className="text-center py-20 text-slate-400">
             <BookOpen size={44} className="mx-auto mb-4 opacity-30" />
             <p className="font-bold text-base">No se encontraron artículos</p>
-            <p className="text-sm mt-1">{isAdmin ? 'Intenta con otro filtro o crea un nuevo artículo' : 'Aún no hay artículos publicados'}</p>
-          </div>
-        ) : isFiltering ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
-            {filtered.map(article => (
-              <GridCard key={article.id} article={article} onEdit={onEdit} onView={onView} onDelete={onDelete} isAdmin={isAdmin} />
-            ))}
-          </div>
-        ) : (
-          <div className="space-y-8">
-            <HeroCard article={filtered[0]} onEdit={onEdit} onView={onView} isAdmin={isAdmin} />
-            {filtered.length > 1 && (
-              <div>
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-sm font-bold text-slate-700 flex items-center gap-2">
-                    <ChevronRight size={16} className="text-teal-500" /> Artículos anteriores
-                  </h3>
-                  <span className="text-xs text-slate-400">{filtered.length - 1} artículo{filtered.length - 1 !== 1 ? 's' : ''}</span>
-                </div>
-                <div className="flex gap-4 overflow-x-auto pb-3 -mx-1 px-1"
-                  style={{ scrollbarWidth: 'thin', scrollbarColor: '#cbd5e1 transparent' }}>
-                  {filtered.slice(1).map(article => (
-                    <CarouselCard key={article.id} article={article} onEdit={onEdit} onView={onView} isAdmin={isAdmin} />
-                  ))}
-                </div>
-              </div>
+            <p className="text-sm mt-1 max-w-xs mx-auto">
+              {isFiltering ? 'Intenta con otro filtro o ' : ''}{isAdmin ? 'crea un nuevo artículo' : 'aún no hay artículos publicados'}
+            </p>
+            {isFiltering && (
+              <button onClick={clearAll}
+                className="mt-4 px-4 py-2 bg-teal-600 text-white rounded-xl text-sm font-semibold hover:bg-teal-700 transition-colors">
+                Limpiar filtros
+              </button>
             )}
           </div>
+        ) : isFiltering ? (
+          /* ── FILTERED: grid universal ── */
+          <>
+            {/* Desktop grid */}
+            <div className="hidden sm:grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {filtered.map(a => (
+                <GridCard key={a.id} article={a} onEdit={onEdit} onView={onView} onDelete={onDelete} isAdmin={isAdmin} />
+              ))}
+            </div>
+            {/* Mobile: list or 2-col grid based on toggle */}
+            <div className="sm:hidden">
+              {mobileView === 'list' ? (
+                <div className="space-y-2">
+                  {filtered.map(a => (
+                    <MobileListCard key={a.id} article={a} onView={onView} onEdit={onEdit} onDelete={onDelete} isAdmin={isAdmin} />
+                  ))}
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-2">
+                  {filtered.map(a => (
+                    <GridCard key={a.id} article={a} onEdit={onEdit} onView={onView} onDelete={onDelete} isAdmin={isAdmin} />
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
+        ) : (
+          /* ── NORMAL (no filter) ── */
+          <>
+            {/* ─── DESKTOP layout: hero + carousel ─────────────── */}
+            <div className="hidden sm:block space-y-8">
+              <HeroCard article={filtered[0]} onEdit={onEdit} onView={onView} isAdmin={isAdmin} />
+              {filtered.length > 1 && (
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-bold text-slate-700 flex items-center gap-2">
+                      <ChevronRight size={16} className="text-teal-500" /> Artículos anteriores
+                    </h3>
+                    <span className="text-xs text-slate-400">{filtered.length - 1} artículo{filtered.length - 1 !== 1 ? 's' : ''}</span>
+                  </div>
+                  <div className="flex gap-4 overflow-x-auto pb-3 -mx-1 px-1"
+                    style={{ scrollbarWidth: 'thin', scrollbarColor: '#cbd5e1 transparent' }}>
+                    {filtered.slice(1).map(a => (
+                      <CarouselCard key={a.id} article={a} onEdit={onEdit} onView={onView} isAdmin={isAdmin} />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* ─── MOBILE layout ───────────────────────────────── */}
+            <div className="sm:hidden space-y-3">
+              {/* Hero compacto en móvil */}
+              <div
+                className="relative w-full rounded-2xl overflow-hidden cursor-pointer group"
+                style={{ height: 200 }}
+                onClick={() => onView(filtered[0])}
+              >
+                <ArticleCover
+                  article={filtered[0]}
+                  className="absolute inset-0 w-full h-full"
+                  imgClassName="absolute inset-0 w-full h-full object-cover"
+                  emojiSize="text-7xl"
+                  emojiOpacity="opacity-20"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-slate-900/90 via-slate-900/40 to-transparent" />
+                {/* Más reciente badge */}
+                <div className="absolute top-3 left-3 z-10">
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white/15 backdrop-blur-sm border border-white/20 text-white text-[11px] font-bold">
+                    <Sparkles size={10} /> Más reciente
+                  </span>
+                </div>
+                {/* Status */}
+                <div className="absolute top-3 right-3 z-10">
+                  <StatusBadge status={filtered[0].status} />
+                </div>
+                {/* Content overlay */}
+                <div className="absolute bottom-0 left-0 right-0 p-4 z-10">
+                  {(() => { const cat = CATEGORIES.find(c => c.key === filtered[0].category); return cat ? (
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border mb-2 ${cat.color}`}>
+                      {cat.emoji} {cat.label}
+                    </span>
+                  ) : null; })()}
+                  <h2 className="text-white font-extrabold text-base leading-snug line-clamp-2 mb-2">
+                    {filtered[0].title}
+                  </h2>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400 text-[11px] flex items-center gap-1">
+                      <Calendar size={9} /> {createdDate(filtered[0])}
+                    </span>
+                    <div className="flex gap-2" onClick={e => e.stopPropagation()}>
+                      <button onClick={() => onView(filtered[0])}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 bg-white text-slate-800 rounded-xl text-xs font-bold active:scale-95 shadow-md">
+                        <Eye size={12} /> Leer
+                      </button>
+                      {isAdmin && (
+                        <button onClick={() => onEdit(filtered[0])}
+                          className="inline-flex items-center gap-1 px-3 py-1.5 bg-white/15 backdrop-blur-sm border border-white/25 text-white rounded-xl text-xs font-bold active:scale-95">
+                          <Edit3 size={12} /> Editar
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Lista / grid del resto */}
+              {filtered.length > 1 && (
+                <>
+                  <div className="flex items-center justify-between pt-1">
+                    <h3 className="text-sm font-bold text-slate-700 flex items-center gap-1.5">
+                      <ChevronRight size={14} className="text-teal-500" />
+                      Más artículos
+                      <span className="text-xs text-slate-400 font-normal">({filtered.length - 1})</span>
+                    </h3>
+                    {/* List/grid toggle inline */}
+                    <div className="flex rounded-lg border border-slate-200 bg-white overflow-hidden">
+                      <button onClick={() => setMobileView('list')}
+                        className={`px-2.5 py-1.5 transition-colors ${mobileView === 'list' ? 'bg-teal-600 text-white' : 'text-slate-500'}`}>
+                        <LayoutList size={13} />
+                      </button>
+                      <button onClick={() => setMobileView('grid')}
+                        className={`px-2.5 py-1.5 transition-colors ${mobileView === 'grid' ? 'bg-teal-600 text-white' : 'text-slate-500'}`}>
+                        <LayoutGrid size={13} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {mobileView === 'list' ? (
+                    <div className="space-y-2">
+                      {filtered.slice(1).map(a => (
+                        <MobileListCard key={a.id} article={a} onView={onView} onEdit={onEdit} onDelete={onDelete} isAdmin={isAdmin} />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-2">
+                      {filtered.slice(1).map(a => (
+                        <GridCard key={a.id} article={a} onEdit={onEdit} onView={onView} onDelete={onDelete} isAdmin={isAdmin} />
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </>
         )}
       </div>
+
+      {/* ── FAB MÓVIL (admin) — botón flotante para crear artículo ── */}
+      {isAdmin && (
+        <button
+          onClick={onNew}
+          className="sm:hidden fixed bottom-5 right-5 z-30 w-14 h-14 rounded-full bg-teal-600 text-white shadow-lg flex items-center justify-center active:scale-95 transition-all hover:bg-teal-700"
+          style={{ boxShadow: '0 4px 20px rgba(13,148,136,0.45)' }}
+        >
+          <Plus size={24} />
+        </button>
+      )}
     </div>
   );
 }
