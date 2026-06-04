@@ -7159,17 +7159,23 @@ class TenantSubscriptionViewSet(viewsets.ModelViewSet):
   </table>
 
   <div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:10px;padding:16px;margin-bottom:20px">
-    <div style="font-size:12px;font-weight:700;color:#15803D;margin-bottom:6px">Instrucciones de pago</div>
+    <div style="font-size:12px;font-weight:700;color:#15803D;margin-bottom:8px">Datos bancarios para transferencia</div>
+    <table style="border-collapse:collapse;width:100%;margin-bottom:8px">
+      <tr><td style="padding:3px 0;color:#166534;font-weight:700;width:140px;font-size:12px">Banco</td><td style="padding:3px 0;color:#166534;font-size:12px">BBVA</td></tr>
+      <tr><td style="padding:3px 0;color:#166534;font-weight:700;font-size:12px">Titular</td><td style="padding:3px 0;color:#166534;font-size:12px">Spotynet S.A. de C.V.</td></tr>
+      <tr><td style="padding:3px 0;color:#166534;font-weight:700;font-size:12px">No. de Cuenta</td><td style="padding:3px 0;color:#166534;font-size:12px;font-family:monospace">0117857578</td></tr>
+      <tr><td style="padding:3px 0;color:#166534;font-weight:700;font-size:12px">CLABE</td><td style="padding:3px 0;color:#166534;font-size:12px;font-family:monospace">012 180 00117857578</td></tr>
+      <tr><td style="padding:3px 0;color:#166534;font-weight:700;font-size:12px">Referencia</td><td style="padding:3px 0;color:#166534;font-size:12px"><strong>{tenant_name} — {period_label}</strong></td></tr>
+    </table>
     <div style="font-size:12px;color:#166534;line-height:1.6">
-      Realiza tu pago por transferencia bancaria o cualquier método acordado con Spotynet.<br>
-      Indica en la referencia: <strong>{tenant_name} — {period_label}</strong><br>
-      Al realizar el pago, notifica a tu asesor de Homly para registrarlo en el sistema.
+      Fecha límite de pago: <strong>{fmt_date(due_date)}</strong><br>
+      Al realizar el pago, envía tu comprobante a tu asesor de Homly para registrarlo en el sistema.
     </div>
   </div>
 
   <div class="footer-note">
-    Este documento es una nota de cobro generada por Homly v{__import__('django').conf.settings.get if False else ''} para el condominio <strong>{tenant_name}</strong>.<br>
-    Generado automáticamente el {generated_at} · Homly — Sistema de Administración de Condominios · www.homly.com.mx
+    Nota de cobro generada automáticamente por Homly para el condominio <strong>{tenant_name}</strong>.<br>
+    {generated_at} · Homly — Sistema de Administración de Condominios · www.homly.com.mx
   </div>
 </div></body></html>"""
 
@@ -7180,7 +7186,13 @@ class TenantSubscriptionViewSet(viewsets.ModelViewSet):
             f"Período: {period_label}\n"
             f"Plan: {plan_name}\n"
             f"Importe: {fmt_money(amount)}\n"
-            f"Vencimiento: {fmt_date(due_date)}\n\n"
+            f"Fecha límite de pago: {fmt_date(due_date)}\n\n"
+            f"Datos bancarios:\n"
+            f"  Banco: BBVA\n"
+            f"  Titular: Spotynet S.A. de C.V.\n"
+            f"  No. de Cuenta: 0117857578\n"
+            f"  CLABE: 012 180 00117857578\n"
+            f"  Referencia: {tenant_name} — {period_label}\n\n"
             f"Emitida por Spotynet — www.homly.com.mx"
         )
 

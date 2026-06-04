@@ -1184,6 +1184,13 @@ function buildBillingNoteHTML({ cycle, sub, tenantData, planName, tenantAdmin })
   const city      = [tenantData?.info_colonia, tenantData?.info_ciudad, tenantData?.info_codigo_postal ? `C.P. ${tenantData.info_codigo_postal}` : ''].filter(Boolean).join(', ');
   const adminName  = tenantAdmin?.name  || '';
   const adminEmail = tenantAdmin?.email || '';
+  // Fecha de vencimiento de pago = inicio del período + 5 días (solo para nota de cobro)
+  const noteDueDate = (() => {
+    if (!cycle.cycleStart) return cycle.dueDate;
+    const d = new Date(cycle.cycleStart + 'T00:00:00');
+    d.setDate(d.getDate() + 5);
+    return d.toISOString().slice(0, 10);
+  })();
   const now     = new Date().toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   const cycleNo = String(cycle.number).padStart(2, '0');
 
@@ -1257,7 +1264,7 @@ function buildBillingNoteHTML({ cycle, sub, tenantData, planName, tenantAdmin })
         <td><strong>Membresía Homly</strong><br><span style="font-size:11px;color:#64748B">${planName}</span></td>
         <td>${cycle.periodLabel}</td>
         <td>${fmtD(cycle.cycleStart)}</td>
-        <td>${fmtD(cycle.dueDate)}</td>
+        <td><strong>${fmtD(noteDueDate)}</strong></td>
         <td style="text-align:right;font-weight:700">${fmtM(cycle.expectedAmount)}</td>
       </tr>
       <tr class="total">
@@ -1268,11 +1275,17 @@ function buildBillingNoteHTML({ cycle, sub, tenantData, planName, tenantAdmin })
   </table>
 
   <div class="info-box">
-    <div class="info-title">Instrucciones de pago</div>
+    <div class="info-title">Datos bancarios para transferencia</div>
     <div class="info-body">
-      Realiza tu pago por transferencia bancaria o cualquier método acordado con Spotynet.<br>
-      Indica en la referencia: <strong>${tn} — ${cycle.periodLabel}</strong><br>
-      Al realizar el pago, notifica a tu asesor de Homly para registrarlo en el sistema.
+      <table style="border-collapse:collapse;width:100%;margin-bottom:8px">
+        <tr><td style="padding:3px 0;color:#166534;font-weight:700;width:140px">Banco</td><td style="padding:3px 0;color:#166534">BBVA</td></tr>
+        <tr><td style="padding:3px 0;color:#166534;font-weight:700">Titular</td><td style="padding:3px 0;color:#166534">Spotynet S.A. de C.V.</td></tr>
+        <tr><td style="padding:3px 0;color:#166534;font-weight:700">No. de Cuenta</td><td style="padding:3px 0;color:#166534;font-family:monospace">0117857578</td></tr>
+        <tr><td style="padding:3px 0;color:#166534;font-weight:700">CLABE</td><td style="padding:3px 0;color:#166534;font-family:monospace">012 180 00117857578</td></tr>
+        <tr><td style="padding:3px 0;color:#166534;font-weight:700">Referencia</td><td style="padding:3px 0;color:#166534"><strong>${tn} — ${cycle.periodLabel}</strong></td></tr>
+      </table>
+      Fecha límite de pago: <strong>${fmtD(noteDueDate)}</strong><br>
+      Al realizar el pago, envía tu comprobante a tu asesor de Homly para registrarlo en el sistema.
     </div>
   </div>
 
@@ -1313,7 +1326,7 @@ function BillingNoteModal({ cycle, sub, tenantData, planName, tenantAdmin, onClo
         period_label:  cycle.periodLabel,
         cycle_start:   cycle.cycleStart,
         cycle_end:     cycle.cycleEnd,
-        due_date:      cycle.dueDate,
+        due_date:      noteDueDate,
         amount:        cycle.expectedAmount,
         currency:      cycle.currency,
         cycle_number:  cycle.number,
@@ -1336,6 +1349,13 @@ function BillingNoteModal({ cycle, sub, tenantData, planName, tenantAdmin, onClo
     try { return new Date(d + 'T00:00:00').toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }); }
     catch { return d; }
   };
+  // Vencimiento de pago = inicio del período + 5 días
+  const noteDueDate = (() => {
+    if (!cycle.cycleStart) return cycle.dueDate;
+    const d = new Date(cycle.cycleStart + 'T00:00:00');
+    d.setDate(d.getDate() + 5);
+    return d.toISOString().slice(0, 10);
+  })();
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 9000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
@@ -1368,7 +1388,7 @@ function BillingNoteModal({ cycle, sub, tenantData, planName, tenantAdmin, onClo
               { label: 'Condominio', value: tenantData?.name || '—' },
               { label: 'Plan', value: planName },
               { label: 'Período', value: cycle.periodLabel },
-              { label: 'Vencimiento', value: fmtD(cycle.dueDate) },
+              { label: 'Vencimiento pago', value: fmtD(noteDueDate) },
               { label: 'Importe', value: fmtM(cycle.expectedAmount) },
               { label: 'Estatus', value: { paid: '✓ Pagado', current: '⏳ Vigente', grace: '⚠ En gracia', overdue: '✗ Vencido' }[cycle.status] || cycle.status },
             ].map(({ label, value }) => (
@@ -1399,9 +1419,29 @@ function BillingNoteModal({ cycle, sub, tenantData, planName, tenantAdmin, onClo
           </div>
 
           {/* Importe */}
-          <div style={{ background: '#0D9488', borderRadius: 10, padding: '14px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+          <div style={{ background: '#0D9488', borderRadius: 10, padding: '14px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
             <div style={{ color: '#fff', fontSize: 13, fontWeight: 600 }}>Total a pagar — {cycle.periodLabel}</div>
             <div style={{ color: '#fff', fontSize: 20, fontWeight: 900 }}>{fmtM(cycle.expectedAmount)}</div>
+          </div>
+
+          {/* Datos bancarios */}
+          <div style={{ background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: 10, padding: '12px 16px', marginBottom: 20 }}>
+            <div style={{ fontSize: 11, fontWeight: 800, color: '#15803D', marginBottom: 8, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Datos bancarios para transferencia</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 16px', fontSize: 12 }}>
+              {[
+                ['Banco',        'BBVA'],
+                ['Titular',      'Spotynet S.A. de C.V.'],
+                ['No. de Cuenta','0117857578'],
+                ['CLABE',        '012 180 00117857578'],
+                ['Referencia',   `${tenantData?.name || '—'} — ${cycle.periodLabel}`],
+                ['Fecha límite', fmtD(noteDueDate)],
+              ].map(([k, v]) => (
+                <React.Fragment key={k}>
+                  <span style={{ fontWeight: 700, color: '#166534', whiteSpace: 'nowrap' }}>{k}</span>
+                  <span style={{ color: '#15803D', fontFamily: k === 'No. de Cuenta' || k === 'CLABE' ? 'monospace' : 'inherit', fontWeight: k === 'Fecha límite' ? 700 : 400 }}>{v}</span>
+                </React.Fragment>
+              ))}
+            </div>
           </div>
 
           {/* Acciones: preview + download */}
