@@ -6,11 +6,12 @@ import { HomlyBrand, APP_VERSION, ROLES } from '../../utils/helpers';
 import { notificationsAPI, tenantsAPI, paymentPlansAPI } from '../../api/client';
 import { ROLE_BASE_MODULES } from '../../constants/modulePermissions';
 import GuideModal from '../onboarding/GuideModal';
+import HelpDrawer from './HelpDrawer';
 import {
   Home, Globe, FileText, ShoppingBag, Receipt, Settings,
   Users, Building, Shield, LogOut, Menu, X, Calendar,
   ChevronDown, Check, Building2, Bell, CheckCheck, Activity, Lock, TrendingDown,
-  Sparkles, CreditCard, DollarSign, Target, Newspaper, Send,
+  Sparkles, CreditCard, DollarSign, Target, Newspaper, Send, HelpCircle,
 } from 'lucide-react';
 
 const NAV_ITEMS = {
@@ -631,6 +632,7 @@ export default function AppLayout() {
   const { activeChapter, closeGuide } = useGuide();
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [helpOpen,    setHelpOpen]    = useState(false);
   // Collapsible sidebar sections — default: all open
   const [collapsedSections, setCollapsedSections] = useState({});
   const toggleSection = (key) =>
@@ -937,6 +939,24 @@ export default function AppLayout() {
                   : isModuleVisible(tenantModulePerms[role], 'notificaciones', role))
               )
             ) && <NotificationBell tenantId={tenantId} role={role} tenantModulePerms={tenantModulePerms} activeProfile={activeProfile} />}
+            {/* Help Button — always visible for all roles */}
+            <button
+              onClick={() => setHelpOpen(true)}
+              title="Centro de Ayuda"
+              style={{
+                width: 34, height: 34, borderRadius: '50%',
+                border: '1.5px solid var(--sand-200)',
+                background: 'var(--white)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                cursor: 'pointer', color: 'var(--ink-500)',
+                transition: 'all 0.15s',
+                fontWeight: 800, fontSize: 15,
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'var(--teal-50)'; e.currentTarget.style.borderColor = 'var(--teal-400)'; e.currentTarget.style.color = 'var(--teal-600)'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'var(--white)'; e.currentTarget.style.borderColor = 'var(--sand-200)'; e.currentTarget.style.color = 'var(--ink-500)'; }}
+            >
+              <HelpCircle size={17} />
+            </button>
           </div>
         </header>
 
@@ -1019,6 +1039,7 @@ export default function AppLayout() {
         chapter={activeChapter}
         onClose={closeGuide}
       />
+      <HelpDrawer open={helpOpen} onClose={() => setHelpOpen(false)} />
     </div>
   );
 }
