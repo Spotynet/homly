@@ -186,9 +186,10 @@ export default function Cobranza() {
         const stmtPrevDebt  = parseFloat(res.data?.previous_debt  ?? showCapture.previous_debt ?? 0);
         const stmtPaidDebt  = parseFloat(res.data?.prev_debt_adeudo ?? 0);
         setCaptureStatementPrevDebt(Math.max(0, stmtPrevDebt - stmtPaidDebt));
-        // Solo períodos anteriores al período actual con saldo pendiente
+        // Solo períodos anteriores al período actual con saldo pendiente (Parcial o Pendiente)
+        // Los períodos "pagado_despues" ya están cubiertos vía adeudo y no deben mostrarse
         const withDebt = rawPeriods
-          .filter(p => p.period < period && (parseFloat(p.charge) - parseFloat(p.paid)) > 0.01)
+          .filter(p => p.period < period && (p.status === 'parcial' || p.status === 'pendiente') && (parseFloat(p.charge) - parseFloat(p.paid)) > 0.01)
           .map(p => ({
             period: p.period,
             charge: parseFloat(p.charge),
