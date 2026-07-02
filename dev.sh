@@ -1,55 +1,52 @@
 #!/bin/bash
-# ─────────────────────────────────────────────────────────────
-#  Homly — Desarrollo local
-#  Uso: ./dev.sh
-#  Inicia backend (Django) y frontend (React) en localhost.
-# ─────────────────────────────────────────────────────────────
+
+echo "🚀 Starting HOMLY DEV (frontend + api)"
+
+FRONTEND_NAME="homly-dev"
+BACKEND_NAME="homly-api-dev"
+
+FRONTEND_PORT=3003
+BACKEND_PORT=3004
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BACKEND_DIR="$SCRIPT_DIR/backend"
 FRONTEND_DIR="$SCRIPT_DIR/frontend"
 
-# Al salir (Ctrl+C), matar ambos procesos
-cleanup() {
-  echo ""
-  echo "▶ Deteniendo servidores..."
-  kill $BACKEND_PID 2>/dev/null
-  kill $FRONTEND_PID 2>/dev/null
-  exit 0
-}
-trap cleanup SIGINT SIGTERM
+# -------------------------
+# 🧹 Clean old processes
+# -------------------------
+echo "🧹 Cleaning old PM2 processes..."
+pm2 delete $FRONTEND_NAME 2>/dev/null
+pm2 delete $BACKEND_NAME 2>/dev/null
 
-echo ""
-echo "╔══════════════════════════════════════╗"
-echo "║     Homly — Entorno de desarrollo   ║"
-echo "╚══════════════════════════════════════╝"
-echo ""
-echo "  Backend:  http://localhost:8000"
-echo "  Frontend: http://localhost:3000"
-echo ""
-echo "  Ctrl+C para detener ambos."
-echo ""
+# -------------------------
+# 🐍 Start Backend (Django)
+# -------------------------
+echo "🐍 Starting Django backend ($BACKEND_NAME) on port $BACKEND_PORT..."
+pm2 start "$BACKEND_DIR/.venv/bin/python" \
+  --name "$BACKEND_NAME" \
+  --cwd "$BACKEND_DIR" \
+  -- manage.py runserver 0.0.0.0:$BACKEND_PORT
 
-# ── Backend ───────────────────────────────────────────────────
-echo "▶ Iniciando backend (Django)..."
-cd "$BACKEND_DIR"
-source .venv/bin/activate
-python manage.py runserver 0.0.0.0:8000 &
-BACKEND_PID=$!
-cd "$SCRIPT_DIR"
+# -------------------------
+# 🎨 Start Frontend (Vite)
+# -------------------------
+echo "🎨 Starting Vite frontend ($FRONTEND_NAME) on port $FRONTEND_PORT..."
+pm2 start npm \
+  --name "$FRONTEND_NAME" \
+  --cwd "$FRONTEND_DIR" \
+  -- run start -- --port $FRONTEND_PORT --host 0.0.0.0
 
-# Esperar un poco a que el backend arranque
-sleep 2
+# -------------------------
+# 💾 Save PM2 state
+# -------------------------
+pm2 save
 
-# ── Frontend ───────────────────────────────────────────────────
-echo "▶ Iniciando frontend (React)..."
-cd "$FRONTEND_DIR"
-npm run start &
-FRONTEND_PID=$!
-cd "$SCRIPT_DIR"
-
+# -------------------------
+# 📊 Status
+# -------------------------
+echo "✅ HOMLY DEV running:"
+pm2 list
 echo ""
-echo "  ✓ Ambos servidores activos. Presiona Ctrl+C para detener."
-echo ""
-
-wait
+echo "  homly-dev      -> https://homly-dev.spotynet.com     (localhost:$FRONTEND_PORT)"
+echo "  homly-api-dev  -> https://homly-api-dev.spotynet.com (localhost:$BACKEND_PORT)"
