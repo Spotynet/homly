@@ -17,9 +17,10 @@ export default defineConfig({
   // Equivalente al campo "proxy": "http://localhost:8000" de CRA en package.json
   server: {
     port: 3000,
+    allowedHosts: ['homly-dev.spotynet.com'],
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        target: 'http://localhost:3004',
         changeOrigin: true,
         // M-06: Reenviar cookies al backend en desarrollo
         cookieDomainRewrite: 'localhost',
