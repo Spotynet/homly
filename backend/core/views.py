@@ -8460,7 +8460,7 @@ def _generate_carta_no_adeudo_pdf(tenant, unit, cutoff_period, print_date):
     # ── Datos ─────────────────────────────────────────────────────────────
     page_w, page_h = A4
     margin_h = 1.8 * cm
-    margin_v = 1.2 * cm
+    margin_v = 1.5 * cm
     content_w = page_w - 2 * margin_h
 
     owner_name  = f'{unit.owner_first_name} {unit.owner_last_name}'.strip() or 'Propietario'
@@ -8547,11 +8547,11 @@ def _generate_carta_no_adeudo_pdf(tenant, unit, cutoff_period, print_date):
     s_folio_r    = S('folio_r',    fontSize=8,  fontName='Helvetica',
                      textColor=INK_LIGHT, alignment=TA_RIGHT, leading=12, spaceAfter=0)
     s_body       = S('body',       fontSize=10, fontName='Helvetica',
-                     textColor=INK, alignment=TA_JUSTIFY, leading=16, spaceBefore=7, spaceAfter=7)
+                     textColor=INK, alignment=TA_JUSTIFY, leading=17, spaceBefore=8, spaceAfter=8)
     s_body_open  = S('body_open',  fontSize=10, fontName='Helvetica',
-                     textColor=INK, alignment=TA_LEFT, leading=16, spaceBefore=4, spaceAfter=7)
+                     textColor=INK, alignment=TA_LEFT, leading=17, spaceBefore=6, spaceAfter=8)
     s_bullet     = S('bullet',     fontSize=10, fontName='Helvetica',
-                     textColor=INK, alignment=TA_LEFT, leading=16, spaceBefore=2, spaceAfter=2,
+                     textColor=INK, alignment=TA_LEFT, leading=17, spaceBefore=3, spaceAfter=3,
                      leftIndent=20, bulletIndent=6)
     s_vigencia   = S('vigencia',   fontSize=9, fontName='Helvetica-Oblique',
                      textColor=INK_MED, alignment=TA_JUSTIFY, leading=14, spaceBefore=4, spaceAfter=4)
@@ -8628,17 +8628,12 @@ def _generate_carta_no_adeudo_pdf(tenant, unit, cutoff_period, print_date):
     # CUERPO DE LA CARTA
     # ══════════════════════════════════════════════════════════════════════
 
-    addr_body = condominio_address.upper() if condominio_address else tenant_name
-    rfc_body  = f', con RFC <b>{rfc}</b>' if rfc else ''
-
     story.append(Paragraph('A QUIEN CORRESPONDA:', s_body_open))
 
     # Párrafo 1 — Presentación
     p1 = (
         f'Por medio de la presente, la Administración a través de su <b>{admin_label}</b> '
-        f'del Condominio <b>{tenant_name}</b>{rfc_body}'
-        + (f', ubicado en <b>{addr_body}</b>' if addr_body else '')
-        + f', hace constar que:'
+        f'del Condominio <b>{tenant_name}</b>, hace constar que:'
     )
     story.append(Paragraph(p1, s_body))
 
