@@ -63,6 +63,8 @@ export default function EstadoCuenta() {
   const [extraFields, setExtraFields] = useState([]);
   // full unit statement PDF download
   const [downloadingStatement, setDownloadingStatement] = useState(false);
+  // carta de no adeudo PDF download
+  const [downloadingCarta, setDownloadingCarta] = useState(false);
   // plan de pago — Estado por Unidad
   const [planUnitDebt, setPlanUnitDebt] = useState(null); // { unit, totalAdeudo }
   // active plans lookup: Set of unit IDs + map of unit_id → plan object
@@ -135,6 +137,31 @@ export default function EstadoCuenta() {
       toast.error('No se pudo generar el PDF del estado de cuenta.');
     } finally {
       setDownloadingStatement(false);
+    }
+  };
+
+  const handleDownloadCarta = async () => {
+    if (!selectedUnit || !tenantId) return;
+    setDownloadingCarta(true);
+    try {
+      const cutoffParam = detailTo || todayPeriod();
+      const res = await reportsAPI.cartaNoAdeudo(tenantId, selectedUnit, cutoffParam);
+      const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+      const a = document.createElement('a');
+      a.href = url;
+      const unitCode = (data?.unit?.unit_id_code || '').replace(/[^a-zA-Z0-9]/g, '_') || 'unidad';
+      a.download = pdfFileName(`Carta_No_Adeudo_${unitCode}`, cutoffParam, tenantData?.name);
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      const msg = err?.response?.data
+        ? await err.response.data.text?.().then(t => { try { return JSON.parse(t).detail; } catch { return null; } })
+        : null;
+      toast.error(msg || 'No se pudo generar la Carta de No Adeudo.');
+    } finally {
+      setDownloadingCarta(false);
     }
   };
 
@@ -611,6 +638,19 @@ export default function EstadoCuenta() {
                 }}>
                   <Printer size={14} /> Imprimir / PDF
                 </button>
+
+                {!isResidente && (
+                  <button
+                    className="btn-outline-white"
+                    disabled={balance > 0 || downloadingCarta}
+                    title={balance > 0 ? 'La unidad presenta adeudos al corte seleccionado' : 'Descargar Carta de No Adeudo en PDF'}
+                    onClick={handleDownloadCarta}
+                    style={balance > 0 ? { opacity: 0.45, cursor: 'not-allowed' } : {}}
+                  >
+                    <Download size={14} />
+                    {downloadingCarta ? 'Generando…' : 'Carta de No Adeudo'}
+                  </button>
+                )}
               </div>
             </div>
 

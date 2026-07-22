@@ -8336,3 +8336,311 @@ class PaymentVoucherSubmissionViewSet(viewsets.ModelViewSet):
         serializer = PaymentVoucherSubmissionSerializer(voucher, context={'request': request})
         return Response(serializer.data)
 
+
+# ═══════════════════════════════════════════════════════════
+#  CARTA DE NO ADEUDO — PDF
+# ═══════════════════════════════════════════════════════════
+
+class CartaNoAdeudoView(APIView):
+    """
+    GET /api/tenants/{tenant_id}/carta-no-adeudo/?unit_id=<uuid>&cutoff=YYYY-MM
+    Genera y descarga una Carta de No Adeudo en PDF para la unidad indicada,
+    con corte al período especificado. Solo se emite si el saldo al corte es <= 0.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, tenant_id):
+        from .models import Tenant, Unit
+        import io
+        from datetime import date as _date
+
+        # ── Permisos ──────────────────────────────────────────────────
+        if not request.user.is_super_admin:
+            tu = TenantUser.objects.filter(
+                tenant_id=tenant_id, user=request.user
+            ).first()
+            if not tu or tu.role not in ('admin', 'tesorero', 'contador', 'auditor'):
+                return Response({'detail': 'Sin permiso.'}, status=403)
+
+        # ── Parámetros ────────────────────────────────────────────────
+        unit_id = request.query_params.get('unit_id')
+        cutoff  = request.query_params.get('cutoff') or _today_period()
+
+        if not unit_id:
+            return Response({'detail': 'Parámetro unit_id requerido.'}, status=400)
+
+        try:
+            tenant = Tenant.objects.get(id=tenant_id)
+        except Tenant.DoesNotExist:
+            return Response({'detail': 'Tenant no encontrado.'}, status=404)
+
+        try:
+            unit = Unit.objects.get(id=unit_id, tenant_id=tenant_id)
+        except Unit.DoesNotExist:
+            return Response({'detail': 'Unidad no encontrada.'}, status=404)
+
+        # ── Calcular saldo al corte ───────────────────────────────────
+        start_period = tenant.operation_start_date or _today_period()
+        rows = _compute_statement(tenant, unit_id, start_period, cutoff)
+
+        total_charge = sum(float(r.get('charge', 0)) for r in rows)
+        total_paid   = sum(float(r.get('paid',   0)) for r in rows)
+        prev_debt    = float(unit.previous_debt or 0)
+        credit_bal   = float(unit.credit_balance or 0)
+
+        # saldo_acum del último período = balance neto
+        balance = float(rows[-1].get('saldo_acum', 0)) if rows else (prev_debt + total_charge - total_paid - credit_bal)
+
+        if balance > 0.005:
+            return Response(
+                {'detail': 'La unidad presenta adeudos al corte indicado. No se puede emitir la carta.'},
+                status=400,
+            )
+
+        # ── Generar PDF ───────────────────────────────────────────────
+        pdf_bytes = _generate_carta_no_adeudo_pdf(tenant, unit, cutoff, _date.today())
+        if pdf_bytes is None:
+            return Response({'detail': 'ReportLab no está instalado en el servidor.'}, status=500)
+
+        unit_code = unit.unit_id_code.replace('/', '-')
+        filename  = f'Carta_No_Adeudo_{unit_code}_{cutoff}_{tenant.name[:20].replace(" ","_")}.pdf'
+
+        response = HttpResponse(pdf_bytes, content_type='application/pdf')
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        return response
+
+
+def _generate_carta_no_adeudo_pdf(tenant, unit, cutoff_period, print_date):
+    """
+    Genera la Carta de No Adeudo como bytes PDF usando ReportLab.
+    """
+    import io
+    try:
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib import colors
+        from reportlab.lib.units import cm
+        from reportlab.platypus import (
+            SimpleDocTemplate, Paragraph, Spacer, HRFlowable, Table, TableStyle,
+        )
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT, TA_JUSTIFY
+    except ImportError:
+        return None
+
+    MONTHS_ES = ['', 'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+                 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
+
+    def period_label(p):
+        try:
+            y, m = p.split('-')
+            return f'{MONTHS_ES[int(m)].capitalize()} {y}'
+        except Exception:
+            return p or ''
+
+    def date_label(d):
+        return f'{d.day} de {MONTHS_ES[d.month]} de {d.year}'
+
+    # ── Colores ───────────────────────────────────────────────────────
+    TEAL      = colors.HexColor('#0d7c6e')
+    TEAL_DARK = colors.HexColor('#0a5f55')
+    INK       = colors.HexColor('#1a1a2e')
+    INK_LIGHT = colors.HexColor('#64748b')
+    SAND      = colors.HexColor('#f8f6f1')
+    SAND_BRD  = colors.HexColor('#d4cfc5')
+    WHITE     = colors.white
+
+    # ── Datos ─────────────────────────────────────────────────────────
+    owner_name = f'{unit.owner_first_name} {unit.owner_last_name}'.strip() or 'Propietario'
+    unit_label = f'{unit.unit_name} ({unit.unit_id_code})'
+    tenant_name = tenant.name
+    admin_type_labels = {
+        'mesa_directiva': 'Mesa Directiva',
+        'administrador':  'Administrador Externo',
+        'comite':         'Comité',
+    }
+    admin_label = admin_type_labels.get(tenant.admin_type, 'Administración')
+
+    # Dirección del condominio
+    addr_parts = [
+        tenant.addr_calle,
+        tenant.addr_num_externo,
+        tenant.addr_colonia,
+        tenant.addr_ciudad,
+        tenant.addr_codigo_postal,
+        tenant.state,
+        tenant.country,
+    ]
+    condominio_address = ', '.join(p for p in addr_parts if p)
+
+    # RFC / Razón social si existe
+    razon_social = tenant.razon_social or ''
+    rfc          = tenant.rfc or ''
+
+    # ── Documento ─────────────────────────────────────────────────────
+    buffer = io.BytesIO()
+    page_w, page_h = A4
+    margin = 2.2 * cm
+
+    doc = SimpleDocTemplate(
+        buffer, pagesize=A4,
+        leftMargin=margin, rightMargin=margin,
+        topMargin=2 * cm, bottomMargin=2 * cm,
+        title=f'Carta de No Adeudo – {unit_label}',
+        author=tenant_name,
+    )
+
+    styles = getSampleStyleSheet()
+
+    # Estilos personalizados
+    def style(name, **kw):
+        return ParagraphStyle(name, parent=styles['Normal'], **kw)
+
+    s_title      = style('title',    fontSize=18, textColor=TEAL_DARK,     fontName='Helvetica-Bold',
+                         alignment=TA_CENTER, spaceAfter=4)
+    s_subtitle   = style('subtitle', fontSize=10, textColor=INK_LIGHT,     fontName='Helvetica',
+                         alignment=TA_CENTER, spaceAfter=2)
+    s_folio      = style('folio',    fontSize=8,  textColor=INK_LIGHT,     fontName='Helvetica',
+                         alignment=TA_RIGHT)
+    s_section    = style('section',  fontSize=9,  textColor=TEAL,          fontName='Helvetica-Bold',
+                         spaceBefore=14, spaceAfter=4, textTransform='uppercase')
+    s_body       = style('body',     fontSize=10, textColor=INK,           fontName='Helvetica',
+                         leading=16, alignment=TA_JUSTIFY, spaceAfter=10)
+    s_body_bold  = style('body_b',   fontSize=10, textColor=INK,           fontName='Helvetica-Bold',
+                         leading=16, alignment=TA_JUSTIFY, spaceAfter=10)
+    s_small      = style('small',    fontSize=8,  textColor=INK_LIGHT,     fontName='Helvetica',
+                         leading=11, alignment=TA_CENTER)
+    s_cell_label = style('cl',       fontSize=8,  textColor=INK_LIGHT,     fontName='Helvetica')
+    s_cell_value = style('cv',       fontSize=10, textColor=INK,           fontName='Helvetica-Bold')
+    s_stamp      = style('stamp',    fontSize=22, textColor=TEAL,          fontName='Helvetica-Bold',
+                         alignment=TA_CENTER)
+    s_stamp_sub  = style('stamps',   fontSize=9,  textColor=TEAL,          fontName='Helvetica',
+                         alignment=TA_CENTER)
+
+    story = []
+
+    # ── Encabezado ────────────────────────────────────────────────────
+    story.append(Paragraph(tenant_name.upper(), s_title))
+    if razon_social and razon_social != tenant_name:
+        story.append(Paragraph(razon_social, s_subtitle))
+    if rfc:
+        story.append(Paragraph(f'RFC: {rfc}', s_subtitle))
+    if condominio_address:
+        story.append(Paragraph(condominio_address, s_subtitle))
+    story.append(Spacer(1, 0.3 * cm))
+    story.append(HRFlowable(width='100%', thickness=2, color=TEAL, spaceAfter=6))
+    story.append(Paragraph(f'Folio: CNAPC-{print_date.strftime("%Y%m%d")}-{unit.unit_id_code.replace("/","-")}', s_folio))
+    story.append(Spacer(1, 0.5 * cm))
+
+    # ── Título central ────────────────────────────────────────────────
+    story.append(Paragraph('CARTA DE NO ADEUDO', style('main_title',
+        fontSize=20, textColor=TEAL_DARK, fontName='Helvetica-Bold',
+        alignment=TA_CENTER, spaceAfter=2)))
+    story.append(Paragraph(
+        f'Con corte al período de <b>{period_label(cutoff_period)}</b>',
+        style('cut', fontSize=11, textColor=INK_LIGHT, fontName='Helvetica',
+              alignment=TA_CENTER, spaceAfter=12)))
+    story.append(HRFlowable(width='60%', thickness=1, color=SAND_BRD,
+                             hAlign='CENTER', spaceAfter=16))
+
+    # ── Tabla de datos de la unidad ───────────────────────────────────
+    def row(label, value):
+        return [Paragraph(label, s_cell_label), Paragraph(str(value), s_cell_value)]
+
+    table_data = [
+        row('Unidad / Número', unit_label),
+        row('Propietario', owner_name),
+    ]
+    if unit.owner_email:
+        table_data.append(row('Correo electrónico', unit.owner_email))
+    if unit.owner_phone:
+        table_data.append(row('Teléfono', unit.owner_phone))
+    if unit.occupancy == 'rentado' and unit.tenant_first_name:
+        table_data.append(row('Ocupante / Inquilino',
+                               f'{unit.tenant_first_name} {unit.tenant_last_name}'.strip()))
+
+    col_w = (page_w - 2 * margin) / 2
+    data_table = Table(table_data, colWidths=[col_w * 0.42, col_w * 1.58])
+    data_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), SAND),
+        ('ROWBACKGROUNDS', (0, 0), (-1, -1), [SAND, WHITE]),
+        ('GRID', (0, 0), (-1, -1), 0.5, SAND_BRD),
+        ('TOPPADDING',    (0, 0), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ('LEFTPADDING',   (0, 0), (-1, -1), 10),
+        ('RIGHTPADDING',  (0, 0), (-1, -1), 10),
+        ('ROUNDEDCORNERS', [4]),
+    ]))
+    story.append(data_table)
+    story.append(Spacer(1, 0.6 * cm))
+
+    # ── Cuerpo de la carta ────────────────────────────────────────────
+    story.append(Paragraph('A QUIEN CORRESPONDA:', s_body_bold))
+
+    body_text = (
+        f'Por medio de la presente, la {admin_label} del condominio <b>{tenant_name}</b> '
+        f'hace constar que el propietario <b>{owner_name}</b>, titular de la '
+        f'<b>{unit_label}</b>, se encuentra <b>al corriente en el cumplimiento de sus '
+        f'obligaciones de pago</b> de cuotas de mantenimiento y demás contribuciones '
+        f'establecidas en el reglamento interno del condominio, no registrando '
+        f'<b>ningún adeudo pendiente</b> con corte al período de '
+        f'<b>{period_label(cutoff_period)}</b>.'
+    )
+    story.append(Paragraph(body_text, s_body))
+
+    body2 = (
+        'La presente constancia se expide a petición del interesado para los fines '
+        'legales y administrativos que estime convenientes, siendo válida únicamente '
+        f'a la fecha de su emisión: <b>{date_label(print_date)}</b>.'
+    )
+    story.append(Paragraph(body2, s_body))
+
+    story.append(Spacer(1, 0.4 * cm))
+
+    # ── Sello / certificación ─────────────────────────────────────────
+    stamp_table = Table([[
+        Paragraph('✓', s_stamp),
+        Paragraph('SIN ADEUDOS AL CORTE', s_stamp_sub),
+    ]], colWidths=[1.5 * cm, page_w - 2 * margin - 1.5 * cm])
+    stamp_table.setStyle(TableStyle([
+        ('BACKGROUND',    (0, 0), (-1, -1), colors.HexColor('#e6f4f2')),
+        ('LINEABOVE',     (0, 0), (-1, 0), 2, TEAL),
+        ('LINEBELOW',     (0, 0), (-1, 0), 2, TEAL),
+        ('TOPPADDING',    (0, 0), (-1, -1), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
+        ('LEFTPADDING',   (0, 0), (-1, -1), 14),
+        ('VALIGN',        (0, 0), (-1, -1), 'MIDDLE'),
+    ]))
+    story.append(stamp_table)
+    story.append(Spacer(1, 1.2 * cm))
+
+    # ── Firma ─────────────────────────────────────────────────────────
+    sig_line_w = 6 * cm
+    sig_table = Table([[
+        '',
+        Table([
+            [HRFlowable(width=sig_line_w, thickness=1, color=INK)],
+            [Paragraph(f'{admin_label}<br/>{tenant_name}',
+                       style('sig', fontSize=9, textColor=INK_LIGHT,
+                             fontName='Helvetica', alignment=TA_CENTER))],
+        ], colWidths=[sig_line_w]),
+    ]], colWidths=[page_w - 2 * margin - sig_line_w - 1 * cm, sig_line_w + 1 * cm])
+    sig_table.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'BOTTOM'),
+        ('TOPPADDING', (0, 0), (-1, -1), 0),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+    ]))
+    story.append(sig_table)
+    story.append(Spacer(1, 0.8 * cm))
+
+    # ── Pie de página ─────────────────────────────────────────────────
+    story.append(HRFlowable(width='100%', thickness=0.5, color=SAND_BRD, spaceAfter=6))
+    story.append(Paragraph(
+        f'Fecha de impresión: {date_label(print_date)}  ·  '
+        f'Documento generado por el sistema de administración Homly  ·  '
+        f'Folio: CNAPC-{print_date.strftime("%Y%m%d")}-{unit.unit_id_code.replace("/","-")}',
+        s_small,
+    ))
+
+    doc.build(story)
+    return buffer.getvalue()
+

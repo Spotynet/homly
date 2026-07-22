@@ -359,6 +359,11 @@ export const reportsAPI = {
       params: { cutoff, ...(unitId ? { unit_id: unitId } : {}), ...(fromPeriod ? { from_period: fromPeriod } : {}) },
       responseType: 'blob',
     }),
+  cartaNoAdeudo: (tenantId, unitId, cutoff) =>
+    api.get(`/tenants/${tenantId}/carta-no-adeudo/`, {
+      params: { unit_id: unitId, cutoff },
+      responseType: 'blob',
+    }),
   sendUnitStatementEmail: (tenantId, data) => api.post(`/tenants/${tenantId}/send-unit-statement-email/`, data),
   sendGeneralStatementEmail: (tenantId, data) => api.post(`/tenants/${tenantId}/send-statement-email/`, data),
   sendResidenteStatementEmail: (tenantId, data) => api.post(`/tenants/${tenantId}/send-residente-statement-email/`, data),
