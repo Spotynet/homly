@@ -68,8 +68,12 @@ ssh -i "$PEM" "$EC2" << 'ENDSSH'
   git reset --hard origin/main
   git clean -fd
 
-  echo "  → migrations..."
+  echo "  → pip install..."
   source backend/venv/bin/activate
+  pip install -r backend/requirements.txt --quiet
+  echo "  ✓ Dependencies up to date."
+
+  echo "  → migrations..."
   cd backend
   # Merge conflicting branches (non-interactive; fixes EOFError over SSH)
   python manage.py makemigrations --merge --noinput 2>/dev/null || true
