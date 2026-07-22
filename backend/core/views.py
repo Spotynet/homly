@@ -8423,7 +8423,7 @@ def _generate_carta_no_adeudo_pdf(tenant, unit, cutoff_period, print_date):
         from reportlab.lib.units import cm
         from reportlab.platypus import (
             SimpleDocTemplate, Paragraph, Spacer, HRFlowable,
-            Table, TableStyle, Image as RLImage, KeepTogether,
+            Table, TableStyle, Image as RLImage,
         )
         from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
         from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT, TA_JUSTIFY
@@ -8453,9 +8453,6 @@ def _generate_carta_no_adeudo_pdf(tenant, unit, cutoff_period, print_date):
     SAND      = colors.HexColor('#f9f7f3')
     SAND_BRD  = colors.HexColor('#d6d0c4')
     WHITE     = colors.white
-    GREEN_OK  = colors.HexColor('#166534')
-    GREEN_BG  = colors.HexColor('#dcfce7')
-    GREEN_BRD = colors.HexColor('#86efac')
 
     # ── Datos ─────────────────────────────────────────────────────────────
     page_w, page_h = A4
@@ -8539,31 +8536,29 @@ def _generate_carta_no_adeudo_pdf(tenant, unit, cutoff_period, print_date):
     s_hdr_addr   = S('hdr_addr',   fontSize=8,  fontName='Helvetica',
                      textColor=INK_LIGHT, alignment=TA_CENTER, leading=12, spaceAfter=0)
     s_doc_title  = S('doc_title',  fontSize=15, fontName='Helvetica-Bold',
-                     textColor=TEAL_DARK, alignment=TA_CENTER, leading=18, spaceBefore=2, spaceAfter=2)
-    s_doc_sub    = S('doc_sub',    fontSize=9.5, fontName='Helvetica',
-                     textColor=INK_LIGHT, alignment=TA_CENTER, leading=13, spaceAfter=2)
-    s_asunto     = S('asunto',     fontSize=9,  fontName='Helvetica-Bold',
-                     textColor=INK_MED, alignment=TA_LEFT, leading=12, spaceAfter=0)
-    s_folio_r    = S('folio_r',    fontSize=8,  fontName='Helvetica',
-                     textColor=INK_LIGHT, alignment=TA_RIGHT, leading=12, spaceAfter=0)
+                     textColor=WHITE, alignment=TA_CENTER, leading=20, spaceBefore=0, spaceAfter=0)
+    s_doc_sub    = S('doc_sub',    fontSize=9, fontName='Helvetica',
+                     textColor=colors.HexColor('#b2dbd6'), alignment=TA_CENTER, leading=13, spaceBefore=0, spaceAfter=0)
+    s_folio_band = S('folio_band', fontSize=8, fontName='Helvetica',
+                     textColor=INK_LIGHT, alignment=TA_LEFT, leading=12, spaceBefore=0, spaceAfter=0)
+    s_folio_r    = S('folio_r',    fontSize=8, fontName='Helvetica',
+                     textColor=INK_LIGHT, alignment=TA_RIGHT, leading=12, spaceBefore=0, spaceAfter=0)
+    s_date_city  = S('date_city',  fontSize=9.5, fontName='Helvetica-Oblique',
+                     textColor=INK_MED, alignment=TA_RIGHT, leading=13, spaceBefore=10, spaceAfter=4)
     s_body       = S('body',       fontSize=10, fontName='Helvetica',
-                     textColor=INK, alignment=TA_JUSTIFY, leading=17, spaceBefore=8, spaceAfter=8)
-    s_body_open  = S('body_open',  fontSize=10, fontName='Helvetica',
-                     textColor=INK, alignment=TA_LEFT, leading=17, spaceBefore=6, spaceAfter=8)
+                     textColor=INK, alignment=TA_JUSTIFY, leading=17, spaceBefore=7, spaceAfter=7)
+    s_body_open  = S('body_open',  fontSize=10, fontName='Helvetica-Bold',
+                     textColor=INK, alignment=TA_LEFT, leading=15, spaceBefore=6, spaceAfter=6)
     s_bullet     = S('bullet',     fontSize=10, fontName='Helvetica',
-                     textColor=INK, alignment=TA_LEFT, leading=17, spaceBefore=3, spaceAfter=3,
-                     leftIndent=20, bulletIndent=6)
-    s_vigencia   = S('vigencia',   fontSize=9, fontName='Helvetica-Oblique',
-                     textColor=INK_MED, alignment=TA_JUSTIFY, leading=14, spaceBefore=4, spaceAfter=4)
+                     textColor=INK, alignment=TA_LEFT, leading=16, spaceBefore=2, spaceAfter=2,
+                     leftIndent=22, bulletIndent=6)
+    s_vigencia   = S('vigencia',   fontSize=8.5, fontName='Helvetica-Oblique',
+                     textColor=colors.HexColor('#92400e'), alignment=TA_JUSTIFY, leading=13, spaceBefore=3, spaceAfter=3)
     s_cierre     = S('cierre',     fontSize=10, fontName='Helvetica',
-                     textColor=INK, alignment=TA_LEFT, leading=16, spaceBefore=4, spaceAfter=4)
-    s_cell_lbl   = S('cl',         fontSize=8,  fontName='Helvetica',     textColor=INK_LIGHT, leading=12)
-    s_cell_val   = S('cv',         fontSize=10, fontName='Helvetica-Bold', textColor=INK,       leading=14)
-    s_stamp_ok   = S('stamp_ok',   fontSize=11, fontName='Helvetica-Bold', textColor=GREEN_OK,  alignment=TA_CENTER, leading=15)
-    s_stamp_sub  = S('stamp_sub',  fontSize=8,  fontName='Helvetica',      textColor=GREEN_OK,  alignment=TA_CENTER, leading=12)
-    s_sig_label  = S('sig_lbl',    fontSize=9,  fontName='Helvetica',      textColor=INK_LIGHT, alignment=TA_CENTER, leading=13)
-    s_footer     = S('footer',     fontSize=7.5, fontName='Helvetica',     textColor=INK_LIGHT, alignment=TA_CENTER, leading=11)
-    s_date_right = S('date_r',     fontSize=9.5, fontName='Helvetica',     textColor=INK_MED,   alignment=TA_RIGHT,  leading=14, spaceAfter=14)
+                     textColor=INK, alignment=TA_LEFT, leading=16, spaceBefore=6, spaceAfter=4)
+    s_sig_title  = S('sig_ttl',    fontSize=9,  fontName='Helvetica-Bold',  textColor=TEAL_DARK, alignment=TA_CENTER, leading=13)
+    s_sig_label  = S('sig_lbl',    fontSize=8.5, fontName='Helvetica',      textColor=INK_MED,   alignment=TA_CENTER, leading=13)
+    s_footer     = S('footer',     fontSize=7,  fontName='Helvetica',       textColor=INK_LIGHT, alignment=TA_CENTER, leading=10)
 
     story = []
 
@@ -8597,32 +8592,47 @@ def _generate_carta_no_adeudo_pdf(tenant, unit, cutoff_period, print_date):
         for el in hdr_text_col:
             story.append(el)
 
-    story.append(Spacer(1, 0.15 * cm))
-    story.append(HRFlowable(width='100%', thickness=2.5, color=TEAL, spaceAfter=3))
-    story.append(HRFlowable(width='100%', thickness=0.5, color=TEAL, spaceAfter=6))
+    story.append(Spacer(1, 0.25 * cm))
 
-    # ── Título del documento ──────────────────────────────────────────────
-    story.append(Paragraph('CARTA DE NO ADEUDO', s_doc_title))
-    story.append(Paragraph(
-        f'Constancia de No Adeudo &nbsp;·&nbsp; Corte al período de <b>{period_label_full(cutoff_period)}</b>',
-        s_doc_sub,
-    ))
-    story.append(HRFlowable(width='50%', thickness=0.8, color=SAND_BRD, hAlign='CENTER', spaceAfter=8))
-
-    # ── Fecha y folio ─────────────────────────────────────────────────────
-    meta_tbl = Table([[
-        Paragraph(f'<b>Asunto:</b> Constancia de No Adeudo', s_asunto),
-        Paragraph(f'Folio: <b>{folio}</b><br/>Fecha: {date_label(print_date)}', s_folio_r),
-    ]], colWidths=[content_w * 0.55, content_w * 0.45])
-    meta_tbl.setStyle(TableStyle([
-        ('VALIGN',       (0, 0), (-1, -1), 'TOP'),
-        ('LEFTPADDING',  (0, 0), (-1, -1), 0),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
-        ('TOPPADDING',   (0, 0), (-1, -1), 0),
-        ('BOTTOMPADDING',(0, 0), (-1, -1), 0),
+    # ── Banda de título (fondo teal oscuro) ──────────────────────────────
+    title_band = Table([[
+        Paragraph('CARTA DE NO ADEUDO', s_doc_title),
+        Paragraph(f'Corte al período: <b>{period_label_full(cutoff_period)}</b>', s_doc_sub),
+    ]], colWidths=[content_w * 0.60, content_w * 0.40])
+    title_band.setStyle(TableStyle([
+        ('BACKGROUND',    (0, 0), (-1, -1), TEAL_DARK),
+        ('LEFTPADDING',   (0, 0), (-1, -1), 14),
+        ('RIGHTPADDING',  (0, 0), (-1, -1), 14),
+        ('TOPPADDING',    (0, 0), (-1, -1), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
+        ('VALIGN',        (0, 0), (-1, -1), 'MIDDLE'),
     ]))
-    story.append(meta_tbl)
-    story.append(Spacer(1, 0.2 * cm))
+    story.append(title_band)
+
+    # ── Banda de folio (fondo muy sutil) ─────────────────────────────────
+    folio_band = Table([[
+        Paragraph(f'Folio: <b>{folio}</b>', s_folio_band),
+        Paragraph(f'Fecha de expedición: <b>{date_label(print_date)}</b>', s_folio_r),
+    ]], colWidths=[content_w * 0.50, content_w * 0.50])
+    folio_band.setStyle(TableStyle([
+        ('BACKGROUND',    (0, 0), (-1, -1), TEAL_BG),
+        ('LEFTPADDING',   (0, 0), (-1, -1), 14),
+        ('RIGHTPADDING',  (0, 0), (-1, -1), 14),
+        ('TOPPADDING',    (0, 0), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ('VALIGN',        (0, 0), (-1, -1), 'MIDDLE'),
+    ]))
+    story.append(folio_band)
+    story.append(Spacer(1, 0.15 * cm))
+
+    # ── Lugar y fecha (convención carta formal) ───────────────────────────
+    city_name = (
+        (tenant.info_ciudad or tenant.addr_ciudad or '').strip() or 'Ciudad de México'
+    )
+    story.append(Paragraph(
+        f'{city_name}, a {date_label(print_date)}.',
+        s_date_city,
+    ))
 
     # ══════════════════════════════════════════════════════════════════════
     # CUERPO DE LA CARTA
@@ -8630,110 +8640,86 @@ def _generate_carta_no_adeudo_pdf(tenant, unit, cutoff_period, print_date):
 
     story.append(Paragraph('A QUIEN CORRESPONDA:', s_body_open))
 
-    # Párrafo 1 — Presentación
+    # Párrafo 1 — Presentación e identificación de la unidad
     p1 = (
         f'Por medio de la presente, la Administración a través de su <b>{admin_label}</b> '
-        f'del Condominio <b>{tenant_name}</b>, hace constar que:'
+        f'del Condominio <b>{tenant_name}</b>, hace constar que el(la) C. '
+        f'<b>{owner_name.upper()}</b>, en su carácter de propietario(a) del inmueble '
+        f'identificado como <b>{unit_label}</b> (clave <b>{unit_code}</b>):'
     )
     story.append(Paragraph(p1, s_body))
 
-    # Párrafo 2 — Constancia del propietario
-    p2 = (
-        f'La C. / C. <b>{owner_name.upper()}</b>, en su carácter de <b>propietario(a)</b> '
-        f'del inmueble identificado como: <b>{unit_label} ({unit_code})</b>, '
-        f'se encuentra <b>AL CORRIENTE</b> en el pago de todas sus obligaciones financieras '
-        f'con este condominio a la fecha de emisión de la presente, cubriendo en su totalidad '
-        f'el período con corte a <b>{period_label_full(cutoff_period)}</b>.'
-    )
-    story.append(Paragraph(p2, s_body))
-
-    # Párrafo 3 — Alcance de la constancia
-    story.append(Paragraph(
-        'La presente constancia ampara que <b>no existe ningún adeudo pendiente</b> '
-        'por concepto de:',
-        s_body,
-    ))
-
+    # Puntos clave — al corriente y sin adeudos
     bullets = [
-        'Cuotas de mantenimiento ordinarias.',
-        'Cuotas extraordinarias.',
-        'Multas, penalizaciones o intereses moratorios.',
+        f'Se encuentra <b>AL CORRIENTE</b> en el pago de todas sus obligaciones financieras '
+        f'con este condominio, con corte al período de <b>{period_label_full(cutoff_period)}</b>.',
+        'No registra <b>adeudo pendiente alguno</b> por concepto de cuotas de mantenimiento '
+        'ordinarias, cuotas extraordinarias, ni multas, penalizaciones o intereses moratorios.',
+        'Ha cumplido en su totalidad con las obligaciones económicas establecidas en el '
+        'Reglamento Interno del Condominio correspondientes al período señalado.',
     ]
     for b in bullets:
         story.append(Paragraph(f'• &nbsp; {b}', s_bullet))
 
-    # Párrafo 4 — Solicitud y fines
+    # Párrafo 2 — Solicitud y fines legales
     story.append(Paragraph(
-        'Se extiende la presente constancia a solicitud del interesado, para los fines '
-        '<b>legales o administrativos</b> que a éste convengan.',
+        'Se extiende la presente constancia a solicitud expresa del interesado, para los fines '
+        '<b>legales, notariales o administrativos</b> que a éste convengan, sin que ello implique '
+        'responsabilidad alguna por obligaciones adquiridas con posterioridad a la fecha de expedición.',
         s_body,
     ))
 
-    # Párrafo 5 — Vigencia (en recuadro destacado)
+    # Recuadro de vigencia (ambar discreto)
     vigencia_tbl = Table([[
         Paragraph(
-            '⚠&nbsp; <b>Vigencia:</b> Esta carta tiene una vigencia de <b>30 días naturales</b> '
-            'a partir de su fecha de expedición. Pierde su validez si se genera una nueva cuota '
-            'o cargo dentro de este período y no es cubierto oportunamente.',
+            '<b>Vigencia:</b> Esta constancia tiene validez por <b>30 días naturales</b> '
+            'a partir de la fecha de su expedición. Pasado dicho plazo o ante la generación '
+            'de nuevos cargos no cubiertos, el documento pierde su efecto legal.',
             s_vigencia,
         )
     ]], colWidths=[content_w])
     vigencia_tbl.setStyle(TableStyle([
         ('BACKGROUND',    (0, 0), (-1, -1), colors.HexColor('#fffbeb')),
-        ('BOX',           (0, 0), (-1, -1), 0.8, colors.HexColor('#fcd34d')),
+        ('LINEABOVE',     (0, 0), (-1, 0),  1.2, colors.HexColor('#f59e0b')),
+        ('LINEBELOW',     (0, -1), (-1, -1), 0.4, colors.HexColor('#fcd34d')),
         ('LEFTPADDING',   (0, 0), (-1, -1), 12),
         ('RIGHTPADDING',  (0, 0), (-1, -1), 12),
-        ('TOPPADDING',    (0, 0), (-1, -1), 8),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+        ('TOPPADDING',    (0, 0), (-1, -1), 7),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 7),
     ]))
     story.append(vigencia_tbl)
-    # Párrafo 6 — Cierre
+
+    # Cierre
     story.append(Paragraph(
-        'Sin más por el momento, quedamos a sus órdenes para cualquier aclaración.',
+        'Sin más por el momento, quedamos a sus órdenes para cualquier aclaración o '
+        'verificación que resulte pertinente.',
         s_cierre,
     ))
-    story.append(Spacer(1, 0.3 * cm))
+    story.append(Spacer(1, 0.6 * cm))
 
     # ══════════════════════════════════════════════════════════════════════
-    # SELLO DE VALIDACIÓN
+    # BLOQUE DE FIRMA — centrado, doble línea para cargo y nombre
     # ══════════════════════════════════════════════════════════════════════
-    stamp_tbl = Table([[
-        Paragraph('✔', S('chk', fontSize=24, fontName='Helvetica-Bold',
-                          textColor=GREEN_OK, alignment=TA_CENTER)),
-        [
-            Paragraph('SIN ADEUDOS AL CORTE', s_stamp_ok),
-            Paragraph(f'Período: {period_label_full(cutoff_period)}', s_stamp_sub),
-        ],
-    ]], colWidths=[1.6 * cm, content_w - 1.6 * cm])
-    stamp_tbl.setStyle(TableStyle([
-        ('BACKGROUND',    (0, 0), (-1, -1), GREEN_BG),
-        ('BOX',           (0, 0), (-1, -1), 1.2, GREEN_BRD),
-        ('LEFTPADDING',   (0, 0), (-1, -1), 12),
-        ('RIGHTPADDING',  (0, 0), (-1, -1), 12),
-        ('TOPPADDING',    (0, 0), (-1, -1), 10),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
-        ('VALIGN',        (0, 0), (-1, -1), 'MIDDLE'),
-    ]))
-    story.append(KeepTogether(stamp_tbl))
-    story.append(Spacer(1, 0.5 * cm))
+    SIG_W = 8.5 * cm
+    SIG_SPACE = (content_w - SIG_W) / 2
 
-    # ══════════════════════════════════════════════════════════════════════
-    # FIRMA
-    # ══════════════════════════════════════════════════════════════════════
-    SIG_W = 7.0 * cm
     sig_inner = Table([
-        [HRFlowable(width=SIG_W, thickness=1, color=INK)],
-        [Paragraph(f'{admin_label}', s_sig_label)],
-        [Paragraph(f'{tenant.name}', s_sig_label)],
+        [Spacer(1, 1.4 * cm)],
+        [HRFlowable(width=SIG_W, thickness=1, color=TEAL)],
+        [Paragraph(admin_label, s_sig_title)],
+        [Paragraph(tenant.name, s_sig_label)],
     ], colWidths=[SIG_W])
     sig_inner.setStyle(TableStyle([
         ('ALIGN',        (0, 0), (-1, -1), 'CENTER'),
-        ('TOPPADDING',   (0, 0), (-1, -1), 3),
-        ('BOTTOMPADDING',(0, 0), (-1, -1), 3),
+        ('TOPPADDING',   (0, 0), (-1, -1), 2),
+        ('BOTTOMPADDING',(0, 0), (-1, -1), 2),
         ('LEFTPADDING',  (0, 0), (-1, -1), 0),
         ('RIGHTPADDING', (0, 0), (-1, -1), 0),
     ]))
-    sig_tbl = Table([[Spacer(1, 1), sig_inner]], colWidths=[content_w - SIG_W, SIG_W])
+    sig_tbl = Table(
+        [[Spacer(1, 1), sig_inner, Spacer(1, 1)]],
+        colWidths=[SIG_SPACE, SIG_W, SIG_SPACE],
+    )
     sig_tbl.setStyle(TableStyle([
         ('VALIGN',       (0, 0), (-1, -1), 'BOTTOM'),
         ('LEFTPADDING',  (0, 0), (-1, -1), 0),
@@ -8742,16 +8728,16 @@ def _generate_carta_no_adeudo_pdf(tenant, unit, cutoff_period, print_date):
         ('BOTTOMPADDING',(0, 0), (-1, -1), 0),
     ]))
     story.append(sig_tbl)
-    story.append(Spacer(1, 0.3 * cm))
+    story.append(Spacer(1, 0.4 * cm))
 
     # ══════════════════════════════════════════════════════════════════════
     # PIE DE PÁGINA
     # ══════════════════════════════════════════════════════════════════════
-    story.append(HRFlowable(width='100%', thickness=0.5, color=SAND_BRD, spaceAfter=5))
+    story.append(HRFlowable(width='100%', thickness=0.5, color=TEAL, spaceAfter=4))
     story.append(Paragraph(
-        f'Folio: {folio} &nbsp;·&nbsp; Fecha de emisión: {date_label(print_date)} &nbsp;·&nbsp; '
-        f'Documento generado por el sistema de administración Homly &nbsp;·&nbsp; '
-        f'Vigencia: 30 días naturales a partir de la fecha de expedición.',
+        f'Folio: {folio} &nbsp;·&nbsp; Emitido el {date_label(print_date)} '
+        f'&nbsp;·&nbsp; Vigencia 30 días naturales &nbsp;·&nbsp; '
+        f'Generado por sistema Homly — administración condominial.',
         s_footer,
     ))
 
