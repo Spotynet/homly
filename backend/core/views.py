@@ -8459,8 +8459,8 @@ def _generate_carta_no_adeudo_pdf(tenant, unit, cutoff_period, print_date):
 
     # ── Datos ─────────────────────────────────────────────────────────────
     page_w, page_h = A4
-    margin_h = 2.0 * cm
-    margin_v = 1.8 * cm
+    margin_h = 1.8 * cm
+    margin_v = 1.2 * cm
     content_w = page_w - 2 * margin_h
 
     owner_name  = f'{unit.owner_first_name} {unit.owner_last_name}'.strip() or 'Propietario'
@@ -8538,25 +8538,25 @@ def _generate_carta_no_adeudo_pdf(tenant, unit, cutoff_period, print_date):
                      textColor=INK_LIGHT, alignment=TA_CENTER, leading=12, spaceAfter=2)
     s_hdr_addr   = S('hdr_addr',   fontSize=8,  fontName='Helvetica',
                      textColor=INK_LIGHT, alignment=TA_CENTER, leading=12, spaceAfter=0)
-    s_doc_title  = S('doc_title',  fontSize=16, fontName='Helvetica-Bold',
-                     textColor=TEAL_DARK, alignment=TA_CENTER, leading=20, spaceBefore=4, spaceAfter=4)
-    s_doc_sub    = S('doc_sub',    fontSize=10, fontName='Helvetica',
-                     textColor=INK_LIGHT, alignment=TA_CENTER, leading=14, spaceAfter=2)
+    s_doc_title  = S('doc_title',  fontSize=15, fontName='Helvetica-Bold',
+                     textColor=TEAL_DARK, alignment=TA_CENTER, leading=18, spaceBefore=2, spaceAfter=2)
+    s_doc_sub    = S('doc_sub',    fontSize=9.5, fontName='Helvetica',
+                     textColor=INK_LIGHT, alignment=TA_CENTER, leading=13, spaceAfter=2)
     s_asunto     = S('asunto',     fontSize=9,  fontName='Helvetica-Bold',
-                     textColor=INK_MED, alignment=TA_LEFT, leading=13, spaceAfter=0)
+                     textColor=INK_MED, alignment=TA_LEFT, leading=12, spaceAfter=0)
     s_folio_r    = S('folio_r',    fontSize=8,  fontName='Helvetica',
                      textColor=INK_LIGHT, alignment=TA_RIGHT, leading=12, spaceAfter=0)
-    s_body       = S('body',       fontSize=10.5, fontName='Helvetica',
-                     textColor=INK, alignment=TA_JUSTIFY, leading=18, spaceBefore=10, spaceAfter=10)
-    s_body_open  = S('body_open',  fontSize=10.5, fontName='Helvetica',
-                     textColor=INK, alignment=TA_LEFT, leading=18, spaceBefore=6, spaceAfter=10)
-    s_bullet     = S('bullet',     fontSize=10.5, fontName='Helvetica',
-                     textColor=INK, alignment=TA_LEFT, leading=18, spaceBefore=4, spaceAfter=4,
+    s_body       = S('body',       fontSize=10, fontName='Helvetica',
+                     textColor=INK, alignment=TA_JUSTIFY, leading=16, spaceBefore=7, spaceAfter=7)
+    s_body_open  = S('body_open',  fontSize=10, fontName='Helvetica',
+                     textColor=INK, alignment=TA_LEFT, leading=16, spaceBefore=4, spaceAfter=7)
+    s_bullet     = S('bullet',     fontSize=10, fontName='Helvetica',
+                     textColor=INK, alignment=TA_LEFT, leading=16, spaceBefore=2, spaceAfter=2,
                      leftIndent=20, bulletIndent=6)
-    s_vigencia   = S('vigencia',   fontSize=9.5, fontName='Helvetica-Oblique',
-                     textColor=INK_MED, alignment=TA_JUSTIFY, leading=16, spaceBefore=8, spaceAfter=8)
-    s_cierre     = S('cierre',     fontSize=10.5, fontName='Helvetica',
-                     textColor=INK, alignment=TA_LEFT, leading=18, spaceBefore=6, spaceAfter=6)
+    s_vigencia   = S('vigencia',   fontSize=9, fontName='Helvetica-Oblique',
+                     textColor=INK_MED, alignment=TA_JUSTIFY, leading=14, spaceBefore=4, spaceAfter=4)
+    s_cierre     = S('cierre',     fontSize=10, fontName='Helvetica',
+                     textColor=INK, alignment=TA_LEFT, leading=16, spaceBefore=4, spaceAfter=4)
     s_cell_lbl   = S('cl',         fontSize=8,  fontName='Helvetica',     textColor=INK_LIGHT, leading=12)
     s_cell_val   = S('cv',         fontSize=10, fontName='Helvetica-Bold', textColor=INK,       leading=14)
     s_stamp_ok   = S('stamp_ok',   fontSize=11, fontName='Helvetica-Bold', textColor=GREEN_OK,  alignment=TA_CENTER, leading=15)
@@ -8597,9 +8597,9 @@ def _generate_carta_no_adeudo_pdf(tenant, unit, cutoff_period, print_date):
         for el in hdr_text_col:
             story.append(el)
 
-    story.append(Spacer(1, 0.25 * cm))
-    story.append(HRFlowable(width='100%', thickness=2.5, color=TEAL, spaceAfter=4))
-    story.append(HRFlowable(width='100%', thickness=0.5, color=TEAL, spaceAfter=10))
+    story.append(Spacer(1, 0.15 * cm))
+    story.append(HRFlowable(width='100%', thickness=2.5, color=TEAL, spaceAfter=3))
+    story.append(HRFlowable(width='100%', thickness=0.5, color=TEAL, spaceAfter=6))
 
     # ── Título del documento ──────────────────────────────────────────────
     story.append(Paragraph('CARTA DE NO ADEUDO', s_doc_title))
@@ -8607,7 +8607,7 @@ def _generate_carta_no_adeudo_pdf(tenant, unit, cutoff_period, print_date):
         f'Constancia de No Adeudo &nbsp;·&nbsp; Corte al período de <b>{period_label_full(cutoff_period)}</b>',
         s_doc_sub,
     ))
-    story.append(HRFlowable(width='50%', thickness=0.8, color=SAND_BRD, hAlign='CENTER', spaceAfter=14))
+    story.append(HRFlowable(width='50%', thickness=0.8, color=SAND_BRD, hAlign='CENTER', spaceAfter=8))
 
     # ── Fecha y folio ─────────────────────────────────────────────────────
     meta_tbl = Table([[
@@ -8622,49 +8622,16 @@ def _generate_carta_no_adeudo_pdf(tenant, unit, cutoff_period, print_date):
         ('BOTTOMPADDING',(0, 0), (-1, -1), 0),
     ]))
     story.append(meta_tbl)
-    story.append(Spacer(1, 0.3 * cm))
-
-    # ── Tabla de datos de la unidad ───────────────────────────────────────
-    def data_row(label, value):
-        return [Paragraph(label, s_cell_lbl), Paragraph(str(value), s_cell_val)]
-
-    col_lbl_w = content_w * 0.38
-    col_val_w = content_w * 0.62
-    tbl_rows  = [data_row('UNIDAD / NÚMERO', f'{unit_label}  ({unit_code})')]
-    tbl_rows.append(data_row('PROPIETARIO / TITULAR', owner_name.upper()))
-    if unit.owner_email:
-        tbl_rows.append(data_row('CORREO ELECTRÓNICO', unit.owner_email))
-    if unit.owner_phone:
-        tbl_rows.append(data_row('TELÉFONO', unit.owner_phone))
-    if unit.occupancy == 'rentado' and unit.tenant_first_name:
-        inquilino = f'{unit.tenant_first_name} {unit.tenant_last_name}'.strip()
-        tbl_rows.append(data_row('INQUILINO / OCUPANTE', inquilino.upper()))
-
-    data_table = Table(tbl_rows, colWidths=[col_lbl_w, col_val_w])
-    data_table.setStyle(TableStyle([
-        ('BACKGROUND',    (0, 0), (-1, -1), SAND),
-        ('ROWBACKGROUNDS',(0, 0), (-1, -1), [SAND, WHITE]),
-        ('BOX',           (0, 0), (-1, -1), 0.8, SAND_BRD),
-        ('LINEBELOW',     (0, 0), (-1, -2), 0.4, SAND_BRD),
-        ('LEFTPADDING',   (0, 0), (-1, -1), 10),
-        ('RIGHTPADDING',  (0, 0), (-1, -1), 10),
-        ('TOPPADDING',    (0, 0), (-1, -1), 7),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 7),
-        ('VALIGN',        (0, 0), (-1, -1), 'MIDDLE'),
-    ]))
-    story.append(data_table)
-    story.append(Spacer(1, 0.5 * cm))
+    story.append(Spacer(1, 0.2 * cm))
 
     # ══════════════════════════════════════════════════════════════════════
     # CUERPO DE LA CARTA
     # ══════════════════════════════════════════════════════════════════════
 
-    # Datos de ubicación del condominio para el cuerpo
     addr_body = condominio_address.upper() if condominio_address else tenant_name
     rfc_body  = f', con RFC <b>{rfc}</b>' if rfc else ''
 
     story.append(Paragraph('A QUIEN CORRESPONDA:', s_body_open))
-    story.append(Spacer(1, 0.15 * cm))
 
     # Párrafo 1 — Presentación
     p1 = (
@@ -8700,8 +8667,6 @@ def _generate_carta_no_adeudo_pdf(tenant, unit, cutoff_period, print_date):
     for b in bullets:
         story.append(Paragraph(f'• &nbsp; {b}', s_bullet))
 
-    story.append(Spacer(1, 0.2 * cm))
-
     # Párrafo 4 — Solicitud y fines
     story.append(Paragraph(
         'Se extiende la presente constancia a solicitud del interesado, para los fines '
@@ -8727,14 +8692,12 @@ def _generate_carta_no_adeudo_pdf(tenant, unit, cutoff_period, print_date):
         ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
     ]))
     story.append(vigencia_tbl)
-    story.append(Spacer(1, 0.3 * cm))
-
     # Párrafo 6 — Cierre
     story.append(Paragraph(
         'Sin más por el momento, quedamos a sus órdenes para cualquier aclaración.',
         s_cierre,
     ))
-    story.append(Spacer(1, 0.6 * cm))
+    story.append(Spacer(1, 0.3 * cm))
 
     # ══════════════════════════════════════════════════════════════════════
     # SELLO DE VALIDACIÓN
@@ -8757,7 +8720,7 @@ def _generate_carta_no_adeudo_pdf(tenant, unit, cutoff_period, print_date):
         ('VALIGN',        (0, 0), (-1, -1), 'MIDDLE'),
     ]))
     story.append(KeepTogether(stamp_tbl))
-    story.append(Spacer(1, 1.0 * cm))
+    story.append(Spacer(1, 0.5 * cm))
 
     # ══════════════════════════════════════════════════════════════════════
     # FIRMA
@@ -8784,7 +8747,7 @@ def _generate_carta_no_adeudo_pdf(tenant, unit, cutoff_period, print_date):
         ('BOTTOMPADDING',(0, 0), (-1, -1), 0),
     ]))
     story.append(sig_tbl)
-    story.append(Spacer(1, 0.6 * cm))
+    story.append(Spacer(1, 0.3 * cm))
 
     # ══════════════════════════════════════════════════════════════════════
     # PIE DE PÁGINA
