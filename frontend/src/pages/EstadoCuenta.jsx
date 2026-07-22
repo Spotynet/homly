@@ -155,11 +155,8 @@ export default function EstadoCuenta() {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-    } catch (err) {
-      const msg = err?.response?.data
-        ? await err.response.data.text?.().then(t => { try { return JSON.parse(t).detail; } catch { return null; } })
-        : null;
-      toast.error(msg || 'No se pudo generar la Carta de No Adeudo.');
+    } catch {
+      toast.error('No se pudo generar la Carta de No Adeudo.');
     } finally {
       setDownloadingCarta(false);
     }

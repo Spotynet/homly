@@ -8381,19 +8381,19 @@ class CartaNoAdeudoView(APIView):
 
         # ── Calcular saldo al corte ───────────────────────────────────
         start_period = tenant.operation_start_date or _today_period()
-        rows = _compute_statement(tenant, unit_id, start_period, cutoff)
+        rows, total_charges, total_paid, balance, prev_debt_adeudo, active_plan = \
+            _compute_statement(tenant, str(unit_id), start_period, cutoff)
 
-        total_charge = sum(float(r.get('charge', 0)) for r in rows)
-        total_paid   = sum(float(r.get('paid',   0)) for r in rows)
-        prev_debt    = float(unit.previous_debt or 0)
-        credit_bal   = float(unit.credit_balance or 0)
+        prev_debt  = float(unit.previous_debt or 0)
+        credit_bal = float(unit.credit_balance or 0)
+        if active_plan:
+            adj_balance = balance - credit_bal
+        else:
+            adj_balance = balance + prev_debt - float(prev_debt_adeudo) - credit_bal
 
-        # saldo_acum del último período = balance neto
-        balance = float(rows[-1].get('saldo_acum', 0)) if rows else (prev_debt + total_charge - total_paid - credit_bal)
-
-        if balance > 0.005:
+        if adj_balance > 0.005:
             return Response(
-                {'detail': 'La unidad presenta adeudos al corte indicado. No se puede emitir la carta.'},
+                {'detail': f'La unidad presenta adeudos (${adj_balance:,.2f}) al corte indicado. No se puede emitir la carta.'},
                 status=400,
             )
 
