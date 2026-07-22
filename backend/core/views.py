@@ -8410,17 +8410,20 @@ class CartaNoAdeudoView(APIView):
         return response
 
 
+
 def _generate_carta_no_adeudo_pdf(tenant, unit, cutoff_period, print_date):
     """
     Genera la Carta de No Adeudo como bytes PDF usando ReportLab.
+    Redacción formal legal basada en el estándar de cartas de no adeudo condominales.
     """
-    import io
+    import io, base64
     try:
         from reportlab.lib.pagesizes import A4
         from reportlab.lib import colors
         from reportlab.lib.units import cm
         from reportlab.platypus import (
-            SimpleDocTemplate, Paragraph, Spacer, HRFlowable, Table, TableStyle,
+            SimpleDocTemplate, Paragraph, Spacer, HRFlowable,
+            Table, TableStyle, Image as RLImage, KeepTogether,
         )
         from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
         from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT, TA_JUSTIFY
@@ -8430,7 +8433,7 @@ def _generate_carta_no_adeudo_pdf(tenant, unit, cutoff_period, print_date):
     MONTHS_ES = ['', 'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
                  'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
 
-    def period_label(p):
+    def period_label_full(p):
         try:
             y, m = p.split('-')
             return f'{MONTHS_ES[int(m)].capitalize()} {y}'
@@ -8440,19 +8443,31 @@ def _generate_carta_no_adeudo_pdf(tenant, unit, cutoff_period, print_date):
     def date_label(d):
         return f'{d.day} de {MONTHS_ES[d.month]} de {d.year}'
 
-    # ── Colores ───────────────────────────────────────────────────────
+    # ── Colores ───────────────────────────────────────────────────────────
     TEAL      = colors.HexColor('#0d7c6e')
     TEAL_DARK = colors.HexColor('#0a5f55')
+    TEAL_BG   = colors.HexColor('#e8f4f2')
     INK       = colors.HexColor('#1a1a2e')
+    INK_MED   = colors.HexColor('#374151')
     INK_LIGHT = colors.HexColor('#64748b')
-    SAND      = colors.HexColor('#f8f6f1')
-    SAND_BRD  = colors.HexColor('#d4cfc5')
+    SAND      = colors.HexColor('#f9f7f3')
+    SAND_BRD  = colors.HexColor('#d6d0c4')
     WHITE     = colors.white
+    GREEN_OK  = colors.HexColor('#166534')
+    GREEN_BG  = colors.HexColor('#dcfce7')
+    GREEN_BRD = colors.HexColor('#86efac')
 
-    # ── Datos ─────────────────────────────────────────────────────────
-    owner_name = f'{unit.owner_first_name} {unit.owner_last_name}'.strip() or 'Propietario'
-    unit_label = f'{unit.unit_name} ({unit.unit_id_code})'
-    tenant_name = tenant.name
+    # ── Datos ─────────────────────────────────────────────────────────────
+    page_w, page_h = A4
+    margin_h = 2.0 * cm
+    margin_v = 1.8 * cm
+    content_w = page_w - 2 * margin_h
+
+    owner_name  = f'{unit.owner_first_name} {unit.owner_last_name}'.strip() or 'Propietario'
+    unit_label  = unit.unit_name or unit.unit_id_code
+    unit_code   = unit.unit_id_code
+    tenant_name = (tenant.razon_social or tenant.name).upper()
+    rfc         = tenant.rfc or ''
     admin_type_labels = {
         'mesa_directiva': 'Mesa Directiva',
         'administrador':  'Administrador Externo',
@@ -8460,187 +8475,327 @@ def _generate_carta_no_adeudo_pdf(tenant, unit, cutoff_period, print_date):
     }
     admin_label = admin_type_labels.get(tenant.admin_type, 'Administración')
 
-    # Dirección del condominio
-    addr_parts = [
-        tenant.addr_calle,
-        tenant.addr_num_externo,
-        tenant.addr_colonia,
-        tenant.addr_ciudad,
-        tenant.addr_codigo_postal,
-        tenant.state,
-        tenant.country,
+    # Dirección: prioridad física > fiscal
+    addr_fields_fisc = [
+        tenant.info_calle, tenant.info_num_externo, tenant.info_colonia,
+        tenant.info_ciudad, tenant.state,
+        f'C.P. {tenant.info_codigo_postal}' if tenant.info_codigo_postal else '',
     ]
-    condominio_address = ', '.join(p for p in addr_parts if p)
+    addr_fields_phys = [
+        tenant.addr_calle, tenant.addr_num_externo, tenant.addr_colonia,
+        tenant.addr_ciudad, tenant.state,
+        f'C.P. {tenant.addr_codigo_postal}' if tenant.addr_codigo_postal else '',
+    ]
+    addr_parts = [p.strip() for p in addr_fields_fisc if (p or '').strip()]
+    if not addr_parts:
+        addr_parts = [p.strip() for p in addr_fields_phys if (p or '').strip()]
+    condominio_address = ', '.join(addr_parts)
 
-    # RFC / Razón social si existe
-    razon_social = tenant.razon_social or ''
-    rfc          = tenant.rfc or ''
+    folio = f'CNA-{print_date.strftime("%Y%m%d")}-{unit_code.replace("/", "-")}'
 
-    # ── Documento ─────────────────────────────────────────────────────
+    # ── Logo ──────────────────────────────────────────────────────────────
+    logo_image = None
+    # Intentar logo_file primero, luego base64
+    try:
+        if tenant.logo_file and hasattr(tenant.logo_file, 'path'):
+            logo_image = RLImage(tenant.logo_file.path, width=2.4 * cm, height=2.4 * cm)
+            logo_image.hAlign = 'CENTER'
+    except Exception:
+        logo_image = None
+
+    if logo_image is None:
+        logo_b64 = (getattr(tenant, 'logo', '') or '').strip()
+        if logo_b64:
+            try:
+                if ',' in logo_b64:
+                    logo_b64 = logo_b64.split(',', 1)[1]
+                logo_data = base64.b64decode(logo_b64)
+                img_buf = io.BytesIO(logo_data)
+                logo_image = RLImage(img_buf, width=2.4 * cm, height=2.4 * cm)
+                logo_image.hAlign = 'CENTER'
+            except Exception:
+                logo_image = None
+
+    # ── Documento ─────────────────────────────────────────────────────────
     buffer = io.BytesIO()
-    page_w, page_h = A4
-    margin = 2.2 * cm
-
     doc = SimpleDocTemplate(
         buffer, pagesize=A4,
-        leftMargin=margin, rightMargin=margin,
-        topMargin=2 * cm, bottomMargin=2 * cm,
-        title=f'Carta de No Adeudo – {unit_label}',
-        author=tenant_name,
+        leftMargin=margin_h, rightMargin=margin_h,
+        topMargin=margin_v, bottomMargin=margin_v,
+        title=f'Carta de No Adeudo – {unit_label} ({unit_code})',
+        author=tenant.name,
+        subject='Constancia de No Adeudo',
     )
 
     styles = getSampleStyleSheet()
 
-    # Estilos personalizados
-    def style(name, **kw):
+    def S(name, **kw):
         return ParagraphStyle(name, parent=styles['Normal'], **kw)
 
-    s_title      = style('title',    fontSize=18, textColor=TEAL_DARK,     fontName='Helvetica-Bold',
-                         alignment=TA_CENTER, spaceAfter=4)
-    s_subtitle   = style('subtitle', fontSize=10, textColor=INK_LIGHT,     fontName='Helvetica',
-                         alignment=TA_CENTER, spaceAfter=2)
-    s_folio      = style('folio',    fontSize=8,  textColor=INK_LIGHT,     fontName='Helvetica',
-                         alignment=TA_RIGHT)
-    s_section    = style('section',  fontSize=9,  textColor=TEAL,          fontName='Helvetica-Bold',
-                         spaceBefore=14, spaceAfter=4, textTransform='uppercase')
-    s_body       = style('body',     fontSize=10, textColor=INK,           fontName='Helvetica',
-                         leading=16, alignment=TA_JUSTIFY, spaceAfter=10)
-    s_body_bold  = style('body_b',   fontSize=10, textColor=INK,           fontName='Helvetica-Bold',
-                         leading=16, alignment=TA_JUSTIFY, spaceAfter=10)
-    s_small      = style('small',    fontSize=8,  textColor=INK_LIGHT,     fontName='Helvetica',
-                         leading=11, alignment=TA_CENTER)
-    s_cell_label = style('cl',       fontSize=8,  textColor=INK_LIGHT,     fontName='Helvetica')
-    s_cell_value = style('cv',       fontSize=10, textColor=INK,           fontName='Helvetica-Bold')
-    s_stamp      = style('stamp',    fontSize=22, textColor=TEAL,          fontName='Helvetica-Bold',
-                         alignment=TA_CENTER)
-    s_stamp_sub  = style('stamps',   fontSize=9,  textColor=TEAL,          fontName='Helvetica',
-                         alignment=TA_CENTER)
+    s_hdr_name   = S('hdr_name',   fontSize=13, fontName='Helvetica-Bold',
+                     textColor=TEAL_DARK, alignment=TA_CENTER, leading=17, spaceAfter=2)
+    s_hdr_rfc    = S('hdr_rfc',    fontSize=8,  fontName='Helvetica',
+                     textColor=INK_LIGHT, alignment=TA_CENTER, leading=12, spaceAfter=2)
+    s_hdr_addr   = S('hdr_addr',   fontSize=8,  fontName='Helvetica',
+                     textColor=INK_LIGHT, alignment=TA_CENTER, leading=12, spaceAfter=0)
+    s_doc_title  = S('doc_title',  fontSize=16, fontName='Helvetica-Bold',
+                     textColor=TEAL_DARK, alignment=TA_CENTER, leading=20, spaceBefore=4, spaceAfter=4)
+    s_doc_sub    = S('doc_sub',    fontSize=10, fontName='Helvetica',
+                     textColor=INK_LIGHT, alignment=TA_CENTER, leading=14, spaceAfter=2)
+    s_asunto     = S('asunto',     fontSize=9,  fontName='Helvetica-Bold',
+                     textColor=INK_MED, alignment=TA_LEFT, leading=13, spaceAfter=0)
+    s_folio_r    = S('folio_r',    fontSize=8,  fontName='Helvetica',
+                     textColor=INK_LIGHT, alignment=TA_RIGHT, leading=12, spaceAfter=0)
+    s_body       = S('body',       fontSize=10.5, fontName='Helvetica',
+                     textColor=INK, alignment=TA_JUSTIFY, leading=18, spaceBefore=10, spaceAfter=10)
+    s_body_open  = S('body_open',  fontSize=10.5, fontName='Helvetica',
+                     textColor=INK, alignment=TA_LEFT, leading=18, spaceBefore=6, spaceAfter=10)
+    s_bullet     = S('bullet',     fontSize=10.5, fontName='Helvetica',
+                     textColor=INK, alignment=TA_LEFT, leading=18, spaceBefore=4, spaceAfter=4,
+                     leftIndent=20, bulletIndent=6)
+    s_vigencia   = S('vigencia',   fontSize=9.5, fontName='Helvetica-Oblique',
+                     textColor=INK_MED, alignment=TA_JUSTIFY, leading=16, spaceBefore=8, spaceAfter=8)
+    s_cierre     = S('cierre',     fontSize=10.5, fontName='Helvetica',
+                     textColor=INK, alignment=TA_LEFT, leading=18, spaceBefore=6, spaceAfter=6)
+    s_cell_lbl   = S('cl',         fontSize=8,  fontName='Helvetica',     textColor=INK_LIGHT, leading=12)
+    s_cell_val   = S('cv',         fontSize=10, fontName='Helvetica-Bold', textColor=INK,       leading=14)
+    s_stamp_ok   = S('stamp_ok',   fontSize=11, fontName='Helvetica-Bold', textColor=GREEN_OK,  alignment=TA_CENTER, leading=15)
+    s_stamp_sub  = S('stamp_sub',  fontSize=8,  fontName='Helvetica',      textColor=GREEN_OK,  alignment=TA_CENTER, leading=12)
+    s_sig_label  = S('sig_lbl',    fontSize=9,  fontName='Helvetica',      textColor=INK_LIGHT, alignment=TA_CENTER, leading=13)
+    s_footer     = S('footer',     fontSize=7.5, fontName='Helvetica',     textColor=INK_LIGHT, alignment=TA_CENTER, leading=11)
+    s_date_right = S('date_r',     fontSize=9.5, fontName='Helvetica',     textColor=INK_MED,   alignment=TA_RIGHT,  leading=14, spaceAfter=14)
 
     story = []
 
-    # ── Encabezado ────────────────────────────────────────────────────
-    story.append(Paragraph(tenant_name.upper(), s_title))
-    if razon_social and razon_social != tenant_name:
-        story.append(Paragraph(razon_social, s_subtitle))
-    if rfc:
-        story.append(Paragraph(f'RFC: {rfc}', s_subtitle))
-    if condominio_address:
-        story.append(Paragraph(condominio_address, s_subtitle))
-    story.append(Spacer(1, 0.3 * cm))
-    story.append(HRFlowable(width='100%', thickness=2, color=TEAL, spaceAfter=6))
-    story.append(Paragraph(f'Folio: CNAPC-{print_date.strftime("%Y%m%d")}-{unit.unit_id_code.replace("/","-")}', s_folio))
-    story.append(Spacer(1, 0.5 * cm))
-
-    # ── Título central ────────────────────────────────────────────────
-    story.append(Paragraph('CARTA DE NO ADEUDO', style('main_title',
-        fontSize=20, textColor=TEAL_DARK, fontName='Helvetica-Bold',
-        alignment=TA_CENTER, spaceAfter=2)))
-    story.append(Paragraph(
-        f'Con corte al período de <b>{period_label(cutoff_period)}</b>',
-        style('cut', fontSize=11, textColor=INK_LIGHT, fontName='Helvetica',
-              alignment=TA_CENTER, spaceAfter=12)))
-    story.append(HRFlowable(width='60%', thickness=1, color=SAND_BRD,
-                             hAlign='CENTER', spaceAfter=16))
-
-    # ── Tabla de datos de la unidad ───────────────────────────────────
-    def row(label, value):
-        return [Paragraph(label, s_cell_label), Paragraph(str(value), s_cell_value)]
-
-    table_data = [
-        row('Unidad / Número', unit_label),
-        row('Propietario', owner_name),
+    # ══════════════════════════════════════════════════════════════════════
+    # MEMBRETE
+    # ══════════════════════════════════════════════════════════════════════
+    hdr_text_col = [
+        Paragraph(tenant_name, s_hdr_name),
     ]
-    if unit.owner_email:
-        table_data.append(row('Correo electrónico', unit.owner_email))
-    if unit.owner_phone:
-        table_data.append(row('Teléfono', unit.owner_phone))
-    if unit.occupancy == 'rentado' and unit.tenant_first_name:
-        table_data.append(row('Ocupante / Inquilino',
-                               f'{unit.tenant_first_name} {unit.tenant_last_name}'.strip()))
+    if rfc:
+        hdr_text_col.append(Paragraph(f'RFC: {rfc}', s_hdr_rfc))
+    if condominio_address:
+        hdr_text_col.append(Paragraph(condominio_address, s_hdr_addr))
 
-    col_w = (page_w - 2 * margin) / 2
-    data_table = Table(table_data, colWidths=[col_w * 0.42, col_w * 1.58])
+    if logo_image:
+        LOGO_COL = 3.0 * cm
+        TEXT_COL = content_w - LOGO_COL
+        hdr_tbl = Table(
+            [[logo_image, hdr_text_col]],
+            colWidths=[LOGO_COL, TEXT_COL],
+        )
+        hdr_tbl.setStyle(TableStyle([
+            ('VALIGN',       (0, 0), (-1, -1), 'MIDDLE'),
+            ('LEFTPADDING',  (0, 0), (-1, -1), 0),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+            ('TOPPADDING',   (0, 0), (-1, -1), 0),
+            ('BOTTOMPADDING',(0, 0), (-1, -1), 0),
+        ]))
+        story.append(hdr_tbl)
+    else:
+        for el in hdr_text_col:
+            story.append(el)
+
+    story.append(Spacer(1, 0.25 * cm))
+    story.append(HRFlowable(width='100%', thickness=2.5, color=TEAL, spaceAfter=4))
+    story.append(HRFlowable(width='100%', thickness=0.5, color=TEAL, spaceAfter=10))
+
+    # ── Título del documento ──────────────────────────────────────────────
+    story.append(Paragraph('CARTA DE NO ADEUDO', s_doc_title))
+    story.append(Paragraph(
+        f'Constancia de No Adeudo &nbsp;·&nbsp; Corte al período de <b>{period_label_full(cutoff_period)}</b>',
+        s_doc_sub,
+    ))
+    story.append(HRFlowable(width='50%', thickness=0.8, color=SAND_BRD, hAlign='CENTER', spaceAfter=14))
+
+    # ── Fecha y folio ─────────────────────────────────────────────────────
+    meta_tbl = Table([[
+        Paragraph(f'<b>Asunto:</b> Constancia de No Adeudo', s_asunto),
+        Paragraph(f'Folio: <b>{folio}</b><br/>Fecha: {date_label(print_date)}', s_folio_r),
+    ]], colWidths=[content_w * 0.55, content_w * 0.45])
+    meta_tbl.setStyle(TableStyle([
+        ('VALIGN',       (0, 0), (-1, -1), 'TOP'),
+        ('LEFTPADDING',  (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+        ('TOPPADDING',   (0, 0), (-1, -1), 0),
+        ('BOTTOMPADDING',(0, 0), (-1, -1), 0),
+    ]))
+    story.append(meta_tbl)
+    story.append(Spacer(1, 0.3 * cm))
+
+    # ── Tabla de datos de la unidad ───────────────────────────────────────
+    def data_row(label, value):
+        return [Paragraph(label, s_cell_lbl), Paragraph(str(value), s_cell_val)]
+
+    col_lbl_w = content_w * 0.38
+    col_val_w = content_w * 0.62
+    tbl_rows  = [data_row('UNIDAD / NÚMERO', f'{unit_label}  ({unit_code})')]
+    tbl_rows.append(data_row('PROPIETARIO / TITULAR', owner_name.upper()))
+    if unit.owner_email:
+        tbl_rows.append(data_row('CORREO ELECTRÓNICO', unit.owner_email))
+    if unit.owner_phone:
+        tbl_rows.append(data_row('TELÉFONO', unit.owner_phone))
+    if unit.occupancy == 'rentado' and unit.tenant_first_name:
+        inquilino = f'{unit.tenant_first_name} {unit.tenant_last_name}'.strip()
+        tbl_rows.append(data_row('INQUILINO / OCUPANTE', inquilino.upper()))
+
+    data_table = Table(tbl_rows, colWidths=[col_lbl_w, col_val_w])
     data_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, -1), SAND),
-        ('ROWBACKGROUNDS', (0, 0), (-1, -1), [SAND, WHITE]),
-        ('GRID', (0, 0), (-1, -1), 0.5, SAND_BRD),
-        ('TOPPADDING',    (0, 0), (-1, -1), 6),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ('BACKGROUND',    (0, 0), (-1, -1), SAND),
+        ('ROWBACKGROUNDS',(0, 0), (-1, -1), [SAND, WHITE]),
+        ('BOX',           (0, 0), (-1, -1), 0.8, SAND_BRD),
+        ('LINEBELOW',     (0, 0), (-1, -2), 0.4, SAND_BRD),
         ('LEFTPADDING',   (0, 0), (-1, -1), 10),
         ('RIGHTPADDING',  (0, 0), (-1, -1), 10),
-        ('ROUNDEDCORNERS', [4]),
-    ]))
-    story.append(data_table)
-    story.append(Spacer(1, 0.6 * cm))
-
-    # ── Cuerpo de la carta ────────────────────────────────────────────
-    story.append(Paragraph('A QUIEN CORRESPONDA:', s_body_bold))
-
-    body_text = (
-        f'Por medio de la presente, la {admin_label} del condominio <b>{tenant_name}</b> '
-        f'hace constar que el propietario <b>{owner_name}</b>, titular de la '
-        f'<b>{unit_label}</b>, se encuentra <b>al corriente en el cumplimiento de sus '
-        f'obligaciones de pago</b> de cuotas de mantenimiento y demás contribuciones '
-        f'establecidas en el reglamento interno del condominio, no registrando '
-        f'<b>ningún adeudo pendiente</b> con corte al período de '
-        f'<b>{period_label(cutoff_period)}</b>.'
-    )
-    story.append(Paragraph(body_text, s_body))
-
-    body2 = (
-        'La presente constancia se expide a petición del interesado para los fines '
-        'legales y administrativos que estime convenientes, siendo válida únicamente '
-        f'a la fecha de su emisión: <b>{date_label(print_date)}</b>.'
-    )
-    story.append(Paragraph(body2, s_body))
-
-    story.append(Spacer(1, 0.4 * cm))
-
-    # ── Sello / certificación ─────────────────────────────────────────
-    stamp_table = Table([[
-        Paragraph('✓', s_stamp),
-        Paragraph('SIN ADEUDOS AL CORTE', s_stamp_sub),
-    ]], colWidths=[1.5 * cm, page_w - 2 * margin - 1.5 * cm])
-    stamp_table.setStyle(TableStyle([
-        ('BACKGROUND',    (0, 0), (-1, -1), colors.HexColor('#e6f4f2')),
-        ('LINEABOVE',     (0, 0), (-1, 0), 2, TEAL),
-        ('LINEBELOW',     (0, 0), (-1, 0), 2, TEAL),
-        ('TOPPADDING',    (0, 0), (-1, -1), 10),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
-        ('LEFTPADDING',   (0, 0), (-1, -1), 14),
+        ('TOPPADDING',    (0, 0), (-1, -1), 7),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 7),
         ('VALIGN',        (0, 0), (-1, -1), 'MIDDLE'),
     ]))
-    story.append(stamp_table)
-    story.append(Spacer(1, 1.2 * cm))
+    story.append(data_table)
+    story.append(Spacer(1, 0.5 * cm))
 
-    # ── Firma ─────────────────────────────────────────────────────────
-    sig_line_w = 6 * cm
-    sig_table = Table([[
-        '',
-        Table([
-            [HRFlowable(width=sig_line_w, thickness=1, color=INK)],
-            [Paragraph(f'{admin_label}<br/>{tenant_name}',
-                       style('sig', fontSize=9, textColor=INK_LIGHT,
-                             fontName='Helvetica', alignment=TA_CENTER))],
-        ], colWidths=[sig_line_w]),
-    ]], colWidths=[page_w - 2 * margin - sig_line_w - 1 * cm, sig_line_w + 1 * cm])
-    sig_table.setStyle(TableStyle([
-        ('VALIGN', (0, 0), (-1, -1), 'BOTTOM'),
-        ('TOPPADDING', (0, 0), (-1, -1), 0),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
-    ]))
-    story.append(sig_table)
-    story.append(Spacer(1, 0.8 * cm))
+    # ══════════════════════════════════════════════════════════════════════
+    # CUERPO DE LA CARTA
+    # ══════════════════════════════════════════════════════════════════════
 
-    # ── Pie de página ─────────────────────────────────────────────────
-    story.append(HRFlowable(width='100%', thickness=0.5, color=SAND_BRD, spaceAfter=6))
+    # Datos de ubicación del condominio para el cuerpo
+    addr_body = condominio_address.upper() if condominio_address else tenant_name
+    rfc_body  = f', con RFC <b>{rfc}</b>' if rfc else ''
+
+    story.append(Paragraph('A QUIEN CORRESPONDA:', s_body_open))
+    story.append(Spacer(1, 0.15 * cm))
+
+    # Párrafo 1 — Presentación
+    p1 = (
+        f'Por medio de la presente, la Administración a través de su <b>{admin_label}</b> '
+        f'del Condominio <b>{tenant_name}</b>{rfc_body}'
+        + (f', ubicado en <b>{addr_body}</b>' if addr_body else '')
+        + f', hace constar que:'
+    )
+    story.append(Paragraph(p1, s_body))
+
+    # Párrafo 2 — Constancia del propietario
+    p2 = (
+        f'La C. / C. <b>{owner_name.upper()}</b>, en su carácter de <b>propietario(a)</b> '
+        f'del inmueble identificado como: <b>{unit_label} ({unit_code})</b>, '
+        f'se encuentra <b>AL CORRIENTE</b> en el pago de todas sus obligaciones financieras '
+        f'con este condominio a la fecha de emisión de la presente, cubriendo en su totalidad '
+        f'el período con corte a <b>{period_label_full(cutoff_period)}</b>.'
+    )
+    story.append(Paragraph(p2, s_body))
+
+    # Párrafo 3 — Alcance de la constancia
     story.append(Paragraph(
-        f'Fecha de impresión: {date_label(print_date)}  ·  '
-        f'Documento generado por el sistema de administración Homly  ·  '
-        f'Folio: CNAPC-{print_date.strftime("%Y%m%d")}-{unit.unit_id_code.replace("/","-")}',
-        s_small,
+        'La presente constancia ampara que <b>no existe ningún adeudo pendiente</b> '
+        'por concepto de:',
+        s_body,
+    ))
+
+    bullets = [
+        'Cuotas de mantenimiento ordinarias.',
+        'Cuotas extraordinarias.',
+        'Multas, penalizaciones o intereses moratorios.',
+    ]
+    for b in bullets:
+        story.append(Paragraph(f'• &nbsp; {b}', s_bullet))
+
+    story.append(Spacer(1, 0.2 * cm))
+
+    # Párrafo 4 — Solicitud y fines
+    story.append(Paragraph(
+        'Se extiende la presente constancia a solicitud del interesado, para los fines '
+        '<b>legales o administrativos</b> que a éste convengan.',
+        s_body,
+    ))
+
+    # Párrafo 5 — Vigencia (en recuadro destacado)
+    vigencia_tbl = Table([[
+        Paragraph(
+            '⚠&nbsp; <b>Vigencia:</b> Esta carta tiene una vigencia de <b>30 días naturales</b> '
+            'a partir de su fecha de expedición. Pierde su validez si se genera una nueva cuota '
+            'o cargo dentro de este período y no es cubierto oportunamente.',
+            s_vigencia,
+        )
+    ]], colWidths=[content_w])
+    vigencia_tbl.setStyle(TableStyle([
+        ('BACKGROUND',    (0, 0), (-1, -1), colors.HexColor('#fffbeb')),
+        ('BOX',           (0, 0), (-1, -1), 0.8, colors.HexColor('#fcd34d')),
+        ('LEFTPADDING',   (0, 0), (-1, -1), 12),
+        ('RIGHTPADDING',  (0, 0), (-1, -1), 12),
+        ('TOPPADDING',    (0, 0), (-1, -1), 8),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+    ]))
+    story.append(vigencia_tbl)
+    story.append(Spacer(1, 0.3 * cm))
+
+    # Párrafo 6 — Cierre
+    story.append(Paragraph(
+        'Sin más por el momento, quedamos a sus órdenes para cualquier aclaración.',
+        s_cierre,
+    ))
+    story.append(Spacer(1, 0.6 * cm))
+
+    # ══════════════════════════════════════════════════════════════════════
+    # SELLO DE VALIDACIÓN
+    # ══════════════════════════════════════════════════════════════════════
+    stamp_tbl = Table([[
+        Paragraph('✔', S('chk', fontSize=24, fontName='Helvetica-Bold',
+                          textColor=GREEN_OK, alignment=TA_CENTER)),
+        [
+            Paragraph('SIN ADEUDOS AL CORTE', s_stamp_ok),
+            Paragraph(f'Período: {period_label_full(cutoff_period)}', s_stamp_sub),
+        ],
+    ]], colWidths=[1.6 * cm, content_w - 1.6 * cm])
+    stamp_tbl.setStyle(TableStyle([
+        ('BACKGROUND',    (0, 0), (-1, -1), GREEN_BG),
+        ('BOX',           (0, 0), (-1, -1), 1.2, GREEN_BRD),
+        ('LEFTPADDING',   (0, 0), (-1, -1), 12),
+        ('RIGHTPADDING',  (0, 0), (-1, -1), 12),
+        ('TOPPADDING',    (0, 0), (-1, -1), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
+        ('VALIGN',        (0, 0), (-1, -1), 'MIDDLE'),
+    ]))
+    story.append(KeepTogether(stamp_tbl))
+    story.append(Spacer(1, 1.0 * cm))
+
+    # ══════════════════════════════════════════════════════════════════════
+    # FIRMA
+    # ══════════════════════════════════════════════════════════════════════
+    SIG_W = 7.0 * cm
+    sig_inner = Table([
+        [HRFlowable(width=SIG_W, thickness=1, color=INK)],
+        [Paragraph(f'{admin_label}', s_sig_label)],
+        [Paragraph(f'{tenant.name}', s_sig_label)],
+    ], colWidths=[SIG_W])
+    sig_inner.setStyle(TableStyle([
+        ('ALIGN',        (0, 0), (-1, -1), 'CENTER'),
+        ('TOPPADDING',   (0, 0), (-1, -1), 3),
+        ('BOTTOMPADDING',(0, 0), (-1, -1), 3),
+        ('LEFTPADDING',  (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+    ]))
+    sig_tbl = Table([[Spacer(1, 1), sig_inner]], colWidths=[content_w - SIG_W, SIG_W])
+    sig_tbl.setStyle(TableStyle([
+        ('VALIGN',       (0, 0), (-1, -1), 'BOTTOM'),
+        ('LEFTPADDING',  (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+        ('TOPPADDING',   (0, 0), (-1, -1), 0),
+        ('BOTTOMPADDING',(0, 0), (-1, -1), 0),
+    ]))
+    story.append(sig_tbl)
+    story.append(Spacer(1, 0.6 * cm))
+
+    # ══════════════════════════════════════════════════════════════════════
+    # PIE DE PÁGINA
+    # ══════════════════════════════════════════════════════════════════════
+    story.append(HRFlowable(width='100%', thickness=0.5, color=SAND_BRD, spaceAfter=5))
+    story.append(Paragraph(
+        f'Folio: {folio} &nbsp;·&nbsp; Fecha de emisión: {date_label(print_date)} &nbsp;·&nbsp; '
+        f'Documento generado por el sistema de administración Homly &nbsp;·&nbsp; '
+        f'Vigencia: 30 días naturales a partir de la fecha de expedición.',
+        s_footer,
     ))
 
     doc.build(story)
     return buffer.getvalue()
-
