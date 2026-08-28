@@ -465,11 +465,11 @@ export default function PlanPagos() {
     }
   };
 
-  // Add a new option
-  const addOption = () => {
+  // Add a new option (installment plan or settlement / quita)
+  const addOption = (planType = 'installment') => {
     if (options.length >= 3) return;
     const last = options[options.length - 1];
-    setOptions([...options, defaultOption(last?.startPeriod)]);
+    setOptions([...options, defaultOption(last?.startPeriod, planType)]);
     setActiveOptIdx(options.length);
   };
 
@@ -1072,18 +1072,24 @@ export default function PlanPagos() {
       ? (activeOptIdx === idx ? '#d97706' : '#fde68a')
       : (activeOptIdx === idx ? 'var(--teal-400)' : 'var(--sand-200)');
 
+    const typeBtnBase = {
+      width: '100%', minWidth: 0, boxSizing: 'border-box',
+      padding: '10px 12px', borderRadius: 8, cursor: 'pointer',
+      textAlign: 'left', whiteSpace: 'normal', lineHeight: 1.35,
+    };
+
     return (
-      <div style={{ background: '#fff', border: `2px solid ${borderColor}`, borderRadius: 10, overflow: 'hidden' }}>
+      <div style={{ background: '#fff', border: `2px solid ${borderColor}`, borderRadius: 10 }}>
         {/* Option tab header */}
         <div
-          style={{ background: headerBg, padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', borderBottom: '1px solid var(--sand-100)' }}
+          style={{ background: headerBg, padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', borderBottom: '1px solid var(--sand-100)', gap: 8 }}
           onClick={() => setActiveOptIdx(activeOptIdx === idx ? -1 : idx)}
         >
-          <span style={{ fontWeight: 700, fontSize: 13, color: headerColor, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontWeight: 700, fontSize: 13, color: headerColor, display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
             {isSettlement && <BadgePercent size={14} />}
             {headerTitle}
           </span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
             {options.length > 1 && (
               <button
                 onClick={e => { e.stopPropagation(); removeOption(idx); }}
@@ -1097,39 +1103,47 @@ export default function PlanPagos() {
           </div>
         </div>
 
+        {/* Type selector — always visible so quita is not clipped inside the accordion */}
+        <div style={{ padding: '12px 14px 10px', borderBottom: '1px solid var(--sand-100)', background: '#fff' }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-600)', marginBottom: 8 }}>Tipo de opción</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <button
+              type="button"
+              style={{
+                ...typeBtnBase,
+                border: `2px solid ${!isSettlement ? 'var(--teal-500)' : 'var(--sand-200)'}`,
+                background: !isSettlement ? 'var(--teal-50)' : '#fff',
+                color: !isSettlement ? 'var(--teal-700)' : 'var(--ink-600)',
+                fontWeight: !isSettlement ? 700 : 400,
+              }}
+              onClick={() => updateOption(idx, 'planType', 'installment')}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+                <Calendar size={14} /> Plan de cuotas
+              </div>
+              <div style={{ fontSize: 11, opacity: 0.75, marginTop: 3 }}>El adeudo se paga en varias exhibiciones</div>
+            </button>
+            <button
+              type="button"
+              style={{
+                ...typeBtnBase,
+                border: `2px solid ${isSettlement ? '#d97706' : 'var(--sand-200)'}`,
+                background: isSettlement ? '#fffbeb' : '#fff',
+                color: isSettlement ? '#92400e' : 'var(--ink-600)',
+                fontWeight: isSettlement ? 700 : 400,
+              }}
+              onClick={() => updateOption(idx, 'planType', 'settlement')}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+                <BadgePercent size={14} /> Liquidación con quita
+              </div>
+              <div style={{ fontSize: 11, opacity: 0.75, marginTop: 3 }}>Pago único con descuento autorizado</div>
+            </button>
+          </div>
+        </div>
+
         {activeOptIdx === idx && (
           <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {/* Type selector */}
-            <div>
-              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-600)', marginBottom: 7 }}>Tipo de opción</div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                <button
-                  type="button"
-                  style={freqBtnStyle(!isSettlement)}
-                  onClick={() => updateOption(idx, 'planType', 'installment')}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                    <Calendar size={13} /> Plan de cuotas
-                  </div>
-                  <div style={{ fontSize: 10, opacity: 0.7, marginTop: 2 }}>El adeudo se paga en varias exhibiciones</div>
-                </button>
-                <button
-                  type="button"
-                  style={{
-                    ...freqBtnStyle(isSettlement),
-                    border: `2px solid ${isSettlement ? '#d97706' : 'var(--sand-200)'}`,
-                    background: isSettlement ? '#fffbeb' : '#fff',
-                    color: isSettlement ? '#92400e' : 'var(--ink-600)',
-                  }}
-                  onClick={() => updateOption(idx, 'planType', 'settlement')}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                    <BadgePercent size={13} /> Liquidación con quita
-                  </div>
-                  <div style={{ fontSize: 10, opacity: 0.7, marginTop: 2 }}>Pago único con descuento autorizado</div>
-                </button>
-              </div>
-            </div>
 
             {isSettlement ? (
               <>
@@ -1142,7 +1156,7 @@ export default function PlanPagos() {
                   histórico de la unidad queda en ceros. Las cuotas de mantenimiento posteriores al corte se cobran aparte.
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>
                   <div>
                     <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-600)', marginBottom: 6 }}>
                       Descuento autorizado
@@ -1202,7 +1216,7 @@ export default function PlanPagos() {
                   </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 8 }}>
                   <div style={{ background: 'var(--coral-50)', border: '1px solid var(--coral-200)', borderRadius: 8, padding: '10px 12px', textAlign: 'center' }}>
                     <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--coral-600)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4 }}>Adeudo original</div>
                     <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--coral-600)' }}>{fmt(totalDebt)}</div>
@@ -1443,18 +1457,37 @@ export default function PlanPagos() {
         </div>
 
         {/* ── PROPOSAL CONFIG ── */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: -4 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink-700)' }}>
-            Opciones de la Propuesta ({options.length}/3)
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginBottom: -4 }}>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink-700)' }}>
+              Opciones de la Propuesta ({options.length}/3)
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--ink-500)', marginTop: 3 }}>
+              Combina planes a plazos y liquidación con quita. El propietario elige una.
+            </div>
           </div>
           {options.length < 3 && (
-            <button
-              className="btn btn-outline btn-sm"
-              onClick={addOption}
-              style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12 }}
-            >
-              <Plus size={13} /> Agregar opción
-            </button>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                className="btn btn-outline btn-sm"
+                onClick={() => addOption('installment')}
+                style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12 }}
+              >
+                <Plus size={13} /> Plan de cuotas
+              </button>
+              <button
+                type="button"
+                className="btn btn-outline btn-sm"
+                onClick={() => addOption('settlement')}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 5, fontSize: 12,
+                  borderColor: '#d97706', color: '#92400e', background: '#fffbeb',
+                }}
+              >
+                <BadgePercent size={13} /> Liquidación con quita
+              </button>
+            </div>
           )}
         </div>
 
