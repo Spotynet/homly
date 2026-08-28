@@ -2163,6 +2163,45 @@ class BankStatementViewSet(viewsets.ModelViewSet):
 #  PAYMENT PLANS
 # ═══════════════════════════════════════════════════════════
 
+def _covering_plans_by_unit(tenant_id):
+    """Map unit_id → plan that currently covers historical debt.
+
+    An accepted plan takes priority over a completed one. Completed plans keep
+    absorbing the original debt so it does not reappear after the last
+    installment (or the settlement payment) is paid.
+    """
+    result = {}
+    qs = PaymentPlan.objects.filter(
+        tenant_id=tenant_id,
+        status__in=['accepted', 'completed'],
+    )
+    for p in qs.filter(status='completed'):
+        result[str(p.unit_id)] = p
+    for p in qs.filter(status='accepted'):
+        result[str(p.unit_id)] = p
+    return result
+
+
+def _compute_settlement_figures(total_debt, discount_type, discount_value):
+    """Return (discount_amount, settlement_amount) as Decimals rounded to 2 places."""
+    total = Decimal(str(total_debt or 0)).quantize(Decimal('0.01'))
+    raw = Decimal(str(discount_value or 0))
+    if raw < 0:
+        raw = Decimal('0')
+    dtype = (discount_type or 'percent').strip().lower()
+    if dtype == 'amount':
+        discount = min(raw, total)
+    else:
+        pct = min(max(raw, Decimal('0')), Decimal('100'))
+        discount = (total * pct / Decimal('100'))
+    discount = discount.quantize(Decimal('0.01'))
+    settlement = (total - discount).quantize(Decimal('0.01'))
+    if settlement < 0:
+        settlement = Decimal('0')
+        discount = total
+    return discount, settlement
+
+
 def _update_plan_installments(plan):
     """
     Re-check FieldPayment records for each installment of a PaymentPlan
@@ -2173,6 +2212,12 @@ def _update_plan_installments(plan):
     plan_key = plan.field_key
     installments = list(plan.installments or [])
     changed = False
+
+    if not installments and plan.status == 'accepted' and getattr(plan, 'plan_type', '') == 'settlement':
+        # Full write-off (100% quita): nothing to collect.
+        plan.status = 'completed'
+        plan.save(update_fields=['status'])
+        return
 
     for inst in installments:
         period_key = inst.get('period_key', '')
@@ -2186,7 +2231,9 @@ def _update_plan_installments(plan):
         inst_total = Decimal(str(inst.get('debt_part', 0)))
         new_paid_amount = float(total_paid)
 
-        if total_paid >= inst_total and inst_total > 0:
+        if inst_total <= 0:
+            new_status = 'paid'
+        elif total_paid >= inst_total:
             new_status = 'paid'
         elif total_paid > 0:
             new_status = 'partial'
@@ -2408,18 +2455,41 @@ def _generate_payment_plan_pdf(plan, tenant):
     story.append(Spacer(1, 0.3 * cm))
 
     # ── Totals summary ─────────────────────────────────────────────────────
-    interest_str = f'{float(plan.interest_rate):.1f}%' if plan.apply_interest else 'Sin interés'
-    totals_data = [
-        [Paragraph('Total Adeudo', st_lbl),
-         Paragraph('Cuota Regular / Período', st_lbl),
-         Paragraph('Interés', st_lbl),
-         Paragraph('TOTAL CON PLAN', st_lbl)],
-        [Paragraph(f'${float(plan.total_adeudo):,.2f}', st_val),
-         Paragraph(f'${float(plan.maintenance_fee):,.2f}', st_val),
-         Paragraph(interest_str, st_val),
-         Paragraph(f'${float(plan.total_with_interest):,.2f}',
-                   ParagraphStyle('TV2', fontSize=10, fontName='Helvetica-Bold', textColor=COL_TEAL))],
-    ]
+    is_settlement = getattr(plan, 'plan_type', '') == 'settlement'
+    if is_settlement:
+        quita_amt = float(getattr(plan, 'discount_amount', 0) or 0)
+        settle_amt = float(getattr(plan, 'settlement_amount', 0) or plan.total_with_interest or 0)
+        dtype = getattr(plan, 'discount_type', '') or ''
+        dval = float(getattr(plan, 'discount_value', 0) or 0)
+        if dtype == 'percent':
+            quita_lbl = f'Quita autorizada ({dval:.1f}%)'
+        else:
+            quita_lbl = 'Quita autorizada'
+        totals_data = [
+            [Paragraph('Adeudo original', st_lbl),
+             Paragraph(quita_lbl, st_lbl),
+             Paragraph('Importe a liquidar', st_lbl),
+             Paragraph('TOTAL A PAGAR', st_lbl)],
+            [Paragraph(f'${float(plan.total_adeudo):,.2f}', st_val),
+             Paragraph(f'-${quita_amt:,.2f}',
+                       ParagraphStyle('TVQ', fontSize=10, fontName='Helvetica-Bold', textColor=COL_GREEN)),
+             Paragraph(f'${settle_amt:,.2f}', st_val),
+             Paragraph(f'${settle_amt:,.2f}',
+                       ParagraphStyle('TV2', fontSize=10, fontName='Helvetica-Bold', textColor=COL_TEAL))],
+        ]
+    else:
+        interest_str = f'{float(plan.interest_rate):.1f}%' if plan.apply_interest else 'Sin interés'
+        totals_data = [
+            [Paragraph('Total Adeudo', st_lbl),
+             Paragraph('Cuota Regular / Período', st_lbl),
+             Paragraph('Interés', st_lbl),
+             Paragraph('TOTAL CON PLAN', st_lbl)],
+            [Paragraph(f'${float(plan.total_adeudo):,.2f}', st_val),
+             Paragraph(f'${float(plan.maintenance_fee):,.2f}', st_val),
+             Paragraph(interest_str, st_val),
+             Paragraph(f'${float(plan.total_with_interest):,.2f}',
+                       ParagraphStyle('TV2', fontSize=10, fontName='Helvetica-Bold', textColor=COL_TEAL))],
+        ]
     totals_tbl = Table(totals_data, colWidths=[W / 4, W / 4, W / 4, W / 4])
     totals_tbl.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), COL_TEAL_LT),
@@ -2430,6 +2500,16 @@ def _generate_payment_plan_pdf(plan, tenant):
         ('BOX', (0, 0), (-1, -1), 0.5, COL_TEAL),
     ]))
     story.append(totals_tbl)
+    if is_settlement:
+        story.append(Spacer(1, 0.2 * cm))
+        story.append(Paragraph(
+            'Esta opción es una <b>liquidación completa con quita autorizada</b>: '
+            f'el adeudo original de ${float(plan.total_adeudo):,.2f} se salda pagando '
+            f'${settle_amt:,.2f}. La diferencia (${quita_amt:,.2f}) es un descuento '
+            'autorizado por la administración y, al cubrir el importe a liquidar, '
+            'el adeudo histórico de la unidad queda en ceros (las cuotas posteriores al corte siguen vigentes).',
+            st_note,
+        ))
     story.append(Spacer(1, 0.4 * cm))
 
     # ── Installments table ─────────────────────────────────────────────────
@@ -2611,6 +2691,8 @@ class PaymentPlanViewSet(viewsets.ModelViewSet):
         # Lista explícita de emails seleccionados por el usuario (propietario / copropietario).
         # Si viene vacía o no se manda, se usan los de la unidad por defecto.
         emails_param  = request.data.get('emails', None)
+        # Período de corte del adeudo que esta propuesta liquida / reestructura.
+        debt_cutoff_period = (request.data.get('debt_cutoff_period') or '').strip()
 
         if not unit_id:
             return Response({'detail': 'unit_id es requerido.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -2645,23 +2727,62 @@ class PaymentPlanViewSet(viewsets.ModelViewSet):
         created_plans = []
 
         for idx, opt in enumerate(options_raw[:3], start=1):
-            frequency    = int(opt.get('frequency', 1))
-            num_payments = int(opt.get('num_payments', 1))
-            apply_int    = bool(opt.get('apply_interest', False))
-            int_rate     = _D(str(opt.get('interest_rate', 0)))
+            plan_type    = (opt.get('plan_type') or 'installment').strip().lower()
+            if plan_type not in ('installment', 'settlement'):
+                plan_type = 'installment'
             start_period = opt.get('start_period', '')
             opt_notes    = opt.get('notes', '') or shared_notes
+            total_debt   = _D(str(total_adeudo))
+            maint        = _D(str(maintenance))
 
-            # Build installments schedule
-            total_debt = _D(str(total_adeudo))
-            if apply_int and int_rate > 0:
-                total_with_int = total_debt * (1 + int_rate / 100)
+            discount_type_val = ''
+            discount_value_val = _D('0')
+            discount_amount_val = _D('0')
+            settlement_amount_val = _D('0')
+
+            if plan_type == 'settlement':
+                discount_type_val = (opt.get('discount_type') or 'percent').strip().lower()
+                if discount_type_val not in ('percent', 'amount'):
+                    discount_type_val = 'percent'
+                try:
+                    discount_value_val = _D(str(opt.get('discount_value', 0) or 0))
+                except Exception:
+                    return Response(
+                        {'detail': f'Opción {idx}: descuento autorizado inválido.'},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                discount_amount_val, settlement_amount_val = _compute_settlement_figures(
+                    total_debt, discount_type_val, discount_value_val,
+                )
+                if discount_amount_val > total_debt:
+                    return Response(
+                        {'detail': f'Opción {idx}: la quita no puede ser mayor al adeudo.'},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                frequency    = 1
+                num_payments = 1
+                apply_int    = False
+                int_rate     = _D('0')
+                total_with_int = settlement_amount_val
+                debt_per_inst  = settlement_amount_val
             else:
-                total_with_int = total_debt
-                int_rate = _D('0')
+                frequency    = int(opt.get('frequency', 1))
+                num_payments = int(opt.get('num_payments', 1))
+                apply_int    = bool(opt.get('apply_interest', False))
+                int_rate     = _D(str(opt.get('interest_rate', 0)))
+                if apply_int and int_rate > 0:
+                    total_with_int = total_debt * (1 + int_rate / 100)
+                else:
+                    total_with_int = total_debt
+                    int_rate = _D('0')
+                if num_payments < 1:
+                    return Response(
+                        {'detail': f'Opción {idx}: el número de pagos debe ser al menos 1.'},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                debt_per_inst = total_with_int / num_payments
+                settlement_amount_val = total_with_int
 
-            debt_per_inst     = total_with_int / num_payments
-            maint             = _D(str(maintenance))
             regular_per_period = maint * frequency
 
             installments = []
@@ -2685,8 +2806,10 @@ class PaymentPlanViewSet(viewsets.ModelViewSet):
             _cur_period = f'{_today.year:04d}-{_today.month:02d}'
             base_period = start_period if start_period else _cur_period
 
-            for n in range(1, num_payments + 1):
+            n_pay = max(1, int(num_payments))
+            for n in range(1, n_pay + 1):
                 period_key = base_period if n == 1 else _next_period(base_period, n - 1)
+                inst_status = 'paid' if (plan_type == 'settlement' and debt_per_inst <= 0) else 'pending'
                 installments.append({
                     'num':          n,
                     'period_key':   period_key,
@@ -2695,7 +2818,7 @@ class PaymentPlanViewSet(viewsets.ModelViewSet):
                     'regular_part': float(round(regular_per_period, 2)),
                     'total':        float(round(debt_per_inst + regular_per_period, 2)),
                     'paid_amount':  0.0,
-                    'status':       'pending',
+                    'status':       inst_status,
                     'paid_at':      None,
                 })
 
@@ -2705,7 +2828,7 @@ class PaymentPlanViewSet(viewsets.ModelViewSet):
                 total_adeudo     = total_debt,
                 maintenance_fee  = maint,
                 frequency        = frequency,
-                num_payments     = num_payments,
+                num_payments     = n_pay,
                 apply_interest   = apply_int,
                 interest_rate    = int_rate,
                 total_with_interest = total_with_int,
@@ -2720,6 +2843,12 @@ class PaymentPlanViewSet(viewsets.ModelViewSet):
                 start_period     = start_period,
                 proposal_group   = group_id,
                 option_number    = idx,
+                plan_type        = plan_type,
+                discount_type    = discount_type_val if plan_type == 'settlement' else '',
+                discount_value   = discount_value_val,
+                discount_amount  = discount_amount_val,
+                settlement_amount = settlement_amount_val,
+                debt_cutoff_period = debt_cutoff_period,
             )
             created_plans.append(plan)
 
@@ -2746,11 +2875,17 @@ class PaymentPlanViewSet(viewsets.ModelViewSet):
                 for p in created_plans:
                     options_for_email.append({
                         'option_number':    p.option_number,
+                        'plan_type':        p.plan_type,
                         'frequency_label':  freq_map.get(p.frequency, str(p.frequency)),
                         'num_payments':     p.num_payments,
                         'apply_interest':   p.apply_interest,
                         'interest_rate':    float(p.interest_rate),
                         'total_with_interest': float(p.total_with_interest),
+                        'total_adeudo':     float(p.total_adeudo),
+                        'discount_amount':  float(p.discount_amount or 0),
+                        'discount_type':    p.discount_type or '',
+                        'discount_value':   float(p.discount_value or 0),
+                        'settlement_amount': float(p.settlement_amount or 0),
                         'start_period':     p.start_period,
                         'installments':     p.installments or [],
                     })
@@ -2773,6 +2908,7 @@ class PaymentPlanViewSet(viewsets.ModelViewSet):
                         notes=shared_notes,
                         terms_conditions=terms_conditions,
                         num_options=len(created_plans),
+                        options_detail=options_for_email,
                     ),
                     daemon=True,
                 ).start()
@@ -2894,6 +3030,9 @@ class PaymentPlanViewSet(viewsets.ModelViewSet):
         plan.status = 'accepted'
         plan.accepted_by_name = name
         plan.accepted_at = timezone.now()
+        # 100% quita: nothing to collect, mark completed immediately.
+        if plan.plan_type == 'settlement' and Decimal(str(plan.settlement_amount or 0)) <= 0:
+            plan.status = 'completed'
         plan.save()
 
         # If this plan is part of a proposal group, cancel all sibling options
@@ -4015,15 +4154,28 @@ class DashboardView(APIView):
                     for amt in period_debt.values():
                         total_adeudo_recibido += Decimal(str(amt or 0))
 
+        # Cobros de plan de pagos / liquidación con quita (FieldPayment plan_*)
+        total_plan_recibido = FieldPayment.objects.filter(
+            payment__tenant_id=tenant_id,
+            payment__period=period,
+            field_key__startswith='plan_',
+        ).aggregate(total=Sum('received'))['total'] or Decimal('0')
+        total_adeudo_recibido += total_plan_recibido
+
+        # Quita autorizada aplicada en este período (liquidaciones aceptadas o completadas)
+        total_quita_aplicada = PaymentPlan.objects.filter(
+            tenant_id=tenant_id,
+            plan_type='settlement',
+            status__in=['accepted', 'completed'],
+            start_period=period,
+        ).aggregate(s=Sum('discount_amount'))['s'] or Decimal('0')
+
         # Deuda total = suma del adeudo real por unidad al corte del período
         # (misma lógica que ReporteAdeudosView para que coincida con el reporte)
         start_period = tenant.operation_start_date or '2024-01'
         deuda_total = Decimal('0')
-        # Pre-fetch planes activos una sola vez para evitar N+1 queries en _compute_statement
-        _unit_active_plans = {
-            str(_p.unit_id): _p
-            for _p in PaymentPlan.objects.filter(tenant_id=tenant_id, status='accepted')
-        }
+        # Pre-fetch planes que cubren deuda (aceptados o completados) una sola vez
+        _unit_active_plans = _covering_plans_by_unit(tenant_id)
         for unit in units:
             # Si una unidad falla en el cálculo, no debe tumbar todo el dashboard
             try:
@@ -4074,6 +4226,8 @@ class DashboardView(APIView):
             'total_adeudo_recibido': float(total_adeudo_recibido),
             'deuda_total': float(deuda_total),
             'total_ingresos': float(total_ingresos),
+            'total_quita_aplicada': float(total_quita_aplicada),
+            'total_plan_recibido': float(total_plan_recibido),
         }
         return Response(DashboardSerializer(data).data)
 
@@ -4236,8 +4390,13 @@ def _compute_receipt_email_data(payment, unit, tenant, extra_fields: list) -> di
         paid_amt = min(fp.received, debt) if debt > 0 else fp.received
         bal_amt  = max(Decimal('0'), debt - paid_amt)
         inst_label = inst.get('period_label') or _period_label_es(payment.period)
+        is_settlement = getattr(plan_obj, 'plan_type', '') == 'settlement'
         plan_rows.append({
-            'concept': f'Cuota Plan de Pago — {inst_label}',
+            'concept': (
+                f'Liquidación con quita — {inst_label}'
+                if is_settlement else
+                f'Cuota Plan de Pago — {inst_label}'
+            ),
             'charge': float(debt),
             'paid': float(paid_amt),
             'balance': float(bal_amt),
@@ -4246,7 +4405,7 @@ def _compute_receipt_email_data(payment, unit, tenant, extra_fields: list) -> di
         total_req_paid += paid_amt
         total_received += paid_amt
     if plan_rows:
-        rows.append({'is_section': True, 'concept': '📋 Plan de Pago de Adeudos'})
+        rows.append({'is_section': True, 'concept': '📋 Plan de Pago / Liquidación de Adeudos'})
         rows.extend(plan_rows)
 
     saldo = max(Decimal('0'), total_req_charges - total_req_paid)
@@ -4424,6 +4583,12 @@ def _compute_statement(tenant, unit_id, start_period, cutoff_period, _prefetched
         active_plan = PaymentPlan.objects.filter(
             tenant_id=tenant.id, unit_id=unit_id, status='accepted',
         ).first()
+        if not active_plan:
+            # Keep absorption after the plan is fully paid so settled debt
+            # does not reappear on the unit / tenant statements.
+            active_plan = PaymentPlan.objects.filter(
+                tenant_id=tenant.id, unit_id=unit_id, status='completed',
+            ).order_by('-accepted_at', '-created_at').first()
     else:
         active_plan = _prefetched_plan  # may be None (no plan for this unit)
     plan_installments_by_period = {}
@@ -4529,6 +4694,36 @@ def _compute_statement(tenant, unit_id, start_period, cutoff_period, _prefetched
 
         cargo_oblig = maint_charge + sum(Decimal(str(ef.default_amount or 0)) for ef in req_fields)
 
+        # ── Adeudo histórico absorbido por plan / liquidación con quita ──
+        # Periods up to debt_cutoff_period were included in the original debt
+        # snapshot. Their unpaid remainder is covered by the plan so it is not
+        # double-counted alongside the new installments / settlement charge.
+        _cutoff = (getattr(active_plan, 'debt_cutoff_period', '') or '') if active_plan else ''
+        _is_settlement = bool(active_plan and getattr(active_plan, 'plan_type', '') == 'settlement')
+        _absorbed = Decimal('0')
+        if active_plan and _cutoff and period <= _cutoff:
+            _pre_plan_cargo = cargo_oblig + total_cargo_opt
+            _pre_plan_abono = total_abono_req + total_abono_opt + total_received_neutral
+            _uncovered = _pre_plan_cargo - _pre_plan_abono
+            if _uncovered > Decimal('0'):
+                _absorbed = _uncovered
+                total_abono_req += _absorbed
+                field_detail.append({
+                    'id': f'plan_absorption_{active_plan.id}',
+                    'label': (
+                        'Cubierto por liquidación con quita'
+                        if _is_settlement else
+                        'Cubierto por plan de pagos'
+                    ),
+                    'charge': 0.0,
+                    'received': 0.0,
+                    'adelanto': 0.0,
+                    'abono': float(_absorbed),
+                    'required': False,
+                    'is_plan_absorption': True,
+                    'is_settlement_absorption': _is_settlement,
+                })
+
         # ── Cuota de plan de pagos activo para este período ──────────────
         plan_inst = plan_installments_by_period.get(period) if active_plan else None
         if plan_inst:
@@ -4541,21 +4736,26 @@ def _compute_statement(tenant, unit_id, start_period, cutoff_period, _prefetched
             _n_total = len(active_plan.installments or [])
             # Compute installment status dynamically from actual payment data
             # (the JSON field may be stale if _update_plan_installments wasn't called)
-            if _debt_part > 0 and _plan_rcvd >= _debt_part:
+            if _debt_part <= 0 or (_debt_part > 0 and _plan_rcvd >= _debt_part):
                 _inst_status = 'paid'
             elif _plan_rcvd > 0:
                 _inst_status = 'partial'
             else:
                 _inst_status = plan_inst.get('status', 'pending')  # fall back to JSON if no payment
+            if _is_settlement:
+                _inst_label = 'Liquidación con quita'
+            else:
+                _inst_label = f'Plan de Pagos — Cuota {_n_inst}/{_n_total}'
             field_detail.append({
                 'id': active_plan.field_key,
-                'label': f'Plan de Pagos — Cuota {_n_inst}/{_n_total}',
+                'label': _inst_label,
                 'charge': float(_debt_part),
                 'received': float(_plan_rcvd),
                 'adelanto': 0.0,
                 'abono': float(_plan_rcvd),
                 'required': True,
                 'is_plan_installment': True,
+                'is_settlement': _is_settlement,
                 'plan_inst': {
                     'num': _n_inst,
                     'n_total': _n_total,
@@ -4564,8 +4764,30 @@ def _compute_statement(tenant, unit_id, start_period, cutoff_period, _prefetched
                     'total': float(plan_inst.get('total', 0)),
                     'paid_amount': float(_plan_rcvd),  # always from real payment data
                     'status': _inst_status,             # always from real payment data
+                    'plan_type': getattr(active_plan, 'plan_type', 'installment') or 'installment',
                 },
             })
+            if _is_settlement:
+                _quita_amt = Decimal(str(getattr(active_plan, 'discount_amount', 0) or 0))
+                field_detail.append({
+                    'id': f'quita_{active_plan.id}',
+                    'label': 'Quita autorizada',
+                    'charge': 0.0,
+                    'received': 0.0,
+                    'adelanto': 0.0,
+                    'abono': 0.0,
+                    'required': False,
+                    'is_quita': True,
+                    'quita_amount': float(_quita_amt),
+                    'original_debt': float(active_plan.total_adeudo or 0),
+                    'settlement_amount': float(
+                        getattr(active_plan, 'settlement_amount', None)
+                        or active_plan.total_with_interest
+                        or 0
+                    ),
+                    'discount_type': getattr(active_plan, 'discount_type', '') or '',
+                    'discount_value': float(getattr(active_plan, 'discount_value', 0) or 0),
+                })
         # ─────────────────────────────────────────────────────────────────
 
         cargo_opt = total_cargo_opt
@@ -4619,6 +4841,11 @@ def _compute_statement(tenant, unit_id, start_period, cutoff_period, _prefetched
             eff_status = 'pendiente'
         else:
             eff_status = 'futuro'
+
+        # Historical periods fully covered by a plan / settlement are not pending.
+        if _absorbed > 0 and not plan_inst and (cargo_total - abono_balance) <= Decimal('0.005'):
+            if eff_status not in ('pagado', 'pagado_despues', 'exento'):
+                eff_status = 'liquidado'
 
         saldo_periodo = cargo_total - abono_balance   # El saldo solo usa pagos que afectan el balance
         saldo_acum += saldo_periodo
@@ -4763,11 +4990,8 @@ class EstadoCuentaView(APIView):
                                      'pagados': 0, 'parciales': 0, 'pendientes': 0, 'futuros': 0}
                 period_agg[p]['total_paid'] += amt
 
-            # Pre-fetch planes activos una sola vez para evitar N+1 queries en _compute_statement
-            _ec_unit_plans = {
-                str(_p.unit_id): _p
-                for _p in PaymentPlan.objects.filter(tenant_id=tenant_id, status='accepted')
-            }
+            # Pre-fetch planes que cubren deuda (aceptados o completados)
+            _ec_unit_plans = _covering_plans_by_unit(tenant_id)
             for unit in units:
                 rows, tc, tp, bal, pda, _unit_active_plan = _compute_statement(
                     tenant, str(unit.id), start_period, cutoff,
@@ -4797,7 +5021,7 @@ class EstadoCuentaView(APIView):
                     period_agg[p]['total_charge'] += row['charge']
                     period_agg[p]['total_paid'] += row['paid']  # abono_display
                     st = row.get('status', 'pendiente')
-                    if st in ('pagado', 'pagado_despues'):
+                    if st in ('pagado', 'pagado_despues', 'liquidado'):
                         period_agg[p]['pagados'] += 1
                     elif st == 'parcial':
                         period_agg[p]['parciales'] += 1
@@ -4994,21 +5218,28 @@ def _compute_report_data(tenant, period):
                 continue
             rec = Decimal(str((fp and fp.received) or 0))
             if rec > 0:
-                if fk not in ingresos_conceptos:
-                    cf = cf_map.get(fk)
-                    ingresos_conceptos[fk] = {'total': Decimal('0'), 'label': getattr(cf, 'label', fk) if cf else fk}
-                from decimal import ROUND_FLOOR
-                int_rec = rec.quantize(Decimal('1'), rounding=ROUND_FLOOR)
-                cents_rec = rec - int_rec
-                if cents_rec > Decimal('0.001'):
-                    ingresos_conceptos[fk]['total'] += int_rec
-                    ingresos_referenciados += cents_rec
+                if str(fk).startswith('plan_'):
+                    # Cobro de plan de pagos / liquidación con quita → recuperación de deuda
+                    ingreso_adeudo += rec
                 else:
-                    ingresos_conceptos[fk]['total'] += rec
+                    if fk not in ingresos_conceptos:
+                        cf = cf_map.get(fk)
+                        ingresos_conceptos[fk] = {'total': Decimal('0'), 'label': getattr(cf, 'label', fk) if cf else fk}
+                    from decimal import ROUND_FLOOR
+                    int_rec = rec.quantize(Decimal('1'), rounding=ROUND_FLOOR)
+                    cents_rec = rec - int_rec
+                    if cents_rec > Decimal('0.001'):
+                        ingresos_conceptos[fk]['total'] += int_rec
+                        ingresos_referenciados += cents_rec
+                    else:
+                        ingresos_conceptos[fk]['total'] += rec
             if fp and fp.adelanto_targets:
                 for amt in fp.adelanto_targets.values():
                     a2 = Decimal(str(amt or 0))
                     if a2 > 0:
+                        if str(fk).startswith('plan_'):
+                            ingreso_adeudo += a2
+                            continue
                         if fk not in ingresos_conceptos:
                             cf2 = cf_map.get(fk)
                             ingresos_conceptos[fk] = {'total': Decimal('0'), 'label': getattr(cf2, 'label', fk) if cf2 else fk}
@@ -5041,6 +5272,8 @@ def _compute_report_data(tenant, period):
                         ingresos_referenciados += cents_ar
                     else:
                         ingreso_mantenimiento += a_r
+                elif str(f_id).startswith('plan_'):
+                    ingreso_adeudo += a_r
                 else:
                     if f_id not in ingresos_conceptos:
                         cf_a = cf_map.get(f_id)
@@ -5142,11 +5375,8 @@ class ReporteAdeudosView(APIView):
         grand_total = Decimal('0')
         units_with_debt = 0
 
-        # Pre-fetch planes activos una sola vez para evitar N+1 queries en _compute_statement
-        _ra_unit_plans = {
-            str(_p.unit_id): _p
-            for _p in PaymentPlan.objects.filter(tenant_id=tenant_id, status='accepted')
-        }
+        # Pre-fetch planes que cubren deuda (aceptados o completados)
+        _ra_unit_plans = _covering_plans_by_unit(tenant_id)
 
         for unit in units:
             rows, tc, tp, bal, prev_debt_adeudo, _u_active_plan = _compute_statement(
@@ -5935,11 +6165,8 @@ class SendGeneralStatementEmailView(APIView):
         total_abono = 0.0
         total_deuda = 0.0
 
-        # Pre-fetch planes activos una sola vez para evitar N+1 queries en _compute_statement
-        _sge_unit_plans = {
-            str(_p.unit_id): _p
-            for _p in PaymentPlan.objects.filter(tenant_id=tenant_id, status='accepted')
-        }
+        # Pre-fetch planes que cubren deuda (aceptados o completados)
+        _sge_unit_plans = _covering_plans_by_unit(tenant_id)
 
         for unit in units:
             rows, tc, tp, bal, pda, _u_ap = _compute_statement(
@@ -6034,11 +6261,8 @@ class EstadoPorUnidadPDFView(APIView):
         total_deuda_all = Decimal('0')
         con_adeudo = 0
 
-        # Pre-fetch planes activos una sola vez para evitar N+1 queries en _compute_statement
-        _gsp_unit_plans = {
-            str(_p.unit_id): _p
-            for _p in PaymentPlan.objects.filter(tenant_id=tenant_id, status='accepted')
-        }
+        # Pre-fetch planes que cubren deuda (aceptados o completados)
+        _gsp_unit_plans = _covering_plans_by_unit(tenant_id)
 
         for unit in units:
             rows, tc, tp, bal, pda, _u_ap2 = _compute_statement(

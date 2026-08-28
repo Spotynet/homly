@@ -457,13 +457,14 @@ export default function MyUnit() {
   const ingAdicional   = ingConceptos;
   const adeudoRecibido = s.total_adeudo_recibido ?? 0;
   const deudaTotal     = s.deuda_total ?? 0;
+  const quitaAplicada  = s.total_quita_aplicada ?? 0;
   const balanceNeto    = totalIngresos - gastos;
 
   const pctCobVsCargos     = cargosFijos > 0 ? Math.round((cobranza / cargosFijos) * 100) : 0;
   const pctGastosVsIng     = totalIngresos > 0 ? Math.round((gastos / totalIngresos) * 100) : 0;
   const pctIngAdicional    = totalIngresos > 0 ? Math.round((ingAdicional / totalIngresos) * 100) : 0;
-  const pctDeudaRecuperada = (adeudoRecibido + deudaTotal) > 0
-    ? Math.round((adeudoRecibido / (adeudoRecibido + deudaTotal)) * 100)
+  const pctDeudaRecuperada = (adeudoRecibido + quitaAplicada + deudaTotal) > 0
+    ? Math.round(((adeudoRecibido + quitaAplicada) / (adeudoRecibido + quitaAplicada + deudaTotal)) * 100)
     : 0;
 
   const effColor = pctCobVsCargos >= 90 ? 'var(--teal-400)' : pctCobVsCargos >= 70 ? 'var(--amber-400)' : 'var(--coral-400)';
@@ -1357,7 +1358,7 @@ export default function MyUnit() {
           </div>
 
           {/* Recuperación de deuda */}
-          {deudaTotal > 0 && (
+          {(deudaTotal > 0 || adeudoRecibido > 0 || quitaAplicada > 0) && (
             <>
               <SubLabel>Recuperación de Deuda</SubLabel>
               <div className="card" style={{ marginBottom: 20 }}>
@@ -1370,12 +1371,19 @@ export default function MyUnit() {
                       </div>
                     </div>
                     <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink-800)', marginBottom: 8 }}>Cobrado al adeudo en el período</div>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink-800)', marginBottom: 8 }}>Recuperación de adeudo en el período</div>
                       <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
                         <div>
                           <div style={{ fontSize: 11, color: 'var(--ink-400)', marginBottom: 2 }}>Recibido en el período</div>
                           <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--amber-700)' }}>{fmtDec(adeudoRecibido)}</div>
                         </div>
+                        {quitaAplicada > 0 && (
+                          <div>
+                            <div style={{ fontSize: 11, color: 'var(--ink-400)', marginBottom: 2 }}>Quita autorizada</div>
+                            <div style={{ fontSize: 18, fontWeight: 800, color: '#047857' }}>{fmtDec(quitaAplicada)}</div>
+                            <div style={{ fontSize: 10, color: '#059669' }}>Descuento, no es ingreso en efectivo</div>
+                          </div>
+                        )}
                         <div>
                           <div style={{ fontSize: 11, color: 'var(--ink-400)', marginBottom: 2 }}>Adeudo al corte</div>
                           <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--coral-600)' }}>{fmtDec(deudaTotal)}</div>

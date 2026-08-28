@@ -83,6 +83,7 @@ export function statusClass(status) {
     case 'pagado': return 'status-pagado';
     case 'exento': return 'status-pagado';
     case 'pagado_despues': return 'status-pagado-tardio';
+    case 'liquidado': return 'status-pagado';
     case 'parcial': return 'status-parcial';
     default: return 'status-pendiente';
   }
@@ -93,6 +94,7 @@ export function statusLabel(status) {
     case 'pagado': return '✓ Pagado';
     case 'exento': return '🛡 Exento';
     case 'pagado_despues': return '✓ Pagado después';
+    case 'liquidado': return '⚖ Liquidado';
     case 'parcial': return '◐ Parcial';
     default: return '○ Pendiente';
   }

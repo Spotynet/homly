@@ -153,7 +153,9 @@ export default function PlanPagosPrintModal({ plan, unit, tc, onClose }) {
                 </div>
               </div>
               <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: 18, fontWeight: 900, color: '#1e3a5f', letterSpacing: '0.02em' }}>PLAN DE PAGO</div>
+                <div style={{ fontSize: 18, fontWeight: 900, color: '#1e3a5f', letterSpacing: '0.02em' }}>
+                  {plan.plan_type === 'settlement' ? 'LIQUIDACIÓN CON QUITA' : 'PLAN DE PAGO'}
+                </div>
                 <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
                   Estado: <strong style={{ color: plan.status === 'accepted' ? '#0d7c6e' : plan.status === 'cancelled' ? '#64748b' : '#d97706' }}>{statusLabel}</strong>
                 </div>
@@ -167,7 +169,7 @@ export default function PlanPagosPrintModal({ plan, unit, tc, onClose }) {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
               <InfoCell label="Unidad" value={`${unitCode}  ${unitName !== '—' ? unitName : ''}`} />
               <InfoCell label="Responsable" value={responsible} />
-              <InfoCell label="Frecuencia de pago" value={`${freqLabel} · ${plan.num_payments} cuotas`} />
+              <InfoCell label="Frecuencia de pago" value={plan.plan_type === 'settlement' ? 'Pago único · liquidación con quita' : `${freqLabel} · ${plan.num_payments} cuotas`} />
               <InfoCell label="Período inicial" value={plan.start_period ? periodLabel(plan.start_period) : '—'} />
               <InfoCell label="Creado por" value={`${plan.created_by_name || '—'}  ${plan.created_at ? '· ' + fmtDate(plan.created_at) : ''}`} />
               {plan.accepted_by_name && (
@@ -177,14 +179,33 @@ export default function PlanPagosPrintModal({ plan, unit, tc, onClose }) {
 
             {/* ── Resumen financiero ── */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 14 }}>
-              <SummaryCard label="Adeudo base" value={fmt(parseFloat(plan.total_adeudo || 0))} color="#e84040" />
-              <SummaryCard
-                label={plan.apply_interest ? `Total con interés (${plan.interest_rate}%)` : 'Total del plan'}
-                value={fmt(parseFloat(plan.total_with_interest || 0))}
-                color="#1e3a5f"
-              />
-              <SummaryCard label="Pagado hasta hoy" value={fmt(totalPaid)} color="#0d7c6e" />
+              {plan.plan_type === 'settlement' ? (
+                <>
+                  <SummaryCard label="Adeudo original" value={fmt(parseFloat(plan.total_adeudo || 0))} color="#e84040" />
+                  <SummaryCard label="Quita autorizada" value={`− ${fmt(parseFloat(plan.discount_amount || 0))}`} color="#047857" />
+                  <SummaryCard label="Importe a liquidar" value={fmt(parseFloat(plan.settlement_amount || plan.total_with_interest || 0))} color="#1e3a5f" />
+                </>
+              ) : (
+                <>
+                  <SummaryCard label="Adeudo base" value={fmt(parseFloat(plan.total_adeudo || 0))} color="#e84040" />
+                  <SummaryCard
+                    label={plan.apply_interest ? `Total con interés (${plan.interest_rate}%)` : 'Total del plan'}
+                    value={fmt(parseFloat(plan.total_with_interest || 0))}
+                    color="#1e3a5f"
+                  />
+                  <SummaryCard label="Pagado hasta hoy" value={fmt(totalPaid)} color="#0d7c6e" />
+                </>
+              )}
             </div>
+            {plan.plan_type === 'settlement' && (
+              <div style={{
+                background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8,
+                padding: '10px 14px', fontSize: 12, color: '#78350f', lineHeight: 1.55, marginBottom: 14,
+              }}>
+                Liquidación completa con descuento autorizado. Al cubrir el importe a liquidar,
+                el adeudo histórico de la unidad queda saldado. Pagado hasta hoy: <strong>{fmt(totalPaid)}</strong>.
+              </div>
+            )}
 
             {/* ── Tabla de cuotas ── */}
             {installments.length > 0 && (

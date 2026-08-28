@@ -627,6 +627,7 @@ export default function Dashboard() {
   const ingAdicional   = ingConceptos;
   const adeudoRecibido = s.total_adeudo_recibido ?? 0;
   const deudaTotal     = s.deuda_total ?? 0;
+  const quitaAplicada  = s.total_quita_aplicada ?? 0;
   const balanceNeto    = totalIngresos - gastos;
 
   // isPeriodClosed: provided directly by useDashboardData (computed from closedPeriods)
@@ -642,9 +643,9 @@ export default function Dashboard() {
   // Fix 4: Ratio Egresos usa todos los ingresos (conciliados + no conciliados) como denominador
   const pctGastosVsIng     = totalIngresosAll > 0 ? Math.round((gastosTotal / totalIngresosAll) * 100) : 0;
   const pctIngAdicional    = totalIngresosAll > 0 ? Math.round((ingAdicional / totalIngresosAll) * 100) : 0;
-  // pct = adeudoRecibido / (adeudoRecibido + deudaTotal): fracción cobrada del total antes de este período
-  const pctDeudaRecuperada = (adeudoRecibido + deudaTotal) > 0
-    ? Math.round((adeudoRecibido / (adeudoRecibido + deudaTotal)) * 100)
+  // pct = (recibido + quita) / (recibido + quita + deuda restante)
+  const pctDeudaRecuperada = (adeudoRecibido + quitaAplicada + deudaTotal) > 0
+    ? Math.round(((adeudoRecibido + quitaAplicada) / (adeudoRecibido + quitaAplicada + deudaTotal)) * 100)
     : 0;
 
   // Colores dinámicos
@@ -1764,8 +1765,8 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Recuperación de deuda (solo si hay deuda) */}
-          {deudaTotal > 0 && (
+          {/* Recuperación de deuda */}
+          {(deudaTotal > 0 || adeudoRecibido > 0 || quitaAplicada > 0) && (
             <>
               <SectionLabel>Recuperación de Deuda</SectionLabel>
               <div className="card">
@@ -1780,13 +1781,20 @@ export default function Dashboard() {
                     </div>
                     <div style={{ flex: 1 }}>
                       <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink-800)', marginBottom: 8 }}>
-                        Cobrado al adeudo en el período
+                        Recuperación de adeudo en el período
                       </div>
                       <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
                         <div>
                           <div style={{ fontSize: 11, color: 'var(--ink-400)', marginBottom: 2 }}>Recibido en el período</div>
                           <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--amber-700)' }}>{fmtDec(adeudoRecibido)}</div>
                         </div>
+                        {quitaAplicada > 0 && (
+                          <div>
+                            <div style={{ fontSize: 11, color: 'var(--ink-400)', marginBottom: 2 }}>Quita autorizada</div>
+                            <div style={{ fontSize: 18, fontWeight: 800, color: '#047857' }}>{fmtDec(quitaAplicada)}</div>
+                            <div style={{ fontSize: 10, color: '#059669' }}>Descuento, no es ingreso en efectivo</div>
+                          </div>
+                        )}
                         <div>
                           <div style={{ fontSize: 11, color: 'var(--ink-400)', marginBottom: 2 }}>Adeudo al corte</div>
                           <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--coral-600)' }}>{fmtDec(deudaTotal)}</div>

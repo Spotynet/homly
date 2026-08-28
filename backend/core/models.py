@@ -626,6 +626,14 @@ class PaymentPlan(models.Model):
         (3, 'Trimestral'),
         (6, 'Semestral'),
     ]
+    PLAN_TYPE_CHOICES = [
+        ('installment', 'Plan de cuotas'),
+        ('settlement',  'Liquidación con quita'),
+    ]
+    DISCOUNT_TYPE_CHOICES = [
+        ('percent', 'Porcentaje'),
+        ('amount',  'Monto fijo'),
+    ]
 
     id             = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant         = models.ForeignKey('Tenant', on_delete=models.CASCADE, related_name='payment_plans')
@@ -639,6 +647,32 @@ class PaymentPlan(models.Model):
     apply_interest      = models.BooleanField(default=False)
     interest_rate       = models.DecimalField(max_digits=5, decimal_places=2, default=0)
     total_with_interest = models.DecimalField(max_digits=14, decimal_places=2)
+
+    # Settlement / quita (complete liquidation with authorized discount)
+    plan_type = models.CharField(
+        max_length=20, choices=PLAN_TYPE_CHOICES, default='installment', db_index=True,
+        help_text='installment = cuotas; settlement = liquidación completa con quita',
+    )
+    discount_type = models.CharField(
+        max_length=10, choices=DISCOUNT_TYPE_CHOICES, blank=True, default='',
+        help_text='Cómo se expresa el descuento autorizado (solo settlement)',
+    )
+    discount_value = models.DecimalField(
+        max_digits=14, decimal_places=2, default=0,
+        help_text='Valor del descuento: porcentaje (0-100) o monto, según discount_type',
+    )
+    discount_amount = models.DecimalField(
+        max_digits=14, decimal_places=2, default=0,
+        help_text='Quita autorizada en moneda (adeudo original − importe a liquidar)',
+    )
+    settlement_amount = models.DecimalField(
+        max_digits=14, decimal_places=2, default=0,
+        help_text='Importe que el residente debe pagar para liquidar (después de la quita)',
+    )
+    debt_cutoff_period = models.CharField(
+        max_length=7, blank=True, default='',
+        help_text='YYYY-MM: períodos con cargo hasta este corte quedan absorbidos por el plan',
+    )
 
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft', db_index=True)
     notes  = models.TextField(blank=True, default='')

@@ -15,7 +15,7 @@ import { queryKeys, STALE } from '../hooks/queryKeys';
 import { todayPeriod, periodLabel, prevPeriod } from '../utils/helpers';
 import {
   TrendingDown, Search, X, Send, Printer,
-  ChevronLeft, Building, CheckCircle, Calendar, Plus, Trash2,
+  ChevronLeft, Building, CheckCircle, Calendar, Plus, Trash2, BadgePercent,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import PlanPagosPrintModal from '../components/PlanPagosPrintModal';
@@ -48,6 +48,10 @@ const PLAN_STATUS_COLORS = {
 const INSTALL_STATUS_COLOR = { paid: '#1E594F', partial: '#d97706', pending: '#e84040' };
 const INSTALL_STATUS_LABEL = { paid: 'Pagado', partial: 'Parcial', pending: 'Pendiente' };
 
+function isSettlementPlan(plan) {
+  return (plan?.plan_type || '') === 'settlement';
+}
+
 function _fmt(n, currency = 'MXN') {
   return new Intl.NumberFormat('es-MX', {
     style: 'currency', currency,
@@ -56,13 +60,40 @@ function _fmt(n, currency = 'MXN') {
 }
 
 // Build installments preview for a given option config
+function settlementFigures(totalDebt, opt) {
+  const debt = parseFloat(totalDebt) || 0;
+  const val  = parseFloat(opt.discountValue) || 0;
+  let discount = 0;
+  if (opt.discountType === 'amount') {
+    discount = Math.min(Math.max(val, 0), debt);
+  } else {
+    const pct = Math.min(Math.max(val, 0), 100);
+    discount = debt * pct / 100;
+  }
+  const settlement = Math.max(0, debt - discount);
+  const pct = debt > 0 ? (discount / debt) * 100 : 0;
+  return { discount, settlement, pct };
+}
+
 function buildInstallmentRows(totalDebt, maintenanceFee, opt) {
+  const isSettlement = opt.planType === 'settlement';
   const { freq, numPagos, applyInterest, interestRate, startPeriod } = opt;
-  const total = applyInterest && interestRate > 0
-    ? totalDebt * (1 + interestRate / 100)
-    : totalDebt;
-  const debtPer    = numPagos > 0 ? total / numPagos : 0;
-  const regularPer = maintenanceFee * freq;
+  let total;
+  let nPagos;
+  let useFreq;
+  if (isSettlement) {
+    total = settlementFigures(totalDebt, opt).settlement;
+    nPagos = 1;
+    useFreq = 1;
+  } else {
+    total = applyInterest && interestRate > 0
+      ? totalDebt * (1 + interestRate / 100)
+      : totalDebt;
+    nPagos = numPagos;
+    useFreq = freq;
+  }
+  const debtPer    = nPagos > 0 ? total / nPagos : 0;
+  const regularPer = maintenanceFee * useFreq;
 
   function nextPeriod(yyyymm, steps = 1) {
     let y = parseInt(yyyymm.slice(0, 4)), m = parseInt(yyyymm.slice(5, 7));
@@ -78,7 +109,7 @@ function buildInstallmentRows(totalDebt, maintenanceFee, opt) {
     return `${months[m - 1]} ${y}`;
   }
   const base = startPeriod || todayPeriod();
-  return Array.from({ length: numPagos }, (_, i) => {
+  return Array.from({ length: nPagos }, (_, i) => {
     const pk = i === 0 ? base : nextPeriod(base, i);
     return {
       num: i + 1, period_key: pk, period_label: periodLbl(pk),
@@ -89,8 +120,18 @@ function buildInstallmentRows(totalDebt, maintenanceFee, opt) {
 }
 
 // Default option config
-function defaultOption(startPeriod) {
-  return { freq: 1, numPagos: 6, applyInterest: false, interestRate: 5, startPeriod: startPeriod || todayPeriod(), notes: '' };
+function defaultOption(startPeriod, planType = 'installment') {
+  return {
+    planType,
+    freq: 1,
+    numPagos: planType === 'settlement' ? 1 : 6,
+    applyInterest: false,
+    interestRate: 5,
+    startPeriod: startPeriod || todayPeriod(),
+    notes: '',
+    discountType: 'percent',
+    discountValue: 20,
+  };
 }
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
@@ -378,14 +419,21 @@ export default function PlanPagos() {
         notes:            sharedNotes,
         terms_conditions: termsConditions,
         emails,  // lista final de destinatarios (vacía = no mandar email)
-        options: options.map(opt => ({
-          frequency:      opt.freq,
-          num_payments:   opt.numPagos,
-          apply_interest: opt.applyInterest,
-          interest_rate:  opt.applyInterest ? opt.interestRate : 0,
-          start_period:   opt.startPeriod,
-          notes:          opt.notes || sharedNotes,
-        })),
+        options: options.map(opt => {
+          const isSettlement = opt.planType === 'settlement';
+          return {
+            plan_type:      isSettlement ? 'settlement' : 'installment',
+            frequency:      isSettlement ? 1 : opt.freq,
+            num_payments:   isSettlement ? 1 : opt.numPagos,
+            apply_interest: isSettlement ? false : opt.applyInterest,
+            interest_rate:  isSettlement ? 0 : (opt.applyInterest ? opt.interestRate : 0),
+            start_period:   opt.startPeriod,
+            notes:          opt.notes || sharedNotes,
+            discount_type:  isSettlement ? (opt.discountType || 'percent') : '',
+            discount_value: isSettlement ? (parseFloat(opt.discountValue) || 0) : 0,
+          };
+        }),
+        debt_cutoff_period: cutoff,
       };
       const res = await paymentPlansAPI.createProposal(tenantId, payload);
       // El backend devuelve { plans, emails_sent_to } ahora; fallback para compat
@@ -438,6 +486,14 @@ export default function PlanPagos() {
     setOptions(prev => {
       const updated = [...prev];
       updated[idx] = { ...updated[idx], [field]: value };
+      if (field === 'planType' && value === 'settlement') {
+        updated[idx].numPagos = 1;
+        updated[idx].freq = 1;
+        updated[idx].applyInterest = false;
+      }
+      if (field === 'planType' && value === 'installment' && updated[idx].numPagos < 2) {
+        updated[idx].numPagos = 6;
+      }
       // Clamp numPagos to max allowed
       const freqObj = PLAN_FREQUENCIES.find(f => f.value === (field === 'freq' ? value : updated[idx].freq));
       const maxP = freqObj?.max ?? 12;
@@ -483,7 +539,7 @@ export default function PlanPagos() {
             { label: 'Fecha envío',      value: plan.sent_at ? new Date(plan.sent_at).toLocaleDateString('es-MX') : '—' },
             { label: 'Aceptado por',     value: plan.accepted_by_name || '—' },
             { label: 'Fecha aceptación', value: plan.accepted_at ? new Date(plan.accepted_at).toLocaleDateString('es-MX') : '—' },
-            { label: 'Frecuencia',       value: freq_lbl },
+            { label: 'Frecuencia',       value: isSettlementPlan(plan) ? 'Pago único (liquidación)' : freq_lbl },
             { label: 'Período inicial',  value: plan.start_period ? periodLabel(plan.start_period) : '—' },
           ].map(c => (
             <div key={c.label} style={{ background: 'var(--sand-50)', border: '1px solid var(--sand-200)', borderRadius: 7, padding: '8px 12px' }}>
@@ -494,17 +550,31 @@ export default function PlanPagos() {
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
-          {[
+          {(isSettlementPlan(plan) ? [
+            { label: 'Adeudo original',  value: fmt(parseFloat(plan.total_adeudo || 0)), color: 'var(--coral-500)' },
+            { label: 'Quita autorizada', value: `− ${fmt(parseFloat(plan.discount_amount || 0))}`, color: '#047857' },
+            { label: 'Importe a liquidar', value: fmt(parseFloat(plan.settlement_amount || plan.total_with_interest || 0)), color: '#1e3a5f' },
+          ] : [
             { label: 'Adeudo Base',      value: fmt(parseFloat(plan.total_adeudo || 0)),        color: 'var(--coral-500)' },
             { label: 'Total con Plan',   value: fmt(parseFloat(plan.total_with_interest || 0)), color: '#1e3a5f' },
             { label: 'Pagado hasta hoy', value: fmt(totalPaid),                                  color: 'var(--teal-600)' },
-          ].map(c => (
+          ]).map(c => (
             <div key={c.label} style={{ background: '#fff', border: '1px solid var(--sand-200)', borderRadius: 8, padding: '10px 14px', textAlign: 'center' }}>
               <div style={{ fontSize: 10, color: 'var(--ink-400)', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.04em', marginBottom: 4 }}>{c.label}</div>
               <div style={{ fontSize: 17, fontWeight: 800, color: c.color }}>{c.value}</div>
             </div>
           ))}
         </div>
+        {isSettlementPlan(plan) && (
+          <div style={{
+            background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8,
+            padding: '10px 14px', fontSize: 12, color: '#78350f', lineHeight: 1.55,
+          }}>
+            Liquidación completa con descuento autorizado por la administración.
+            Al cubrir el importe a liquidar, el adeudo histórico de la unidad queda saldado.
+            Pagado hasta hoy: <strong>{fmt(totalPaid)}</strong>.
+          </div>
+        )}
 
         {plan.status === 'accepted' && installments.length > 0 && (
           <div>
@@ -706,7 +776,9 @@ export default function PlanPagos() {
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
               <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink-700)' }}>
-                {freq_lbl} · {plan.num_payments} pagos
+                {isSettlementPlan(plan)
+                  ? 'Liquidación con quita'
+                  : `${freq_lbl} · ${plan.num_payments} pagos`}
               </span>
               <span style={{ fontSize: 11, fontWeight: 700, color: sc, background: sc + '18', padding: '2px 8px', borderRadius: 12 }}>
                 {sl}
@@ -718,9 +790,19 @@ export default function PlanPagos() {
               )}
             </div>
             <div style={{ fontSize: 12, color: 'var(--ink-500)' }}>
-              Total: <strong>{fmt(parseFloat(plan.total_with_interest))}</strong>
-              &nbsp;·&nbsp;Adeudo base: {fmt(parseFloat(plan.total_adeudo))}
-              {plan.apply_interest && <span style={{ color: 'var(--coral-500)' }}>&nbsp;· Interés: {plan.interest_rate}%</span>}
+              {isSettlementPlan(plan) ? (
+                <>
+                  Adeudo: <strong>{fmt(parseFloat(plan.total_adeudo))}</strong>
+                  &nbsp;·&nbsp;Quita: <span style={{ color: '#047857', fontWeight: 700 }}>{fmt(parseFloat(plan.discount_amount || 0))}</span>
+                  &nbsp;·&nbsp;A liquidar: <strong>{fmt(parseFloat(plan.settlement_amount || plan.total_with_interest))}</strong>
+                </>
+              ) : (
+                <>
+                  Total: <strong>{fmt(parseFloat(plan.total_with_interest))}</strong>
+                  &nbsp;·&nbsp;Adeudo base: {fmt(parseFloat(plan.total_adeudo))}
+                  {plan.apply_interest && <span style={{ color: 'var(--coral-500)' }}>&nbsp;· Interés: {plan.interest_rate}%</span>}
+                </>
+              )}
             </div>
           </div>
           <div style={{ fontSize: 11, color: 'var(--ink-400)', whiteSpace: 'nowrap', textAlign: 'right', flexShrink: 0 }}>
@@ -793,11 +875,18 @@ export default function PlanPagos() {
                   )}
                 </div>
                 <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink-700)', marginBottom: 3 }}>
-                  {freq_lbl} · {plan.num_payments} pago{plan.num_payments !== 1 ? 's' : ''}
+                  {isSettlementPlan(plan)
+                    ? 'Liquidación con quita'
+                    : `${freq_lbl} · ${plan.num_payments} pago${plan.num_payments !== 1 ? 's' : ''}`}
                 </div>
                 <div style={{ fontSize: 14, fontWeight: 800, color: '#1e3a5f', marginBottom: 2 }}>
-                  {fmt(parseFloat(plan.total_with_interest))}
+                  {fmt(parseFloat(isSettlementPlan(plan) ? (plan.settlement_amount || plan.total_with_interest) : plan.total_with_interest))}
                 </div>
+                {isSettlementPlan(plan) && parseFloat(plan.discount_amount || 0) > 0 && (
+                  <div style={{ fontSize: 11, color: '#047857', fontWeight: 600 }}>
+                    Quita {fmt(parseFloat(plan.discount_amount))}
+                  </div>
+                )}
                 {plan.start_period && (
                   <div style={{ fontSize: 11, color: 'var(--ink-400)', marginBottom: 4 }}>
                     Desde {periodLabel(plan.start_period)}
@@ -884,24 +973,36 @@ export default function PlanPagos() {
                       </div>
                       <div>
                         <div style={{ fontSize: 16, fontWeight: 800, color: '#1e3a5f' }}>
-                          {fmt(parseFloat(plan.total_with_interest))}
+                          {fmt(parseFloat(isSettlementPlan(plan) ? (plan.settlement_amount || plan.total_with_interest) : plan.total_with_interest))}
                         </div>
                         <div style={{ fontSize: 13, color: 'var(--ink-600)', marginTop: 2 }}>
-                          {freq_lbl} · {plan.num_payments} pago{plan.num_payments !== 1 ? 's' : ''}
+                          {isSettlementPlan(plan)
+                            ? 'Liquidación con quita · 1 pago'
+                            : `${freq_lbl} · ${plan.num_payments} pago${plan.num_payments !== 1 ? 's' : ''}`}
                         </div>
                         {plan.start_period && (
                           <div style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: 1 }}>
                             Inicia en {periodLabel(plan.start_period)}
                           </div>
                         )}
-                        {plan.apply_interest && (
+                        {isSettlementPlan(plan) && parseFloat(plan.discount_amount || 0) > 0 && (
+                          <div style={{ fontSize: 12, color: '#047857', fontWeight: 600, marginTop: 4 }}>
+                            Quita autorizada: {fmt(parseFloat(plan.discount_amount))}
+                            {parseFloat(plan.total_adeudo) > 0 && (
+                              <span style={{ fontWeight: 500 }}>
+                                {' '}({((parseFloat(plan.discount_amount) / parseFloat(plan.total_adeudo)) * 100).toFixed(1)}%)
+                              </span>
+                            )}
+                          </div>
+                        )}
+                        {plan.apply_interest && !isSettlementPlan(plan) && (
                           <div style={{ fontSize: 11, color: 'var(--coral-500)', marginTop: 1 }}>
                             Incluye {plan.interest_rate}% de interés anual
                           </div>
                         )}
                       </div>
                       <div style={{ fontSize: 12, color: 'var(--ink-500)' }}>
-                        Adeudo base: {fmt(parseFloat(plan.total_adeudo))}
+                        Adeudo original: {fmt(parseFloat(plan.total_adeudo))}
                       </div>
                       {!isCancelled && !isRejected && !isAccepted && plan.status === 'sent' && hasSentOptions && (
                         <button
@@ -945,25 +1046,42 @@ export default function PlanPagos() {
 
   // ─── Single option config card ────────────────────────────────────────────
   const renderOptionCard = (opt, idx, totalDebt) => {
+    const isSettlement = opt.planType === 'settlement';
+    const figs       = isSettlement ? settlementFigures(totalDebt, opt) : null;
     const freqObj    = PLAN_FREQUENCIES.find(f => f.value === opt.freq);
     const maxPagos   = freqObj?.max ?? 12;
-    const durMonths  = opt.freq * opt.numPagos;
+    const durMonths  = isSettlement ? 1 : opt.freq * opt.numPagos;
     const rows       = buildInstallmentRows(totalDebt, maintenanceFee, opt);
-    const totalCon   = opt.applyInterest && opt.interestRate > 0
-      ? totalDebt * (1 + opt.interestRate / 100)
-      : totalDebt;
-    const grandReg   = (maintenanceFee * opt.freq) * opt.numPagos;
+    const totalCon   = isSettlement
+      ? figs.settlement
+      : (opt.applyInterest && opt.interestRate > 0
+        ? totalDebt * (1 + opt.interestRate / 100)
+        : totalDebt);
+    const grandReg   = isSettlement ? maintenanceFee : (maintenanceFee * opt.freq) * opt.numPagos;
     const grandTotal = totalCon + grandReg;
+    const headerTitle = isSettlement
+      ? `Opción ${idx + 1} — Liquidación con quita · ${fmt(totalCon)}`
+      : `Opción ${idx + 1} — ${PLAN_FREQUENCIES.find(f => f.value === opt.freq)?.label} · ${opt.numPagos} pagos · ${fmt(totalCon)}`;
+    const headerBg = isSettlement
+      ? (activeOptIdx === idx ? '#fef3c7' : '#fffbeb')
+      : (activeOptIdx === idx ? 'var(--teal-50)' : 'var(--sand-50)');
+    const headerColor = isSettlement
+      ? '#92400e'
+      : (activeOptIdx === idx ? 'var(--teal-700)' : 'var(--ink-700)');
+    const borderColor = isSettlement
+      ? (activeOptIdx === idx ? '#d97706' : '#fde68a')
+      : (activeOptIdx === idx ? 'var(--teal-400)' : 'var(--sand-200)');
 
     return (
-      <div style={{ background: '#fff', border: `2px solid ${activeOptIdx === idx ? 'var(--teal-400)' : 'var(--sand-200)'}`, borderRadius: 10, overflow: 'hidden' }}>
+      <div style={{ background: '#fff', border: `2px solid ${borderColor}`, borderRadius: 10, overflow: 'hidden' }}>
         {/* Option tab header */}
         <div
-          style={{ background: activeOptIdx === idx ? 'var(--teal-50)' : 'var(--sand-50)', padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', borderBottom: '1px solid var(--sand-100)' }}
+          style={{ background: headerBg, padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', borderBottom: '1px solid var(--sand-100)' }}
           onClick={() => setActiveOptIdx(activeOptIdx === idx ? -1 : idx)}
         >
-          <span style={{ fontWeight: 700, fontSize: 13, color: activeOptIdx === idx ? 'var(--teal-700)' : 'var(--ink-700)' }}>
-            Opción {idx + 1} — {PLAN_FREQUENCIES.find(f => f.value === opt.freq)?.label} · {opt.numPagos} pagos · {fmt(totalCon)}
+          <span style={{ fontWeight: 700, fontSize: 13, color: headerColor, display: 'flex', alignItems: 'center', gap: 6 }}>
+            {isSettlement && <BadgePercent size={14} />}
+            {headerTitle}
           </span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             {options.length > 1 && (
@@ -981,6 +1099,128 @@ export default function PlanPagos() {
 
         {activeOptIdx === idx && (
           <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {/* Type selector */}
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-600)', marginBottom: 7 }}>Tipo de opción</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                <button
+                  type="button"
+                  style={freqBtnStyle(!isSettlement)}
+                  onClick={() => updateOption(idx, 'planType', 'installment')}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                    <Calendar size={13} /> Plan de cuotas
+                  </div>
+                  <div style={{ fontSize: 10, opacity: 0.7, marginTop: 2 }}>El adeudo se paga en varias exhibiciones</div>
+                </button>
+                <button
+                  type="button"
+                  style={{
+                    ...freqBtnStyle(isSettlement),
+                    border: `2px solid ${isSettlement ? '#d97706' : 'var(--sand-200)'}`,
+                    background: isSettlement ? '#fffbeb' : '#fff',
+                    color: isSettlement ? '#92400e' : 'var(--ink-600)',
+                  }}
+                  onClick={() => updateOption(idx, 'planType', 'settlement')}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                    <BadgePercent size={13} /> Liquidación con quita
+                  </div>
+                  <div style={{ fontSize: 10, opacity: 0.7, marginTop: 2 }}>Pago único con descuento autorizado</div>
+                </button>
+              </div>
+            </div>
+
+            {isSettlement ? (
+              <>
+                <div style={{
+                  background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8,
+                  padding: '12px 14px', fontSize: 12, color: '#78350f', lineHeight: 1.55,
+                }}>
+                  <strong>¿Cómo funciona?</strong> La administración autoriza un descuento (quita) sobre el adeudo
+                  al corte. El residente liquida el restante en <strong>un solo pago</strong>. Al cubrirlo, el adeudo
+                  histórico de la unidad queda en ceros. Las cuotas de mantenimiento posteriores al corte se cobran aparte.
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-600)', marginBottom: 6 }}>
+                      Descuento autorizado
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+                      {[
+                        { id: 'percent', label: '%' },
+                        { id: 'amount', label: 'Monto' },
+                      ].map(t => (
+                        <button
+                          key={t.id}
+                          type="button"
+                          style={freqBtnStyle(opt.discountType === t.id)}
+                          onClick={() => updateOption(idx, 'discountType', t.id)}
+                        >
+                          {t.label}
+                        </button>
+                      ))}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      {opt.discountType === 'amount' && (
+                        <span style={{ fontSize: 13, color: 'var(--ink-500)' }}>$</span>
+                      )}
+                      <input
+                        type="number"
+                        min={0}
+                        max={opt.discountType === 'percent' ? 100 : totalDebt}
+                        step={opt.discountType === 'percent' ? 0.5 : 1}
+                        value={opt.discountValue}
+                        onChange={e => updateOption(idx, 'discountValue', parseFloat(e.target.value) || 0)}
+                        style={{ flex: 1, padding: '8px 10px', border: '1.5px solid #f59e0b', borderRadius: 7, fontSize: 16, fontWeight: 700, textAlign: 'right', boxSizing: 'border-box' }}
+                      />
+                      {opt.discountType === 'percent' && (
+                        <span style={{ fontSize: 14, fontWeight: 700, color: '#92400e' }}>%</span>
+                      )}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-600)', marginBottom: 6 }}>
+                      <Calendar size={12} style={{ marginRight: 4, verticalAlign: 'middle' }} />
+                      Período de liquidación
+                    </div>
+                    <select
+                      value={opt.startPeriod}
+                      onChange={e => updateOption(idx, 'startPeriod', e.target.value)}
+                      style={{ width: '100%', padding: '8px 10px', border: '1px solid var(--sand-200)', borderRadius: 7, fontSize: 12, background: '#fff', color: 'var(--ink-700)', boxSizing: 'border-box' }}
+                    >
+                      {startPeriodOptions.map(p => (
+                        <option key={p} value={p}>
+                          {periodLabel(p)}{p === todayPeriod() ? ' (actual)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                    <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 4 }}>
+                      En este período se captura el pago de liquidación en cobranza.
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+                  <div style={{ background: 'var(--coral-50)', border: '1px solid var(--coral-200)', borderRadius: 8, padding: '10px 12px', textAlign: 'center' }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--coral-600)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4 }}>Adeudo original</div>
+                    <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--coral-600)' }}>{fmt(totalDebt)}</div>
+                  </div>
+                  <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: 8, padding: '10px 12px', textAlign: 'center' }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: '#047857', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4 }}>
+                      Quita {figs.pct > 0 ? `(${figs.pct.toFixed(1)}%)` : ''}
+                    </div>
+                    <div style={{ fontSize: 16, fontWeight: 800, color: '#047857' }}>− {fmt(figs.discount)}</div>
+                  </div>
+                  <div style={{ background: 'var(--teal-50)', border: '1.5px solid var(--teal-400)', borderRadius: 8, padding: '10px 12px', textAlign: 'center' }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--teal-700)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4 }}>A liquidar</div>
+                    <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--teal-700)' }}>{fmt(figs.settlement)}</div>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
             {/* Frequency */}
             <div>
               <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-600)', marginBottom: 7 }}>Frecuencia de pago</div>
@@ -1057,11 +1297,13 @@ export default function PlanPagos() {
                 </div>
               )}
             </div>
+              </>
+            )}
 
             {/* Installments preview */}
             <div>
               <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-500)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 7 }}>
-                Vista previa de cuotas
+                {isSettlement ? 'Vista previa de la liquidación' : 'Vista previa de cuotas'}
               </div>
               <div style={{ border: '1px solid var(--sand-200)', borderRadius: 8, overflow: 'hidden' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
@@ -1086,7 +1328,9 @@ export default function PlanPagos() {
                   <tfoot>
                     <tr style={{ background: '#1e3a5f', color: 'white', fontWeight: 700 }}>
                       <td colSpan={2} style={{ padding: '7px 10px', fontSize: 10 }}>
-                        TOTAL · {opt.numPagos} pagos en {durMonths} mes{durMonths !== 1 ? 'es' : ''}
+                        {isSettlement
+                          ? 'LIQUIDACIÓN · 1 pago'
+                          : `TOTAL · ${opt.numPagos} pagos en ${durMonths} mes${durMonths !== 1 ? 'es' : ''}`}
                       </td>
                       <td style={{ padding: '7px 10px', textAlign: 'right' }}>{fmt(totalCon)}</td>
                       <td style={{ padding: '7px 10px', textAlign: 'right' }}>{fmt(grandReg)}</td>
@@ -1310,7 +1554,7 @@ export default function PlanPagos() {
         <p style={{ margin: 0, fontSize: 13, color: 'var(--ink-500)' }}>
           {isResidente
             ? 'Revisa las propuestas de plan de pago enviadas a tu unidad y elige la que mejor te convenga.'
-            : 'Crea y envía propuestas de plan de pago con hasta 3 opciones para que el propietario elija.'}
+            : 'Crea y envía propuestas de plan de pago o liquidación con quita (hasta 3 opciones) para que el propietario elija.'}
         </p>
       </div>
 

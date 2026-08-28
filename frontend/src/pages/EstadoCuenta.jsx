@@ -688,12 +688,29 @@ export default function EstadoCuenta() {
             {data && (
               <div className="ec-summary-strip">
                 {data.has_active_plan && (
-                  <div className="ec-sum-cell" style={{ background: 'rgba(13,124,110,0.08)', borderLeft: '3px solid var(--teal-500)', minWidth: 180 }}>
-                    <div className="ec-sum-label" style={{ color: 'var(--teal-700)' }}>
-                      📋 Plan de Pagos Activo
-                      <div style={{ fontSize: 9, color: 'var(--teal-500)', fontWeight: 400, marginTop: 1 }}>La deuda anterior está incluida en el plan</div>
+                  <div className="ec-sum-cell" style={{
+                    background: data.active_plan?.plan_type === 'settlement' ? '#fffbeb' : 'rgba(13,124,110,0.08)',
+                    borderLeft: data.active_plan?.plan_type === 'settlement' ? '3px solid #d97706' : '3px solid var(--teal-500)',
+                    minWidth: 180,
+                  }}>
+                    <div className="ec-sum-label" style={{ color: data.active_plan?.plan_type === 'settlement' ? '#92400e' : 'var(--teal-700)' }}>
+                      {data.active_plan?.plan_type === 'settlement' ? '⚖ Liquidación con quita' : '📋 Plan de Pagos Activo'}
+                      <div style={{ fontSize: 9, fontWeight: 400, marginTop: 1, color: data.active_plan?.plan_type === 'settlement' ? '#b45309' : 'var(--teal-500)' }}>
+                        {data.active_plan?.plan_type === 'settlement'
+                          ? 'El adeudo histórico se salda al cubrir el importe a liquidar'
+                          : 'La deuda anterior está incluida en el plan'}
+                      </div>
                     </div>
-                    {data.active_plan && (
+                    {data.active_plan && data.active_plan.plan_type === 'settlement' && (
+                      <div style={{ marginTop: 4, fontSize: 11, color: '#92400e' }}>
+                        <div>Adeudo original {fmt(parseFloat(data.active_plan.total_adeudo || 0))}</div>
+                        <div>Quita −{fmt(parseFloat(data.active_plan.discount_amount || 0))}</div>
+                        <div style={{ marginTop: 2, fontWeight: 700 }}>
+                          A liquidar {fmt(parseFloat(data.active_plan.settlement_amount || data.active_plan.total_with_interest || 0))}
+                        </div>
+                      </div>
+                    )}
+                    {data.active_plan && data.active_plan.plan_type !== 'settlement' && (
                       <div style={{ marginTop: 4, fontSize: 11, color: 'var(--teal-700)' }}>
                         <div>{data.active_plan.installments?.length || 0} cuotas · {data.active_plan.option_number ? `Opción ${data.active_plan.option_number}` : ''}</div>
                         <div style={{ marginTop: 2, fontWeight: 700 }}>
@@ -995,7 +1012,11 @@ export default function EstadoCuenta() {
                               <tr key={`plan-inst-${i}`} style={{ background: 'rgba(13,124,110,0.05)', borderLeft: '3px solid var(--teal-400)' }}>
                                 <td style={{ paddingLeft: 28, fontSize: 11, color: 'var(--teal-700)', fontWeight: 600 }}>
                                   📋 {planFd.label}
-                                  <div style={{ fontSize: 10, color: 'var(--teal-500)', fontWeight: 400 }}>Amortización de deuda · Plan activo</div>
+                                  <div style={{ fontSize: 10, color: 'var(--teal-500)', fontWeight: 400 }}>
+                                    {planFd.is_settlement || pi.plan_type === 'settlement'
+                                      ? 'Liquidación con quita autorizada'
+                                      : 'Amortización de deuda · Plan activo'}
+                                  </div>
                                 </td>
                                 <td style={{ textAlign: 'right', fontSize: 12, color: 'var(--ink-500)' }}>—</td>
                                 <td style={{ textAlign: 'right', fontSize: 12, fontWeight: 700, color: 'var(--ink-700)' }}>{fmt(instCharge)}</td>
@@ -1010,9 +1031,50 @@ export default function EstadoCuenta() {
                               </tr>
                             );
                           })()}
+                          {/* Sub-fila: adeudo histórico cubierto por plan / quita */}
+                          {(p.field_detail || []).filter(fd => fd.is_plan_absorption).map((fd, ai) => (
+                            <tr key={`plan-abs-${i}-${ai}`} style={{ background: '#fffbeb', borderLeft: '3px solid #f59e0b' }}>
+                              <td style={{ paddingLeft: 28, fontSize: 11, color: '#92400e', fontWeight: 600 }}>
+                                ⚖ {fd.label}
+                                <div style={{ fontSize: 10, color: '#b45309', fontWeight: 400 }}>
+                                  {fd.is_settlement_absorption
+                                    ? 'Adeudo de este período absorbido por la liquidación'
+                                    : 'Adeudo de este período absorbido por el plan de pagos'}
+                                </div>
+                              </td>
+                              <td style={{ textAlign: 'right', fontSize: 12, color: 'var(--ink-400)' }}>—</td>
+                              <td style={{ textAlign: 'right', fontSize: 12, color: 'var(--ink-400)' }}>—</td>
+                              <td style={{ textAlign: 'right', fontSize: 12, fontWeight: 700, color: '#047857' }}>
+                                {fmt(fd.abono)}
+                              </td>
+                              <td><span className="badge badge-teal" style={{ fontSize: 10 }}>Cubierto</span></td>
+                              <td style={{ textAlign: 'right', fontSize: 12, color: 'var(--teal-600)' }}>✓</td>
+                              <td></td>
+                            </tr>
+                          ))}
+                          {/* Sub-fila: quita autorizada (informativa) */}
+                          {(p.field_detail || []).filter(fd => fd.is_quita).map((fd, qi) => (
+                            <tr key={`quita-${i}-${qi}`} style={{ background: '#ecfdf5', borderLeft: '3px solid #10b981' }}>
+                              <td style={{ paddingLeft: 28, fontSize: 11, color: '#047857', fontWeight: 600 }}>
+                                🏷 Quita autorizada
+                                <div style={{ fontSize: 10, color: '#059669', fontWeight: 400 }}>
+                                  Descuento sobre adeudo original {fmt(fd.original_debt || 0)}
+                                </div>
+                              </td>
+                              <td colSpan={2} style={{ textAlign: 'right', fontSize: 11, color: 'var(--ink-400)', fontStyle: 'italic' }}>
+                                No es ingreso en efectivo
+                              </td>
+                              <td style={{ textAlign: 'right', fontSize: 12, fontWeight: 700, color: '#047857' }}>
+                                −{fmt(fd.quita_amount || 0)}
+                              </td>
+                              <td><span className="badge" style={{ fontSize: 10, background: '#d1fae5', color: '#047857', border: '1px solid #a7f3d0' }}>Quita</span></td>
+                              <td></td>
+                              <td></td>
+                            </tr>
+                          ))}
                           {/* Sub-filas: pagos a campos de ingresos (campos opcionales neutrales — concepto de servicio del condominio) */}
                           {(p.field_detail || [])
-                            .filter(fd => fd.contributes_balance === false && !fd.is_plan_installment && (fd.abono || 0) > 0)
+                            .filter(fd => fd.contributes_balance === false && !fd.is_plan_installment && !fd.is_plan_absorption && !fd.is_quita && (fd.abono || 0) > 0)
                             .map((fd, fi) => (
                               <tr key={`income-field-${i}-${fi}`} style={{ background: 'var(--blue-50)', borderLeft: '3px solid var(--blue-200)' }}>
                                 <td style={{ paddingLeft: 28, fontSize: 11, color: 'var(--blue-700)', fontWeight: 600 }}>

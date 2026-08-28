@@ -814,6 +814,8 @@ class PaymentPlanSerializer(serializers.ModelSerializer):
             'total_adeudo', 'maintenance_fee',
             'frequency', 'num_payments', 'apply_interest', 'interest_rate',
             'total_with_interest', 'status', 'status_display', 'notes', 'terms_conditions',
+            'plan_type', 'discount_type', 'discount_value', 'discount_amount',
+            'settlement_amount', 'debt_cutoff_period',
             'created_by_name', 'created_by_email', 'created_at',
             'sent_by_name', 'sent_at',
             'accepted_by_name', 'accepted_at',
@@ -936,6 +938,8 @@ class DashboardSerializer(serializers.Serializer):
     total_adeudo_recibido = serializers.FloatField()
     deuda_total = serializers.FloatField()
     total_ingresos = serializers.FloatField()
+    total_quita_aplicada = serializers.FloatField(required=False, default=0)
+    total_plan_recibido = serializers.FloatField(required=False, default=0)
 
 
 class EstadoCuentaSerializer(serializers.Serializer):

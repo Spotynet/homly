@@ -1470,6 +1470,7 @@ def send_payment_plan_email(
     notes: str = '',
     terms_conditions: str = '',
     num_options: int = 1,
+    options_detail: list = None,
 ) -> bool:
     """Send a payment plan proposal email to the residente."""
     c = COLORS
@@ -1528,11 +1529,79 @@ def send_payment_plan_email(
         )
 
     # Intro block: explanation of the proposal
+    has_settlement = any((od.get('plan_type') or '') == 'settlement' for od in (options_detail or []))
     options_text = (
         f'Esta propuesta incluye <strong>{num_options} opción{"es" if num_options > 1 else ""} de pago</strong> para que puedas elegir la que mejor se adapte a tu situación.'
         if num_options > 1 else
-        'A continuación encontrarás el detalle del plan de pago sugerido.'
+        ('A continuación encontrarás el detalle de la liquidación con quita autorizada.'
+         if has_settlement else
+         'A continuación encontrarás el detalle del plan de pago sugerido.')
     )
+
+    how_it_works = (
+        'Si eliges una <strong>liquidación con quita</strong>, pagas un importe reducido autorizado por la administración '
+        'y el adeudo histórico de tu unidad queda saldado. Si eliges un <strong>plan de cuotas</strong>, el adeudo se divide '
+        'en pagos periódicos que se suman a tu cuota de mantenimiento.'
+        if has_settlement else
+        'El plan divide tu adeudo en cuotas periódicas que se suman a tu cuota regular de mantenimiento, '
+        'permitiéndote ponerte al corriente de forma gradual y ordenada. '
+        'Cada período verás reflejada tu cuota del plan en tu cobranza mensual.'
+    )
+
+    # Per-option cards (settlement + installment) when the proposal has structured options
+    options_cards_html = ''
+    if options_detail:
+        cards = []
+        for od in options_detail:
+            n = od.get('option_number', '')
+            is_set = (od.get('plan_type') or '') == 'settlement'
+            if is_set:
+                quita = float(od.get('discount_amount') or 0)
+                settle = float(od.get('settlement_amount') or od.get('total_with_interest') or 0)
+                orig = float(od.get('total_adeudo') or total_adeudo)
+                dval = float(od.get('discount_value') or 0)
+                dtype = od.get('discount_type') or 'percent'
+                pct_txt = f' ({dval:.1f}%)' if dtype == 'percent' and dval else ''
+                cards.append(
+                    f'<div style="margin:0 0 14px;padding:14px 16px;border:1.5px solid {c["green"]}40;'
+                    f'border-radius:8px;background:#F0F7F5;">'
+                    f'<div style="font-size:11px;font-weight:800;color:{c["green"]};text-transform:uppercase;'
+                    f'letter-spacing:.04em;margin-bottom:8px;">Opción {n} · Liquidación con quita</div>'
+                    f'<table width="100%" cellpadding="0" cellspacing="0">'
+                    f'<tr><td style="padding:4px 0;font-size:12px;color:{c["ink_600"]};">Adeudo original</td>'
+                    f'<td style="padding:4px 0;font-size:13px;font-weight:700;color:{c["orange"]};text-align:right;">{fmt(orig)}</td></tr>'
+                    f'<tr><td style="padding:4px 0;font-size:12px;color:{c["ink_600"]};">Quita autorizada{pct_txt}</td>'
+                    f'<td style="padding:4px 0;font-size:13px;font-weight:700;color:{c["green"]};text-align:right;">− {fmt(quita)}</td></tr>'
+                    f'<tr><td style="padding:6px 0 0;font-size:13px;font-weight:700;color:{c["ink_800"]};'
+                    f'border-top:1px solid {c["cream_outer"]};">Importe a liquidar (un solo pago)</td>'
+                    f'<td style="padding:6px 0 0;font-size:18px;font-weight:800;color:{c["green"]};'
+                    f'text-align:right;border-top:1px solid {c["cream_outer"]};">{fmt(settle)}</td></tr>'
+                    f'</table>'
+                    f'<p style="margin:10px 0 0;font-size:12px;color:{c["ink_600"]};line-height:1.5;">'
+                    f'Al pagar este importe, el adeudo histórico de tu unidad queda saldado. '
+                    f'Las cuotas de mantenimiento posteriores al corte siguen vigentes.</p>'
+                    f'</div>'
+                )
+            else:
+                tot = float(od.get('total_with_interest') or 0)
+                n_pay = od.get('num_payments', '')
+                freq_l = od.get('frequency_label', '')
+                int_note = ''
+                if od.get('apply_interest') and float(od.get('interest_rate') or 0) > 0:
+                    int_note = f' · incluye {od.get("interest_rate")}% de interés'
+                cards.append(
+                    f'<div style="margin:0 0 14px;padding:14px 16px;border:1.5px solid #E8E0D5;'
+                    f'border-radius:8px;background:{c["cream_outer"]};">'
+                    f'<div style="font-size:11px;font-weight:800;color:{c["ink_600"]};text-transform:uppercase;'
+                    f'letter-spacing:.04em;margin-bottom:8px;">Opción {n} · Plan de cuotas</div>'
+                    f'<div style="font-size:18px;font-weight:800;color:{c["green"]};">{fmt(tot)}</div>'
+                    f'<div style="font-size:13px;color:{c["ink_600"]};margin-top:4px;">'
+                    f'{n_pay} pagos {freq_l}{int_note}</div>'
+                    f'</div>'
+                )
+        options_cards_html = (
+            f'<tr><td style="padding:0 32px 16px;">{"".join(cards)}</td></tr>'
+        )
 
     logo_img = f'<img src="cid:{LOGO_CID}" alt="Homly" width="150" style="display:block;height:auto;max-width:150px;" />'
 
@@ -1571,12 +1640,12 @@ def send_payment_plan_email(
               {options_text}
             </p>
             <p style="margin:0;font-size:13px;color:{c['ink_600']};line-height:1.6;">
-              <strong>¿Cómo funciona?</strong> El plan divide tu adeudo en cuotas periódicas que se suman a tu cuota regular de mantenimiento,
-              permitiéndote ponerte al corriente de forma gradual y ordenada.
-              Cada período verás reflejada tu cuota del plan en tu cobranza mensual.
+              <strong>¿Cómo funciona?</strong> {how_it_works}
             </p>
           </div>
         </td></tr>
+
+        {options_cards_html}
 
         <!-- Debt summary -->
         <tr><td style="padding:0 32px 16px;">

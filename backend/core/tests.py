@@ -515,3 +515,84 @@ class PermissionTests(BaseTestCase):
     def test_unauthenticated_rejected(self):
         resp = self.client.get(f'/api/tenants/{self.tenant.id}/units/')
         self.assertEqual(resp.status_code, 401)
+
+
+# ═══════════════════════════════════════════════════════════
+#  PAYMENT PLAN — LIQUIDACIÓN CON QUITA
+# ═══════════════════════════════════════════════════════════
+
+class PaymentPlanSettlementTests(BaseTestCase):
+
+    def test_settlement_figures(self):
+        from core.views import _compute_settlement_figures
+        discount, settle = _compute_settlement_figures(Decimal('10000'), 'percent', Decimal('30'))
+        self.assertEqual(discount, Decimal('3000.00'))
+        self.assertEqual(settle, Decimal('7000.00'))
+        discount, settle = _compute_settlement_figures(Decimal('10000'), 'amount', Decimal('2500'))
+        self.assertEqual(discount, Decimal('2500.00'))
+        self.assertEqual(settle, Decimal('7500.00'))
+
+    def test_create_and_accept_settlement_absorbs_unit_debt(self):
+        self.unit3.previous_debt = Decimal('4000.00')
+        self.unit3.save(update_fields=['previous_debt'])
+
+        self.login_as('carlos@email.com', 'Admin123', self.tenant.id)
+        url = f'/api/tenants/{self.tenant.id}/payment-plans/create_proposal/'
+        resp = self.client.post(url, {
+            'unit_id': str(self.unit3.id),
+            'total_adeudo': '10000.00',
+            'maintenance_fee': '2500.00',
+            'debt_cutoff_period': '2024-03',
+            'emails': [],
+            'options': [{
+                'plan_type': 'settlement',
+                'discount_type': 'percent',
+                'discount_value': 20,
+                'start_period': '2024-04',
+            }],
+        }, format='json')
+        self.assertEqual(resp.status_code, 201, resp.data)
+        plans = resp.data['plans']
+        self.assertEqual(len(plans), 1)
+        plan = plans[0]
+        self.assertEqual(plan['plan_type'], 'settlement')
+        self.assertEqual(float(plan['discount_amount']), 2000.0)
+        self.assertEqual(float(plan['settlement_amount']), 8000.0)
+        self.assertEqual(plan['num_payments'], 1)
+        self.assertEqual(len(plan['installments']), 1)
+        self.assertEqual(plan['installments'][0]['debt_part'], 8000.0)
+
+        # Residente acepta
+        self.login_as('ana@email.com', 'Vecino12', self.tenant.id)
+        acc = self.client.post(
+            f'/api/tenants/{self.tenant.id}/payment-plans/{plan["id"]}/accept/',
+            {},
+            format='json',
+        )
+        self.assertEqual(acc.status_code, 200, acc.data)
+        self.assertEqual(acc.data['status'], 'accepted')
+
+        # Estado de cuenta de la unidad: deuda histórica absorbida, solo queda la liquidación
+        stmt = self.client.get(
+            f'/api/tenants/{self.tenant.id}/estado-cuenta/',
+            {'unit_id': str(self.unit3.id), 'from': '2024-01', 'to': '2024-04'},
+        )
+        self.assertEqual(stmt.status_code, 200, stmt.data)
+        self.assertTrue(stmt.data.get('has_active_plan'))
+        self.assertEqual(stmt.data['active_plan']['plan_type'], 'settlement')
+        periods = stmt.data.get('periods') or []
+        mar = next((p for p in periods if p['period'] == '2024-03'), None)
+        self.assertIsNotNone(mar)
+        fd = mar.get('field_detail') or []
+        self.assertTrue(any(f.get('is_plan_absorption') for f in fd))
+        self.assertEqual(mar.get('status'), 'liquidado')
+        apr = next((p for p in periods if p['period'] == '2024-04'), None)
+        self.assertIsNotNone(apr)
+        apr_fd = apr.get('field_detail') or []
+        self.assertTrue(any(f.get('is_plan_installment') and f.get('is_settlement') for f in apr_fd))
+        self.assertTrue(any(f.get('is_quita') for f in apr_fd))
+        # Saldo final ≈ liquidación 8000 + cuota abril (2500+500) — sin el adeudo original de 10000
+        balance = float(stmt.data['balance'])
+        self.assertLess(balance, 12000)
+        self.assertGreater(balance, 7000)
+

@@ -1457,11 +1457,17 @@ export default function Cobranza() {
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 100px 120px 85px', gap: 0, alignItems: 'center', padding: '11px 16px', borderBottom: '1px solid var(--sand-50)', background: 'rgba(13,124,110,0.04)' }}>
                       <div>
                         <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-800)' }}>
-                          📋 Plan de Pagos — Cuota {capturePlanNInst}/{capturePlanNTotal}
-                          <span style={{ marginLeft: 6, fontSize: 10, color: 'var(--teal-700)', background: 'var(--teal-100)', padding: '2px 6px', borderRadius: 4 }}>Plan Activo</span>
+                          {captureActivePlan?.plan_type === 'settlement'
+                            ? '⚖ Liquidación con quita'
+                            : `📋 Plan de Pagos — Cuota ${capturePlanNInst}/${capturePlanNTotal}`}
+                          <span style={{ marginLeft: 6, fontSize: 10, color: captureActivePlan?.plan_type === 'settlement' ? '#92400e' : 'var(--teal-700)', background: captureActivePlan?.plan_type === 'settlement' ? '#fef3c7' : 'var(--teal-100)', padding: '2px 6px', borderRadius: 4 }}>
+                            {captureActivePlan?.plan_type === 'settlement' ? 'Quita autorizada' : 'Plan Activo'}
+                          </span>
                         </div>
                         <div style={{ fontSize: 11, color: 'var(--ink-400)' }}>
-                          Amortización — período {period} · total cuota: {fmt(parseFloat(capturePlanInst.total) || 0)}
+                          {captureActivePlan?.plan_type === 'settlement'
+                            ? `Importe a liquidar · adeudo original ${fmt(parseFloat(captureActivePlan.total_adeudo) || 0)} · quita ${fmt(parseFloat(captureActivePlan.discount_amount) || 0)}`
+                            : `Amortización — período ${period} · total cuota: ${fmt(parseFloat(capturePlanInst.total) || 0)}`}
                         </div>
                       </div>
                       <div style={{ textAlign: 'right', fontSize: 15, fontWeight: 700, color: 'var(--ink-700)' }}>{fmt(capturePlanDebtPart)}</div>
