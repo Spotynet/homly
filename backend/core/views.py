@@ -5131,6 +5131,169 @@ class EstadoCuentaView(APIView):
         })
 
 
+_PAID_STATUSES = {'pagado', 'exento', 'pagado_despues'}
+
+
+def _build_unit_analysis(tenant, unit, start_period, cutoff):
+    """Executive financial snapshot of a unit statement (for modal + email)."""
+    rows, total_charges, total_paid, balance, prev_debt_adeudo, active_plan = _compute_statement(
+        tenant, str(unit.id), start_period, cutoff,
+    )
+    previous_debt = float(unit.previous_debt or 0)
+    prev_debt_adeudo_val = float(prev_debt_adeudo)
+    net_prev_debt = max(0.0, previous_debt - prev_debt_adeudo_val)
+    credit_balance = float(unit.credit_balance or 0)
+    if active_plan:
+        adj_balance = float(balance) - credit_balance
+    else:
+        adj_balance = float(balance) + previous_debt - prev_debt_adeudo_val - credit_balance
+
+    relevant = [r for r in (rows or []) if r.get('status') != 'futuro']
+    paid_count = sum(1 for r in relevant if r.get('status') in _PAID_STATUSES)
+    partial_count = sum(1 for r in relevant if r.get('status') == 'parcial')
+    pending_count = sum(1 for r in relevant if r.get('status') == 'pendiente')
+    n_rel = len(relevant)
+    compliance = (paid_count / n_rel * 100) if n_rel else 100.0
+
+    overdue_items = []
+    for r in relevant:
+        charge = float(r.get('charge') or 0)
+        paid_amt = float(r.get('paid') or 0)
+        deficit = max(0.0, charge - paid_amt)
+        if deficit > 0.01:
+            overdue_items.append({
+                'period': r.get('period'),
+                'period_label': _period_label_es(r.get('period') or ''),
+                'charge': charge,
+                'paid': paid_amt,
+                'deficit': deficit,
+                'status': r.get('status'),
+            })
+
+    charges_f = float(total_charges or 0)
+    paid_f = float(total_paid or 0)
+    if adj_balance > 1:
+        situation = 'moroso'
+    elif adj_balance < -1:
+        situation = 'a_favor'
+    else:
+        situation = 'al_corriente'
+
+    has_plan = active_plan is not None
+    plan_type = getattr(active_plan, 'plan_type', '') if active_plan else ''
+    is_settlement = plan_type == 'settlement'
+    installments = (active_plan.installments or []) if active_plan else []
+
+    if has_plan and is_settlement:
+        diagnosis = (
+            'La unidad opera bajo una liquidación con quita. El adeudo histórico queda cubierto '
+            'al pagar el importe pactado; el seguimiento ejecutivo debe centrarse en el cierre '
+            'de esa liquidación, no en la deuda previa.'
+        )
+        recommendation = (
+            'Dar seguimiento al pago único de liquidación y confirmar el cierre del adeudo '
+            'histórico al cubrirse el importe pactado.'
+        )
+        plan_title = 'Liquidación con quita'
+        plan_summary = (
+            f"Adeudo original {_fmt_money(active_plan.total_adeudo)} · "
+            f"Quita −{_fmt_money(active_plan.discount_amount)} · "
+            f"A liquidar {_fmt_money(getattr(active_plan, 'settlement_amount', None) or active_plan.total_with_interest)}"
+        )
+    elif has_plan:
+        pending_inst = sum(1 for i in installments if (i or {}).get('status') != 'paid')
+        diagnosis = (
+            'La unidad tiene un plan de pagos vigente que absorbe el adeudo histórico. '
+            'El riesgo operativo está en el cumplimiento de las cuotas, no en el saldo anterior al plan.'
+        )
+        recommendation = (
+            f'Dar seguimiento a las {pending_inst} cuota{"s" if pending_inst != 1 else ""} '
+            f'pendiente{"s" if pending_inst != 1 else ""} del plan. Un incumplimiento reabre el riesgo de mora.'
+            if pending_inst else
+            'El plan no tiene cuotas pendientes. Verificar que el estatus se marque como completado.'
+        )
+        plan_title = 'Plan de pagos activo'
+        paid_inst = len(installments) - pending_inst
+        plan_summary = f'{paid_inst} cuotas pagadas / {len(installments)} totales'
+    elif situation == 'a_favor':
+        diagnosis = (
+            f'La unidad se encuentra al corriente y además presenta un saldo a favor de '
+            f'{adj_balance * -1:.2f}. Ese crédito se aplica a cargos futuros y no requiere gestión de cobranza.'
+        )
+        recommendation = 'No se requiere acción de cobranza. El saldo a favor se aplicará a los próximos cargos ordinarios.'
+        plan_title = plan_summary = ''
+    elif situation == 'al_corriente':
+        diagnosis = (
+            'La unidad se encuentra al corriente. Los cargos del rango analizado están cubiertos '
+            'y no hay saldo vencido al corte.'
+        )
+        recommendation = 'Mantener la disciplina de pago. No hay acciones de recuperación pendientes al corte.'
+        plan_title = plan_summary = ''
+    else:
+        n_ov = len(overdue_items)
+        oldest = overdue_items[0]['period_label'] if overdue_items else 'N/D'
+        if compliance >= 70 and n_ov <= 2:
+            diagnosis = (
+                f'La unidad presenta un atraso acotado ({n_ov} período{"s" if n_ov != 1 else ""}). '
+                f'El cumplimiento histórico sigue siendo alto ({compliance:.0f}%). '
+                f'Conviene regularizar antes de que el saldo se capitalice en más meses.'
+            )
+        elif net_prev_debt > 0.5:
+            diagnosis = (
+                f'El adeudo combina deuda anterior al sistema y períodos vencidos. '
+                f'El atraso más antiguo del estado de cuenta es {oldest}. Requiere gestión activa de cobranza.'
+            )
+        else:
+            diagnosis = (
+                f'La unidad presenta un adeudo de {n_ov} período{"s" if n_ov != 1 else ""} vencido'
+                f'{"s" if n_ov != 1 else ""}. El atraso más antiguo corresponde a {oldest}. '
+                f'El cumplimiento del rango es {compliance:.0f}%.'
+            )
+        if n_ov >= 3 or compliance < 50:
+            recommendation = (
+                'Priorizar contacto de cobranza y, si aplica, proponer un plan de pagos o '
+                'liquidación con quita para contener el crecimiento del adeudo.'
+            )
+        else:
+            recommendation = (
+                f'Solicitar la regularización del saldo ({n_ov} período{"s" if n_ov != 1 else ""}) '
+                f'en el siguiente ciclo de cobranza.'
+            )
+        plan_title = plan_summary = ''
+
+    return {
+        'unit_code': unit.unit_id_code or '',
+        'unit_name': unit.unit_name or '',
+        'responsible': unit.responsible_name or '',
+        'period_from': _period_label_es(start_period),
+        'period_to': _period_label_es(cutoff),
+        'charges': charges_f,
+        'paid': paid_f,
+        'balance': adj_balance,
+        'prev_debt': net_prev_debt,
+        'credit': credit_balance,
+        'situation': situation,
+        'compliance': round(compliance, 1),
+        'paid_count': paid_count,
+        'partial_count': partial_count,
+        'pending_count': pending_count,
+        'periods_count': n_rel,
+        'overdue_items': overdue_items,
+        'has_plan': has_plan,
+        'plan_title': plan_title,
+        'plan_summary': plan_summary,
+        'diagnosis': diagnosis,
+        'recommendation': recommendation,
+    }
+
+
+def _fmt_money(n):
+    try:
+        return f'{float(n or 0):,.2f}'
+    except (TypeError, ValueError):
+        return '0.00'
+
+
 # ═══════════════════════════════════════════════════════════
 #  REPORTE GENERAL — Replicates HTML computePeriodBankData + computeBankBalanceForPeriod
 # ═══════════════════════════════════════════════════════════
@@ -5722,6 +5885,78 @@ class SendUnitStatementEmailView(APIView):
         if ok:
             return Response({'detail': f'Estado de cuenta enviado a {", ".join(emails)}'})
         return Response({'detail': 'Error al enviar el correo. Verifica la configuración SMTP.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class SendUnitAnalysisEmailView(APIView):
+    """POST /api/tenants/{tenant_id}/send-unit-analysis-email/
+       Sends the executive analysis of a unit statement by email."""
+    permission_classes = [IsTenantMember]
+
+    def post(self, request, tenant_id=None):
+        unit_id = request.data.get('unit_id')
+        from_period = request.data.get('from_period', '')
+        to_period = request.data.get('to_period', _today_period())
+        emails_param = request.data.get('emails')
+
+        if not unit_id:
+            return Response({'detail': 'Falta unit_id.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        unit = Unit.objects.filter(tenant_id=tenant_id, id=unit_id).first()
+        if not unit:
+            return Response({'detail': 'Unidad no encontrada.'}, status=status.HTTP_404_NOT_FOUND)
+
+        is_staff = request.user.is_super_admin or TenantUser.objects.filter(
+            tenant_id=tenant_id, user=request.user, role__in=['admin', 'tesorero', 'contador'],
+        ).exists()
+
+        if is_staff:
+            emails = [e.strip() for e in (emails_param or []) if isinstance(e, str) and e.strip()]
+            if not emails:
+                return Response(
+                    {'detail': 'Selecciona al menos un destinatario.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        else:
+            tu = TenantUser.objects.filter(tenant_id=tenant_id, user=request.user).first()
+            own = (request.user.email or '').strip().lower()
+            assigned = str(tu.unit_id) if tu and tu.unit_id else ''
+            if assigned and assigned != str(unit_id):
+                return Response({'detail': 'Solo puedes enviar el análisis de tu unidad.'}, status=403)
+            if not assigned:
+                unit_emails = {
+                    (unit.owner_email or '').strip().lower(),
+                    (unit.coowner_email or '').strip().lower(),
+                    (unit.tenant_email or '').strip().lower(),
+                }
+                if own not in unit_emails:
+                    return Response({'detail': 'Solo puedes enviar el análisis de tu unidad.'}, status=403)
+            if not own:
+                return Response({'detail': 'Tu usuario no tiene correo configurado.'}, status=400)
+            emails = [(request.user.email or '').strip()]
+
+        tenant = Tenant.objects.get(id=tenant_id)
+        start_period = from_period or tenant.operation_start_date or '2024-01'
+        analysis = _build_unit_analysis(tenant, unit, start_period, to_period)
+
+        from .email_service import send_unit_analysis_email
+        ok = send_unit_analysis_email(
+            emails=emails,
+            tenant_name=getattr(tenant, 'razon_social', '') or tenant.name or '',
+            analysis=analysis,
+        )
+        if ok:
+            _audit_log(
+                request, 'cobranza', 'send_email',
+                f'Análisis ejecutivo enviado: {unit.unit_id_code} → {", ".join(emails)}',
+                tenant_id=tenant_id,
+                object_type='Unit', object_id=str(unit.id),
+                object_repr=unit.unit_id_code,
+            )
+            return Response({'detail': f'Análisis ejecutivo enviado a {", ".join(emails)}'})
+        return Response(
+            {'detail': 'Error al enviar el correo. Verifica la configuración SMTP.'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
 
 
 # ═══════════════════════════════════════════════════════════

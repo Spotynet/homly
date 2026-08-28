@@ -5,8 +5,9 @@ import { unitsAPI, reportsAPI, tenantsAPI, paymentsAPI, gastosAPI, unrecognizedI
 import PaginationBar from '../components/PaginationBar';
 import PaymentReceiptModal from '../components/PaymentReceiptModal';
 import SendEmailModal from '../components/SendEmailModal';
+import UnitStatementAnalysisModal from '../components/UnitStatementAnalysisModal';
 import { statusClass, statusLabel, fmtDate, periodLabel, todayPeriod, prevPeriod, nextPeriod, ROLES } from '../utils/helpers';
-import { Search, ChevronLeft, ChevronRight, Building, Globe, DollarSign, ArrowDown, TrendingDown, AlertCircle, Calendar, Printer, ShoppingBag, FileText, Mail, X, Send, Download, Paperclip, Eye, Upload } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight, Building, Globe, DollarSign, ArrowDown, TrendingDown, AlertCircle, Calendar, Printer, ShoppingBag, FileText, Mail, X, Send, Download, Paperclip, Eye, Upload, BarChart3 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 function _fmt(n, currency = 'MXN') {
@@ -213,6 +214,7 @@ export default function EstadoCuenta() {
   // Email state
   const [sendingUnitEmail, setSendingUnitEmail] = useState(false);
   const [showUnitEmailModal, setShowUnitEmailModal] = useState(false);
+  const [showAnalysisModal, setShowAnalysisModal] = useState(false);
 
   useEffect(() => {
     if (!tenantId || selectedUnit) return;
@@ -594,6 +596,15 @@ export default function EstadoCuenta() {
                 </div>
               </div>
               <div className="ec-detail-actions" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                {data && (
+                  <button
+                    className="btn-outline-white"
+                    onClick={() => setShowAnalysisModal(true)}
+                    title="Ver análisis financiero ejecutivo de esta unidad"
+                  >
+                    <BarChart3 size={14} /> Análisis ejecutivo
+                  </button>
+                )}
                 {/* Email controls for unit statement — admin/tesorero only */}
                 {!isResidente && (
                   (data?.unit?.owner_email || selectedUnitInfo?.owner_email) ||
@@ -1497,6 +1508,19 @@ export default function EstadoCuenta() {
           reservations={receiptReservations}
           activePlan={activePlansMap[String(showReceiptModal.unit?.id)] || null}
           onClose={() => setShowReceiptModal(null)}
+        />
+      )}
+
+      {showAnalysisModal && data && (
+        <UnitStatementAnalysisModal
+          data={data}
+          fromPeriod={detailFrom}
+          toPeriod={detailTo}
+          tenantData={tenantData}
+          tenantId={tenantId}
+          isResidente={isResidente}
+          userEmail={user?.email}
+          onClose={() => setShowAnalysisModal(false)}
         />
       )}
 

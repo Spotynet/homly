@@ -779,6 +779,39 @@ tr:hover td { background: rgba(59,185,144,0.02); }
   body.printing-ec tr { break-inside: avoid; page-break-inside: avoid; }
   body.printing-ec thead { display: table-header-group; }
 
+  /* ── Análisis ejecutivo de unidad (body.printing-analysis) ───────────── */
+  body.printing-analysis * { visibility: hidden !important; }
+  body.printing-analysis .unit-analysis-print,
+  body.printing-analysis .unit-analysis-print * { visibility: visible !important; }
+  body.printing-analysis .no-print,
+  body.printing-analysis .no-print * { visibility: hidden !important; }
+  body.printing-analysis .modal-bg {
+    position: static !important;
+    background: none !important;
+    backdrop-filter: none !important;
+    padding: 0 !important;
+    display: block !important;
+    inset: auto !important;
+  }
+  body.printing-analysis .unit-analysis-print {
+    position: absolute !important;
+    left: 0; top: 0;
+    width: 100% !important;
+    max-width: none !important;
+    max-height: none !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    overflow: visible !important;
+  }
+  body.printing-analysis .unit-analysis-print .modal-body {
+    overflow: visible !important;
+    max-height: none !important;
+    padding: 0 !important;
+  }
+  body.printing-analysis .unit-analysis-print-header { display: block !important; }
+  body.printing-analysis,
+  body.printing-analysis * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
   /* ── Gastos: layout ejecutivo multi-página (body.printing-gastos) ─── */
   /* Ocultar TODO con visibility (permite flujo multi-página a diferencia de display:none global) */
   body.printing-gastos * { visibility: hidden !important; }
@@ -1106,6 +1139,10 @@ tr:hover td { background: rgba(59,185,144,0.02); }
   border-radius: var(--radius-lg);
   overflow: hidden;
 }
+
+.unit-analysis-print-header { display: none; }
+.ua-kpi-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.ua-split { display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 12px; }
 
 .btn-outline-white {
   background: rgba(255,255,255,0.12);
@@ -1646,6 +1683,8 @@ tr:hover td { background: rgba(59,185,144,0.02); }
   .ec-detail-title { font-size: 18px; }
   .ec-detail-actions { flex-wrap: wrap; gap: 8px; }
   .ec-detail-actions .btn { flex: 1; justify-content: center; }
+  .ua-kpi-grid { grid-template-columns: 1fr 1fr !important; }
+  .ua-split { grid-template-columns: 1fr !important; }
   .section-intro { margin-bottom: 14px; }
   .cob-stat { padding: 14px; gap: 10px; }
   .cob-stat-icon { width: 32px; height: 32px; }

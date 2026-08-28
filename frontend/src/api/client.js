@@ -365,6 +365,7 @@ export const reportsAPI = {
       responseType: 'blob',
     }),
   sendUnitStatementEmail: (tenantId, data) => api.post(`/tenants/${tenantId}/send-unit-statement-email/`, data),
+  sendUnitAnalysisEmail: (tenantId, data) => api.post(`/tenants/${tenantId}/send-unit-analysis-email/`, data),
   sendGeneralStatementEmail: (tenantId, data) => api.post(`/tenants/${tenantId}/send-statement-email/`, data),
   sendResidenteStatementEmail: (tenantId, data) => api.post(`/tenants/${tenantId}/send-residente-statement-email/`, data),
 };

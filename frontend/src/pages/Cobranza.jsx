@@ -8,6 +8,7 @@ import { usePaymentsData } from '../hooks/usePaymentsData';
 import { queryKeys }        from '../hooks/queryKeys';
 import PaginationBar from '../components/PaginationBar';
 import PaymentReceiptModal from '../components/PaymentReceiptModal';
+import UnitStatementOverlay from '../components/UnitStatementOverlay';
 import { todayPeriod, periodLabel, prevPeriod, nextPeriod, tenantStartPeriod, fmtCurrency, statusClass, statusLabel, PAYMENT_TYPES, fmtDate, ROLES, CURRENCIES, APP_VERSION } from '../utils/helpers';
 import { ChevronLeft, ChevronRight, Search, Receipt, X, Users, CheckCircle, Clock, AlertCircle, DollarSign, Calendar, Building2, Upload, FileText, Check, Plus, Edit, Edit2, Trash2, Banknote, Mail, Lock, Send, XCircle, Eye, ChevronDown as ChevronDownIcon } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -148,6 +149,7 @@ export default function Cobranza() {
   const [captureStatementPrevDebt, setCaptureStatementPrevDebt] = useState(null); // net prev debt from estado de cuenta
   // Voucher ID que originó la captura actual; si existe, se marca como "received" al guardar
   const [pendingVoucherId, setPendingVoucherId]       = useState(null);
+  const [statementOverlayUnit, setStatementOverlayUnit] = useState(null);
 
   // ── Datos del módulo vía React Query ────────────────────────────────────────
   const {
@@ -718,6 +720,14 @@ export default function Cobranza() {
                     </td>
                     <td>
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          title="Ver estado de cuenta de la unidad"
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}
+                          onClick={() => setStatementOverlayUnit(u)}
+                        >
+                          <FileText size={12} /> Estado de cuenta
+                        </button>
                         {pay && (
                           <button className="btn btn-secondary btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }} onClick={() => setShowReceipt({ unit: u, pay })}>
                             <FileText size={12} /> Ver Recibo
@@ -1380,6 +1390,15 @@ export default function Cobranza() {
                     <div style={{ fontWeight: 700, fontSize: 14 }}>{showCapture.unit_name}</div>
                     <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>{responsible || '—'} · {showCapture.occupancy === 'rentado' ? 'Inquilino' : 'Propietario'}</div>
                   </div>
+                  <button
+                    type="button"
+                    className="btn btn-outline btn-sm"
+                    title="Ver estado de cuenta sin salir de cobranza"
+                    onClick={(e) => { e.stopPropagation(); setStatementOverlayUnit(showCapture); }}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 5, flexShrink: 0 }}
+                  >
+                    <FileText size={13} /> Estado de cuenta
+                  </button>
                   <span className={`badge ${statusClass(autoStatus)}`}>{statusLabel(autoStatus)}</span>
                 </div>
 
@@ -2047,6 +2066,17 @@ export default function Cobranza() {
           </div>
         );
       })()}
+
+      {/* ── Estado de cuenta de la unidad (sin salir de cobranza) ── */}
+      {statementOverlayUnit && (
+        <UnitStatementOverlay
+          tenantId={tenantId}
+          tenantData={tenantData}
+          unit={statementOverlayUnit}
+          cutoffPeriod={period}
+          onClose={() => setStatementOverlayUnit(null)}
+        />
+      )}
 
       {/* Voucher submissions panel — visible only to admin/tesorero */}
       {(role === 'admin' || role === 'tesorero') && (

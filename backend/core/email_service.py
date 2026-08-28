@@ -967,6 +967,165 @@ def send_unit_statement_email(
     )
 
 
+def send_unit_analysis_email(
+    emails: list[str],
+    tenant_name: str,
+    analysis: dict,
+) -> bool:
+    """Send an executive financial analysis of a unit statement."""
+    c = COLORS
+    logo_img = f'<img src="cid:{LOGO_CID}" alt="Homly" width="150" style="display:block;height:auto;max-width:150px;" />'
+
+    def money(n):
+        try:
+            v = float(n or 0)
+        except (TypeError, ValueError):
+            v = 0.0
+        return f'${v:,.2f}'
+
+    unit_code = analysis.get('unit_code') or ''
+    unit_name = analysis.get('unit_name') or ''
+    responsible = analysis.get('responsible') or ''
+    range_str = f"{analysis.get('period_from') or ''} — {analysis.get('period_to') or ''}"
+    situation = analysis.get('situation') or 'al_corriente'
+    sit_label = {
+        'al_corriente': 'Al corriente',
+        'a_favor': 'Saldo a favor',
+        'moroso': 'Con adeudo',
+    }.get(situation, situation)
+    sit_color = c['orange'] if situation == 'moroso' else c['green']
+    balance = float(analysis.get('balance') or 0)
+    bal_txt = money(abs(balance))
+    if balance > 1:
+        bal_txt = f'−{bal_txt}'
+    elif balance < -1:
+        bal_txt = f'+{bal_txt}'
+
+    overdue_html = ''
+    for item in analysis.get('overdue_items') or []:
+        overdue_html += (
+            f'<tr style="border-bottom:1px solid {c["cream_outer"]};">'
+            f'<td style="padding:8px 12px;font-size:13px;color:{c["ink_800"]};">{item.get("period_label") or item.get("period") or ""}</td>'
+            f'<td style="padding:8px 12px;text-align:right;font-size:13px;">{money(item.get("charge"))}</td>'
+            f'<td style="padding:8px 12px;text-align:right;font-size:13px;color:{c["green"]};">{money(item.get("paid"))}</td>'
+            f'<td style="padding:8px 12px;text-align:right;font-size:13px;font-weight:700;color:{c["orange"]};">{money(item.get("deficit"))}</td>'
+            f'</tr>'
+        )
+    overdue_block = ''
+    if overdue_html:
+        overdue_block = f"""
+<tr><td style="padding:0 28px 8px;">
+  <p style="margin:0 0 8px;font-size:11px;font-weight:700;color:{c['ink_600']};text-transform:uppercase;letter-spacing:0.06em;">Antigüedad del adeudo</p>
+  <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid {c['cream_outer']};border-radius:8px;overflow:hidden;">
+    <tr style="background:{c['green']};">
+      <td style="padding:8px 12px;font-size:11px;font-weight:700;color:{c['white']};">Período</td>
+      <td style="padding:8px 12px;text-align:right;font-size:11px;font-weight:700;color:{c['white']};">Cargo</td>
+      <td style="padding:8px 12px;text-align:right;font-size:11px;font-weight:700;color:{c['white']};">Abono</td>
+      <td style="padding:8px 12px;text-align:right;font-size:11px;font-weight:700;color:{c['white']};">Faltante</td>
+    </tr>
+    {overdue_html}
+  </table>
+</td></tr>"""
+
+    plan_block = ''
+    if analysis.get('has_plan'):
+        plan_block = f"""
+<tr><td style="padding:0 28px 16px;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#F0FAF7;border-left:3px solid {c['green']};border-radius:0 8px 8px 0;">
+    <tr><td style="padding:12px 16px;">
+      <p style="margin:0 0 4px;font-size:11px;font-weight:700;color:{c['green']};text-transform:uppercase;letter-spacing:0.06em;">{analysis.get('plan_title') or 'Plan de pagos'}</p>
+      <p style="margin:0;font-size:13px;color:{c['ink_600']};">{analysis.get('plan_summary') or ''}</p>
+    </td></tr>
+  </table>
+</td></tr>"""
+
+    html = f"""<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Análisis ejecutivo — {unit_code}</title></head>
+<body style="margin:0;padding:0;font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:{c['cream_outer']};">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:{c['cream_outer']};padding:40px 20px;">
+<tr><td align="center">
+<table width="100%" cellpadding="0" cellspacing="0" style="max-width:640px;background:{c['cream']};border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(26,22,18,0.08);">
+
+<tr><td style="padding:28px 28px 20px;text-align:center;border-bottom:3px solid {c['green']};">
+  {logo_img}
+  <p style="margin:10px 0 0;font-size:13px;font-weight:600;color:{c['ink_600']};letter-spacing:0.04em;">Property Management</p>
+  <p style="margin:8px 0 0;font-size:18px;font-weight:800;color:{c['ink_800']};">Análisis ejecutivo de estado de cuenta</p>
+  <p style="margin:4px 0 0;font-size:14px;font-weight:600;color:{c['ink_600']};">{tenant_name}</p>
+</td></tr>
+
+<tr><td style="padding:20px 28px 0;">
+  <p style="margin:0;font-size:15px;font-weight:800;color:{c['ink_800']};">{unit_name} ({unit_code})</p>
+  <p style="margin:4px 0 0;font-size:13px;color:{c['ink_600']};">{responsible} · Período {range_str}</p>
+  <p style="margin:10px 0 0;display:inline-block;font-size:11px;font-weight:800;letter-spacing:0.05em;text-transform:uppercase;color:{sit_color};background:{sit_color}18;padding:4px 10px;border-radius:999px;">{sit_label}</p>
+</td></tr>
+
+<tr><td style="padding:18px 28px 8px;">
+  <table width="100%" cellpadding="0" cellspacing="0">
+    <tr>
+      <td width="25%" style="padding:8px;vertical-align:top;">
+        <p style="margin:0;font-size:10px;font-weight:700;color:{c['ink_600']};text-transform:uppercase;">Cargos</p>
+        <p style="margin:4px 0 0;font-size:16px;font-weight:800;color:{c['ink_800']};">{money(analysis.get('charges'))}</p>
+      </td>
+      <td width="25%" style="padding:8px;vertical-align:top;">
+        <p style="margin:0;font-size:10px;font-weight:700;color:{c['ink_600']};text-transform:uppercase;">Abonado</p>
+        <p style="margin:4px 0 0;font-size:16px;font-weight:800;color:{c['green']};">{money(analysis.get('paid'))}</p>
+      </td>
+      <td width="25%" style="padding:8px;vertical-align:top;">
+        <p style="margin:0;font-size:10px;font-weight:700;color:{c['ink_600']};text-transform:uppercase;">Saldo</p>
+        <p style="margin:4px 0 0;font-size:16px;font-weight:800;color:{sit_color};">{bal_txt}</p>
+      </td>
+      <td width="25%" style="padding:8px;vertical-align:top;">
+        <p style="margin:0;font-size:10px;font-weight:700;color:{c['ink_600']};text-transform:uppercase;">Cumplimiento</p>
+        <p style="margin:4px 0 0;font-size:16px;font-weight:800;color:{c['ink_800']};">{float(analysis.get('compliance') or 0):.0f}%</p>
+      </td>
+    </tr>
+  </table>
+</td></tr>
+
+<tr><td style="padding:8px 28px 16px;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:{'#FFF4F1' if situation == 'moroso' else '#F0FAF7'};border-left:3px solid {sit_color};border-radius:0 8px 8px 0;">
+    <tr><td style="padding:14px 16px;">
+      <p style="margin:0 0 4px;font-size:11px;font-weight:700;color:{sit_color};text-transform:uppercase;letter-spacing:0.06em;">Diagnóstico</p>
+      <p style="margin:0;font-size:13px;color:{c['ink_600']};line-height:1.6;">{analysis.get('diagnosis') or ''}</p>
+    </td></tr>
+  </table>
+</td></tr>
+
+{plan_block}
+{overdue_block}
+
+<tr><td style="padding:8px 28px 22px;">
+  <p style="margin:0 0 4px;font-size:11px;font-weight:700;color:{c['ink_600']};text-transform:uppercase;letter-spacing:0.06em;">Recomendación</p>
+  <p style="margin:0;font-size:13px;color:{c['ink_800']};line-height:1.6;">{analysis.get('recommendation') or ''}</p>
+</td></tr>
+
+{_email_footer_html(c)}
+
+</table>
+</td></tr>
+</table>
+</body>
+</html>"""
+
+    plain = (
+        f'Análisis ejecutivo — {unit_name} ({unit_code})\n'
+        f'{tenant_name} · {range_str}\n'
+        f'Situación: {sit_label}\n'
+        f'Cargos: {money(analysis.get("charges"))} · Abonado: {money(analysis.get("paid"))} · Saldo: {bal_txt}\n'
+        f'Cumplimiento: {float(analysis.get("compliance") or 0):.0f}%\n\n'
+        f'{analysis.get("diagnosis") or ""}\n\n'
+        f'{analysis.get("recommendation") or ""}'
+    )
+
+    return _send_branded_email(
+        subject=f'Análisis ejecutivo — {unit_code} | {tenant_name}',
+        plain=plain,
+        html=html,
+        to_emails=emails,
+    )
+
+
 # ─── General Statement Email ────────────────────────────────────────────────
 
 def send_general_statement_email(
