@@ -150,6 +150,10 @@ class Tenant(models.Model):
     country = models.CharField(max_length=100, blank=True, default='')
     state = models.CharField(max_length=100, blank=True, default='')
     bank_initial_balance = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    receipt_seq = models.PositiveIntegerField(
+        default=0,
+        help_text='Último consecutivo de recibo principal asignado en este condominio.',
+    )
     admin_type = models.CharField(max_length=20, choices=ADMIN_TYPE_CHOICES, default='mesa_directiva')
 
     # Fiscal info (Info tab)

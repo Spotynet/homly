@@ -4,6 +4,8 @@ All endpoints for the property management system.
 """
 import uuid
 import json
+import re
+import base64
 import logging
 import threading
 from decimal import Decimal
@@ -60,7 +62,7 @@ from .serializers import (
     BlogPostSerializer, BlogPostListSerializer, BlogCommentSerializer,
     PaymentVoucherSubmissionSerializer,
 )
-from .permissions import IsSuperAdmin, IsTenantAdmin, IsTenantMember, IsAdminOrTesorero, IsAdminOrTesOrAuditor, CanApproveReservation
+from .permissions import IsSuperAdmin, IsTenantAdmin, IsTenantMember, IsAdminOrTesorero, IsAdminOrTesOrAuditor, IsAdminTesOrContador, CanApproveReservation
 
 logger = logging.getLogger(__name__)
 
@@ -1471,6 +1473,59 @@ def _compute_payment_status(payment, tenant, extra_fields, plan_charge=Decimal('
     return 'pendiente'
 
 
+def _next_principal_folio(tenant):
+    """Assign the next tenant-wide principal receipt consecutive: REC-000123."""
+    with transaction.atomic():
+        locked = Tenant.objects.select_for_update().get(pk=tenant.pk)
+        seq = int(locked.receipt_seq or 0)
+        if seq <= 0:
+            max_n = 0
+            for folio in Payment.objects.filter(tenant_id=locked.id).exclude(folio='').values_list('folio', flat=True):
+                m = re.match(r'^REC-(\d+)', str(folio or ''))
+                if m:
+                    max_n = max(max_n, int(m.group(1)))
+            seq = max_n
+        seq += 1
+        locked.receipt_seq = seq
+        locked.save(update_fields=['receipt_seq'])
+        return f'REC-{seq:06d}'
+
+
+def _principal_folio_base(folio):
+    raw = (folio or '').strip()
+    if not raw:
+        return ''
+    return re.sub(r'-A\d+$', '', raw)
+
+
+def _additional_folio(principal_folio, index):
+    base = _principal_folio_base(principal_folio) or 'REC'
+    return f'{base}-A{int(index)}'
+
+
+def _ensure_payment_folios(payment, tenant=None):
+    """Guarantee a principal folio plus A1, A2… consecutives for additional payments."""
+    tenant = tenant or payment.tenant
+    changed = False
+    if not (payment.folio or '').strip():
+        payment.folio = _next_principal_folio(tenant)
+        changed = True
+    principal = (payment.folio or '').strip()
+    aps = list(payment.additional_payments or [])
+    new_aps = []
+    for i, ap in enumerate(aps, start=1):
+        ap = dict(ap or {})
+        expected = _additional_folio(principal, i)
+        if ap.get('folio') != expected:
+            ap['folio'] = expected
+            changed = True
+        new_aps.append(ap)
+    if changed:
+        payment.additional_payments = new_aps
+        payment.save(update_fields=['folio', 'additional_payments', 'updated_at'])
+    return payment
+
+
 class PaymentViewSet(viewsets.ModelViewSet):
     """CRUD /api/tenants/{tenant_id}/payments/"""
     serializer_class = PaymentSerializer
@@ -1555,13 +1610,18 @@ class PaymentViewSet(viewsets.ModelViewSet):
                 'payment_type': data['payment_type'],
                 'payment_date': data.get('payment_date'),
                 'notes': data.get('notes', ''),
-                'folio': data.get('folio', ''),
                 'evidence': json.dumps(data.get('evidence', [])),
                 'bank_reconciled': data.get('bank_reconciled', False),
                 'adeudo_payments': data.get('adeudo_payments', {}),
                 'applied_to_unit_id': applied_to_unit_id,
             }
         )
+
+        requested_folio = (data.get('folio') or '').strip()
+        if requested_folio:
+            payment.folio = requested_folio
+            payment.save(update_fields=['folio'])
+        _ensure_payment_folios(payment, tenant)
 
         # Process field payments
         field_payments_data = data.get('field_payments', {})
@@ -1693,6 +1753,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
             'payment_date': (data.get('payment_date') or '').isoformat() if hasattr(data.get('payment_date'), 'isoformat') else str(data.get('payment_date') or ''),
             'notes': data.get('notes', ''),
             'bank_reconciled': data.get('bank_reconciled', False),
+            'evidence': data.get('evidence') or [],
             'created_at': timezone.now().isoformat(),
             **({'applied_to_unit_id': str(applied_to_unit_id)} if applied_to_unit_id else {}),
         }
@@ -1722,6 +1783,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
             plan_charge=_add_plan_charge, plan_key=_add_plan_key,
         )
         payment.save()
+        _ensure_payment_folios(payment, tenant)
 
         # Sync plan installments if there is an active plan for this unit
         try:
@@ -1824,6 +1886,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
             plan_charge=_del_plan_charge, plan_key=_del_plan_key,
         )
         payment.save()
+        _ensure_payment_folios(payment, tenant)
         # Sync plan installments
         try:
             if _del_active_plan:
@@ -1857,6 +1920,8 @@ class PaymentViewSet(viewsets.ModelViewSet):
                 ap['payment_date'] = data.get('payment_date', ap.get('payment_date', ''))
                 ap['notes'] = data.get('notes', ap.get('notes', ''))
                 ap['bank_reconciled'] = data.get('bank_reconciled', ap.get('bank_reconciled', False))
+                if 'evidence' in data:
+                    ap['evidence'] = data.get('evidence') or []
                 updated = True
             new_list.append(ap)
         if not updated:
@@ -1885,6 +1950,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
             plan_charge=_upd_plan_charge, plan_key=_upd_plan_key,
         )
         payment.save()
+        _ensure_payment_folios(payment, tenant)
         # Sync plan installments
         try:
             if _upd_active_plan:
@@ -1929,8 +1995,17 @@ class PaymentViewSet(viewsets.ModelViewSet):
 
         tenant = Tenant.objects.get(id=tenant_id)
         extra_fields = list(ExtraField.objects.filter(tenant_id=tenant_id, enabled=True))
+        _ensure_payment_folios(payment, tenant)
+        payment.refresh_from_db()
 
-        receipt_data = _compute_receipt_email_data(payment, unit, tenant, extra_fields)
+        additional_id = request.query_params.get('additional_id')
+        if additional_id:
+            ap = next((x for x in (payment.additional_payments or []) if str(x.get('id')) == str(additional_id)), None)
+            if not ap:
+                return Response({'detail': 'Pago adicional no encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+            receipt_data = _receipt_data_from_additional(payment, unit, tenant, ap, extra_fields)
+        else:
+            receipt_data = _compute_receipt_email_data(payment, unit, tenant, extra_fields)
 
         pdf_bytes = _generate_receipt_pdf(tenant, unit, payment, receipt_data)
         if pdf_bytes is None:
@@ -1941,7 +2016,8 @@ class PaymentViewSet(viewsets.ModelViewSet):
 
         period_safe = payment.period.replace('-', '')
         unit_safe = ''.join(c if c.isalnum() or c in '-_' else '_' for c in (unit.unit_id_code or 'unidad'))
-        filename = f'recibo_{unit_safe}_{period_safe}.pdf'
+        folio_safe = ''.join(c if c.isalnum() or c in '-_' else '_' for c in (receipt_data.get('folio') or 'recibo'))
+        filename = f'recibo_{unit_safe}_{period_safe}_{folio_safe}.pdf'
 
         response = HttpResponse(pdf_bytes, content_type='application/pdf')
         response['Content-Disposition'] = f'attachment; filename="{filename}"'
@@ -1976,8 +2052,17 @@ class PaymentViewSet(viewsets.ModelViewSet):
 
         tenant = Tenant.objects.get(id=tenant_id)
         extra_fields = list(ExtraField.objects.filter(tenant_id=tenant_id, enabled=True))
+        _ensure_payment_folios(payment, tenant)
+        payment.refresh_from_db()
 
-        receipt_data = _compute_receipt_email_data(payment, unit, tenant, extra_fields)
+        additional_id = request.data.get('additional_id')
+        if additional_id:
+            ap = next((x for x in (payment.additional_payments or []) if str(x.get('id')) == str(additional_id)), None)
+            if not ap:
+                return Response({'detail': 'Pago adicional no encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+            receipt_data = _receipt_data_from_additional(payment, unit, tenant, ap, extra_fields)
+        else:
+            receipt_data = _compute_receipt_email_data(payment, unit, tenant, extra_fields)
 
         # Generate PDF attachment
         pdf_bytes = _generate_receipt_pdf(tenant, unit, payment, receipt_data)
@@ -2140,7 +2225,7 @@ class CajaChicaViewSet(viewsets.ModelViewSet):
 class BankStatementViewSet(viewsets.ModelViewSet):
     """CRUD /api/tenants/{tenant_id}/bank-statements/"""
     serializer_class = BankStatementSerializer
-    permission_classes = [IsAdminOrTesorero]
+    permission_classes = [IsAdminTesOrContador]
 
     def get_queryset(self):
         return BankStatement.objects.filter(tenant_id=self.kwargs['tenant_id'])
@@ -2148,16 +2233,54 @@ class BankStatementViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(tenant_id=self.kwargs['tenant_id'])
 
+    @staticmethod
+    def _is_pdf_upload(name, content_type, raw):
+        n = (name or '').lower()
+        ctype = (content_type or '').lower()
+        if n.endswith('.pdf'):
+            return True
+        if 'pdf' in ctype:
+            return True
+        if raw and raw[:5] == b'%PDF-':
+            return True
+        return False
+
     def create(self, request, *args, **kwargs):
         """Upsert: if a statement already exists for this period, replace it."""
-        period = request.data.get('period')
-        file_data = request.data.get('file_data')
+        period = (request.data.get('period') or '').strip()
+        if not period:
+            return Response({'detail': 'El período es obligatorio.'}, status=status.HTTP_400_BAD_REQUEST)
+
         tenant_id = self.kwargs['tenant_id']
+        upload = request.FILES.get('statement_file') or request.FILES.get('file')
+        file_data = request.data.get('file_data')
+        raw = None
+
+        if upload:
+            raw = upload.read()
+            if not self._is_pdf_upload(getattr(upload, 'name', ''), getattr(upload, 'content_type', ''), raw):
+                return Response({'detail': 'Solo se permiten archivos PDF.'}, status=status.HTTP_400_BAD_REQUEST)
+            file_data = base64.b64encode(raw).decode('ascii')
+            upload.seek(0)
+
+        if not file_data:
+            return Response({'detail': 'Adjunta un archivo PDF.'}, status=status.HTTP_400_BAD_REQUEST)
+
         obj, created = BankStatement.objects.update_or_create(
             tenant_id=tenant_id,
             period=period,
             defaults={'file_data': file_data},
         )
+        if upload:
+            try:
+                filename = getattr(upload, 'name', '') or f'estado-bancario-{period}.pdf'
+                if not filename.lower().endswith('.pdf'):
+                    filename = f'{filename}.pdf'
+                upload.seek(0)
+                obj.statement_file.save(filename, upload, save=True)
+            except Exception:
+                logger.exception('No se pudo guardar statement_file del estado bancario %s %s', tenant_id, period)
+
         serializer = self.get_serializer(obj)
         st = status.HTTP_201_CREATED if created else status.HTTP_200_OK
         return Response(serializer.data, status=st)
@@ -4452,6 +4575,60 @@ def _compute_receipt_email_data(payment, unit, tenant, extra_fields: list) -> di
         'total_charges': float(total_req_charges),
         'total_paid': float(total_received),
         'saldo': float(saldo),
+        'related_folios': [
+            ap.get('folio') for ap in (payment.additional_payments or []) if ap.get('folio')
+        ],
+        'parent_folio': payment.folio or '',
+        'is_additional': False,
+    }
+
+
+def _receipt_data_from_additional(payment, unit, tenant, ap, extra_fields):
+    """Build receipt payload for a single additional payment (own consecutive)."""
+    field_map = {str(f.id): f.label for f in extra_fields}
+    rows = [{'is_section': True, 'concept': '+ Pago adicional'}]
+    total = 0.0
+    for fk, fd in (ap.get('field_payments') or {}).items():
+        amt = float((fd or {}).get('received', 0) if isinstance(fd, dict) else fd or 0)
+        if amt <= 0:
+            continue
+        if fk == 'maintenance':
+            label = 'Mantenimiento'
+        elif str(fk).startswith('plan_'):
+            label = 'Plan de pagos'
+        else:
+            label = field_map.get(str(fk), str(fk))
+        rows.append({'concept': label, 'charge': 0, 'paid': amt, 'balance': 0})
+        total += amt
+    pt = _PAYMENT_TYPE_LABELS.get(ap.get('payment_type') or '', ap.get('payment_type') or 'No especificado')
+    pd_raw = ap.get('payment_date') or ''
+    pd_label = pd_raw or 'No registrada'
+    try:
+        if pd_raw:
+            y, m, d = [int(x) for x in str(pd_raw)[:10].split('-')]
+            pd_label = f'{d:02d} de {_MONTH_NAMES_ES[m]} de {y}'
+    except Exception:
+        pass
+    currency_sym = _CURRENCY_SYMBOLS.get(getattr(tenant, 'currency', 'MXN') or 'MXN', '$')
+    return {
+        'tenant_name': getattr(tenant, 'razon_social', '') or tenant.name or '',
+        'tenant_rfc': getattr(tenant, 'rfc', '') or '',
+        'currency_symbol': currency_sym,
+        'unit_code': unit.unit_id_code or '',
+        'unit_name': unit.unit_name or '',
+        'responsible': unit.responsible_name or '',
+        'period_str': _period_label_es(payment.period),
+        'folio': ap.get('folio') or '',
+        'payment_type_label': pt,
+        'payment_date_label': pd_label,
+        'rows': rows,
+        'total_charges': 0,
+        'total_paid': total,
+        'saldo': 0,
+        'related_folios': [],
+        'parent_folio': payment.folio or '',
+        'is_additional': True,
+        'notes': ap.get('notes') or '',
     }
 
 
@@ -6026,6 +6203,11 @@ def _generate_receipt_pdf(tenant, unit, payment, receipt_data):
     st_total_lbl = ParagraphStyle('TL', fontSize=10, fontName='Helvetica-Bold', textColor=COL_WHITE)
     st_total_val = ParagraphStyle('TV', fontSize=10, fontName='Helvetica-Bold', textColor=COL_WHITE, alignment=TA_RIGHT)
     st_status    = ParagraphStyle('ST', fontSize=11, fontName='Helvetica-Bold', textColor=COL_WHITE, alignment=TA_CENTER)
+    st_note      = ParagraphStyle('NT', fontSize=8, fontName='Helvetica', textColor=COL_INK_LT, leading=11)
+
+    folio       = receipt_data.get('folio') or getattr(payment, 'folio', '') or ''
+    is_addl     = bool(receipt_data.get('is_additional'))
+    header_title = 'Recibo complementario' if is_addl else 'Recibo de Pago'
 
     story = []
 
@@ -6037,7 +6219,7 @@ def _generate_receipt_pdf(tenant, unit, payment, receipt_data):
     header_data = [[
         [Paragraph(tenant_display, st_hdr_title),
          Paragraph(f'Condominio{rfc_part}', st_hdr_sub)],
-        Paragraph('Recibo de Pago', st_hdr_right),
+        Paragraph(header_title, st_hdr_right),
     ]]
     header_tbl = Table(header_data, colWidths=[W * 0.62, W * 0.38])
     header_tbl.setStyle(TableStyle([
@@ -6058,7 +6240,6 @@ def _generate_receipt_pdf(tenant, unit, payment, receipt_data):
     period_str  = receipt_data.get('period_str', payment.period)
     pay_date    = receipt_data.get('payment_date_label', '—')
     pay_type    = receipt_data.get('payment_type_label', '—')
-    folio       = getattr(payment, 'folio', '') or ''
 
     info_rows = [
         [
@@ -6086,7 +6267,23 @@ def _generate_receipt_pdf(tenant, unit, payment, receipt_data):
         ('VALIGN', (0, 0), (-1, -1), 'TOP'),
     ]))
     story.append(info_tbl)
-    story.append(Spacer(1, 0.3 * cm))
+    story.append(Spacer(1, 0.22 * cm))
+
+    parent_folio = (receipt_data.get('parent_folio') or '').strip()
+    related_folios = [f for f in (receipt_data.get('related_folios') or []) if f]
+    if is_addl and parent_folio:
+        story.append(Paragraph(
+            f'Este recibo complementario forma parte del recibo principal <b>{parent_folio}</b> '
+            f'de la cobranza del mes de la unidad.',
+            st_note,
+        ))
+        story.append(Spacer(1, 0.18 * cm))
+    elif related_folios:
+        story.append(Paragraph(
+            f'Recibos complementarios de este período: <b>{", ".join(related_folios)}</b>',
+            st_note,
+        ))
+        story.append(Spacer(1, 0.18 * cm))
 
     # ── Detail table ────────────────────────────────────────────────────────
     def fmt_cur(n):
@@ -6178,6 +6375,11 @@ def _generate_receipt_pdf(tenant, unit, payment, receipt_data):
         ('ROUNDEDCORNERS', [0, 0, 6, 6]),
     ]))
     story.append(totals_tbl)
+
+    notes = (receipt_data.get('notes') or '').strip()
+    if notes:
+        story.append(Spacer(1, 0.2 * cm))
+        story.append(Paragraph(f'<b>Notas:</b> {notes}', st_note))
 
     # ── Footer note ─────────────────────────────────────────────────────────
     story.append(Spacer(1, 0.4 * cm))

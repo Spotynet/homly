@@ -646,6 +646,10 @@ def send_receipt_email(
     total_paid: float,
     saldo: float,
     pdf_attachment: tuple | None = None,   # (filename, bytes, 'application/pdf')
+    is_additional: bool = False,
+    parent_folio: str = '',
+    related_folios: list | None = None,
+    notes: str = '',
 ) -> bool:
     """Send a branded payment receipt email."""
     c = COLORS
@@ -672,12 +676,21 @@ def send_receipt_email(
             )
 
     saldo_color = c['orange'] if float(saldo) > 0 else c['green']
+    receipt_kind = 'Recibo complementario' if is_additional else 'Recibo de Pago'
     folio_line = f'<div style="font-size:14px;font-weight:800;color:{c["orange"]};margin-top:4px;">No. {folio}</div>' if folio else ''
     rfc_line = f'<div style="font-size:12px;color:{c["ink_600"]};margin-top:2px;">RFC: {tenant_rfc}</div>' if tenant_rfc else ''
+    parent_line = (
+        f' Forma parte del recibo principal <strong>{parent_folio}</strong> de la cobranza del mes.'
+        if is_additional and parent_folio else ''
+    )
+    related_line = (
+        f' Recibos complementarios: <strong>{", ".join(related_folios)}</strong>.'
+        if (related_folios and not is_additional) else ''
+    )
 
     html = f"""<!DOCTYPE html>
 <html lang="es">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Recibo de Pago — {period_str}</title></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{receipt_kind} — {period_str}</title></head>
 <body style="margin:0;padding:0;font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:{c['cream_outer']};">
 <table width="100%" cellpadding="0" cellspacing="0" style="background:{c['cream_outer']};padding:40px 20px;">
 <tr><td align="center">
@@ -693,7 +706,7 @@ def send_receipt_email(
         {rfc_line}
       </td>
       <td style="text-align:right;vertical-align:top;">
-        <div style="font-size:11px;font-weight:700;letter-spacing:0.1em;color:{c['ink_600']};text-transform:uppercase;">Recibo de Pago</div>
+        <div style="font-size:11px;font-weight:700;letter-spacing:0.1em;color:{c['ink_600']};text-transform:uppercase;">{receipt_kind}</div>
         {folio_line}
         <div style="font-size:13px;font-weight:600;color:{c['orange']};margin-top:4px;">{period_str}</div>
         <div style="font-size:11px;color:{c['ink_600']};margin-top:3px;">{payment_date_label}</div>
@@ -709,9 +722,9 @@ def send_receipt_email(
       <td>
         <p style="margin:0 0 4px;font-size:11px;font-weight:700;color:{c['green']};text-transform:uppercase;letter-spacing:0.06em;">Contenido de este correo</p>
         <p style="margin:0;font-size:13px;color:{c['ink_600']};line-height:1.6;">
-          Este correo contiene el <strong>recibo de pago del período {period_str}</strong> correspondiente a la unidad
+          Este correo contiene el <strong>{receipt_kind.lower()} del período {period_str}</strong> correspondiente a la unidad
           <strong>{unit_code} — {unit_name}</strong> del condominio <strong>{tenant_name}</strong>.
-          Incluye el desglose de cargos obligatorios, abonos registrados y el saldo resultante.
+          {parent_line}{related_line}
         </p>
       </td>
     </tr>
@@ -777,7 +790,7 @@ def send_receipt_email(
 </html>"""
 
     plain = (
-        f'Recibo de Pago — {period_str}\n'
+        f'{receipt_kind} — {period_str}\n'
         f'{tenant_name}\n\n'
         f'Unidad: {unit_code} — {unit_name}\n'
         f'Responsable: {responsible}\n'
@@ -790,7 +803,7 @@ def send_receipt_email(
     )
 
     return _send_branded_email(
-        subject=f'Recibo de Pago — {period_str} | {unit_code}',
+        subject=f'{receipt_kind}{f" {folio}" if folio else ""} — {period_str} | {unit_code}',
         plain=plain,
         html=html,
         to_emails=emails,

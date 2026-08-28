@@ -162,7 +162,10 @@ export const paymentsAPI = {
   updateAdditional: (tenantId, paymentId, additionalId, data) => api.patch(`/tenants/${tenantId}/payments/${paymentId}/update-additional/${additionalId}/`, data),
   clear: (tenantId, id) => api.delete(`/tenants/${tenantId}/payments/${id}/clear/`),
   sendReceipt: (tenantId, paymentId, data) => api.post(`/tenants/${tenantId}/payments/${paymentId}/send-receipt/`, data),
-  receiptPDF: (tenantId, paymentId) => api.get(`/tenants/${tenantId}/payments/${paymentId}/receipt-pdf/`, { responseType: 'blob' }),
+  receiptPDF: (tenantId, paymentId, additionalId) => api.get(
+    `/tenants/${tenantId}/payments/${paymentId}/receipt-pdf/`,
+    { responseType: 'blob', params: additionalId ? { additional_id: additionalId } : {} },
+  ),
 };
 
 // ─── Payment Voucher Submissions ────────────────
@@ -225,8 +228,8 @@ export const periodsAPI = {
 
 // ─── Bank Statements ────────────────────────────
 export const bankAPI = {
-  list:            (tenantId)     => api.get(`/tenants/${tenantId}/bank-statements/`),
-  upload:          (tenantId, data) => api.post(`/tenants/${tenantId}/bank-statements/`, data),
+  list: (tenantId, params) => api.get(`/tenants/${tenantId}/bank-statements/`, { params: params || {} }),
+  upload: (tenantId, data) => api.post(`/tenants/${tenantId}/bank-statements/`, data),
   deleteStatement: (tenantId, id) => api.delete(`/tenants/${tenantId}/bank-statements/${id}/`),
 };
 

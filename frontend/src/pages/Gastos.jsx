@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { gastosAPI } from '../api/client';
 import { useGastosData } from '../hooks/useGastosData';
 import { queryKeys }     from '../hooks/queryKeys';
-import { todayPeriod, periodLabel, prevPeriod, nextPeriod, fmtDate, PAYMENT_TYPES } from '../utils/helpers';
+import { todayPeriod, periodLabel, prevPeriod, nextPeriod, fmtDate, PAYMENT_TYPES, isPdfFile } from '../utils/helpers';
 import { ChevronLeft, ChevronRight, Plus, Edit, Trash2, X, ShoppingBag, Printer, Check, AlertCircle, Lock, Paperclip, Eye, FileText, Image } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -33,7 +33,7 @@ function parseEvidence(raw) {
   return s ? [{ data: s, mime: '', name: 'Evidencia adjunta' }] : [];
 }
 
-const ACCEPTED_TYPES = 'image/png,image/jpeg,image/gif,image/webp,image/bmp,application/pdf';
+const ACCEPTED_TYPES = 'image/png,image/jpeg,image/gif,image/webp,image/bmp,application/pdf,.pdf,.PDF';
 
 // ── EvidenceViewer popup ───────────────────────────────────────────────────────
 
@@ -541,7 +541,7 @@ export default function Gastos() {
 
   const handleGastoFileAdd = async (files) => {
     const arr = Array.from(files);
-    const invalid = arr.filter(f => !f.type.startsWith('image/') && f.type !== 'application/pdf');
+    const invalid = arr.filter(f => !f.type.startsWith('image/') && !isPdfFile(f));
     if (invalid.length) { toast.error('Solo se permiten imágenes (PNG, JPG, GIF, WEBP) y PDF'); return; }
     const tooBig = arr.filter(f => f.size > 10 * 1024 * 1024);
     if (tooBig.length) { toast.error('Cada archivo debe ser menor a 10 MB'); return; }

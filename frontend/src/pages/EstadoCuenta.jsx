@@ -6,7 +6,7 @@ import PaginationBar from '../components/PaginationBar';
 import PaymentReceiptModal from '../components/PaymentReceiptModal';
 import SendEmailModal from '../components/SendEmailModal';
 import UnitStatementAnalysisModal from '../components/UnitStatementAnalysisModal';
-import { statusClass, statusLabel, fmtDate, periodLabel, todayPeriod, prevPeriod, nextPeriod, ROLES } from '../utils/helpers';
+import { statusClass, statusLabel, fmtDate, periodLabel, todayPeriod, prevPeriod, nextPeriod, ROLES, isPdfFile } from '../utils/helpers';
 import { Search, ChevronLeft, ChevronRight, Building, Globe, DollarSign, ArrowDown, TrendingDown, AlertCircle, Calendar, Printer, ShoppingBag, FileText, Mail, X, Send, Download, Paperclip, Eye, Upload, BarChart3 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -1428,6 +1428,7 @@ export default function EstadoCuenta() {
               startPeriod={startPeriod}
               periodAggregates={listMeta?.period_aggregates || []}
               unitsCount={units.length}
+              role={role}
             />
           )}
 
@@ -1573,9 +1574,10 @@ function payTotalIncome(pay) {
 /* ═══════════════════════════════════════════════════════════
    ESTADO GENERAL — per-period rows across all units
    ═══════════════════════════════════════════════════════════ */
-function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cutoff, setCutoff, startPeriod, periodAggregates, unitsCount }) {
+function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cutoff, setCutoff, startPeriod, periodAggregates, unitsCount, role }) {
   const cur = tenantData?.currency || 'MXN';
   const fmt = (n) => _fmt(n, cur);
+  const canManageBankStmts = ['admin', 'tesorero', 'contador', 'superadmin'].includes(role);
   const [payments, setPayments] = useState([]);
   const [gastos, setGastos] = useState([]);
   // cajaChica ya no se incluye en el reporte general
@@ -1599,24 +1601,24 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
-    if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+    if (!isPdfFile(file)) {
       toast.error('Solo se permiten archivos PDF');
+      return;
+    }
+    if (file.size > 20 * 1024 * 1024) {
+      toast.error('El PDF no puede superar 20 MB');
       return;
     }
     setBankUploading(period);
     try {
-      const base64 = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = ev => resolve(ev.target.result.split(',')[1]);
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
-      // El backend hace upsert: crea o reemplaza el estado del período automáticamente
-      const res = await bankAPI.upload(tenantId, { period, file_data: base64 });
+      const form = new FormData();
+      form.append('period', period);
+      form.append('statement_file', file, file.name || `estado-bancario-${period}.pdf`);
+      const res = await bankAPI.upload(tenantId, form);
       setBankStatements(prev => [...prev.filter(s => s.period !== period), res.data]);
       toast.success(`Estado bancario de ${periodLabel(period)} guardado`);
-    } catch {
-      toast.error('Error al subir el estado bancario');
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || 'Error al subir el estado bancario');
     } finally {
       setBankUploading(null);
     }
@@ -1633,7 +1635,7 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
       paymentsAPI.list(tenantId, { page_size: 9999 }).catch(() => ({ data: [] })),
       gastosAPI.list(tenantId, { page_size: 9999 }).catch(() => ({ data: [] })),
       unrecognizedIncomeAPI.list(tenantId, { page_size: 9999 }).catch(() => ({ data: [] })),
-      bankAPI.list(tenantId).catch(() => ({ data: [] })),
+      bankAPI.list(tenantId, { page_size: 9999 }).catch(() => ({ data: [] })),
     ]).then(([pRes, gRes, uiRes, bsRes]) => {
       setPayments(pRes.data?.results || pRes.data || []);
       setGastos(gRes.data?.results || gRes.data || []);
@@ -2118,6 +2120,7 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
                                 <Eye size={13} />
                               </button>
                             )}
+                            {canManageBankStmts && (
                             <label
                               title={bankStmtMap[row.period] ? 'Reemplazar estado bancario' : 'Adjuntar estado bancario PDF'}
                               style={{
@@ -2137,11 +2140,12 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
                               }
                               <input
                                 type="file"
-                                accept=".pdf,application/pdf"
+                                accept=".pdf,.PDF,application/pdf,application/x-pdf"
                                 style={{ display: 'none' }}
                                 onChange={e => handleBankFileSelect(e, row.period)}
                               />
                             </label>
+                            )}
                           </div>
                         </td>
                       </tr>

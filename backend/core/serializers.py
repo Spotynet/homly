@@ -655,7 +655,7 @@ class PaymentListSerializer(serializers.ModelSerializer):
     La evidencia real se obtiene bajo demanda en GET /payments/{id}/.
     """
     field_payments = FieldPaymentSerializer(many=True, read_only=True)
-    additional_payments = serializers.JSONField(read_only=True)
+    additional_payments = serializers.SerializerMethodField()
     unit_code = serializers.CharField(source='unit.unit_id_code', read_only=True)
     unit_name = serializers.CharField(source='unit.unit_name', read_only=True)
     responsible = serializers.CharField(source='unit.responsible_name', read_only=True)
@@ -665,7 +665,21 @@ class PaymentListSerializer(serializers.ModelSerializer):
     applied_to_unit_name = serializers.CharField(source='applied_to_unit.unit_name',    read_only=True, allow_null=True, default=None)
 
     def get_has_evidence(self, obj):
-        return bool(obj.evidence)
+        if _parse_evidence(obj.evidence):
+            return True
+        for ap in (obj.additional_payments or []):
+            if (ap or {}).get('evidence'):
+                return True
+        return False
+
+    def get_additional_payments(self, obj):
+        """List payload without Base64 blobs; keep folio and has_evidence per additional."""
+        out = []
+        for ap in (obj.additional_payments or []):
+            item = {k: v for k, v in (ap or {}).items() if k != 'evidence'}
+            item['has_evidence'] = bool((ap or {}).get('evidence'))
+            out.append(item)
+        return out
 
     class Meta:
         model = Payment
@@ -700,6 +714,7 @@ class AddAdditionalPaymentSerializer(serializers.Serializer):
     notes = serializers.CharField(required=False, allow_blank=True, default='')
     bank_reconciled = serializers.BooleanField(required=False, default=False)
     applied_to_unit_id = serializers.UUIDField(required=False, allow_null=True, default=None)
+    evidence = serializers.ListField(child=serializers.DictField(), required=False, default=list)
 
 
 # ═══════════════════════════════════════════════════════════

@@ -9,7 +9,7 @@
  *   reservations  – Array of approved reservations for this payment (default [])
  *   onClose       – () => void
  */
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { AlertCircle, Calendar, FileText, Mail, Printer, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
@@ -38,6 +38,42 @@ function receiptStatusBadge(status) {
       <span className={`status-indicator ${s.si}`} /> {s.label}
     </span>
   );
+}
+
+function collectEvidenceGroups(pay, { principalOnly = false, additional = null } = {}) {
+  if (additional) {
+    const files = Array.isArray(additional.evidence) ? additional.evidence : [];
+    return files.length
+      ? [{ label: additional.folio ? `Comprobantes · ${additional.folio}` : 'Comprobantes de este pago', files }]
+      : [];
+  }
+  const groups = [];
+  const principal = Array.isArray(pay?.evidence) ? pay.evidence : [];
+  if (principal.length) {
+    groups.push({
+      label: pay?.folio ? `Pago principal · ${pay.folio}` : 'Pago principal',
+      files: principal,
+    });
+  }
+  if (!principalOnly) {
+    (pay?.additional_payments || []).forEach((ap, i) => {
+      const files = Array.isArray(ap.evidence) ? ap.evidence : [];
+      if (!files.length) return;
+      groups.push({
+        label: ap.folio ? `Pago adicional · ${ap.folio}` : `Pago adicional #${i + 2}`,
+        files,
+      });
+    });
+  }
+  return groups;
+}
+
+function additionalTotal(ap) {
+  let t = 0;
+  Object.values(ap?.field_payments || ap?.fieldPayments || {}).forEach((fd) => {
+    t += parseFloat((fd && fd.received) ?? fd ?? 0) || 0;
+  });
+  return t;
 }
 
 function getEffectiveFieldTotals(pay) {
@@ -107,11 +143,28 @@ function EvidencePopup({ ev, onClose }) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function PaymentReceiptModal({ pay, unit, tc, extraFields = [], reservations = [], activePlan = null, onClose }) {
+export default function PaymentReceiptModal({ pay: payProp, unit, tc, extraFields = [], reservations = [], activePlan = null, initialAdditionalId = null, onClose }) {
   const { tenantId, user } = useAuth();
+  const [pay, setPay] = useState(payProp);
+  const [activeKey, setActiveKey] = useState(initialAdditionalId || 'principal');
   const [evidencePopup, setEvidencePopup] = useState(null);
   const [sendingReceipt, setSendingReceipt] = useState(false);
   const [showEmailModal, setShowEmailModal] = useState(false);
+
+  useEffect(() => {
+    setPay(payProp);
+    setActiveKey(initialAdditionalId || 'principal');
+    if (!payProp?.id || !tenantId) return;
+    paymentsAPI.get(tenantId, payProp.id)
+      .then(({ data }) => setPay(data))
+      .catch(() => {});
+  }, [payProp?.id, tenantId, initialAdditionalId]);
+
+  const additionalPayments = pay?.additional_payments || [];
+  const activeAp = activeKey === 'principal'
+    ? null
+    : additionalPayments.find(ap => String(ap.id) === String(activeKey)) || null;
+  const isComplement = !!activeAp;
 
   // ── Computed receipt values ──
   const isReceiptExempt = !!unit?.admin_exempt;
@@ -213,12 +266,21 @@ export default function PaymentReceiptModal({ pay, unit, tc, extraFields = [], r
   const adeudoRowsPrev = adeudoRows.filter(r => r.targetPeriod === '__prevDebt');
   const adeudoRowsPeriods = adeudoRows.filter(r => r.targetPeriod !== '__prevDebt');
 
-  const totalReservations = reservations.reduce((s, r) => s + (parseFloat(r.charge_amount) || 0), 0);
-  const grandTotal = totReqAbono + totOptAbono + totalAdelanto + totalAdeudo + totalReservations;
+  const totalReservations = isComplement ? 0 : reservations.reduce((s, r) => s + (parseFloat(r.charge_amount) || 0), 0);
+  const complementTotal = isComplement ? additionalTotal(activeAp) : 0;
+  const grandTotal = isComplement
+    ? complementTotal
+    : totReqAbono + totOptAbono + totalAdelanto + totalAdeudo + totalReservations;
 
-  const ptLabel = pay?.payment_type ? (PAYMENT_TYPES[pay.payment_type]?.label || pay.payment_type) : 'No especificado';
-  const pdLabel = pay?.payment_date
-    ? new Date(pay.payment_date + 'T12:00:00').toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric' })
+  const displayFolio = isComplement
+    ? (activeAp?.folio || '')
+    : (pay?.folio || '');
+  const ptLabel = isComplement
+    ? (activeAp?.payment_type ? (PAYMENT_TYPES[activeAp.payment_type]?.label || activeAp.payment_type) : 'No especificado')
+    : (pay?.payment_type ? (PAYMENT_TYPES[pay.payment_type]?.label || pay.payment_type) : 'No especificado');
+  const pdSource = isComplement ? activeAp?.payment_date : pay?.payment_date;
+  const pdLabel = pdSource
+    ? new Date(pdSource + 'T12:00:00').toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric' })
     : 'No registrada';
   const condominioName = tc?.razon_social || tc?.name || '';
   const roleLabel = user ? (ROLES[user.role]?.label || user.role) : '';
@@ -228,11 +290,12 @@ export default function PaymentReceiptModal({ pay, unit, tc, extraFields = [], r
   // Imprime en una ventana nueva aislada para evitar conflictos CSS del modal
   // (visibility/overflow/position:fixed rompen el print preview en Chromium)
   const handlePrint = () => {
-    const folioNum = pay?.folio || pay?.id?.slice(0, 8)?.toUpperCase() || 'SN';
+    const folioNum = displayFolio || pay?.id?.slice(0, 8)?.toUpperCase() || 'SN';
     const tenantName = (tc?.name || '').replace(/[^a-zA-Z0-9À-ÿ\s]/g, '').trim();
     const unitCode = (unit?.unit_id_code || '').replace(/[^a-zA-Z0-9]/g, '');
     const periodo = pay?.period || '';
-    const printTitle = `Recibo de pago No. ${folioNum} ${tenantName} ${unitCode} ${periodo}`;
+    const kind = isComplement ? 'Recibo complementario' : 'Recibo de pago';
+    const printTitle = `${kind} No. ${folioNum} ${tenantName} ${unitCode} ${periodo}`;
 
     const el = document.getElementById('receipt-print-area');
     if (!el) return;
@@ -286,9 +349,45 @@ export default function PaymentReceiptModal({ pay, unit, tc, extraFields = [], r
       <div className="modal-bg open" onClick={onClose}>
         <div className="modal lg" onClick={e => e.stopPropagation()} style={{ maxWidth: 680 }}>
           <div className="modal-head">
-            <h3><FileText size={18} style={{ display: 'inline', verticalAlign: -4, marginRight: 8 }} />Recibo de Pago — {periodLabel(pay.period)}</h3>
+            <h3>
+              <FileText size={18} style={{ display: 'inline', verticalAlign: -4, marginRight: 8 }} />
+              {isComplement ? 'Recibo complementario' : 'Recibo de Pago'} — {periodLabel(pay.period)}
+            </h3>
             <button className="modal-close" onClick={onClose}><X size={16} /></button>
           </div>
+          {additionalPayments.length > 0 && (
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', padding: '10px 20px 0', borderBottom: '1px solid var(--sand-100)' }}>
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={() => setActiveKey('principal')}
+                style={{
+                  fontWeight: 700,
+                  background: !isComplement ? 'var(--teal-600)' : 'var(--sand-50)',
+                  color: !isComplement ? 'white' : 'var(--ink-600)',
+                  border: `1px solid ${!isComplement ? 'var(--teal-600)' : 'var(--sand-200)'}`,
+                }}
+              >
+                Principal {pay?.folio ? `· ${pay.folio}` : ''}
+              </button>
+              {additionalPayments.map((ap, i) => (
+                <button
+                  key={ap.id || i}
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={() => setActiveKey(ap.id)}
+                  style={{
+                    fontWeight: 700,
+                    background: String(activeKey) === String(ap.id) ? 'var(--blue-600)' : 'var(--sand-50)',
+                    color: String(activeKey) === String(ap.id) ? 'white' : 'var(--ink-600)',
+                    border: `1px solid ${String(activeKey) === String(ap.id) ? 'var(--blue-600)' : 'var(--sand-200)'}`,
+                  }}
+                >
+                  {ap.folio || `Adicional A${i + 1}`}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="modal-body">
             <div className="receipt-container" id="receipt-print-area">
               <div className="receipt-header">
@@ -299,8 +398,8 @@ export default function PaymentReceiptModal({ pay, unit, tc, extraFields = [], r
                   {(tc?.info_calle || tc?.info_ciudad) && <div className="receipt-sub">{[tc.info_calle, tc.info_ciudad].filter(Boolean).join(', ')}</div>}
                 </div>
                 <div className="receipt-folio-block">
-                  <div className="receipt-folio-label">RECIBO DE PAGO</div>
-                  {pay?.folio && <div className="receipt-folio-num">{pay.folio}</div>}
+                  <div className="receipt-folio-label">{isComplement ? 'RECIBO COMPLEMENTARIO' : 'RECIBO DE PAGO'}</div>
+                  {displayFolio && <div className="receipt-folio-num">{displayFolio}</div>}
                   <div className="receipt-folio-date">{pdLabel}</div>
                 </div>
               </div>
@@ -311,9 +410,37 @@ export default function PaymentReceiptModal({ pay, unit, tc, extraFields = [], r
                 <div className="receipt-info-row"><span className="receipt-info-label">Período</span><span className="receipt-info-val">{periodLabel(pay.period)}</span></div>
                 <div className="receipt-info-row"><span className="receipt-info-label">Forma de Pago</span><span className="receipt-info-val">{ptLabel}</span></div>
               </div>
+              {isComplement && pay?.folio && (
+                <div className="receipt-notes" style={{ background: 'var(--blue-50)', borderColor: 'var(--blue-200)', color: 'var(--blue-700)', margin: '0 0 14px', fontWeight: 600 }}>
+                  Forma parte del recibo principal {pay.folio} de la cobranza del mes de esta unidad.
+                </div>
+              )}
+              {!isComplement && additionalPayments.some(ap => ap.folio) && (
+                <div className="receipt-notes" style={{ background: 'var(--blue-50)', borderColor: 'var(--blue-200)', color: 'var(--blue-700)', margin: '0 0 14px' }}>
+                  Recibos complementarios: {additionalPayments.map(ap => ap.folio).filter(Boolean).join(', ')}
+                </div>
+              )}
               <table className="receipt-table">
                 <thead><tr><th>Concepto</th><th style={{ textAlign: 'right' }}>Cargo</th><th style={{ textAlign: 'right' }}>Abono</th><th style={{ textAlign: 'right' }}>Saldo</th></tr></thead>
                 <tbody>
+                  {isComplement ? (
+                    <>
+                      <tr className="receipt-section-header"><td colSpan={4} style={{ color: 'var(--blue-700)', background: 'var(--blue-50)' }}>+ PAGO ADICIONAL</td></tr>
+                      {Object.entries(activeAp.field_payments || activeAp.fieldPayments || {}).map(([fid, fd2]) => {
+                        const aAmt = parseFloat((fd2 && fd2.received) ?? fd2 ?? 0) || 0;
+                        if (aAmt <= 0) return null;
+                        return (
+                          <tr key={fid}>
+                            <td>{getFieldLabel(fid)}</td>
+                            <td style={{ textAlign: 'right', color: 'var(--ink-300)' }}>—</td>
+                            <td style={{ textAlign: 'right', color: 'var(--blue-600)', fontWeight: 700 }}>{rfmt(aAmt)}</td>
+                            <td style={{ textAlign: 'right', color: 'var(--ink-300)' }}>—</td>
+                          </tr>
+                        );
+                      })}
+                    </>
+                  ) : (
+                    <>
                   <tr className="receipt-section-header"><td colSpan={4}>● CAMPOS OBLIGATORIOS</td></tr>
                   <tr>
                     <td>Mantenimiento<br /><small>Cuota base del condominio</small></td>
@@ -450,7 +577,7 @@ export default function PaymentReceiptModal({ pay, unit, tc, extraFields = [], r
                         const aAmt = parseFloat((fd2 && fd2.received) ?? fd2 ?? 0) || 0;
                         if (aAmt <= 0) return;
                         const fLabel = getFieldLabel(fid);
-                        const sublabel = ['Pago #' + (apIdx + 2), apPtLabel, apPdLabel].filter(Boolean).join(' · ') + (ap.bank_reconciled ? ' 🏦' : '');
+                        const sublabel = [ap.folio || ('Pago #' + (apIdx + 2)), apPtLabel, apPdLabel].filter(Boolean).join(' · ') + (ap.bank_reconciled ? ' 🏦' : '');
                         rows.push({ fLabel, sublabel, amount: aAmt });
                       });
                       if (ap.notes) rows.push({ isNote: true, notes: ap.notes });
@@ -493,24 +620,26 @@ export default function PaymentReceiptModal({ pay, unit, tc, extraFields = [], r
                       })}
                     </>
                   )}
+                    </>
+                  )}
                 </tbody>
                 <tfoot>
                   <tr className="receipt-total">
                     <td>TOTAL</td>
-                    <td style={{ textAlign: 'right' }}>{rfmt(totReqCharge)}</td>
+                    <td style={{ textAlign: 'right' }}>{rfmt(isComplement ? 0 : totReqCharge)}</td>
                     <td style={{ textAlign: 'right', color: 'var(--teal-600)' }}>{rfmt(grandTotal)}</td>
-                    <td style={{ textAlign: 'right', color: totSaldo > 0 ? 'var(--coral-500)' : 'var(--teal-600)' }}>{rfmt(totSaldo)}</td>
+                    <td style={{ textAlign: 'right', color: (!isComplement && totSaldo > 0) ? 'var(--coral-500)' : 'var(--teal-600)' }}>{rfmt(isComplement ? 0 : totSaldo)}</td>
                   </tr>
-                  {totalAdelanto > 0 && <tr><td colSpan={4} style={{ textAlign: 'right', fontSize: 11, color: 'var(--blue-600)', padding: '4px 12px' }}>Incluye {rfmt(totalAdelanto)} en pagos adelantados</td></tr>}
-                  {adeudoRowsPrev.length > 0 && <tr><td colSpan={4} style={{ textAlign: 'right', fontSize: 11, color: 'var(--coral-600)', padding: '4px 12px' }}>Incluye {rfmt(adeudoRowsPrev.reduce((s, r) => s + r.amount, 0))} en abono a <strong>deuda anterior</strong></td></tr>}
-                  {adeudoRowsPeriods.length > 0 && <tr><td colSpan={4} style={{ textAlign: 'right', fontSize: 11, color: 'var(--amber-700)', padding: '4px 12px' }}>Incluye {rfmt(adeudoRowsPeriods.reduce((s, r) => s + r.amount, 0))} en abono a <strong>período(s) anterior(es) no pagado(s)</strong></td></tr>}
-                  {totalReservations > 0 && <tr><td colSpan={4} style={{ textAlign: 'right', fontSize: 11, color: 'var(--teal-600)', padding: '4px 12px' }}>Incluye {rfmt(totalReservations)} en reservas de áreas comunes</td></tr>}
-                  {planInstReceived > 0 && <tr><td colSpan={4} style={{ textAlign: 'right', fontSize: 11, color: 'var(--teal-600)', padding: '4px 12px' }}>Incluye {rfmt(planInstReceived)} en cuota de <strong>plan de pago de adeudos</strong></td></tr>}
-                  {planInstCharge === 0 && [...planFieldKeys].some(k => (effTotals[k] || 0) > 0) && (() => {
+                  {!isComplement && totalAdelanto > 0 && <tr><td colSpan={4} style={{ textAlign: 'right', fontSize: 11, color: 'var(--blue-600)', padding: '4px 12px' }}>Incluye {rfmt(totalAdelanto)} en pagos adelantados</td></tr>}
+                  {!isComplement && adeudoRowsPrev.length > 0 && <tr><td colSpan={4} style={{ textAlign: 'right', fontSize: 11, color: 'var(--coral-600)', padding: '4px 12px' }}>Incluye {rfmt(adeudoRowsPrev.reduce((s, r) => s + r.amount, 0))} en abono a <strong>deuda anterior</strong></td></tr>}
+                  {!isComplement && adeudoRowsPeriods.length > 0 && <tr><td colSpan={4} style={{ textAlign: 'right', fontSize: 11, color: 'var(--amber-700)', padding: '4px 12px' }}>Incluye {rfmt(adeudoRowsPeriods.reduce((s, r) => s + r.amount, 0))} en abono a <strong>período(s) anterior(es) no pagado(s)</strong></td></tr>}
+                  {!isComplement && totalReservations > 0 && <tr><td colSpan={4} style={{ textAlign: 'right', fontSize: 11, color: 'var(--teal-600)', padding: '4px 12px' }}>Incluye {rfmt(totalReservations)} en reservas de áreas comunes</td></tr>}
+                  {!isComplement && planInstReceived > 0 && <tr><td colSpan={4} style={{ textAlign: 'right', fontSize: 11, color: 'var(--teal-600)', padding: '4px 12px' }}>Incluye {rfmt(planInstReceived)} en cuota de <strong>plan de pago de adeudos</strong></td></tr>}
+                  {!isComplement && planInstCharge === 0 && [...planFieldKeys].some(k => (effTotals[k] || 0) > 0) && (() => {
                     const planTotal = [...planFieldKeys].reduce((s, k) => s + (effTotals[k] || 0), 0);
                     return planTotal > 0 ? <tr><td colSpan={4} style={{ textAlign: 'right', fontSize: 11, color: 'var(--teal-600)', padding: '4px 12px' }}>Incluye {rfmt(planTotal)} en cuota de <strong>plan de pago de adeudos</strong></td></tr> : null;
                   })()}
-                  {(pay?.additional_payments || []).length > 0 && (() => {
+                  {!isComplement && (pay?.additional_payments || []).length > 0 && (() => {
                     let t = 0;
                     (pay.additional_payments || []).forEach(ap => {
                       const fp2 = ap.field_payments || ap.fieldPayments || {};
@@ -520,12 +649,14 @@ export default function PaymentReceiptModal({ pay, unit, tc, extraFields = [], r
                   })()}
                 </tfoot>
               </table>
-              {pay?.notes && <div className="receipt-notes"><AlertCircle size={13} /> <strong>Notas:</strong> {pay.notes}</div>}
-              {isReceiptExempt && pay?.payment_type === 'excento' ? (
+              {isComplement
+                ? (activeAp?.notes && <div className="receipt-notes"><AlertCircle size={13} /> <strong>Notas:</strong> {activeAp.notes}</div>)
+                : (pay?.notes && <div className="receipt-notes"><AlertCircle size={13} /> <strong>Notas:</strong> {pay.notes}</div>)}
+              {!isComplement && isReceiptExempt && pay?.payment_type === 'excento' ? (
                 <div className="receipt-notes" style={{ background: 'var(--teal-50)', borderColor: 'var(--teal-200)', color: 'var(--teal-700)', marginTop: 10, fontWeight: 600 }}>
                   🛡 Exento por cargo en la mesa directiva
                 </div>
-              ) : isReceiptExempt ? (
+              ) : !isComplement && isReceiptExempt ? (
                 <div className="receipt-notes" style={{ background: 'var(--teal-50)', borderColor: 'var(--teal-200)', color: 'var(--teal-700)', marginTop: 10 }}>
                   🛡 Unidad Exenta — Sin cargo de mantenimiento base para este período
                 </div>
@@ -533,29 +664,32 @@ export default function PaymentReceiptModal({ pay, unit, tc, extraFields = [], r
               <div style={{ display: 'flex', justifyContent: 'center', marginTop: 16 }}>
                 {receiptStatusBadge(isReceiptExempt ? 'exento' : pay?.status)}
               </div>
-              {(pay?.evidence || []).length > 0 && (
-                <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center' }}>
-                  {(pay.evidence || []).map((ev, idx) => (
-                    <button key={idx} type="button" className="btn btn-secondary btn-sm" style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 5 }}
-                      onClick={() => setEvidencePopup({ b64: ev.data, mime: ev.mime || '', fileName: ev.name || `Evidencia ${idx + 1}` })}>
-                      <FileText size={12} /> {ev.name || `Evidencia ${idx + 1}`}
-                    </button>
-                  ))}
+              {collectEvidenceGroups(pay, { additional: isComplement ? activeAp : null }).map((group, gIdx) => (
+                <div key={gIdx} style={{ marginTop: 12 }}>
+                  <div style={{ textAlign: 'center', fontSize: 10, fontWeight: 800, color: 'var(--ink-400)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 6 }}>{group.label}</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center' }}>
+                    {group.files.map((ev, idx) => (
+                      <button key={idx} type="button" className="btn btn-secondary btn-sm" style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 5 }}
+                        onClick={() => setEvidencePopup({ b64: ev.data, mime: ev.mime || '', fileName: ev.name || `Evidencia ${idx + 1}` })}>
+                        <FileText size={12} /> {ev.name || `Evidencia ${idx + 1}`}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              )}
+              ))}
               <div style={{ marginTop: 20, paddingTop: 14, borderTop: '1.5px solid var(--sand-100)', display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--ink-400)' }}>
                 <div><Calendar size={11} style={{ display: 'inline', verticalAlign: -2, marginRight: 4 }} /> <strong>Fecha de pago:</strong> {pdLabel}</div>
                 <div><FileText size={11} style={{ display: 'inline', verticalAlign: -2, marginRight: 4 }} /> <strong>Recibo creado:</strong> {new Date().toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric' })}</div>
               </div>
               <div style={{ marginTop: 12, textAlign: 'center' }}>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 'var(--radius-full)', fontSize: 12, fontWeight: 700, background: pay?.bank_reconciled ? 'var(--teal-50)' : 'var(--sand-50)', border: `1.5px solid ${pay?.bank_reconciled ? 'var(--teal-200)' : 'var(--sand-200)'}`, color: pay?.bank_reconciled ? 'var(--teal-700)' : 'var(--ink-400)' }}>
-                  {pay?.bank_reconciled ? '🏦 ✓ Conciliado en Banco' : '🏦 Sin conciliar'}
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 'var(--radius-full)', fontSize: 12, fontWeight: 700, background: (isComplement ? activeAp?.bank_reconciled : pay?.bank_reconciled) ? 'var(--teal-50)' : 'var(--sand-50)', border: `1.5px solid ${(isComplement ? activeAp?.bank_reconciled : pay?.bank_reconciled) ? 'var(--teal-200)' : 'var(--sand-200)'}`, color: (isComplement ? activeAp?.bank_reconciled : pay?.bank_reconciled) ? 'var(--teal-700)' : 'var(--ink-400)' }}>
+                  {(isComplement ? activeAp?.bank_reconciled : pay?.bank_reconciled) ? '🏦 ✓ Conciliado en Banco' : '🏦 Sin conciliar'}
                 </span>
               </div>
               <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--sand-100)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 10, color: 'var(--ink-300)' }}>
                 <span>Generado por: {user?.name || ''} ({roleLabel})</span>
                 <span>Homly v{APP_VERSION}</span>
-                <span>{condominioName} — Recibo — {periodLabel(pay.period)}</span>
+                <span>{condominioName} — {displayFolio || 'Recibo'} — {periodLabel(pay.period)}</span>
               </div>
             </div>
           </div>
@@ -584,14 +718,17 @@ export default function PaymentReceiptModal({ pay, unit, tc, extraFields = [], r
       {showEmailModal && (
         <SendEmailModal
           unit={unit}
-          title="Enviar Recibo de Pago"
+          title={isComplement ? 'Enviar Recibo Complementario' : 'Enviar Recibo de Pago'}
           isSending={sendingReceipt}
           onClose={() => setShowEmailModal(false)}
           onSend={async (emails) => {
             if (!pay?.id) return;
             setSendingReceipt(true);
             try {
-              const res = await paymentsAPI.sendReceipt(tenantId, pay.id, { emails });
+              const res = await paymentsAPI.sendReceipt(tenantId, pay.id, {
+                emails,
+                ...(isComplement && activeAp?.id ? { additional_id: activeAp.id } : {}),
+              });
               toast.success(res.data?.detail || 'Recibo enviado');
               setShowEmailModal(false);
             } catch (err) {

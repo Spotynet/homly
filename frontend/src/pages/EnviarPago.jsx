@@ -23,7 +23,7 @@ const MAX_SIZE_BYTES = 15 * 1024 * 1024; // 15 MB
 function isAcceptedFile(f) {
   if (!f) return false;
   if (f.type?.startsWith('image/')) return true;
-  if (f.type === 'application/pdf') return true;
+  if ((f.type || '').toLowerCase().includes('pdf')) return true;
   const ext = (f.name?.split('.').pop() || '').toLowerCase();
   return ACCEPTED_EXT.includes(ext);
 }
@@ -506,7 +506,7 @@ function NewVoucherForm({ tenantId, onSuccess, onFileChange }) {
           key="file-picker"
           ref={fileInputRef}
           type="file"
-          accept="image/*,.pdf"
+          accept="image/*,.pdf,.PDF,application/pdf"
           onChange={handleFileInput}
           className="hidden"
         />

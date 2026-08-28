@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { tenantsAPI, extraFieldsAPI, assemblyAPI, usersAPI, unitsAPI, superAdminAPI, authAPI, periodsAPI } from '../api/client';
 import { ROLE_BASE_MODULES } from '../constants/modulePermissions';
-import { CURRENCIES, getStatesForCountry, COUNTRIES } from '../utils/helpers';
+import { CURRENCIES, getStatesForCountry, COUNTRIES, isPdfFile } from '../utils/helpers';
 import AdminConfigTour from '../components/onboarding/AdminConfigTour';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
@@ -2903,9 +2903,9 @@ export default function Config() {
                 <label className="btn btn-secondary btn-sm" style={{ cursor:'pointer', display:'inline-flex', alignItems:'center', gap:4 }}>
                   <Upload size={12} />
                   {unitForm.previous_debt_evidence ? '✓ PDF cargado' : 'Cargar PDF evidencia'}
-                  <input type="file" accept=".pdf" style={{ display:'none' }} onChange={e=>{
+                  <input type="file" accept=".pdf,.PDF,application/pdf,application/x-pdf" style={{ display:'none' }} onChange={e=>{
                     const file=e.target.files?.[0]; if(!file) return;
-                    if(file.type!=='application/pdf'){ toast.error('Solo se permiten archivos PDF.'); return; }
+                    if(!isPdfFile(file)){ toast.error('Solo se permiten archivos PDF.'); return; }
                     const r=new FileReader(); r.onload=()=>{ const b=r.result?.split(',')[1]||''; setUnitForm(f=>({...f,previous_debt_evidence:b})); }; r.readAsDataURL(file);
                     e.target.value='';
                   }} />
@@ -2941,9 +2941,9 @@ export default function Config() {
                 <label className="btn btn-secondary btn-sm" style={{ cursor:'pointer', display:'inline-flex', alignItems:'center', gap:4 }}>
                   <Upload size={12} />
                   {unitForm.credit_balance_evidence ? '✓ PDF cargado' : 'Cargar PDF evidencia'}
-                  <input type="file" accept=".pdf" style={{ display:'none' }} onChange={e=>{
+                  <input type="file" accept=".pdf,.PDF,application/pdf,application/x-pdf" style={{ display:'none' }} onChange={e=>{
                     const file=e.target.files?.[0]; if(!file) return;
-                    if(file.type!=='application/pdf'){ toast.error('Solo se permiten archivos PDF.'); return; }
+                    if(!isPdfFile(file)){ toast.error('Solo se permiten archivos PDF.'); return; }
                     const r=new FileReader(); r.onload=()=>{ const b=r.result?.split(',')[1]||''; setUnitForm(f=>({...f,credit_balance_evidence:b})); }; r.readAsDataURL(file);
                     e.target.value='';
                   }} />

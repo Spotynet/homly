@@ -84,6 +84,29 @@ class IsReadOnly(BasePermission):
         return False
 
 
+class IsAdminTesOrContador(BasePermission):
+    """
+    Admin, tesorero y contador: lectura y escritura.
+    Auditor: solo lectura.
+    Superadmin: siempre permitido.
+    """
+    WRITE_ROLES = ('admin', 'tesorero', 'contador')
+    READ_ROLES  = ('admin', 'tesorero', 'contador', 'auditor')
+
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        if request.user.is_super_admin:
+            return True
+        tenant_id = view.kwargs.get('tenant_id')
+        if not tenant_id:
+            return False
+        allowed = self.WRITE_ROLES if request.method not in ('GET', 'HEAD', 'OPTIONS') else self.READ_ROLES
+        return TenantUser.objects.filter(
+            user=request.user, tenant_id=tenant_id, role__in=allowed
+        ).exists()
+
+
 class IsAdminOrTesOrAuditor(BasePermission):
     """
     Admin / tesorero → acceso completo (lectura + escritura).
