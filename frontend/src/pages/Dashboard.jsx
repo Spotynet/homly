@@ -188,7 +188,7 @@ function SvgDonutMulti({ segments = [], size = 140 }) {
         <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--sand-50)" strokeWidth={sw} />
         <circle cx={cx} cy={cy} r={r} fill="none" stroke={seg.color} strokeWidth={sw}
           style={{ transition: 'all 0.5s ease' }}>
-          <title>{seg.label}: {_fmt(seg.value)}</title>
+          <title>{seg.label}: {_fmtDec(seg.value)}</title>
         </circle>
       </svg>
     );
@@ -235,7 +235,7 @@ function SvgDonutMulti({ segments = [], size = 140 }) {
             transition: 'stroke-dasharray 0.5s ease',
           }}
         >
-          <title>{arc.label}: {_fmt(arc.value)}</title>
+          <title>{arc.label}: {_fmtDec(arc.value)}</title>
         </circle>
       ))}
     </svg>
@@ -289,7 +289,7 @@ function GaugeCard({ title, pct, color, subLeft, subRight, icon: Icon, breakdown
               const bPct = maxBreak > 0 ? Math.round((b.value / maxBreak) * 100) : 0;
               return (
                 <div key={i}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: b.infoOnly ? 0 : 5 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                       <span style={{ width: 10, height: 10, borderRadius: 3, background: b.color, flexShrink: 0, display: 'inline-block' }} />
                       <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-600)' }}>{b.label}</span>
@@ -297,9 +297,11 @@ function GaugeCard({ title, pct, color, subLeft, subRight, icon: Icon, breakdown
                     </div>
                     <span style={{ fontSize: 13, fontWeight: 800, color: b.color }}>{b.fmtVal}</span>
                   </div>
-                  <div style={{ height: 8, background: 'var(--sand-100)', borderRadius: 6, overflow: 'hidden' }}>
-                    <div style={{ height: '100%', width: `${bPct}%`, background: b.color, borderRadius: 6, transition: 'width 0.6s ease' }} />
-                  </div>
+                  {!b.infoOnly && (
+                    <div style={{ height: 8, background: 'var(--sand-100)', borderRadius: 6, overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: `${bPct}%`, background: b.color, borderRadius: 6, transition: 'width 0.6s ease' }} />
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -569,7 +571,7 @@ export default function Dashboard() {
   const t = tenant || {};
   // Currency-aware formatters (shadow module-level _fmt/_fmtDec)
   const cur = t.currency || 'MXN';
-  const fmt = (n) => _fmt(n, cur);
+  const fmt = (n) => (cur === 'MXN' ? _fmtDec(n, cur) : _fmt(n, cur));
   const fmtDec = (n) => _fmtDec(n, cur);
 
   // ── Período mínimo = inicio de operaciones del tenant ─────────────────
@@ -609,9 +611,11 @@ export default function Dashboard() {
     : (s.ingreso_adicional ?? 0);
   // Ingresos no identificados (depósitos en banco sin asignar a unidad)
   const ingNoId        = parseFloat(rd.ingresos_no_identificados ?? 0);
+  // Centavos/ajustes referenciados que sí entran al total conciliado
+  const ingReferenciados = parseFloat(rd.ingresos_referenciados ?? 0);
   // Ingresos registrados en sistema pero NO conciliados con banco (bank_reconciled=False)
   const ingNoConc      = parseFloat(rd.ingresos_no_reconciled ?? 0);
-  // Total ingresos conciliados con banco = mismo número que Reporte General
+  // Total ingresos conciliados con banco = mismo número que Reporte General / Eficiencia
   const totalIngresos  = parseFloat(rd.total_ingresos_reconciled ?? (s.total_ingresos ?? s.total_collected ?? 0));
   // Gastos conciliados con banco = mismo número que Reporte General
   const gastos         = parseFloat(rd.total_egresos_reconciled ?? s.total_gastos_conciliados ?? 0);
@@ -632,17 +636,15 @@ export default function Dashboard() {
 
   // isPeriodClosed: provided directly by useDashboardData (computed from closedPeriods)
 
-  // Total ingresos incluyendo no conciliados (para gauges y KPIs)
-  const totalIngresosAll   = totalIngresos + ingNoConc;
   // % cobranza de mantenimiento del período vs cargos fijos
   const pctCobranzaMensual = cargosFijos > 0 ? Math.round((cobranza / cargosFijos) * 100) : 0;
   // % total ingresos conciliados vs cargos fijos del período
   const pctTotalIngrVsCargos = cargosFijos > 0 ? Math.round((totalIngresos / cargosFijos) * 100) : 0;
-  // Fix 3: Eficiencia de Cobranza usa todos los ingresos registrados (conciliados + no conciliados)
-  const pctCobVsCargos     = cargosFijos > 0 ? Math.round((totalIngresosAll / cargosFijos) * 100) : 0;
-  // Fix 4: Ratio Egresos usa todos los ingresos (conciliados + no conciliados) como denominador
-  const pctGastosVsIng     = totalIngresosAll > 0 ? Math.round((gastosTotal / totalIngresosAll) * 100) : 0;
-  const pctIngAdicional    = totalIngresosAll > 0 ? Math.round((ingAdicional / totalIngresosAll) * 100) : 0;
+  // Eficiencia de Cobranza: ingresos conciliados vs cargos fijos
+  const pctCobVsCargos     = cargosFijos > 0 ? Math.round((totalIngresos / cargosFijos) * 100) : 0;
+  // Ratio Egresos vs Ingresos: SOLO conciliados (aguja)
+  const pctGastosVsIng     = totalIngresos > 0 ? Math.round((gastos / totalIngresos) * 100) : 0;
+  const pctIngAdicional    = totalIngresos > 0 ? Math.round((ingAdicional / totalIngresos) * 100) : 0;
   // pct = (recibido + quita) / (recibido + quita + deuda restante)
   const pctDeudaRecuperada = (adeudoRecibido + quitaAplicada + deudaTotal) > 0
     ? Math.round(((adeudoRecibido + quitaAplicada) / (adeudoRecibido + quitaAplicada + deudaTotal)) * 100)
@@ -694,17 +696,22 @@ export default function Dashboard() {
           value: parseFloat(v.total) || 0,
           color: CONCEPT_PALETTE[idx % CONCEPT_PALETTE.length],
         }))
-        .filter(s => s.value > 0)
-    : (ingConceptos > 0 ? [{ label: 'Conceptos adicionales', value: ingConceptos, color: CONCEPT_PALETTE[0] }] : []);
+    : (ingConceptos !== 0 ? [{ label: 'Conceptos adicionales', value: ingConceptos, color: CONCEPT_PALETTE[0] }] : []);
 
-  // Segmentos del donut de ingresos (desglose del Reporte General)
+  // Composición = desglose de ingresos conciliados (mismo total que Eficiencia de Cobranza)
   const incomeSegments = [
-    { label: 'Mantenimiento',       value: cobranza,    color: 'var(--teal-500)' },
-    ...(ingAdelanto > 0 ? [{ label: 'Adelantos mant.',   value: ingAdelanto, color: '#2dd4bf' }] : []),
-    ...(ingAdeudo   > 0 ? [{ label: 'Cobranza de Adeudo', value: ingAdeudo,  color: '#f59e0b' }] : []),
+    { label: 'Mantenimiento',              value: cobranza,         color: 'var(--teal-500)' },
+    { label: 'Adelantos de mantenimiento', value: ingAdelanto,      color: '#2dd4bf' },
+    { label: 'Cobranza de adeudo',         value: ingAdeudo,        color: '#f59e0b' },
     ...conceptSegments,
-    ...(ingNoId > 0  ? [{ label: 'No Identificados',     value: ingNoId,    color: 'var(--amber-400)' }] : []),
-  ].filter(seg => seg.value > 0);
+    { label: 'No identificados',           value: ingNoId,          color: 'var(--amber-400)' },
+    { label: 'Ajustes de centavos',        value: ingReferenciados, color: '#64748b' },
+  ];
+  const incomeSegsSum = incomeSegments.reduce((a, b) => a + (b.value || 0), 0);
+  const incomeRemainder = Math.round((totalIngresos - incomeSegsSum) * 100) / 100;
+  if (Math.abs(incomeRemainder) >= 0.01) {
+    incomeSegments.push({ label: 'Otros conciliados', value: incomeRemainder, color: '#94a3b8' });
+  }
 
   // ── Componentes de sección ─────────────────────────────────────────────
   const SectionLabel = ({ children }) => (
@@ -1325,29 +1332,30 @@ export default function Dashboard() {
               pct={pctCobVsCargos}
               color={effColor}
               icon={Receipt}
-              subLeft={{ label: 'Total cobrado', value: fmtDec(totalIngresosAll) }}
+              subLeft={{ label: 'Ingresos conciliados', value: fmtDec(totalIngresos) }}
               subRight={{ label: 'Cargos esperados', value: fmtDec(cargosFijos) }}
               breakdown={[
                 {
-                  label: 'Conciliados con banco',
-                  note: 'identificados',
+                  label: 'Conciliados identificados',
+                  note: 'asignados a unidad',
                   value: totalIngresos - ingNoId,
                   fmtVal: fmtDec(totalIngresos - ingNoId),
                   color: 'var(--teal-500)',
                 },
-                ...(ingNoId > 0 ? [{
+                {
                   label: 'No identificados',
                   note: 'en banco sin asignar',
                   value: ingNoId,
                   fmtVal: fmtDec(ingNoId),
                   color: 'var(--amber-400)',
-                }] : []),
+                },
                 ...(ingNoConc > 0 ? [{
                   label: 'Sin conciliar',
-                  note: 'registrados, pend. banco',
+                  note: 'no entran en el total conciliado',
                   value: ingNoConc,
                   fmtVal: fmtDec(ingNoConc),
                   color: 'var(--blue-400)',
+                  infoOnly: true,
                 }] : []),
               ]}
             />
@@ -1358,22 +1366,24 @@ export default function Dashboard() {
               pct={pctGastosVsIng}
               color={gvColor}
               icon={ShoppingBag}
-              subLeft={{ label: 'Total egresos', value: fmtDec(gastosTotal) }}
-              subRight={{ label: 'Total ingresos', value: fmtDec(totalIngresosAll) }}
+              subLeft={{ label: 'Egresos conciliados', value: fmtDec(gastos) }}
+              subRight={{ label: 'Ingresos conciliados', value: fmtDec(totalIngresos) }}
               breakdown={[
-                {
-                  label: 'Egresos conciliados',
-                  note: 'con banco',
-                  value: gastos,
-                  fmtVal: fmtDec(gastos),
-                  color: 'var(--coral-500)',
-                },
+                ...(ingNoConc > 0 ? [{
+                  label: 'Ingresos no conciliados',
+                  note: 'no entran en la aguja',
+                  value: ingNoConc,
+                  fmtVal: fmtDec(ingNoConc),
+                  color: '#94a3b8',
+                  infoOnly: true,
+                }] : []),
                 ...(gastosNoConc > 0 ? [{
-                  label: 'Sin conciliar',
-                  note: 'registrados, pend. banco',
+                  label: 'Egresos no conciliados',
+                  note: 'no entran en la aguja',
                   value: gastosNoConc,
                   fmtVal: fmtDec(gastosNoConc),
-                  color: 'var(--coral-200)',
+                  color: 'var(--coral-300)',
+                  infoOnly: true,
                 }] : []),
               ]}
             />
@@ -1384,50 +1394,42 @@ export default function Dashboard() {
           <div className="grid-2" style={{ marginBottom: 20 }}>
             {/* Donut multi: composición de ingresos */}
             {(() => {
-              // Fix 2: todos los segmentos con conceptos adicionales expandidos y colores únicos
-              const allIncomeSegs = [
-                { label: 'Mantenimiento',        value: cobranza,    color: 'var(--teal-500)' },
-                ...(ingAdelanto > 0 ? [{ label: 'Adelantos mant.',    value: ingAdelanto, color: '#2dd4bf' }] : []),
-                ...(ingAdeudo   > 0 ? [{ label: 'Cobranza de Adeudo', value: ingAdeudo,  color: '#f59e0b' }] : []),
-                ...conceptSegments,
-                ...(ingNoId   > 0 ? [{ label: 'No identificados',    value: ingNoId,    color: 'var(--amber-400)' }] : []),
-                ...(ingNoConc > 0 ? [{ label: 'Sin conciliar',       value: ingNoConc,  color: '#94a3b8' }] : []),
-              ].filter(s => s.value > 0);
-              const grandTotal = allIncomeSegs.reduce((a, b) => a + b.value, 0);
+              const grandTotal = totalIngresos;
+              const donutSegs = incomeSegments.filter(s => (s.value || 0) > 0);
               return (
                 <div className="card">
                   <div className="card-head">
                     <h3>Composición de Ingresos</h3>
                     <span style={{ fontSize: 11, color: 'var(--ink-400)' }}>
-                      {grandTotal > 0 ? fmtDec(grandTotal) : 'sin datos'}
+                      {grandTotal > 0 ? fmtDec(grandTotal) : 'sin datos'} · conciliados
                     </span>
                   </div>
                   <div className="card-body">
-                    {grandTotal === 0 ? (
+                    {grandTotal === 0 && donutSegs.length === 0 ? (
                       <div style={{ textAlign: 'center', color: 'var(--ink-300)', fontSize: 13, fontStyle: 'italic', padding: '24px 0' }}>
-                        Sin ingresos registrados en este período
+                        Sin ingresos conciliados en este período
                       </div>
                     ) : (
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 }}>
 
                         {/* Donut centrado + total en el centro */}
                         <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-                          <SvgDonutMulti segments={allIncomeSegs} size={160} />
+                          <SvgDonutMulti segments={donutSegs} size={160} />
                           <div style={{
                             position: 'absolute', textAlign: 'center',
                             pointerEvents: 'none',
                           }}>
-                            <div style={{ fontSize: 10, color: 'var(--ink-400)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Total</div>
+                            <div style={{ fontSize: 10, color: 'var(--ink-400)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Conciliados</div>
                             <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--ink-800)' }}>{fmtDec(grandTotal)}</div>
                           </div>
                         </div>
 
-                        {/* Leyenda con mini barras */}
+                        {/* Leyenda: todas las variables, aunque el monto sea 0 */}
                         <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 9 }}>
-                          {allIncomeSegs.map((seg, i) => {
+                          {incomeSegments.map((seg, i) => {
                             const pct2 = grandTotal > 0 ? Math.round((seg.value / grandTotal) * 100) : 0;
                             return (
-                              <div key={i}>
+                              <div key={i} style={{ opacity: (seg.value || 0) === 0 ? 0.55 : 1 }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                                   <span style={{ width: 10, height: 10, borderRadius: 3, background: seg.color, flexShrink: 0 }} />
                                   <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-600)', flex: 1 }}>{seg.label}</span>

@@ -3,6 +3,7 @@ Homly — Comprehensive Tests
 Validates all endpoints match original app functionality.
 """
 from decimal import Decimal
+from unittest.mock import patch
 from django.test import TestCase
 from django.urls import reverse
 from rest_framework.test import APIClient
@@ -403,6 +404,101 @@ class DashboardTests(BaseTestCase):
         )
         self.assertEqual(resp.data['paid_count'], 1)
         self.assertEqual(resp.data['pending_count'], 2)
+
+    def test_closed_period_dashboard_is_frozen(self):
+        self.login_as('carlos@email.com', 'Admin123', self.tenant.id)
+        payment = Payment.objects.create(
+            tenant=self.tenant, unit=self.unit1, period='2025-01',
+            status='pagado', payment_type='transferencia',
+        )
+        FieldPayment.objects.create(
+            payment=payment, field_key='maintenance', received=Decimal('2500')
+        )
+        close = self.client.post(
+            f'/api/tenants/{self.tenant.id}/closed-periods/',
+            {'period': '2025-01'},
+            format='json',
+        )
+        self.assertEqual(close.status_code, 201)
+
+        cp = ClosedPeriod.objects.get(tenant=self.tenant, period='2025-01')
+        self.assertTrue(cp.snapshot.get('dashboard'))
+        self.assertTrue(cp.snapshot.get('report_data'))
+        self.assertIsNotNone(cp.snapshot_at)
+        self.assertEqual(cp.snapshot['dashboard']['total_collected'], 2500)
+
+        FieldPayment.objects.filter(payment=payment).update(received=Decimal('9999'))
+
+        with patch('core.views._compute_dashboard_stats') as mock_compute:
+            resp = self.client.get(
+                f'/api/tenants/{self.tenant.id}/dashboard/?period=2025-01'
+            )
+            mock_compute.assert_not_called()
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data['total_collected'], 2500)
+
+        with patch('core.views._compute_report_data') as mock_report:
+            report = self.client.get(
+                f'/api/tenants/{self.tenant.id}/reporte-general/?period=2025-01'
+            )
+            mock_report.assert_not_called()
+        self.assertEqual(report.status_code, 200)
+        self.assertTrue(report.data['is_closed'])
+
+    def test_open_period_dashboard_stays_live(self):
+        self.login_as('carlos@email.com', 'Admin123', self.tenant.id)
+        payment = Payment.objects.create(
+            tenant=self.tenant, unit=self.unit1, period='2025-01',
+            status='pagado', payment_type='transferencia',
+        )
+        FieldPayment.objects.create(
+            payment=payment, field_key='maintenance', received=Decimal('2500')
+        )
+        resp1 = self.client.get(
+            f'/api/tenants/{self.tenant.id}/dashboard/?period=2025-01'
+        )
+        self.assertEqual(resp1.data['total_collected'], 2500)
+        FieldPayment.objects.filter(payment=payment).update(received=Decimal('1000'))
+        resp2 = self.client.get(
+            f'/api/tenants/{self.tenant.id}/dashboard/?period=2025-01'
+        )
+        self.assertEqual(resp2.data['total_collected'], 1000)
+
+    def test_closed_period_lazy_snapshot_on_first_read(self):
+        self.login_as('carlos@email.com', 'Admin123', self.tenant.id)
+        ClosedPeriod.objects.create(
+            tenant=self.tenant, period='2025-01', closed_by=self.admin_user,
+            snapshot={}, snapshot_at=None,
+        )
+        resp = self.client.get(
+            f'/api/tenants/{self.tenant.id}/dashboard/?period=2025-01'
+        )
+        self.assertEqual(resp.status_code, 200)
+        cp = ClosedPeriod.objects.get(tenant=self.tenant, period='2025-01')
+        self.assertTrue(cp.snapshot.get('dashboard'))
+        self.assertIsNotNone(cp.snapshot_at)
+
+    def test_reopen_invalidates_later_closed_snapshots(self):
+        self.login_as('carlos@email.com', 'Admin123', self.tenant.id)
+        from core.views import _save_closed_period_snapshot
+        cp1 = ClosedPeriod.objects.create(
+            tenant=self.tenant, period='2025-01', closed_by=self.admin_user,
+        )
+        cp2 = ClosedPeriod.objects.create(
+            tenant=self.tenant, period='2025-02', closed_by=self.admin_user,
+        )
+        _save_closed_period_snapshot(cp1, self.tenant, need='all')
+        _save_closed_period_snapshot(cp2, self.tenant, need='all')
+        cp2.refresh_from_db()
+        self.assertTrue(cp2.snapshot.get('dashboard'))
+
+        resp = self.client.delete(
+            f'/api/tenants/{self.tenant.id}/closed-periods/{cp1.id}/'
+        )
+        self.assertEqual(resp.status_code, 204)
+        cp2.refresh_from_db()
+        self.assertEqual(cp2.snapshot, {})
+        self.assertIsNone(cp2.snapshot_at)
 
 
 # ═══════════════════════════════════════════════════════════

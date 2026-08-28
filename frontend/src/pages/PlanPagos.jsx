@@ -15,7 +15,7 @@ import { queryKeys, STALE } from '../hooks/queryKeys';
 import { todayPeriod, periodLabel, prevPeriod } from '../utils/helpers';
 import {
   TrendingDown, Search, X, Send, Printer,
-  ChevronLeft, Building, CheckCircle, Calendar, Plus, Trash2, BadgePercent,
+  ChevronLeft, Building, CheckCircle, Calendar, Plus, Trash2, BadgePercent, User,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import PlanPagosPrintModal from '../components/PlanPagosPrintModal';
@@ -134,6 +134,55 @@ function defaultOption(startPeriod, planType = 'installment') {
   };
 }
 
+function _fullName(first, last) {
+  return [first, last].filter(Boolean).join(' ').trim();
+}
+
+/** Contactos de la unidad a los que se puede crear / enviar la propuesta. */
+function unitProposalContacts(unit) {
+  if (!unit) return [];
+  const list = [];
+  const ownerName = _fullName(unit.owner_first_name, unit.owner_last_name);
+  if (ownerName || (unit.owner_email || '').trim()) {
+    list.push({
+      key: 'owner',
+      label: 'Propietario',
+      name: ownerName || '—',
+      email: (unit.owner_email || '').trim(),
+      phone: (unit.owner_phone || '').trim(),
+    });
+  }
+  const coName = _fullName(unit.coowner_first_name, unit.coowner_last_name);
+  if (coName || (unit.coowner_email || '').trim()) {
+    list.push({
+      key: 'coowner',
+      label: 'Copropietario',
+      name: coName || '—',
+      email: (unit.coowner_email || '').trim(),
+      phone: (unit.coowner_phone || '').trim(),
+    });
+  }
+  const tenantName = _fullName(unit.tenant_first_name, unit.tenant_last_name);
+  if (unit.occupancy === 'rentado' || tenantName || (unit.tenant_email || '').trim()) {
+    list.push({
+      key: 'tenant',
+      label: 'Inquilino',
+      name: tenantName || '—',
+      email: (unit.tenant_email || '').trim(),
+      phone: (unit.tenant_phone || '').trim(),
+    });
+  }
+  return list;
+}
+
+function defaultContactKeys(unit) {
+  const contacts = unitProposalContacts(unit);
+  if (!contacts.length) return [];
+  if (unit?.occupancy === 'rentado' && contacts.some(c => c.key === 'tenant')) return ['tenant'];
+  if (contacts.some(c => c.key === 'owner')) return ['owner'];
+  return [contacts[0].key];
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function PlanPagos() {
   const { tenantId, role } = useAuth();
@@ -194,10 +243,11 @@ export default function PlanPagos() {
   const [printPlan, setPrintPlan] = useState(null); // plan to print
 
   // ─── Diálogo de selección de destinatarios ────────────────────────
-  // Abre cuando el usuario pulsa "Enviar propuesta"; permite marcar/desmarcar
-  // propietario y copropietario antes de realmente enviar.
+  // Abre cuando el usuario pulsa "Enviar propuesta"; confirma los contactos
+  // elegidos en la tarjeta (propietario, copropietario y/o inquilino).
   const [recipientDialog, setRecipientDialog] = useState(null);
-  // null | { sendOwner: bool, sendCoowner: bool, ownerEmail: str, coownerEmail: str }
+  // null | { selectedKeys: string[] }
+  const [selectedContactKeys, setSelectedContactKeys] = useState([]);
 
   // ─── Multi-option proposal form ────────────────────────────────────────────
   const [options,  setOptions]  = useState([defaultOption()]);  // up to 3
@@ -248,6 +298,7 @@ export default function PlanPagos() {
   useEffect(() => {
     setSelectedPlan(null);
     setTab('list');
+    setSelectedContactKeys(defaultContactKeys(selectedUnit));
   }, [selectedUnit?.id]);
 
   // ─── Period options for the cutoff selector ──────────────────────────────
@@ -391,24 +442,20 @@ export default function PlanPagos() {
   // NO envía todavía: sólo muestra el selector.
   const handleSendProposal = () => {
     if (!selectedUnit) return;
-    const ownerEmail   = (selectedUnit.owner_email   || '').trim();
-    const coownerEmail = (selectedUnit.coowner_email || '').trim();
-    // Pre-seleccionamos los que existan
-    setRecipientDialog({
-      sendOwner:   !!ownerEmail,
-      sendCoowner: !!coownerEmail,
-      ownerEmail,
-      coownerEmail,
-    });
+    const keys = selectedContactKeys.length
+      ? selectedContactKeys
+      : defaultContactKeys(selectedUnit);
+    setRecipientDialog({ selectedKeys: keys });
   };
 
   // Paso 2 — confirmado el diálogo, recolecta los emails elegidos y envía.
   const submitProposal = async () => {
     if (!selectedUnit || !recipientDialog) return;
-    const { sendOwner, sendCoowner, ownerEmail, coownerEmail } = recipientDialog;
-    const emails = [];
-    if (sendOwner   && ownerEmail)   emails.push(ownerEmail);
-    if (sendCoowner && coownerEmail) emails.push(coownerEmail);
+    const contacts = unitProposalContacts(selectedUnit);
+    const keys = recipientDialog.selectedKeys || [];
+    const chosen = contacts.filter(c => keys.includes(c.key));
+    const emails = [...new Set(chosen.map(c => c.email).filter(Boolean))];
+    const recipientName = chosen.map(c => c.name).filter(n => n && n !== '—').join(' / ');
 
     setSaving(true);
     try {
@@ -419,6 +466,7 @@ export default function PlanPagos() {
         notes:            sharedNotes,
         terms_conditions: termsConditions,
         emails,  // lista final de destinatarios (vacía = no mandar email)
+        recipient_name: recipientName,
         options: options.map(opt => {
           const isSettlement = opt.planType === 'settlement';
           return {
@@ -457,6 +505,7 @@ export default function PlanPagos() {
       setSharedNotes('');
       setTermsConditions('');
       setActiveOptIdx(0);
+      setSelectedContactKeys(defaultContactKeys(selectedUnit));
       setRecipientDialog(null);
     } catch (err) {
       toast.error(err?.response?.data?.detail || 'Error al enviar la propuesta.');
@@ -716,7 +765,7 @@ export default function PlanPagos() {
           <TrendingDown size={36} style={{ opacity: 0.25, marginBottom: 10 }} />
           <div style={{ fontSize: 14, marginBottom: 4 }}>No hay planes de pago para esta unidad.</div>
           {canWrite && selectedUnit && (
-            <button className="btn btn-primary btn-sm" style={{ marginTop: 14 }} onClick={() => setTab('new')}>
+            <button className="btn btn-primary btn-sm" style={{ marginTop: 14 }} onClick={() => { setTab('new'); setSelectedContactKeys(defaultContactKeys(selectedUnit)); }}>
               + Crear propuesta
             </button>
           )}
@@ -1367,10 +1416,16 @@ export default function PlanPagos() {
     const netPrevDebt   = parseFloat(selectedAdeudoItem?.net_prev_debt || 0);
     const OCCUPANCY_LABEL = { propietario: 'Propietario', rentado: 'Rentado', 'vacío': 'Vacío' };
     const occLabel      = OCCUPANCY_LABEL[u.occupancy] || u.occupancy || '—';
-    const contactName   = u.responsible_name || [u.owner_first_name, u.owner_last_name].filter(Boolean).join(' ') || '—';
-    const contactEmail  = u.occupancy === 'rentado' ? (u.tenant_email || u.owner_email || '—') : (u.owner_email || '—');
-    const contactPhone  = u.occupancy === 'rentado' ? (u.tenant_phone || u.owner_phone || '—') : (u.owner_phone || '—');
-    const ownerFull     = [u.owner_first_name, u.owner_last_name].filter(Boolean).join(' ') || '—';
+    const contacts      = unitProposalContacts(u);
+    const toggleContact = (key) => {
+      setSelectedContactKeys(prev => (
+        prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]
+      ));
+    };
+    const chosenContacts = contacts.filter(c => selectedContactKeys.includes(c.key));
+    const sendHint = chosenContacts.length
+      ? `Se enviará a: ${chosenContacts.map(c => `${c.name !== '—' ? c.name : c.label}${c.email ? '' : ' (sin correo)'}`).join(', ')}.`
+      : 'Selecciona al menos un contacto para enviar el correo. Sin selección, la propuesta se guarda en la unidad.';
 
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -1388,39 +1443,60 @@ export default function PlanPagos() {
             </span>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 0 }}>
             <div style={{ padding: '12px 16px', borderRight: '1px solid var(--sand-100)' }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--ink-400)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Contacto</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                  <span style={{ fontSize: 11, color: 'var(--ink-400)', width: 60, flexShrink: 0 }}>Responsable</span>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-700)' }}>{contactName}</span>
-                </div>
-                {u.occupancy === 'rentado' && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                    <span style={{ fontSize: 11, color: 'var(--ink-400)', width: 60, flexShrink: 0 }}>Propietario</span>
-                    <span style={{ fontSize: 12, color: 'var(--ink-600)' }}>{ownerFull}</span>
-                  </div>
-                )}
-                {contactEmail !== '—' && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                    <span style={{ fontSize: 11, color: 'var(--ink-400)', width: 60, flexShrink: 0 }}>Correo</span>
-                    <span style={{ fontSize: 12, color: 'var(--teal-600)', wordBreak: 'break-all' }}>{contactEmail}</span>
-                  </div>
-                )}
-                {contactPhone !== '—' && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                    <span style={{ fontSize: 11, color: 'var(--ink-400)', width: 60, flexShrink: 0 }}>Teléfono</span>
-                    <span style={{ fontSize: 12, color: 'var(--ink-700)' }}>{contactPhone}</span>
-                  </div>
-                )}
-                {u.coowner_first_name && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                    <span style={{ fontSize: 11, color: 'var(--ink-400)', width: 60, flexShrink: 0 }}>Co-propiet.</span>
-                    <span style={{ fontSize: 12, color: 'var(--ink-600)' }}>{[u.coowner_first_name, u.coowner_last_name].filter(Boolean).join(' ')}</span>
-                  </div>
-                )}
+              <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--ink-400)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>
+                Contacto de la propuesta
               </div>
+              <div style={{ fontSize: 11, color: 'var(--ink-500)', marginBottom: 8 }}>
+                Elige a quién se crea y envía esta propuesta.
+              </div>
+              {contacts.length === 0 ? (
+                <div style={{ fontSize: 12, color: 'var(--coral-500)' }}>
+                  Esta unidad no tiene contactos registrados.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {contacts.map(c => {
+                    const isOn = selectedContactKeys.includes(c.key);
+                    return (
+                      <label
+                        key={c.key}
+                        style={{
+                          display: 'flex', alignItems: 'flex-start', gap: 8,
+                          padding: '8px 10px',
+                          border: `1.5px solid ${isOn ? 'var(--teal-500)' : 'var(--sand-200)'}`,
+                          borderRadius: 8,
+                          background: isOn ? 'var(--teal-50)' : '#fff',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isOn}
+                          onChange={() => toggleContact(c.key)}
+                          style={{ width: 14, height: 14, marginTop: 2, flexShrink: 0, cursor: 'pointer' }}
+                        />
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 1 }}>
+                            <User size={11} color={isOn ? 'var(--teal-600)' : 'var(--ink-400)'} />
+                            <span style={{ fontSize: 10, fontWeight: 700, color: isOn ? 'var(--teal-700)' : 'var(--ink-400)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                              {c.label}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-700)' }}>{c.name}</div>
+                          <div style={{ fontSize: 11, color: c.email ? 'var(--teal-600)' : 'var(--coral-500)', wordBreak: 'break-all' }}>
+                            {c.email || 'Sin correo — la propuesta se guardará para la unidad'}
+                          </div>
+                          {c.phone ? (
+                            <div style={{ fontSize: 11, color: 'var(--ink-500)' }}>{c.phone}</div>
+                          ) : null}
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             <div style={{ padding: '12px 16px' }}>
@@ -1499,7 +1575,7 @@ export default function PlanPagos() {
         {/* Shared notes */}
         <div>
           <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-600)', display: 'block', marginBottom: 6 }}>
-            Notas para el propietario (opcional)
+            Notas para el destinatario (opcional)
           </label>
           <textarea
             value={sharedNotes} onChange={e => setSharedNotes(e.target.value)}
@@ -1539,7 +1615,7 @@ export default function PlanPagos() {
         {/* Actions */}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, borderTop: '1px solid var(--sand-200)', paddingTop: 12 }}>
           <div style={{ fontSize: 11, color: 'var(--ink-400)', flex: 1, alignSelf: 'center' }}>
-            Se enviará la propuesta por correo al propietario/copropietario.
+            {sendHint}
           </div>
           <button className="btn btn-secondary" onClick={() => setTab('list')}>Cancelar</button>
           <button
@@ -1781,7 +1857,7 @@ export default function PlanPagos() {
                     ) : (
                       <button
                         className="btn btn-primary btn-sm"
-                        onClick={() => { setTab('new'); setActiveOptIdx(0); setOptions([defaultOption()]); }}
+                        onClick={() => { setTab('new'); setActiveOptIdx(0); setOptions([defaultOption()]); setSelectedContactKeys(defaultContactKeys(selectedUnit)); }}
                         style={{ display: 'flex', alignItems: 'center', gap: 5 }}
                       >
                         <Plus size={13} /> Nueva propuesta
@@ -1813,8 +1889,17 @@ export default function PlanPagos() {
 
       {/* ── Recipient Selection Modal (envío de propuesta) ── */}
       {recipientDialog && (() => {
-        const { sendOwner, sendCoowner, ownerEmail, coownerEmail } = recipientDialog;
-        const selectedCount = (sendOwner && ownerEmail ? 1 : 0) + (sendCoowner && coownerEmail ? 1 : 0);
+        const contacts = unitProposalContacts(selectedUnit);
+        const keys = recipientDialog.selectedKeys || [];
+        const chosen = contacts.filter(c => keys.includes(c.key));
+        const emailCount = chosen.filter(c => c.email).length;
+        const toggleKey = (key) => {
+          setRecipientDialog(d => {
+            const cur = d.selectedKeys || [];
+            const next = cur.includes(key) ? cur.filter(k => k !== key) : [...cur, key];
+            return { ...d, selectedKeys: next };
+          });
+        };
         return (
           <div style={{
             position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)',
@@ -1832,75 +1917,51 @@ export default function PlanPagos() {
                 Enviar propuesta por correo
               </h3>
               <p style={{ margin: '0 0 18px', fontSize: 13, color: 'var(--ink-500)' }}>
-                Selecciona a quiénes deseas enviar la propuesta de plan de pagos.
+                Confirma a qué usuario de la unidad se enviará esta propuesta.
               </p>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 18 }}>
-                {/* Propietario */}
-                <label style={{
-                  display: 'flex', alignItems: 'center', gap: 12,
-                  padding: '12px 14px',
-                  border: `1.5px solid ${sendOwner && ownerEmail ? 'var(--teal-500)' : 'var(--sand-200)'}`,
-                  borderRadius: 10,
-                  background: sendOwner && ownerEmail ? 'var(--teal-50)' : '#fff',
-                  cursor: ownerEmail ? 'pointer' : 'not-allowed',
-                  opacity: ownerEmail ? 1 : 0.5,
-                }}>
-                  <input
-                    type="checkbox"
-                    checked={sendOwner && !!ownerEmail}
-                    disabled={!ownerEmail}
-                    onChange={e => setRecipientDialog(d => ({ ...d, sendOwner: e.target.checked }))}
-                    style={{ width: 16, height: 16, cursor: 'pointer' }}
-                  />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-700)' }}>
-                      Propietario
-                    </div>
-                    <div style={{ fontSize: 12, color: 'var(--ink-500)', wordBreak: 'break-all' }}>
-                      {ownerEmail || 'Sin correo registrado'}
-                    </div>
+                {contacts.length === 0 ? (
+                  <div style={{ fontSize: 12, color: 'var(--coral-500)', padding: '6px 4px' }}>
+                    Esta unidad no tiene contactos registrados. La propuesta se guardará sin envío.
                   </div>
-                </label>
-
-                {/* Copropietario */}
-                <label style={{
-                  display: 'flex', alignItems: 'center', gap: 12,
-                  padding: '12px 14px',
-                  border: `1.5px solid ${sendCoowner && coownerEmail ? 'var(--teal-500)' : 'var(--sand-200)'}`,
-                  borderRadius: 10,
-                  background: sendCoowner && coownerEmail ? 'var(--teal-50)' : '#fff',
-                  cursor: coownerEmail ? 'pointer' : 'not-allowed',
-                  opacity: coownerEmail ? 1 : 0.5,
-                }}>
-                  <input
-                    type="checkbox"
-                    checked={sendCoowner && !!coownerEmail}
-                    disabled={!coownerEmail}
-                    onChange={e => setRecipientDialog(d => ({ ...d, sendCoowner: e.target.checked }))}
-                    style={{ width: 16, height: 16, cursor: 'pointer' }}
-                  />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-700)' }}>
-                      Copropietario
-                    </div>
-                    <div style={{ fontSize: 12, color: 'var(--ink-500)', wordBreak: 'break-all' }}>
-                      {coownerEmail || 'Sin correo registrado'}
-                    </div>
-                  </div>
-                </label>
-
-                {!ownerEmail && !coownerEmail && (
-                  <div style={{ fontSize: 11, color: 'var(--coral-500)', padding: '6px 4px' }}>
-                    Esta unidad no tiene correos registrados. La propuesta se guardará sin envío.
-                  </div>
-                )}
+                ) : contacts.map(c => {
+                  const isOn = keys.includes(c.key);
+                  return (
+                    <label
+                      key={c.key}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 12,
+                        padding: '12px 14px',
+                        border: `1.5px solid ${isOn ? 'var(--teal-500)' : 'var(--sand-200)'}`,
+                        borderRadius: 10,
+                        background: isOn ? 'var(--teal-50)' : '#fff',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isOn}
+                        onChange={() => toggleKey(c.key)}
+                        style={{ width: 16, height: 16, cursor: 'pointer' }}
+                      />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-700)' }}>
+                          {c.label}{c.name && c.name !== '—' ? ` · ${c.name}` : ''}
+                        </div>
+                        <div style={{ fontSize: 12, color: c.email ? 'var(--ink-500)' : 'var(--coral-500)', wordBreak: 'break-all' }}>
+                          {c.email || 'Sin correo registrado'}
+                        </div>
+                      </div>
+                    </label>
+                  );
+                })}
               </div>
 
               <div style={{ fontSize: 11, color: 'var(--ink-400)', marginBottom: 14 }}>
-                {selectedCount > 0
-                  ? `Se enviará a ${selectedCount} destinatario${selectedCount > 1 ? 's' : ''}.`
-                  : 'No hay destinatarios seleccionados — la propuesta se guardará sin enviar correo.'}
+                {emailCount > 0
+                  ? `Se enviará a ${emailCount} destinatario${emailCount > 1 ? 's' : ''} con correo.`
+                  : 'No hay destinatarios con correo — la propuesta se guardará sin enviar correo.'}
               </div>
 
               <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
@@ -1920,7 +1981,7 @@ export default function PlanPagos() {
                   <Send size={13} />
                   {saving
                     ? 'Enviando…'
-                    : (selectedCount > 0 ? 'Confirmar y enviar' : 'Guardar sin enviar')}
+                    : (emailCount > 0 ? 'Confirmar y enviar' : 'Guardar sin enviar')}
                 </button>
               </div>
             </div>

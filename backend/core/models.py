@@ -777,6 +777,15 @@ class ClosedPeriod(models.Model):
     period = models.CharField(max_length=7, db_index=True)
     closed_at = models.DateTimeField(auto_now_add=True)
     closed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
+    # Frozen dashboard + reporte-general figures so closed periods are not recomputed.
+    snapshot = models.JSONField(
+        default=dict, blank=True,
+        help_text='Cifras congeladas del dashboard y reporte general al momento del cierre.',
+    )
+    snapshot_at = models.DateTimeField(
+        null=True, blank=True,
+        help_text='Cuándo se generó o actualizó el snapshot de cifras.',
+    )
 
     class Meta:
         db_table = 'closed_periods'

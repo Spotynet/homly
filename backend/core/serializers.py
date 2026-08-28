@@ -841,7 +841,7 @@ class ClosedPeriodSerializer(serializers.ModelSerializer):
     class Meta:
         model = ClosedPeriod
         fields = ['id', 'tenant', 'period', 'closed_at', 'closed_by', 'closed_by_name']
-        read_only_fields = ['id', 'closed_at']
+        read_only_fields = ['id', 'tenant', 'closed_at', 'closed_by', 'closed_by_name']
 
 
 class ReopenRequestSerializer(serializers.ModelSerializer):

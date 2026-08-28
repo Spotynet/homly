@@ -4,8 +4,10 @@ All endpoints for the property management system.
 """
 import uuid
 import json
+import logging
 import threading
 from decimal import Decimal
+from django.db import transaction
 from django.db.models import Sum, Count, Q, F  # noqa: F401 - Q used in estado cuenta
 from django.conf import settings
 from django.http import HttpResponse
@@ -59,6 +61,8 @@ from .serializers import (
     PaymentVoucherSubmissionSerializer,
 )
 from .permissions import IsSuperAdmin, IsTenantAdmin, IsTenantMember, IsAdminOrTesorero, IsAdminOrTesOrAuditor, CanApproveReservation
+
+logger = logging.getLogger(__name__)
 
 
 # ═══════════════════════════════════════════════════════════
@@ -2688,9 +2692,10 @@ class PaymentPlanViewSet(viewsets.ModelViewSet):
         maintenance      = request.data.get('maintenance_fee', 0)
         shared_notes     = request.data.get('notes', '')
         terms_conditions = request.data.get('terms_conditions', '')
-        # Lista explícita de emails seleccionados por el usuario (propietario / copropietario).
+        # Lista explícita de emails seleccionados (propietario / copropietario / inquilino).
         # Si viene vacía o no se manda, se usan los de la unidad por defecto.
         emails_param  = request.data.get('emails', None)
+        recipient_name = (request.data.get('recipient_name') or '').strip()
         # Período de corte del adeudo que esta propuesta liquida / reestructura.
         debt_cutoff_period = (request.data.get('debt_cutoff_period') or '').strip()
 
@@ -2853,12 +2858,12 @@ class PaymentPlanViewSet(viewsets.ModelViewSet):
             created_plans.append(plan)
 
         # Resolver destinatarios: si el cliente manda lista explícita se usa esa
-        # (ya filtrada del UI: propietario/copropietario seleccionados).
-        # Fallback: propietario + copropietario de la unidad.
+        # (ya filtrada del UI: propietario / copropietario / inquilino).
+        # Fallback: contactos de la unidad con correo.
         if isinstance(emails_param, list):
             emails = [e.strip() for e in emails_param if isinstance(e, str) and e.strip()]
         else:
-            emails = [e for e in [unit.owner_email, unit.coowner_email] if e]
+            emails = [e for e in [unit.owner_email, unit.coowner_email, unit.tenant_email] if e]
         # Deduplicar preservando orden
         seen_em = set()
         emails = [e for e in emails if not (e.lower() in seen_em or seen_em.add(e.lower()))]
@@ -2868,9 +2873,13 @@ class PaymentPlanViewSet(viewsets.ModelViewSet):
             try:
                 freq_map = {1: 'Mensual', 2: 'Bimestral', 3: 'Trimestral', 6: 'Semestral'}
                 _owner_name_parts = [unit.owner_first_name or '', unit.owner_last_name or '']
+                _co_name_parts = [unit.coowner_first_name or '', unit.coowner_last_name or '']
                 _tenant_name_parts = [unit.tenant_first_name or '', unit.tenant_last_name or '']
-                responsible = (' '.join(p for p in _tenant_name_parts if p).strip()
-                               or ' '.join(p for p in _owner_name_parts if p).strip())
+                responsible = recipient_name or (
+                    ' '.join(p for p in _tenant_name_parts if p).strip()
+                    or ' '.join(p for p in _owner_name_parts if p).strip()
+                    or ' '.join(p for p in _co_name_parts if p).strip()
+                )
                 options_for_email = []
                 for p in created_plans:
                     options_for_email.append({
@@ -3231,6 +3240,7 @@ class ClosedPeriodViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         tenant_id = self.kwargs['tenant_id']
         obj = serializer.save(tenant_id=tenant_id, closed_by=self.request.user)
+        _snapshot_closed_period(tenant_id, obj.period)
         # Notify all roles that have access to the cobranza module
         try:
             _notify_roles(
@@ -3254,6 +3264,7 @@ class ClosedPeriodViewSet(viewsets.ModelViewSet):
         tenant_id = self.kwargs['tenant_id']
         period = instance.period
         instance.delete()
+        _invalidate_closed_snapshots_after(tenant_id, period)
         # Notify roles with access to cobranza
         try:
             _notify_roles(
@@ -3296,6 +3307,7 @@ class ReopenRequestViewSet(viewsets.ModelViewSet):
         req.save()
         # Remove closed period
         ClosedPeriod.objects.filter(tenant_id=tenant_id, period=req.period).delete()
+        _invalidate_closed_snapshots_after(tenant_id, req.period)
         # Notify roles with access to cobranza
         try:
             _notify_roles(
@@ -3406,6 +3418,7 @@ class PeriodClosureRequestViewSet(viewsets.ReadOnlyModelViewSet):
                 tenant_id=tenant_id, period=period,
                 defaults={'closed_by': request.user},
             )
+            _snapshot_closed_period(tenant_id, period)
             try:
                 _notify_roles(
                     tenant_id,
@@ -3507,6 +3520,7 @@ class PeriodClosureRequestViewSet(viewsets.ReadOnlyModelViewSet):
                 tenant_id=tenant_id, period=closure.period,
                 defaults={'closed_by': request.user},
             )
+            _snapshot_closed_period(tenant_id, closure.period)
             try:
                 _notify_roles(
                     tenant_id,
@@ -4067,6 +4081,151 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
 #  DASHBOARD
 # ═══════════════════════════════════════════════════════════
 
+def _compute_dashboard_stats(tenant, period):
+    """Live dashboard figures for *period*. Used for open periods and to freeze snapshots."""
+    tenant_id = tenant.id
+    units = Unit.objects.filter(tenant_id=tenant_id)
+    total_units = units.count()
+    exempt_count = units.filter(admin_exempt=True).count()
+
+    payments = Payment.objects.filter(tenant_id=tenant_id, period=period)
+
+    # Count by unique unit IDs to avoid double-counting and to exclude exempt units
+    exempt_unit_ids = set(units.filter(admin_exempt=True).values_list('id', flat=True))
+    non_exempt_unit_ids = set(units.filter(admin_exempt=False).values_list('id', flat=True))
+
+    paid_unit_ids = (
+        set(payments.filter(status='pagado').values_list('unit_id', flat=True))
+        - exempt_unit_ids
+    )
+    partial_unit_ids = (
+        set(payments.filter(status='parcial').values_list('unit_id', flat=True))
+        - exempt_unit_ids
+        - paid_unit_ids  # unit paid in full takes precedence over partial
+    )
+    paid_count = len(paid_unit_ids)
+    partial_count = len(partial_unit_ids)
+    pending_count = max(0, len(non_exempt_unit_ids) - paid_count - partial_count)
+
+    # Total collected — solo mantenimiento fijo
+    total_collected = FieldPayment.objects.filter(
+        payment__tenant_id=tenant_id,
+        payment__period=period,
+        field_key='maintenance',
+    ).aggregate(total=Sum('received'))['total'] or Decimal('0')
+
+    # Cargos fijos: solo unidades no exentas
+    billable_units = total_units - exempt_count
+    total_expected = tenant.maintenance_fee * billable_units
+
+    # Required extra fields
+    req_fields = ExtraField.objects.filter(
+        tenant_id=tenant_id, enabled=True, required=True
+    )
+    for ef in req_fields:
+        total_expected += ef.default_amount * billable_units
+
+    collection_rate = (
+        float(total_collected / total_expected * 100) if total_expected > 0 else 0
+    )
+
+    # Gastos
+    total_gastos = GastoEntry.objects.filter(
+        tenant_id=tenant_id, period=period
+    ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+
+    # Solo gastos conciliados (para tarjeta Gastos vs Ingresos)
+    total_gastos_conciliados = GastoEntry.objects.filter(
+        tenant_id=tenant_id, period=period, bank_reconciled=True
+    ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+
+    total_caja = CajaChicaEntry.objects.filter(
+        tenant_id=tenant_id, period=period
+    ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+
+    rented_count = units.filter(occupancy='rentada').count()
+
+    # Ingresos adicionales: FieldPayments del periodo que NO sean mantenimiento
+    ingreso_adicional = FieldPayment.objects.filter(
+        payment__tenant_id=tenant_id,
+        payment__period=period,
+    ).exclude(field_key='maintenance').aggregate(total=Sum('received'))['total'] or Decimal('0')
+
+    # Adeudo recibido este periodo (suma de adeudo_payments JSON — métrica separada)
+    total_adeudo_recibido = Decimal('0')
+    for p in payments:
+        for period_debt in (p.adeudo_payments or {}).values():
+            if isinstance(period_debt, dict):
+                for amt in period_debt.values():
+                    total_adeudo_recibido += Decimal(str(amt or 0))
+
+    # Cobros de plan de pagos / liquidación con quita (FieldPayment plan_*)
+    total_plan_recibido = FieldPayment.objects.filter(
+        payment__tenant_id=tenant_id,
+        payment__period=period,
+        field_key__startswith='plan_',
+    ).aggregate(total=Sum('received'))['total'] or Decimal('0')
+    total_adeudo_recibido += total_plan_recibido
+
+    # Quita autorizada aplicada en este período
+    total_quita_aplicada = PaymentPlan.objects.filter(
+        tenant_id=tenant_id,
+        plan_type='settlement',
+        status__in=['accepted', 'completed'],
+        start_period=period,
+    ).aggregate(s=Sum('discount_amount'))['s'] or Decimal('0')
+
+    # Deuda total = suma del adeudo real por unidad al corte del período
+    start_period = tenant.operation_start_date or '2024-01'
+    deuda_total = Decimal('0')
+    _unit_active_plans = _covering_plans_by_unit(tenant_id)
+    for unit in units:
+        try:
+            _, _, _, bal, prev_debt_adeudo, _u_active_plan = _compute_statement(
+                tenant, str(unit.id), start_period, period,
+                _prefetched_plan=_unit_active_plans.get(str(unit.id)),
+            )
+            previous_debt_u = Decimal(str(unit.previous_debt or 0))
+            credit_balance_u = Decimal(str(unit.credit_balance or 0))
+            prev_debt_adeudo_dec = Decimal(str(prev_debt_adeudo))
+            if _u_active_plan:
+                adj_bal = Decimal(str(bal)) - credit_balance_u
+            else:
+                adj_bal = Decimal(str(bal)) + previous_debt_u - prev_debt_adeudo_dec - credit_balance_u
+            deuda_total += max(Decimal('0'), adj_bal)
+        except Exception:
+            logger.exception(
+                'Error computing statement for unit %s in tenant %s', unit.id, tenant_id
+            )
+            continue
+
+    total_ingresos = total_collected + ingreso_adicional
+
+    return {
+        'total_units': total_units,
+        'units_planned': tenant.units_count,
+        'rented_count': rented_count,
+        'total_collected': float(total_collected),
+        'total_expected': float(total_expected),
+        'collection_rate': round(collection_rate, 1),
+        'paid_count': paid_count,
+        'partial_count': partial_count,
+        'pending_count': pending_count,
+        'exempt_count': exempt_count,
+        'total_gastos': float(total_gastos),
+        'total_gastos_conciliados': float(total_gastos_conciliados),
+        'total_caja_chica': float(total_caja),
+        'maintenance_fee': float(tenant.maintenance_fee),
+        'period': period,
+        'ingreso_adicional': float(ingreso_adicional),
+        'total_adeudo_recibido': float(total_adeudo_recibido),
+        'deuda_total': float(deuda_total),
+        'total_ingresos': float(total_ingresos),
+        'total_quita_aplicada': float(total_quita_aplicada),
+        'total_plan_recibido': float(total_plan_recibido),
+    }
+
+
 class DashboardView(APIView):
     """GET /api/tenants/{tenant_id}/dashboard/?period=YYYY-MM"""
     permission_classes = [IsTenantMember]
@@ -4078,157 +4237,11 @@ class DashboardView(APIView):
             period = date.today().strftime('%Y-%m')
 
         tenant = Tenant.objects.get(id=tenant_id)
-        units = Unit.objects.filter(tenant_id=tenant_id)
-        total_units = units.count()
-        exempt_count = units.filter(admin_exempt=True).count()
+        snap = _get_closed_period_snapshot(tenant, period, need='dashboard')
+        if snap and snap.get('dashboard'):
+            return Response(snap['dashboard'])
 
-        payments = Payment.objects.filter(tenant_id=tenant_id, period=period)
-
-        # Count by unique unit IDs to avoid double-counting and to exclude exempt units
-        exempt_unit_ids = set(units.filter(admin_exempt=True).values_list('id', flat=True))
-        non_exempt_unit_ids = set(units.filter(admin_exempt=False).values_list('id', flat=True))
-
-        paid_unit_ids = (
-            set(payments.filter(status='pagado').values_list('unit_id', flat=True))
-            - exempt_unit_ids
-        )
-        partial_unit_ids = (
-            set(payments.filter(status='parcial').values_list('unit_id', flat=True))
-            - exempt_unit_ids
-            - paid_unit_ids  # unit paid in full takes precedence over partial
-        )
-        paid_count = len(paid_unit_ids)
-        partial_count = len(partial_unit_ids)
-        pending_count = max(0, len(non_exempt_unit_ids) - paid_count - partial_count)
-
-        # Total collected — solo mantenimiento fijo
-        total_collected = FieldPayment.objects.filter(
-            payment__tenant_id=tenant_id,
-            payment__period=period,
-            field_key='maintenance',
-        ).aggregate(total=Sum('received'))['total'] or Decimal('0')
-
-        # Cargos fijos: solo unidades no exentas
-        billable_units = total_units - exempt_count
-        total_expected = tenant.maintenance_fee * billable_units
-
-        # Required extra fields
-        req_fields = ExtraField.objects.filter(
-            tenant_id=tenant_id, enabled=True, required=True
-        )
-        for ef in req_fields:
-            total_expected += ef.default_amount * billable_units
-
-        collection_rate = (
-            float(total_collected / total_expected * 100) if total_expected > 0 else 0
-        )
-
-        # Gastos
-        total_gastos = GastoEntry.objects.filter(
-            tenant_id=tenant_id, period=period
-        ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
-
-        # Solo gastos conciliados (para tarjeta Gastos vs Ingresos)
-        total_gastos_conciliados = GastoEntry.objects.filter(
-            tenant_id=tenant_id, period=period, bank_reconciled=True
-        ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
-
-        total_caja = CajaChicaEntry.objects.filter(
-            tenant_id=tenant_id, period=period
-        ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
-
-        rented_count = units.filter(occupancy='rentada').count()
-
-        # Ingresos adicionales: FieldPayments del periodo que NO sean mantenimiento
-        # (campos extra opcionales/obligatorios — NO incluye adeudo_payments que son JSON aparte)
-        ingreso_adicional = FieldPayment.objects.filter(
-            payment__tenant_id=tenant_id,
-            payment__period=period,
-        ).exclude(field_key='maintenance').aggregate(total=Sum('received'))['total'] or Decimal('0')
-
-        # Adeudo recibido este periodo (suma de adeudo_payments JSON — métrica separada, no forma parte de ingresos)
-        total_adeudo_recibido = Decimal('0')
-        for p in payments:
-            for period_debt in (p.adeudo_payments or {}).values():
-                if isinstance(period_debt, dict):
-                    for amt in period_debt.values():
-                        total_adeudo_recibido += Decimal(str(amt or 0))
-
-        # Cobros de plan de pagos / liquidación con quita (FieldPayment plan_*)
-        total_plan_recibido = FieldPayment.objects.filter(
-            payment__tenant_id=tenant_id,
-            payment__period=period,
-            field_key__startswith='plan_',
-        ).aggregate(total=Sum('received'))['total'] or Decimal('0')
-        total_adeudo_recibido += total_plan_recibido
-
-        # Quita autorizada aplicada en este período (liquidaciones aceptadas o completadas)
-        total_quita_aplicada = PaymentPlan.objects.filter(
-            tenant_id=tenant_id,
-            plan_type='settlement',
-            status__in=['accepted', 'completed'],
-            start_period=period,
-        ).aggregate(s=Sum('discount_amount'))['s'] or Decimal('0')
-
-        # Deuda total = suma del adeudo real por unidad al corte del período
-        # (misma lógica que ReporteAdeudosView para que coincida con el reporte)
-        start_period = tenant.operation_start_date or '2024-01'
-        deuda_total = Decimal('0')
-        # Pre-fetch planes que cubren deuda (aceptados o completados) una sola vez
-        _unit_active_plans = _covering_plans_by_unit(tenant_id)
-        for unit in units:
-            # Si una unidad falla en el cálculo, no debe tumbar todo el dashboard
-            try:
-                _, _, _, bal, prev_debt_adeudo, _u_active_plan = _compute_statement(
-                    tenant, str(unit.id), start_period, period,
-                    _prefetched_plan=_unit_active_plans.get(str(unit.id)),
-                )
-                previous_debt_u = Decimal(str(unit.previous_debt or 0))
-                credit_balance_u = Decimal(str(unit.credit_balance or 0))
-                prev_debt_adeudo_dec = Decimal(str(prev_debt_adeudo))
-                if _u_active_plan:
-                    adj_bal = Decimal(str(bal)) - credit_balance_u
-                else:
-                    adj_bal = Decimal(str(bal)) + previous_debt_u - prev_debt_adeudo_dec - credit_balance_u
-                deuda_total += max(Decimal('0'), adj_bal)
-            except Exception:
-                # Omitir unidades con datos inconsistentes; la deuda total queda subestimada
-                # para esa unidad pero el dashboard continúa cargando.
-                import logging
-                logging.getLogger(__name__).exception(
-                    'Error computing statement for unit %s in tenant %s', unit.id, tenant_id
-                )
-                continue
-
-        # Total ingresos = mantenimiento + campos adicionales (SIN adeudos)
-        # total_collected = solo FieldPayments de mantenimiento fijo
-        # ingreso_adicional = campos extra (opcionales/obligatorios, no mantenimiento)
-        # los adeudo_payments son un JSON aparte y NO deben sumarse aquí
-        total_ingresos = total_collected + ingreso_adicional
-
-        data = {
-            'total_units': total_units,
-            'units_planned': tenant.units_count,
-            'rented_count': rented_count,
-            'total_collected': float(total_collected),
-            'total_expected': float(total_expected),
-            'collection_rate': round(collection_rate, 1),
-            'paid_count': paid_count,
-            'partial_count': partial_count,
-            'pending_count': pending_count,
-            'exempt_count': exempt_count,
-            'total_gastos': float(total_gastos),
-            'total_gastos_conciliados': float(total_gastos_conciliados),
-            'total_caja_chica': float(total_caja),
-            'maintenance_fee': float(tenant.maintenance_fee),
-            'period': period,
-            'ingreso_adicional': float(ingreso_adicional),
-            'total_adeudo_recibido': float(total_adeudo_recibido),
-            'deuda_total': float(deuda_total),
-            'total_ingresos': float(total_ingresos),
-            'total_quita_aplicada': float(total_quita_aplicada),
-            'total_plan_recibido': float(total_plan_recibido),
-        }
+        data = _compute_dashboard_stats(tenant, period)
         return Response(DashboardSerializer(data).data)
 
 
@@ -5345,18 +5358,143 @@ def _compute_report_data(tenant, period):
 
 
 def _compute_saldo_inicial(tenant, target_period):
-    """Saldo inicial = bank_initial_balance + sum(ingresos-egresos) of all periods before target."""
+    """Saldo inicial = bank_initial_balance + sum(ingresos-egresos) of all periods before target.
+
+    Closed periods with a frozen snapshot are not recomputed.
+    """
     start = getattr(tenant, 'operation_start_date', None) or '2024-01'
     periods = _periods_between(start, target_period)
     if not periods or target_period not in periods:
         return float(tenant.bank_initial_balance or 0)
     idx = periods.index(target_period) if target_period in periods else len(periods)
     prev_periods = periods[:idx]
+    if not prev_periods:
+        return float(tenant.bank_initial_balance or 0)
+
+    snaps = {
+        cp.period: cp.snapshot
+        for cp in ClosedPeriod.objects.filter(tenant=tenant, period__in=prev_periods)
+        if _closed_snapshot_has_report(cp.snapshot)
+    }
+
+    last_prev = prev_periods[-1]
+    last_snap = snaps.get(last_prev)
+    if last_snap is not None and last_snap.get('saldo_final') is not None:
+        return float(last_snap['saldo_final'])
+
     running = Decimal(str(tenant.bank_initial_balance or 0))
     for p in prev_periods:
+        snap = snaps.get(p)
+        if snap and snap.get('report_data'):
+            rd = snap['report_data']
+            running += Decimal(str(rd.get('total_ingresos_reconciled') or 0))
+            running -= Decimal(str(rd.get('total_egresos_reconciled') or 0))
+            continue
         data = _compute_report_data(tenant, p)
         running += Decimal(str(data['total_ingresos_reconciled'])) - Decimal(str(data['total_egresos_reconciled']))
     return float(running)
+
+
+def _closed_snapshot_has_dashboard(snapshot):
+    return isinstance(snapshot, dict) and isinstance(snapshot.get('dashboard'), dict) and snapshot.get('dashboard')
+
+
+def _closed_snapshot_has_report(snapshot):
+    return (
+        isinstance(snapshot, dict)
+        and isinstance(snapshot.get('report_data'), dict)
+        and snapshot.get('saldo_final') is not None
+    )
+
+
+def _json_plain(value):
+    """Make DRF/Decimal payloads JSONField-safe."""
+    return json.loads(json.dumps(value, default=str))
+
+
+def _merge_closed_period_snapshot(cp, **fields):
+    with transaction.atomic():
+        locked = ClosedPeriod.objects.select_for_update().get(pk=cp.pk)
+        snap = dict(locked.snapshot or {})
+        snap.update(fields)
+        locked.snapshot = snap
+        locked.snapshot_at = timezone.now()
+        locked.save(update_fields=['snapshot', 'snapshot_at'])
+        return snap
+
+
+def _dashboard_snapshot_payload(tenant, period):
+    return _json_plain(dict(DashboardSerializer(_compute_dashboard_stats(tenant, period)).data))
+
+
+def _report_snapshot_payload(tenant, period):
+    report_data = _compute_report_data(tenant, period)
+    saldo_inicial = _compute_saldo_inicial(tenant, period)
+    saldo_final = (
+        float(saldo_inicial)
+        + float(report_data.get('total_ingresos_reconciled') or 0)
+        - float(report_data.get('total_egresos_reconciled') or 0)
+    )
+    return {
+        'report_data': _json_plain(report_data),
+        'saldo_inicial': float(saldo_inicial),
+        'saldo_final': float(saldo_final),
+        'units_count': Unit.objects.filter(tenant=tenant).count(),
+    }
+
+
+def _save_closed_period_snapshot(cp, tenant, need='all'):
+    """Freeze missing dashboard and/or reporte-general figures for a closed period."""
+    snap = dict(cp.snapshot or {}) if isinstance(cp.snapshot, dict) else {}
+    fields = {}
+    if need in ('dashboard', 'all') and not _closed_snapshot_has_dashboard(snap):
+        fields['dashboard'] = _dashboard_snapshot_payload(tenant, cp.period)
+    if need in ('report', 'all') and not _closed_snapshot_has_report(snap):
+        fields.update(_report_snapshot_payload(tenant, cp.period))
+    if not fields:
+        return snap
+    return _merge_closed_period_snapshot(cp, **fields)
+
+
+def _get_closed_period_snapshot(tenant, period, need='all'):
+    """Return frozen figures for a closed period, computing the requested slice once if missing."""
+    cp = ClosedPeriod.objects.filter(tenant_id=tenant.id, period=period).first()
+    if not cp:
+        return None
+    snap = cp.snapshot if isinstance(cp.snapshot, dict) else {}
+    complete = True
+    if need in ('dashboard', 'all') and not _closed_snapshot_has_dashboard(snap):
+        complete = False
+    if need in ('report', 'all') and not _closed_snapshot_has_report(snap):
+        complete = False
+    if complete:
+        return snap
+    try:
+        return _save_closed_period_snapshot(cp, tenant, need=need)
+    except Exception:
+        logger.exception(
+            'No se pudo generar snapshot del período cerrado %s (tenant %s)',
+            period, tenant.id,
+        )
+        return snap or None
+
+
+def _snapshot_closed_period(tenant_id, period):
+    """Best-effort freeze after a period is closed. Failures are filled on first read."""
+    try:
+        tenant = Tenant.objects.get(id=tenant_id)
+        cp = ClosedPeriod.objects.filter(tenant_id=tenant_id, period=period).first()
+        if cp:
+            _save_closed_period_snapshot(cp, tenant, need='all')
+    except Exception:
+        logger.exception('No se pudo guardar snapshot al cerrar el período %s', period)
+
+
+def _invalidate_closed_snapshots_after(tenant_id, period):
+    """If an earlier period is reopened, later frozen snapshots may be stale."""
+    ClosedPeriod.objects.filter(tenant_id=tenant_id, period__gt=period).update(
+        snapshot={}, snapshot_at=None,
+    )
 
 
 class ReporteAdeudosView(APIView):
@@ -5459,8 +5597,20 @@ class ReporteGeneralView(APIView):
             period = date.today().strftime('%Y-%m')
 
         tenant = Tenant.objects.get(id=tenant_id)
-        units = Unit.objects.filter(tenant_id=tenant_id).order_by('unit_id_code')
 
+        snap = _get_closed_period_snapshot(tenant, period, need='report')
+        if snap and snap.get('report_data') is not None:
+            return Response({
+                'tenant': TenantDetailSerializer(tenant).data,
+                'period': period,
+                'units_count': snap.get('units_count') or Unit.objects.filter(tenant_id=tenant_id).count(),
+                'saldo_inicial': snap.get('saldo_inicial', 0),
+                'saldo_final': snap.get('saldo_final', 0),
+                'report_data': snap.get('report_data') or {},
+                'is_closed': True,
+            })
+
+        units = Unit.objects.filter(tenant_id=tenant_id).order_by('unit_id_code')
         report_data = _compute_report_data(tenant, period)
         saldo_inicial = _compute_saldo_inicial(tenant, period)
         saldo_final = saldo_inicial + report_data['total_ingresos_reconciled'] - report_data['total_egresos_reconciled']
@@ -5472,9 +5622,7 @@ class ReporteGeneralView(APIView):
             'saldo_inicial': saldo_inicial,
             'saldo_final': saldo_final,
             'report_data': report_data,
-            'is_closed': ClosedPeriod.objects.filter(
-                tenant_id=tenant_id, period=period
-            ).exists(),
+            'is_closed': False,
         })
 
 
