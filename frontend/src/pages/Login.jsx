@@ -23,7 +23,7 @@ export default function Login() {
   const { loginWithCode } = useAuth();
   const navigate = useNavigate();
 
-  // ── Step 1: validate email has access ───────────────────────────────────
+  // ── Step 1: validate email and send the verification code ───────────────
   const handleEmailContinue = async (e) => {
     e.preventDefault();
     setError('');
@@ -49,7 +49,22 @@ export default function Login() {
       }
 
       setIsSuperAdminEmail(isSuperAdmin);
-      setValidated(true);
+      setLookingUp(false);
+      setSendingCode(true);
+      try {
+        await authAPI.requestCode(email.trim());
+        setCodeSent(true);
+        setCode('');
+      } catch (sendErr) {
+        const msg =
+          sendErr.response?.data?.detail ||
+          sendErr.response?.data?.email?.[0] ||
+          'No se pudo enviar el código. Usa el botón para reenviarlo.';
+        setError(msg);
+      } finally {
+        setSendingCode(false);
+        setValidated(true);
+      }
     } catch (err) {
       const msg =
         err.response?.data?.detail ||
@@ -61,7 +76,7 @@ export default function Login() {
     }
   };
 
-  // ── Step 2a: request code ────────────────────────────────────────────────
+  // ── Step 2: resend code (same endpoint; invalidates the previous unused code) ──
   const handleRequestCode = async (e) => {
     if (e) e.preventDefault();
     setError('');
@@ -123,9 +138,7 @@ export default function Login() {
   // Subtitle text per state
   const subtitle = !step2
     ? 'Ingresa tu correo para continuar.'
-    : !codeSent
-      ? 'Solicita un código de verificación por correo.'
-      : 'Ingresa el código que te enviamos a tu correo.';
+    : 'Ingresa el código que te enviamos a tu correo.';
 
   return (
     <div className="min-h-screen flex">
@@ -163,16 +176,16 @@ export default function Login() {
                   autoFocus required
                 />
               </div>
-              <button type="submit" disabled={lookingUp || !email.trim()}
+              <button type="submit" disabled={lookingUp || sendingCode || !email.trim()}
                 className="w-full btn btn-coral justify-center py-3 text-base">
-                {lookingUp ? 'Verificando…' : 'Continuar'}
+                {lookingUp ? 'Verificando…' : sendingCode ? 'Enviando código…' : 'Continuar'}
               </button>
             </form>
           )}
 
-          {/* ── Step 2: code ─────────────────────────────────────────────── */}
+          {/* ── Step 2: enter code (already sent on Continuar) ───────────── */}
           {step2 && (
-            <form onSubmit={codeSent ? handleLogin : handleRequestCode} className="space-y-4">
+            <form onSubmit={handleLogin} className="space-y-4">
               {/* Email (read-only) */}
               <div>
                 <label className="field-label">Correo Electrónico</label>
@@ -197,60 +210,52 @@ export default function Login() {
                 </div>
               </div>
 
-              {/* Code request or code input */}
-              {!codeSent ? (
-                <button
-                  type="button"
-                  onClick={handleRequestCode}
-                  disabled={sendingCode}
-                  className="w-full justify-center py-3 text-base"
-                  style={{ background: 'linear-gradient(135deg, #0d9488, #059669)', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700, fontSize: 15, cursor: sendingCode ? 'default' : 'pointer', opacity: sendingCode ? 0.7 : 1, display: 'flex', alignItems: 'center', gap: 8, transition: 'all 0.15s', boxShadow: sendingCode ? 'none' : '0 2px 8px rgba(13,148,136,0.3)' }}
-                  onMouseEnter={e => { if (!sendingCode) e.currentTarget.style.background = 'linear-gradient(135deg, #0f766e, #047857)'; }}
-                  onMouseLeave={e => { e.currentTarget.style.background = 'linear-gradient(135deg, #0d9488, #059669)'; }}
-                >
-                  {sendingCode ? 'Enviando código…' : 'Enviar código por correo'}
-                </button>
-              ) : (
-                <>
-                  <div>
-                    <label className="field-label">Código de verificación</label>
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      pattern="[0-9]*"
-                      maxLength={8}
-                      className="field-input"
-                      placeholder="123456"
-                      value={code}
-                      onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 8))}
-                      autoFocus
-                      style={{ letterSpacing: 8, fontSize: 18, textAlign: 'center' }}
-                    />
-                    <p style={{ fontSize: 12, color: 'var(--ink-400)', marginTop: 6 }}>
-                      ¿No recibiste el código?{' '}
-                      <button
-                        type="button"
-                        onClick={handleRequestCode}
-                        disabled={sendingCode}
-                        style={{
-                          background: 'none', border: 'none', color: 'var(--teal-600)',
-                          fontWeight: 600, cursor: sendingCode ? 'default' : 'pointer',
-                          padding: 0, textDecoration: 'underline',
-                        }}
-                      >
-                        Reenviar
-                      </button>
-                    </p>
-                  </div>
-                  <button
-                    type="submit"
-                    disabled={loading || !code.trim()}
-                    className="w-full btn btn-coral justify-center py-3 text-base"
-                  >
-                    {loading ? 'Ingresando...' : 'Iniciar Sesión'}
-                  </button>
-                </>
-              )}
+              <div>
+                <label className="field-label">Código de verificación</label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={8}
+                  className="field-input"
+                  placeholder="123456"
+                  value={code}
+                  onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 8))}
+                  autoFocus
+                  style={{ letterSpacing: 8, fontSize: 18, textAlign: 'center' }}
+                />
+                <p style={{ fontSize: 12, color: 'var(--ink-400)', marginTop: 6 }}>
+                  {codeSent
+                    ? 'Revisa tu bandeja de entrada. Si no llega o ya no es válido, reenvía un código nuevo.'
+                    : 'Si no recibiste el código, pulsa el botón para enviarlo de nuevo.'}
+                </p>
+              </div>
+              <button
+                type="submit"
+                disabled={loading || sendingCode || !code.trim()}
+                className="w-full btn btn-coral justify-center py-3 text-base"
+              >
+                {loading ? 'Ingresando...' : 'Iniciar Sesión'}
+              </button>
+              <button
+                type="button"
+                onClick={handleRequestCode}
+                disabled={sendingCode || loading}
+                className="w-full justify-center py-3 text-base"
+                style={{
+                  background: 'linear-gradient(135deg, #0d9488, #059669)',
+                  color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700,
+                  fontSize: 15, cursor: sendingCode ? 'default' : 'pointer',
+                  opacity: sendingCode ? 0.7 : 1, display: 'flex',
+                  alignItems: 'center', justifyContent: 'center', gap: 8,
+                  transition: 'all 0.15s',
+                  boxShadow: sendingCode ? 'none' : '0 2px 8px rgba(13,148,136,0.3)',
+                }}
+                onMouseEnter={e => { if (!sendingCode) e.currentTarget.style.background = 'linear-gradient(135deg, #0f766e, #047857)'; }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'linear-gradient(135deg, #0d9488, #059669)'; }}
+              >
+                {sendingCode ? 'Enviando código…' : (codeSent ? 'Reenviar código por correo' : 'Enviar código por correo')}
+              </button>
             </form>
           )}
 
