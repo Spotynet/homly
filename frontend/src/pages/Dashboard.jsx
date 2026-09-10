@@ -9,12 +9,13 @@ import { useAuth } from '../context/AuthContext';
 import { reportsAPI, reservationsAPI, tenantsAPI } from '../api/client';
 import { useDashboardData } from '../hooks/useDashboardData';
 import { queryKeys, STALE } from '../hooks/queryKeys';
+import toast from 'react-hot-toast';
 import {
   Globe, Building2, DollarSign, Receipt, ShoppingBag,
   ChevronLeft, ChevronRight, RefreshCw, TrendingDown, TrendingUp,
   Users, UserCheck, Mail, Phone, Wallet, Activity,
   CheckCircle, AlertCircle, Clock, BarChart2, Calendar, X, Check, Lock, LockOpen,
-  Sparkles,
+  Sparkles, FileText, Loader2,
 } from 'lucide-react';
 
 // ─── Formatters ────────────────────────────────────────────────────────────
@@ -341,6 +342,46 @@ export default function Dashboard() {
   const [rejectModalOpen,  setRejectModalOpen]  = useState(false);
   const [rejectReason,     setRejectReason]     = useState('');
   const [rejectTargetId,   setRejectTargetId]   = useState(null);
+  const [closingReportLoading, setClosingReportLoading] = useState(false);
+
+  const canDownloadClosingReport = isSuperAdmin || ['admin', 'tesorero', 'contador'].includes(role);
+
+  const handleDownloadClosingReport = async () => {
+    if (!tenantId || !period || closingReportLoading) return;
+    setClosingReportLoading(true);
+    try {
+      const res = await reportsAPI.closingReport(tenantId, period);
+      const blob = new Blob([res.data], { type: 'application/pdf' });
+      if (blob.size < 80 && res.data?.type && res.data.type.includes('json')) {
+        throw new Error('El servidor no devolvió un PDF.');
+      }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const safe = (s) => (s || '').trim().replace(/[/\\:*?"<>|]/g, '').replace(/\s+/g, '_');
+      a.download = `Cierre_${safe(period)}_${safe(tenantName)}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success('Reporte de cierre generado');
+    } catch (err) {
+      let msg = 'No se pudo generar el reporte de cierre.';
+      const payload = err.response?.data;
+      try {
+        if (payload instanceof Blob) {
+          const txt = await payload.text();
+          const j = JSON.parse(txt);
+          if (j.detail) msg = j.detail;
+        } else if (typeof payload?.detail === 'string') {
+          msg = payload.detail;
+        }
+      } catch { /* keep default */ }
+      toast.error(msg);
+    } finally {
+      setClosingReportLoading(false);
+    }
+  };
 
   // ── React Query: reservas del mes del calendario ────────────────────────
   const resFirstDay = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-01`;
@@ -1196,22 +1237,38 @@ export default function Dashboard() {
       {activeTab === 'economic' && (
         <div>
           {/* Period status indicator */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, gap: 10, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 13, color: 'var(--ink-500)', fontWeight: 500 }}>
               Período: <strong style={{ color: 'var(--ink-800)' }}>{monthLabel(period)}</strong>
             </span>
-            <span style={{
-              display: 'inline-flex', alignItems: 'center', gap: 6,
-              padding: '5px 14px', borderRadius: 20, fontSize: 12, fontWeight: 700,
-              background: isPeriodClosed ? 'var(--coral-50)' : 'var(--teal-50)',
-              color: isPeriodClosed ? 'var(--coral-700)' : 'var(--teal-700)',
-              border: `1px solid ${isPeriodClosed ? 'var(--coral-200)' : 'var(--teal-200)'}`,
-            }}>
-              {isPeriodClosed
-                ? <><Lock size={11} /> Período Cerrado</>
-                : <><LockOpen size={11} /> Período Abierto</>
-              }
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              {isPeriodClosed && canDownloadClosingReport && (
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  onClick={handleDownloadClosingReport}
+                  disabled={closingReportLoading}
+                  title="Generar el expediente PDF de cierre del período"
+                >
+                  {closingReportLoading
+                    ? <Loader2 size={14} style={{ animation: 'spin 0.8s linear infinite' }} />
+                    : <FileText size={14} />}
+                  {closingReportLoading ? 'Generando reporte…' : 'Reporte de cierre'}
+                </button>
+              )}
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                padding: '5px 14px', borderRadius: 20, fontSize: 12, fontWeight: 700,
+                background: isPeriodClosed ? 'var(--coral-50)' : 'var(--teal-50)',
+                color: isPeriodClosed ? 'var(--coral-700)' : 'var(--teal-700)',
+                border: `1px solid ${isPeriodClosed ? 'var(--coral-200)' : 'var(--teal-200)'}`,
+              }}>
+                {isPeriodClosed
+                  ? <><Lock size={11} /> Período Cerrado</>
+                  : <><LockOpen size={11} /> Período Abierto</>
+                }
+              </span>
+            </div>
           </div>
 
           {/* KPI Grid — 7 tarjetas */}

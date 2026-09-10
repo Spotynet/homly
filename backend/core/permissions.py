@@ -84,6 +84,26 @@ class IsReadOnly(BasePermission):
         return False
 
 
+class IsFinancialManager(BasePermission):
+    """
+    Solo administrador, tesorero y contador del condominio (más superadmin).
+    No incluye auditor ni otros roles. Aplica a todos los métodos HTTP.
+    """
+    ROLES = ('admin', 'tesorero', 'contador')
+
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        if request.user.is_super_admin:
+            return True
+        tenant_id = view.kwargs.get('tenant_id')
+        if not tenant_id:
+            return False
+        return TenantUser.objects.filter(
+            user=request.user, tenant_id=tenant_id, role__in=self.ROLES
+        ).exists()
+
+
 class IsAdminTesOrContador(BasePermission):
     """
     Admin, tesorero y contador: lectura y escritura.

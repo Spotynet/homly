@@ -367,6 +367,12 @@ export const reportsAPI = {
       params: { unit_id: unitId, cutoff },
       responseType: 'blob',
     }),
+  closingReport: (tenantId, period) =>
+    api.get(`/tenants/${tenantId}/closing-report/`, {
+      params: { period },
+      responseType: 'blob',
+      timeout: 120000,
+    }),
   sendUnitStatementEmail: (tenantId, data) => api.post(`/tenants/${tenantId}/send-unit-statement-email/`, data),
   sendUnitAnalysisEmail: (tenantId, data) => api.post(`/tenants/${tenantId}/send-unit-analysis-email/`, data),
   sendGeneralStatementEmail: (tenantId, data) => api.post(`/tenants/${tenantId}/send-statement-email/`, data),

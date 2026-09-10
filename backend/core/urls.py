@@ -91,6 +91,8 @@ urlpatterns = [
          views.EstadoPorUnidadPDFView.as_view(), name='estado-cuenta-pdf'),
     path('tenants/<uuid:tenant_id>/carta-no-adeudo/',
          views.CartaNoAdeudoView.as_view(), name='carta-no-adeudo'),
+    path('tenants/<uuid:tenant_id>/closing-report/',
+         views.ClosingReportView.as_view(), name='closing-report'),
 
     # CRM Dashboard (aggregate stats)
     path('crm/dashboard/', views.CRMDashboardView.as_view(), name='crm-dashboard'),

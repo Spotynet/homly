@@ -62,7 +62,7 @@ from .serializers import (
     BlogPostSerializer, BlogPostListSerializer, BlogCommentSerializer,
     PaymentVoucherSubmissionSerializer,
 )
-from .permissions import IsSuperAdmin, IsTenantAdmin, IsTenantMember, IsAdminOrTesorero, IsAdminOrTesOrAuditor, IsAdminTesOrContador, CanApproveReservation
+from .permissions import IsSuperAdmin, IsTenantAdmin, IsTenantMember, IsAdminOrTesorero, IsAdminOrTesOrAuditor, IsAdminTesOrContador, IsFinancialManager, CanApproveReservation
 
 logger = logging.getLogger(__name__)
 
@@ -9144,6 +9144,56 @@ class PaymentVoucherSubmissionViewSet(viewsets.ModelViewSet):
         from .serializers import PaymentVoucherSubmissionSerializer
         serializer = PaymentVoucherSubmissionSerializer(voucher, context={'request': request})
         return Response(serializer.data)
+
+
+# ═══════════════════════════════════════════════════════════
+#  REPORTE DE CIERRE DE PERÍODO — PDF
+# ═══════════════════════════════════════════════════════════
+
+class ClosingReportView(APIView):
+    """GET /api/tenants/{tenant_id}/closing-report/?period=YYYY-MM
+
+    PDF consolidado de cierre: dashboard económicos, resumen ejecutivo,
+    reporte general, adeudos, gastos y caja chica.
+    Solo períodos cerrados. Roles: admin, tesorero, contador (y superadmin).
+    """
+    permission_classes = [IsFinancialManager]
+
+    def get(self, request, tenant_id):
+        period = request.query_params.get('period') or _today_period()
+        try:
+            tenant = Tenant.objects.get(id=tenant_id)
+        except Tenant.DoesNotExist:
+            return Response({'detail': 'Condominio no encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+
+        cp = ClosedPeriod.objects.filter(tenant_id=tenant_id, period=period).select_related('closed_by').first()
+        if not cp:
+            return Response(
+                {'detail': 'El período no está cerrado. El reporte de cierre solo está disponible para períodos cerrados.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        from .closing_report import generate_closing_report_pdf
+        try:
+            pdf_bytes = generate_closing_report_pdf(tenant, period, closed_period=cp)
+        except Exception:
+            logger.exception('Error generando reporte de cierre %s (tenant %s)', period, tenant_id)
+            return Response(
+                {'detail': 'No se pudo generar el reporte de cierre.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        if not pdf_bytes:
+            return Response(
+                {'detail': 'ReportLab no está instalado en el servidor.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        safe = (tenant.name or 'condominio')[:40].replace(' ', '_')
+        filename = f'Cierre_{period}_{safe}.pdf'
+        response = HttpResponse(pdf_bytes, content_type='application/pdf')
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        return response
 
 
 # ═══════════════════════════════════════════════════════════
