@@ -329,6 +329,14 @@ class Unit(models.Model):
     tenant_phone = models.CharField(max_length=30, blank=True, default='')
     admin_exempt = models.BooleanField(default=False,
                                        help_text='Exento por Mesa Directiva')
+    services_suspended = models.BooleanField(
+        default=False,
+        help_text='Suspensión de servicios por adeudo (aviso informativo).',
+    )
+    services_suspended_at = models.DateTimeField(
+        null=True, blank=True,
+        help_text='Cuándo se activó la suspensión de servicios.',
+    )
     previous_debt = models.DecimalField(max_digits=12, decimal_places=2, default=0,
                                         help_text='Adeudo anterior al inicio')
     previous_debt_evidence = models.TextField(blank=True, default='',

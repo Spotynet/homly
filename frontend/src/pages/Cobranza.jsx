@@ -13,6 +13,7 @@ import EvidenceAttach from '../components/EvidenceAttach';
 import { todayPeriod, periodLabel, prevPeriod, nextPeriod, tenantStartPeriod, fmtCurrency, statusClass, statusLabel, PAYMENT_TYPES, fmtDate, ROLES, CURRENCIES, APP_VERSION } from '../utils/helpers';
 import { ChevronLeft, ChevronRight, Search, Receipt, X, Users, CheckCircle, Clock, AlertCircle, DollarSign, Calendar, Building2, FileText, Check, Plus, Edit, Edit2, Trash2, Banknote, Mail, Lock, Send, XCircle, Eye, ChevronDown as ChevronDownIcon } from 'lucide-react';
 import toast from 'react-hot-toast';
+import ServicesSuspensionBadge from '../components/ServicesSuspensionBadge';
 
 // Derive the FieldPayment key for a PaymentPlan.
 // field_key is a @property on the model (= "plan_{id}") but historically was
@@ -671,6 +672,11 @@ export default function Cobranza() {
                         <span title={`Plan de pago activo — Cuota ${rowPlanInst.num || '?'}: ${fmt(parseFloat(rowPlanInst.debt_part) || 0)}`}
                           style={{ marginLeft: 6, fontSize: 10, color: 'var(--teal-700)', background: 'var(--teal-50)', border: '1px solid var(--teal-200)', padding: '1px 5px', borderRadius: 4, cursor: 'default', verticalAlign: 'middle' }}>
                           📋 Plan
+                        </span>
+                      )}
+                      {u.services_suspended && (
+                        <span style={{ marginLeft: 6, verticalAlign: 'middle', display: 'inline-block' }}>
+                          <ServicesSuspensionBadge />
                         </span>
                       )}
                     </td>
@@ -1427,7 +1433,7 @@ export default function Cobranza() {
                   </div>
                 )}
                 {/* Unit header */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', background: 'var(--sand-50)', border: '1px solid var(--sand-100)', borderRadius: 'var(--radius-md)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', background: 'var(--sand-50)', border: '1px solid var(--sand-100)', borderRadius: 'var(--radius-md)', flexWrap: 'wrap' }}>
                   <span style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--teal-600)', background: 'var(--teal-50)', padding: '4px 10px', borderRadius: 6, fontSize: 12 }}>{showCapture.unit_id_code}</span>
                   <div style={{ flex: 1 }}>
                     <div style={{ fontWeight: 700, fontSize: 14 }}>{showCapture.unit_name}</div>
@@ -1443,6 +1449,9 @@ export default function Cobranza() {
                     <FileText size={13} /> Estado de cuenta
                   </button>
                   <span className={`badge ${statusClass(autoStatus)}`}>{statusLabel(autoStatus)}</span>
+                  {showCapture.services_suspended && (
+                    <ServicesSuspensionBadge size="md" />
+                  )}
                 </div>
 
                 {/* SECCIÓN 1: OBLIGATORIOS */}

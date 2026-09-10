@@ -7,6 +7,7 @@ import { BarChart3, ChevronLeft, FileText, X } from 'lucide-react';
 import { reportsAPI } from '../api/client';
 import { periodLabel, statusClass, statusLabel, todayPeriod } from '../utils/helpers';
 import UnitStatementAnalysisModal from './UnitStatementAnalysisModal';
+import ServicesSuspensionBadge, { ServicesSuspensionBanner } from './ServicesSuspensionBadge';
 
 function fmt(n, currency = 'MXN') {
   return new Intl.NumberFormat('es-MX', {
@@ -83,6 +84,11 @@ export default function UnitStatementOverlay({
                 <div style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: 2 }}>
                   {displayUnit.responsible_name || '—'} · {displayUnit.occupancy === 'rentado' ? 'Inquilino' : 'Propietario'}
                 </div>
+                {(displayUnit.services_suspended || data?.unit?.services_suspended) && (
+                  <div style={{ marginTop: 8 }}>
+                    <ServicesSuspensionBadge />
+                  </div>
+                )}
               </div>
               <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 <span style={{ fontSize: 12, color: 'var(--ink-400)' }}>Desde</span>
@@ -97,6 +103,12 @@ export default function UnitStatementOverlay({
             )}
             {error && !loading && (
               <div style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--coral-600)', fontSize: 14 }}>{error}</div>
+            )}
+
+            {(displayUnit.services_suspended || data?.unit?.services_suspended) && !loading && (
+              <div style={{ padding: '12px 18px 0' }}>
+                <ServicesSuspensionBanner />
+              </div>
             )}
 
             {data && !loading && (

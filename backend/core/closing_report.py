@@ -9,6 +9,7 @@ from __future__ import annotations
 import base64
 import io
 import logging
+import os
 from collections import defaultdict
 from decimal import Decimal
 from xml.sax.saxutils import escape
@@ -179,6 +180,33 @@ def _logo_reader(tenant):
         return None
 
 
+def _homly_logo_reader():
+    from reportlab.lib.utils import ImageReader
+    path = os.path.join(os.path.dirname(__file__), 'email_assets', 'homly-full.png')
+    if not os.path.isfile(path):
+        return None
+    try:
+        return ImageReader(path)
+    except Exception:
+        return None
+
+
+def _fit_canvas_text(canvas, text, font, size, max_w, min_size=6.5):
+    """Reduce font or ellipsize so `text` fits in max_w. Returns (text, size)."""
+    t = (text or '').strip()
+    if not t or max_w <= 0:
+        return t, size
+    s = size
+    while s > min_size and canvas.stringWidth(t, font, s) > max_w:
+        s -= 0.5
+    if canvas.stringWidth(t, font, s) <= max_w:
+        return t, s
+    ell = '…'
+    while t and canvas.stringWidth(t + ell, font, s) > max_w:
+        t = t[:-1]
+    return (t + ell) if t else ell, s
+
+
 # ═══════════════════════════════════════════════════════════
 #  Canvas con página X de Y
 # ═══════════════════════════════════════════════════════════
@@ -307,6 +335,7 @@ def _adeudos_slice(tenant, period) -> dict:
         if total_adeudo > Decimal('0'):
             units_with_debt += 1
             grand_total += total_adeudo
+        if total_adeudo > Decimal('0') or unit.services_suspended:
             result.append({
                 'code': unit.unit_id_code,
                 'name': unit.unit_name,
@@ -314,14 +343,18 @@ def _adeudos_slice(tenant, period) -> dict:
                 'net_prev_debt': float(net_prev_debt),
                 'period_debts': period_debts,
                 'total_adeudo': float(total_adeudo),
+                'services_suspended': bool(unit.services_suspended),
             })
 
-    result.sort(key=lambda x: x['total_adeudo'], reverse=True)
+    result.sort(key=lambda x: (not x.get('services_suspended'), -x['total_adeudo']))
+    suspended = [u for u in result if u.get('services_suspended')]
     return {
         'units': result,
         'grand_total': float(grand_total),
         'units_with_debt': units_with_debt,
         'total_units': units.count(),
+        'suspended_count': len(suspended),
+        'suspended_codes': [u['code'] for u in suspended],
     }
 
 
@@ -393,6 +426,43 @@ def _history_slice(tenant, period) -> list[dict]:
     return items
 
 
+def _status_income_slice(tenant, period) -> dict:
+    """Ingresos del período agrupados por estatus de unidad (pagado/parcial/pendiente)."""
+    from .models import Payment
+    from .views import _payment_total_income
+
+    units = list(Unit.objects.filter(tenant=tenant))
+    exempt_ids = {u.id for u in units if u.admin_exempt}
+    non_exempt_ids = {u.id for u in units if not u.admin_exempt}
+    payments = list(
+        Payment.objects.filter(tenant=tenant, period=period).prefetch_related('field_payments')
+    )
+    paid_ids = {p.unit_id for p in payments if p.status == 'pagado'} - exempt_ids
+    partial_ids = {p.unit_id for p in payments if p.status == 'parcial'} - exempt_ids - paid_ids
+    pending_ids = non_exempt_ids - paid_ids - partial_ids
+    pay_map = {p.unit_id: p for p in payments}
+
+    income = {'paid': 0.0, 'partial': 0.0, 'pending': 0.0}
+    for u in units:
+        pay = pay_map.get(u.id)
+        amt = float(_payment_total_income(pay)) if pay else 0.0
+        if u.id in exempt_ids or u.id in paid_ids:
+            income['paid'] += amt
+        elif u.id in partial_ids:
+            income['partial'] += amt
+        else:
+            income['pending'] += amt
+    return {
+        'paid_income': income['paid'],
+        'partial_income': income['partial'],
+        'pending_income': income['pending'],
+        'paid_count': len(paid_ids),
+        'exempt_count': len(exempt_ids),
+        'partial_count': len(partial_ids),
+        'pending_count': len(pending_ids),
+    }
+
+
 def collect_closing_data(tenant, period, closed_period=None) -> dict:
     dash = _dashboard_slice(tenant, period)
     gen = _report_slice(tenant, period)
@@ -449,6 +519,7 @@ def collect_closing_data(tenant, period, closed_period=None) -> dict:
         'gastos_rep': _gastos_slice(tenant, period),
         'caja': _caja_slice(tenant, period),
         'history': _history_slice(tenant, period),
+        'status_income': _status_income_slice(tenant, period),
     }
 
 
@@ -572,6 +643,18 @@ def _executive_paragraphs(d: dict) -> list[str]:
             'La cartera se considera al corriente.'
         )
 
+    suspended_n = int(ad.get('suspended_count') or 0)
+    if suspended_n:
+        codes = ad.get('suspended_codes') or []
+        shown = ', '.join(_esc(c) for c in codes[:12])
+        extra = f' y {suspended_n - 12} más' if suspended_n > 12 else ''
+        paras.append(
+            f'Hay <b>{suspended_n}</b> unidad(es) con <b>suspensión de servicios</b> vigente'
+            + (f': {shown}{extra}' if shown else '')
+            + '. Es una medida informativa de la administración por adeudo; '
+            'no modifica las cifras de conciliación ni el saldo bancario del cierre.'
+        )
+
     hist = d.get('history') or []
     if len(hist) >= 2:
         prev = hist[-2]
@@ -598,7 +681,7 @@ def _executive_paragraphs(d: dict) -> list[str]:
 # ═══════════════════════════════════════════════════════════
 
 def _hbar_drawing(items, width, height, currency='MXN'):
-    """Barras horizontales simples: [{label, value, color}]."""
+    """Barras horizontales: [{label, value, color}] — `value` se muestra como monto."""
     from reportlab.graphics.shapes import Drawing, Rect, String
 
     items = [i for i in items if _f(i.get('value')) > 0 or i.get('show_zero')]
@@ -608,22 +691,25 @@ def _hbar_drawing(items, width, height, currency='MXN'):
         return d
 
     max_v = max((_f(i['value']) for i in items), default=1) or 1
-    row_h = max(16, min(22, (height - 8) / max(len(items), 1)))
-    h = max(height, row_h * len(items) + 8)
+    row_h = max(22, min(28, (height - 8) / max(len(items), 1)))
+    h = max(height, row_h * len(items) + 10)
     d = Drawing(width, h)
-    label_w = min(150, width * 0.32)
-    val_w = 78
-    bar_max = width - label_w - val_w - 12
+    label_w = min(130, width * 0.28)
+    val_w = 92
+    bar_max = max(40, width - label_w - val_w - 10)
     y = h - row_h
     for it in items:
         v = _f(it['value'])
-        bw = max(2, bar_max * (v / max_v))
-        d.add(String(0, y + 4, (it.get('label') or '')[:28], fontName='Helvetica', fontSize=7.5, fillColor=_hex(INK_MED)))
-        d.add(Rect(label_w, y + 2, bar_max, row_h - 6, fillColor=_hex('#eef2f6'), strokeColor=None))
-        d.add(Rect(label_w, y + 2, bw, row_h - 6, fillColor=_hex(it.get('color') or TEAL), strokeColor=None))
+        bw = max(2, bar_max * (v / max_v)) if max_v else 2
         d.add(String(
-            width - 2, y + 4, _money(v, currency),
-            fontName='Helvetica-Bold', fontSize=7.5, fillColor=_hex(INK),
+            0, y + 7, (it.get('label') or '')[:32],
+            fontName='Helvetica', fontSize=8, fillColor=_hex(INK_MED),
+        ))
+        d.add(Rect(label_w, y + 5, bar_max, row_h - 10, fillColor=_hex('#eef2f6'), strokeColor=None))
+        d.add(Rect(label_w, y + 5, bw, row_h - 10, fillColor=_hex(it.get('color') or TEAL), strokeColor=None))
+        d.add(String(
+            width - 2, y + 7, _money(v, currency),
+            fontName='Helvetica-Bold', fontSize=8, fillColor=_hex(INK),
             textAnchor='end',
         ))
         y -= row_h
@@ -631,6 +717,7 @@ def _hbar_drawing(items, width, height, currency='MXN'):
 
 
 def _pie_drawing(items, width, height, currency='MXN'):
+    """Solo el pastel; la leyenda se arma aparte para que los textos no se encimen."""
     from reportlab.graphics.charts.piecharts import Pie
     from reportlab.graphics.shapes import Drawing, String
 
@@ -640,8 +727,9 @@ def _pie_drawing(items, width, height, currency='MXN'):
         d.add(String(8, height / 2, 'Sin composición para graficar', fontName='Helvetica-Oblique', fontSize=8, fillColor=_hex(INK_LIGHT)))
         return d
     pie = Pie()
-    side = min(height - 8, width * 0.42)
-    pie.x = 6
+    pad = 6
+    side = min(height, width) - pad * 2
+    pie.x = (width - side) / 2
     pie.y = (height - side) / 2
     pie.width = side
     pie.height = side
@@ -649,24 +737,10 @@ def _pie_drawing(items, width, height, currency='MXN'):
     pie.labels = [''] * len(segs)
     pie.slices.strokeWidth = 0.6
     pie.slices.strokeColor = _hex(WHITE)
+    pie.startAngle = 90
     for i, s in enumerate(segs):
         pie.slices[i].fillColor = _hex(s[2])
     d.add(pie)
-    lx = side + 18
-    total = sum(s[1] for s in segs) or 1
-    row = min(14, (height - 10) / max(len(segs), 1))
-    y = height - 14
-    for lab, val, col in segs:
-        d.add(String(lx, y, '●', fontName='Helvetica', fontSize=8, fillColor=_hex(col)))
-        pct = int(round(val / total * 100))
-        d.add(String(
-            lx + 12, y,
-            f'{lab[:26]}  {_money(val, currency)} ({pct}%)',
-            fontName='Helvetica', fontSize=7, fillColor=_hex(INK_MED),
-        ))
-        y -= row
-        if y < 4:
-            break
     return d
 
 
@@ -807,7 +881,7 @@ def _gauge_bar(pct, color, width, label_left, label_right):
 #  Construcción del PDF
 # ═══════════════════════════════════════════════════════════
 
-def generate_closing_report_pdf(tenant, period, closed_period=None) -> bytes | None:
+def generate_closing_report_pdf(tenant, period, closed_period=None, generated_by=None) -> bytes | None:
     try:
         from reportlab.lib.pagesizes import A4
         from reportlab.lib.units import cm
@@ -826,10 +900,12 @@ def generate_closing_report_pdf(tenant, period, closed_period=None) -> bytes | N
     m = lambda n: _money(n, cur)
     generated_at = timezone.localtime(timezone.now())
     gen_label = _dt_es(generated_at)
+    generated_by = (generated_by or '').strip() or '—'
     page_w, page_h = A4
     margin_h = 1.6 * cm
     content_w = page_w - 2 * margin_h
     logo = _logo_reader(tenant)
+    homly_logo = _homly_logo_reader()
     tenant_name = (tenant.razon_social or tenant.name or 'Condominio').strip()
     tenant_alias = (tenant.name or '').strip()
     rfc = (tenant.rfc or '').strip()
@@ -842,7 +918,7 @@ def generate_closing_report_pdf(tenant, period, closed_period=None) -> bytes | N
         leftMargin=margin_h, rightMargin=margin_h,
         topMargin=3.55 * cm, bottomMargin=2.15 * cm,
         title=f'Reporte de Cierre — {_period_label(period)}',
-        author='Homly',
+        author=generated_by if generated_by != '—' else 'Homly',
         subject=f'Cierre de período {period} — {tenant_name}',
     )
     styles = getSampleStyleSheet()
@@ -873,57 +949,111 @@ def generate_closing_report_pdf(tenant, period, closed_period=None) -> bytes | N
         canvas.setFillColor(_hex(TEAL))
         canvas.rect(0, page_h - 3.35 * cm, page_w, 0.12 * cm, fill=1, stroke=0)
 
+        right_w = 4.35 * cm
+        inner_top = page_h - 0.42 * cm
+        inner_bottom = page_h - 3.08 * cm
+        inner_h = inner_top - inner_bottom
         x0 = margin_h
-        y_logo = page_h - 2.85 * cm
+
+        show_alias = bool(tenant_alias and tenant_alias.lower() != tenant_name.lower())
+        meta_bits = []
+        if rfc:
+            meta_bits.append(f'RFC {rfc}')
+        if phone:
+            meta_bits.append(f'Tel. {phone}')
+        meta_line = '  ·  '.join(meta_bits)
+        n_lines = 1 + (1 if show_alias else 0) + (1 if meta_line else 0) + (1 if addr else 0)
+        line_h = 0.32 * cm
+        text_h = n_lines * line_h
+        logo_h = min(inner_h, max(text_h, 1.15 * cm))
+
         text_x = x0
         if logo:
             try:
-                canvas.drawImage(logo, x0, y_logo, width=1.7 * cm, height=1.7 * cm, mask='auto', preserveAspectRatio=True, anchor='c')
-                text_x = x0 + 1.95 * cm
+                logo_y = inner_bottom + (inner_h - logo_h) / 2
+                canvas.drawImage(
+                    logo, x0, logo_y,
+                    width=logo_h, height=logo_h,
+                    mask='auto', preserveAspectRatio=True, anchor='c',
+                )
+                text_x = x0 + logo_h + 0.28 * cm
             except Exception:
                 text_x = x0
 
-        canvas.setFillColor(_hex(WHITE))
-        canvas.setFont('Helvetica-Bold', 11)
-        canvas.drawString(text_x, page_h - 1.35 * cm, tenant_name[:70])
-        canvas.setFont('Helvetica', 7.5)
-        canvas.setFillColor(_hex('#c5d4e8'))
-        yinfo = page_h - 1.7 * cm
-        if tenant_alias and tenant_alias.lower() != tenant_name.lower():
-            canvas.drawString(text_x, yinfo, tenant_alias[:70])
-            yinfo -= 0.32 * cm
-        meta = []
-        if rfc:
-            meta.append(f'RFC {rfc}')
-        if phone:
-            meta.append(f'Tel. {phone}')
-        if meta:
-            canvas.drawString(text_x, yinfo, '  ·  '.join(meta)[:90])
-            yinfo -= 0.32 * cm
-        if addr:
-            canvas.drawString(text_x, yinfo, addr[:95])
+        text_max_w = max(2.5 * cm, page_w - margin_h - right_w - text_x - 0.25 * cm)
+        name_txt, name_sz = _fit_canvas_text(canvas, tenant_name, 'Helvetica-Bold', 10, text_max_w, 7)
+        alias_txt, alias_sz = _fit_canvas_text(canvas, tenant_alias, 'Helvetica', 7.5, text_max_w, 6.5) if show_alias else ('', 7.5)
+        meta_txt, meta_sz = _fit_canvas_text(canvas, meta_line, 'Helvetica', 7.5, text_max_w, 6.5) if meta_line else ('', 7.5)
+        addr_txt, addr_sz = _fit_canvas_text(canvas, addr, 'Helvetica', 7.5, text_max_w, 6.5) if addr else ('', 7.5)
 
+        y_cursor = inner_bottom + (inner_h + text_h) / 2 - 0.22 * cm
         canvas.setFillColor(_hex(WHITE))
-        canvas.setFont('Helvetica-Bold', 9)
-        canvas.drawRightString(page_w - margin_h, page_h - 1.4 * cm, 'REPORTE DE CIERRE')
+        canvas.setFont('Helvetica-Bold', name_sz)
+        canvas.drawString(text_x, y_cursor, name_txt)
+        y_cursor -= line_h
+        canvas.setFillColor(_hex('#c5d4e8'))
+        if show_alias:
+            canvas.setFont('Helvetica', alias_sz)
+            canvas.drawString(text_x, y_cursor, alias_txt)
+            y_cursor -= line_h
+        if meta_line:
+            canvas.setFont('Helvetica', meta_sz)
+            canvas.drawString(text_x, y_cursor, meta_txt)
+            y_cursor -= line_h
+        if addr:
+            canvas.setFont('Helvetica', addr_sz)
+            canvas.drawString(text_x, y_cursor, addr_txt)
+
+        rx = page_w - margin_h
+        canvas.setFillColor(_hex(WHITE))
+        canvas.setFont('Helvetica-Bold', 8.5)
+        canvas.drawRightString(rx, inner_top - 0.28 * cm, 'REPORTE DE CIERRE')
         canvas.setFont('Helvetica', 8)
         canvas.setFillColor(_hex('#c5d4e8'))
-        canvas.drawRightString(page_w - margin_h, page_h - 1.8 * cm, _period_label(period))
+        canvas.drawRightString(rx, inner_top - 0.68 * cm, _period_label(period))
         canvas.setFont('Helvetica', 7)
-        canvas.drawRightString(page_w - margin_h, page_h - 2.15 * cm, 'CONFIDENCIAL')
+        canvas.drawRightString(rx, inner_top - 1.02 * cm, 'CONFIDENCIAL')
 
         # Footer
         canvas.setFillColor(_hex(SAND))
         canvas.rect(0, 0, page_w, 1.85 * cm, fill=1, stroke=0)
         canvas.setFillColor(_hex(TEAL))
         canvas.rect(0, 1.85 * cm, page_w, 0.08 * cm, fill=1, stroke=0)
-        canvas.setFillColor(_hex(INK_MED))
-        canvas.setFont('Helvetica-Bold', 8)
-        canvas.drawString(margin_h, 1.25 * cm, 'Homly')
-        canvas.setFont('Helvetica', 7)
+
+        foot_text_x = margin_h
+        if homly_logo:
+            try:
+                logo_fh = 0.78 * cm
+                logo_fw = logo_fh * (677 / 369)
+                canvas.drawImage(
+                    homly_logo, margin_h, 0.88 * cm,
+                    width=logo_fw, height=logo_fh,
+                    mask='auto', preserveAspectRatio=True, anchor='c',
+                )
+                foot_text_x = margin_h + logo_fw + 0.25 * cm
+            except Exception:
+                foot_text_x = margin_h
+                canvas.setFillColor(_hex(INK_MED))
+                canvas.setFont('Helvetica-Bold', 8)
+                canvas.drawString(margin_h, 1.28 * cm, 'Homly')
+                foot_text_x = margin_h + 1.5 * cm
+        else:
+            canvas.setFillColor(_hex(INK_MED))
+            canvas.setFont('Helvetica-Bold', 8)
+            canvas.drawString(margin_h, 1.28 * cm, 'Homly')
+            foot_text_x = margin_h + 1.5 * cm
+
         canvas.setFillColor(_hex(INK_LIGHT))
-        canvas.drawString(margin_h + 1.4 * cm, 1.25 * cm, '· Sistema de administración condominial')
-        canvas.drawString(margin_h, 0.9 * cm, f'Generado: {gen_label}')
+        canvas.setFont('Helvetica', 7)
+        foot_max = page_w - margin_h - 3.1 * cm - foot_text_x
+        canvas.drawString(foot_text_x, 1.28 * cm, 'Sistema de administración condominial')
+        user_line, _fs = _fit_canvas_text(
+            canvas,
+            f'Generado: {gen_label}  ·  Por: {generated_by}',
+            'Helvetica', 7, foot_max, 6,
+        )
+        canvas.setFont('Helvetica', _fs)
+        canvas.drawString(foot_text_x, 0.92 * cm, user_line)
         canvas.restoreState()
 
     def section(title):
@@ -937,11 +1067,12 @@ def generate_closing_report_pdf(tenant, period, closed_period=None) -> bytes | N
         for lab, val, sub, accent in cells:
             inner = Table(
                 [
-                    [Paragraph(_esc(lab).upper(), st_kpi_l)],
-                    [Paragraph(_esc(val), st_kpi_v)],
-                    [Paragraph(_esc(sub), st_kpi_s)],
+                    [Paragraph(_esc(lab).upper() or ' ', st_kpi_l)],
+                    [Paragraph(_esc(val) or ' ', st_kpi_v)],
+                    [Paragraph(_esc(sub) or ' ', st_kpi_s)],
                 ],
                 colWidths=[col_w - 8],
+                rowHeights=[16, 22, 16],
             )
             inner.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, -1), _hex(WHITE)),
@@ -956,7 +1087,7 @@ def generate_closing_report_pdf(tenant, period, closed_period=None) -> bytes | N
             row1.append(inner)
         t = Table([row1], colWidths=[col_w] * n)
         t.setStyle(TableStyle([
-            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
             ('LEFTPADDING', (0, 0), (-1, -1), 3),
             ('RIGHTPADDING', (0, 0), (-1, -1), 3),
         ]))
@@ -1153,14 +1284,28 @@ def generate_closing_report_pdf(tenant, period, closed_period=None) -> bytes | N
     exempt = int(dash.get('exempt_count') or 0)
     partial = int(dash.get('partial_count') or 0)
     pending = int(dash.get('pending_count') or 0)
+    st_inc = data.get('status_income') or {}
     status_items = [
-        {'label': f'Pagado ({paid + exempt})', 'value': paid + exempt, 'color': TEAL, 'show_zero': True},
-        {'label': f'Parcial ({partial})', 'value': partial, 'color': AMBER, 'show_zero': True},
-        {'label': f'Pendiente ({pending})', 'value': pending, 'color': CORAL, 'show_zero': True},
+        {
+            'label': f'Pagado ({paid + exempt})',
+            'value': _f(st_inc.get('paid_income')),
+            'color': TEAL,
+            'show_zero': True,
+        },
+        {
+            'label': f'Parcial ({partial})',
+            'value': _f(st_inc.get('partial_income')),
+            'color': AMBER,
+            'show_zero': True,
+        },
+        {
+            'label': f'Pendiente ({pending})',
+            'value': _f(st_inc.get('pending_income')),
+            'color': CORAL,
+            'show_zero': True,
+        },
     ]
 
-    pie = _pie_drawing(income_segs, content_w / 2 - 8, 150, cur)
-    bars = _hbar_drawing(status_items, content_w / 2 - 8, 120, cur)
     class _Draw(Flowable):
         def __init__(self, drawing):
             super().__init__()
@@ -1174,24 +1319,64 @@ def generate_closing_report_pdf(tenant, period, closed_period=None) -> bytes | N
         def wrap(self, aw, ah):
             return self.width, self.height
 
-    charts = Table(
-        [[
-            [Paragraph('Composición de ingresos conciliados', st_h3), _Draw(pie)],
-            [Paragraph('Unidades por estatus', st_h3), _Draw(bars)],
-        ]],
-        colWidths=[content_w / 2, content_w / 2],
+    segs_visible = [s for s in income_segs if _f(s.get('value')) > 0]
+    pie_side = 4.1 * cm
+    pie = _pie_drawing(segs_visible, pie_side, pie_side, cur)
+    st_leg = S('leg', fontName='Helvetica', fontSize=7.5, textColor=_hex(INK_MED), leading=10)
+    st_lega = S('lega', fontName='Helvetica-Bold', fontSize=7.5, textColor=_hex(INK), leading=10, alignment=TA_RIGHT)
+    st_legp = S('legp', fontName='Helvetica', fontSize=7.5, textColor=_hex(INK_LIGHT), leading=10, alignment=TA_RIGHT)
+    legend_w = content_w - pie_side - 14
+    total_seg = sum(_f(s['value']) for s in segs_visible) or 1
+    legend_rows = []
+    if not segs_visible:
+        legend_rows.append([Paragraph('Sin composición para graficar', st_muted), '', '', ''])
+    else:
+        for s in segs_visible:
+            swatch = Table([['']], colWidths=[9], rowHeights=[9])
+            swatch.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, -1), _hex(s['color'])),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('LEFTPADDING', (0, 0), (-1, -1), 0),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+                ('TOPPADDING', (0, 0), (-1, -1), 0),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+            ]))
+            pct = int(round(_f(s['value']) / total_seg * 100))
+            legend_rows.append([
+                swatch,
+                Paragraph(_esc(s['label']), st_leg),
+                Paragraph(m(s['value']), st_lega),
+                Paragraph(f'{pct}%', st_legp),
+            ])
+    legend = Table(
+        legend_rows,
+        colWidths=[16, legend_w * 0.50, legend_w * 0.32, legend_w * 0.14],
     )
-    charts.setStyle(TableStyle([
+    legend.setStyle(TableStyle([
         ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('BOX', (0, 0), (0, 0), 0.4, _hex(LINE)),
-        ('BOX', (1, 0), (1, 0), 0.4, _hex(LINE)),
-        ('BACKGROUND', (0, 0), (-1, -1), _hex(WHITE)),
-        ('LEFTPADDING', (0, 0), (-1, -1), 6),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 6),
-        ('TOPPADDING', (0, 0), (-1, -1), 4),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ('LEFTPADDING', (0, 0), (-1, -1), 3),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 3),
+        ('TOPPADDING', (0, 0), (-1, -1), 3),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+        ('LINEBELOW', (0, 0), (-1, -2), 0.25, _hex('#eef2f6')),
     ]))
-    story.append(charts)
+    composition = Table(
+        [[_Draw(pie), legend]],
+        colWidths=[pie_side + 8, legend_w],
+    )
+    composition.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 4),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+        ('TOPPADDING', (0, 0), (-1, -1), 2),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+    ]))
+    story.append(Paragraph('Composición de ingresos conciliados', st_h3))
+    story.append(composition)
+    story.append(Spacer(1, 10))
+
+    story.append(Paragraph('Unidades (Casas) por estatus', st_h3))
+    story.append(_Draw(_hbar_drawing(status_items, content_w, 92, cur)))
     story.append(Spacer(1, 10))
 
     # Saldos
@@ -1253,8 +1438,8 @@ def generate_closing_report_pdf(tenant, period, closed_period=None) -> bytes | N
     story.append(kpi_grid([
         ('Saldo inicial', m(data['saldo_ini']), 'banco', NAVY),
         ('Ingresos conciliados', m(data['total_ing']), f'{data["rd"].get("ingreso_units_count", 0)} unidades', TEAL),
-        ('Egresos conciliados', m(data['gastos']), '', CORAL),
-        ('Saldo final banco', m(data['saldo_fin']), '', TEAL if data['saldo_fin'] >= 0 else CORAL),
+        ('Egresos conciliados', m(data['gastos']), 'egresos conciliados con banco', CORAL),
+        ('Saldo final banco', m(data['saldo_fin']), 'al cierre del período', TEAL if data['saldo_fin'] >= 0 else CORAL),
     ]))
     story.append(Spacer(1, 10))
     rd = data['rd']
@@ -1315,12 +1500,11 @@ def generate_closing_report_pdf(tenant, period, closed_period=None) -> bytes | N
         st_muted,
     ))
     ad = data['adeudos']
-    avg = (ad['grand_total'] / ad['units_with_debt']) if ad['units_with_debt'] else 0
     story.append(Spacer(1, 6))
     story.append(kpi_grid([
         ('Unidades con adeudo', f'{ad["units_with_debt"]} / {ad["total_units"]}', 'al corte', CORAL),
         ('Adeudo total', m(ad['grand_total']), 'cartera', CORAL),
-        ('Promedio por unidad', m(avg), 'con saldo', AMBER),
+        ('Suspensión de servicios', str(ad.get('suspended_count') or 0), 'unidades con aviso', AMBER),
         ('Corte', _period_label(period), 'período cerrado', NAVY),
     ]))
     story.append(Spacer(1, 10))
@@ -1336,14 +1520,15 @@ def generate_closing_report_pdf(tenant, period, closed_period=None) -> bytes | N
                 u.get('code') or '',
                 u.get('name') or '',
                 u.get('responsible') or '',
+                'Sí' if u.get('services_suspended') else '—',
                 m(u.get('net_prev_debt')),
                 periods or '—',
                 m(u.get('total_adeudo')),
             ])
         story.append(data_table(
-            ['Unidad', 'Nombre', 'Responsable', 'Deuda ant.', 'Períodos con saldo', 'Total adeudo'],
+            ['Unidad', 'Nombre', 'Responsable', 'Suspensión', 'Deuda ant.', 'Períodos con saldo', 'Total adeudo'],
             ad_rows,
-            [content_w * x for x in (0.12, 0.18, 0.22, 0.14, 0.18, 0.16)],
+            [content_w * x for x in (0.11, 0.16, 0.18, 0.12, 0.13, 0.14, 0.16)],
         ))
 
     # ── Gastos ─────────────────────────────────────────────

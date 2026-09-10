@@ -140,6 +140,8 @@ export const unitsAPI = {
   updateMyInfo:(tenantId, data) => api.patch(`/tenants/${tenantId}/units/update-my-info/`, data),
   inactivate:  (tenantId, id) => api.post(`/tenants/${tenantId}/units/${id}/inactivate/`),
   activate:    (tenantId, id) => api.post(`/tenants/${tenantId}/units/${id}/activate/`),
+  setServicesSuspension: (tenantId, id, active) =>
+    api.post(`/tenants/${tenantId}/units/${id}/services-suspension/`, { active }),
 };
 
 // ─── Users ──────────────────────────────────────

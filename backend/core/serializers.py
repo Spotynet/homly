@@ -559,10 +559,12 @@ class UnitListSerializer(serializers.ModelSerializer):
                   'coowner_first_name', 'coowner_last_name', 'coowner_email', 'coowner_phone',
                   'occupancy', 'tenant_first_name', 'tenant_last_name',
                   'tenant_email', 'tenant_phone', 'responsible_name',
-                  'admin_exempt', 'previous_debt', 'has_evidence', 'has_credit_evidence',
+                  'admin_exempt', 'services_suspended', 'services_suspended_at',
+                  'previous_debt', 'has_evidence', 'has_credit_evidence',
                   'credit_balance', 'is_active',
                   'created_at', 'updated_at']
-        read_only_fields = ['id', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'created_at', 'updated_at',
+                            'services_suspended', 'services_suspended_at']
 
 
 class UnitSerializer(serializers.ModelSerializer):
@@ -576,10 +578,12 @@ class UnitSerializer(serializers.ModelSerializer):
                   'coowner_first_name', 'coowner_last_name', 'coowner_email', 'coowner_phone',
                   'occupancy', 'tenant_first_name', 'tenant_last_name',
                   'tenant_email', 'tenant_phone', 'responsible_name',
-                  'admin_exempt', 'previous_debt', 'previous_debt_evidence',
+                  'admin_exempt', 'services_suspended', 'services_suspended_at',
+                  'previous_debt', 'previous_debt_evidence',
                   'credit_balance', 'credit_balance_evidence', 'is_active',
                   'created_at', 'updated_at']
-        read_only_fields = ['id', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'created_at', 'updated_at',
+                            'services_suspended', 'services_suspended_at']
 
 
 # ═══════════════════════════════════════════════════════════

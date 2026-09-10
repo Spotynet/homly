@@ -7,8 +7,11 @@ import PaymentReceiptModal from '../components/PaymentReceiptModal';
 import SendEmailModal from '../components/SendEmailModal';
 import UnitStatementAnalysisModal from '../components/UnitStatementAnalysisModal';
 import { statusClass, statusLabel, fmtDate, periodLabel, todayPeriod, prevPeriod, nextPeriod, ROLES, isPdfFile } from '../utils/helpers';
-import { Search, ChevronLeft, ChevronRight, Building, Globe, DollarSign, ArrowDown, TrendingDown, AlertCircle, Calendar, Printer, ShoppingBag, FileText, Mail, X, Send, Download, Paperclip, Eye, Upload, BarChart3 } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight, Building, Globe, DollarSign, ArrowDown, TrendingDown, AlertCircle, Calendar, Printer, ShoppingBag, FileText, Mail, X, Send, Download, Paperclip, Eye, Upload, BarChart3, Ban } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { useQueryClient } from '@tanstack/react-query';
+import { queryKeys } from '../hooks/queryKeys';
+import ServicesSuspensionBadge, { ServicesSuspensionBanner } from '../components/ServicesSuspensionBadge';
 
 function _fmt(n, currency = 'MXN') {
   return new Intl.NumberFormat('es-MX', { style: 'currency', currency, minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n ?? 0);
@@ -307,6 +310,7 @@ export default function EstadoCuenta() {
         unit_name: u.unit_name || '',
         responsible_name: u.responsible_name || `${u.owner_first_name || ''} ${u.owner_last_name || ''}`.trim(),
         occupancy: u.occupancy || 'propietario',
+        services_suspended: !!(u.services_suspended || units.find(x => x.id === u.id)?.services_suspended),
         total_charges: charge,
         total_payments: paid,
         balance: bal,
@@ -323,6 +327,7 @@ export default function EstadoCuenta() {
           unit_name: u.unit_name || '',
           responsible_name: u.responsible_name || `${u.owner_first_name || ''} ${u.owner_last_name || ''}`.trim(),
           occupancy: u.occupancy || 'propietario',
+          services_suspended: !!u.services_suspended,
           total_charges: 0,
           total_payments: 0,
           balance: 0,
@@ -572,6 +577,11 @@ export default function EstadoCuenta() {
                     {' · '}
                     {(data?.unit?.occupancy || selectedUnitInfo?.occupancy) === 'rentado' ? 'Inquilino' : 'Propietario'}
                   </div>
+                  {(data?.unit?.services_suspended || selectedUnitInfo?.services_suspended) && (
+                    <div style={{ marginTop: 4, fontSize: 10, fontWeight: 800, color: '#92400e', letterSpacing: '0.04em' }}>
+                      SUSPENSIÓN DE SERVICIOS
+                    </div>
+                  )}
                   {(detailFrom || detailTo) && (
                     <div style={{ fontSize: 11, color: '#0d7c6e', fontWeight: 600, marginTop: 4 }}>
                       Período: {detailFrom ? periodLabel(detailFrom) : '—'} — {detailTo ? periodLabel(detailTo) : '—'}
@@ -594,6 +604,11 @@ export default function EstadoCuenta() {
                 <div className="ec-detail-sub">
                   {data?.unit?.responsible_name || selectedUnitInfo?.responsible_name} · {(data?.unit?.occupancy || selectedUnitInfo?.occupancy) === 'rentado' ? 'Inquilino' : 'Propietario'} · {data?.tenant_name || tenantData?.name || ''}
                 </div>
+                {(data?.unit?.services_suspended || selectedUnitInfo?.services_suspended) && (
+                  <div style={{ marginTop: 8 }}>
+                    <ServicesSuspensionBadge />
+                  </div>
+                )}
               </div>
               <div className="ec-detail-actions" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 {data && (
@@ -694,6 +709,10 @@ export default function EstadoCuenta() {
                 {data?.periods?.length || 0} período(s)
               </span>
             </div>
+
+            {(data?.unit?.services_suspended || selectedUnitInfo?.services_suspended) && (
+              <ServicesSuspensionBanner style={{ margin: '0 0 14px' }} />
+            )}
 
             {/* Summary strip */}
             {data && (
@@ -1246,6 +1265,7 @@ export default function EstadoCuenta() {
                                       📋 Plan de pagos activo
                                     </span>
                                   )}
+                                  {u.services_suspended && <ServicesSuspensionBadge />}
                                 </div>
                               </td>
                               <td style={{ color: 'var(--ink-400)' }}>
@@ -1450,6 +1470,7 @@ export default function EstadoCuenta() {
             <ReporteAdeudosView
               tenantData={tenantData}
               adeudosData={adeudosData}
+              setAdeudosData={setAdeudosData}
               adeudosLoading={adeudosLoading}
               cutoff={cutoff}
               setCutoff={setCutoff}
@@ -1458,6 +1479,7 @@ export default function EstadoCuenta() {
               setSearch={setAdeudosSearch}
               tenantId={tenantId}
               role={role}
+              setUnits={setUnits}
             />
           )}
 
@@ -3231,23 +3253,59 @@ function DebtPaymentPlanModal({ unit, totalAdeudo, maintenanceFee = 0, onClose, 
 
 // ──────────────────────────────────────────────────────────────────────────────
 
-function ReporteAdeudosView({ tenantData, adeudosData, adeudosLoading, cutoff, setCutoff, startPeriod, search = '', setSearch, tenantId, role }) {
+function ReporteAdeudosView({ tenantData, adeudosData, setAdeudosData, adeudosLoading, cutoff, setCutoff, startPeriod, search = '', setSearch, tenantId, role, setUnits }) {
   const cur = tenantData?.currency || 'MXN';
   const fmt = (n) => _fmt(n, cur);
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [expanded, setExpanded] = useState({});
   const [planUnit, setPlanUnit] = useState(null);  // { unit, totalAdeudo } — kept for any legacy use
   const [showGeneralEmailModal, setShowGeneralEmailModal] = useState(false);
   const [generalEmailRecipientMode, setGeneralEmailRecipientMode] = useState('owners');
   const [generalEmailCustom, setGeneralEmailCustom] = useState('');
   const [sendingGeneralEmail, setSendingGeneralEmail] = useState(false);
+  const [togglingSuspension, setTogglingSuspension] = useState(null);
   const toggle = (id) => setExpanded(prev => ({ ...prev, [id]: !prev[id] }));
+  const canToggleSuspension = ['admin', 'tesorero', 'contador', 'superadmin'].includes(role);
 
   const units = adeudosData?.units || [];
   const grandTotal = parseFloat(adeudosData?.grand_total_adeudo || 0);
   const unitsWithDebt = adeudosData?.units_with_debt || 0;
+  const unitsSuspended = adeudosData?.units_suspended || units.filter(u => u.unit?.services_suspended || u.services_suspended).length;
   const totalUnits = adeudosData?.total_units || 0;
   const avgDebt = unitsWithDebt > 0 ? grandTotal / unitsWithDebt : 0;
+
+  const handleToggleSuspension = async (e, item) => {
+    e.stopPropagation();
+    const u = item.unit || {};
+    if (!u.id || !tenantId || togglingSuspension) return;
+    const next = !u.services_suspended;
+    setTogglingSuspension(u.id);
+    try {
+      const res = await unitsAPI.setServicesSuspension(tenantId, u.id, next);
+      setAdeudosData?.(prev => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          units: (prev.units || []).map(row =>
+            row.unit?.id === u.id
+              ? { ...row, unit: { ...row.unit, ...res.data }, services_suspended: next }
+              : row
+          ),
+          units_suspended: Math.max(0, (prev.units_suspended || 0) + (next ? 1 : -1)),
+        };
+      });
+      setUnits?.(prev => (prev || []).map(row =>
+        row.id === u.id ? { ...row, ...res.data, services_suspended: next } : row
+      ));
+      queryClient.invalidateQueries({ queryKey: queryKeys.units(tenantId) });
+      toast.success(next ? 'Suspensión de servicios activada' : 'Suspensión de servicios desactivada');
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || 'No se pudo actualizar la suspensión de servicios');
+    } finally {
+      setTogglingSuspension(null);
+    }
+  };
 
   const filtered = useMemo(() => {
     if (!search) return units;
@@ -3320,6 +3378,15 @@ function ReporteAdeudosView({ tenantData, adeudosData, adeudosLoading, cutoff, s
             <div className="cob-stat-value" style={{ fontSize: 14 }}>{periodLabel(cutoff)}</div>
           </div>
         </div>
+        <div className="cob-stat">
+          <div className="cob-stat-icon" style={{ background: 'var(--amber-50)', color: 'var(--amber-600)' }}>
+            <Ban size={18} />
+          </div>
+          <div>
+            <div className="cob-stat-label">Suspensión de servicios</div>
+            <div className="cob-stat-value">{unitsSuspended}</div>
+          </div>
+        </div>
       </div>
 
       {/* ── PRINT LAYOUT (oculto en pantalla, visible con body.printing-adeudos) ── */}
@@ -3373,11 +3440,12 @@ function ReporteAdeudosView({ tenantData, adeudosData, adeudosLoading, cutoff, s
         </div>
 
         {/* KPI strip */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8, marginBottom: 12 }}>
           {[
             { label: 'Unidades con Adeudo', value: `${unitsWithDebt} / ${totalUnits}`, color: '#c0392b' },
             { label: 'Adeudo Total', value: fmt(grandTotal), color: '#c0392b' },
             { label: 'Promedio por Unidad', value: fmt(avgDebt), color: '#d97706' },
+            { label: 'Suspensión de servicios', value: String(unitsSuspended), color: '#b45309' },
             { label: 'Corte de Período', value: periodLabel(cutoff), color: '#1a1a2e' },
           ].map(({ label, value, color }) => (
             <div key={label} style={{ background: '#f8f6f1', border: '1px solid #e5e0d5', borderRadius: 6, padding: '8px 10px' }}>
@@ -3415,7 +3483,14 @@ function ReporteAdeudosView({ tenantData, adeudosData, adeudosLoading, cutoff, s
                       {u.unit_id_code}
                     </span>
                   </td>
-                  <td style={{ padding: '5px 8px', fontWeight: 600, color: '#1a1a2e', borderBottom: '1px solid #fde8e8' }}>{u.unit_name}</td>
+                  <td style={{ padding: '5px 8px', fontWeight: 600, color: '#1a1a2e', borderBottom: '1px solid #fde8e8' }}>
+                    {u.unit_name}
+                    {(u.services_suspended || item.services_suspended) && (
+                      <div style={{ marginTop: 2, fontSize: 8, fontWeight: 800, color: '#92400e', letterSpacing: '0.04em' }}>
+                        SUSPENSIÓN DE SERVICIOS
+                      </div>
+                    )}
+                  </td>
                   <td style={{ padding: '5px 8px', color: '#64748b', borderBottom: '1px solid #fde8e8' }}>{u.responsible_name || '—'}</td>
                   <td style={{ padding: '5px 8px', textAlign: 'right', color: prevDebt > 0 ? '#c0392b' : '#64748b', fontWeight: prevDebt > 0 ? 700 : 400, borderBottom: '1px solid #fde8e8' }}>
                     {prevDebt > 0 ? fmt(prevDebt) : '—'}
@@ -3498,12 +3573,17 @@ function ReporteAdeudosView({ tenantData, adeudosData, adeudosLoading, cutoff, s
                         >
                           <td>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                              <div style={{ width: 4, height: 36, borderRadius: 2, background: 'var(--coral-400)', flexShrink: 0 }} />
+                              <div style={{ width: 4, height: 36, borderRadius: 2, background: (u.services_suspended || item.services_suspended) ? 'var(--amber-500)' : 'var(--coral-400)', flexShrink: 0 }} />
                               <div>
                                 <span style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--teal-600)', background: 'var(--teal-50)', padding: '2px 8px', borderRadius: 5, fontSize: 12 }}>
                                   {u.unit_id_code}
                                 </span>
                                 <div style={{ fontWeight: 600, fontSize: 13, marginTop: 3 }}>{u.unit_name}</div>
+                                {(u.services_suspended || item.services_suspended) && (
+                                  <div style={{ marginTop: 5 }}>
+                                    <ServicesSuspensionBadge />
+                                  </div>
+                                )}
                               </div>
                             </div>
                           </td>
@@ -3528,6 +3608,25 @@ function ReporteAdeudosView({ tenantData, adeudosData, adeudosLoading, cutoff, s
                           </td>
                           <td style={{ color: 'var(--ink-400)' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'flex-end' }}>
+                              {canToggleSuspension && (
+                                <button
+                                  className="btn btn-outline btn-sm"
+                                  title={u.services_suspended ? 'Quitar suspensión de servicios' : 'Activar suspensión de servicios'}
+                                  disabled={togglingSuspension === u.id}
+                                  style={{
+                                    padding: '3px 9px', fontSize: 11, display: 'flex', alignItems: 'center', gap: 4,
+                                    color: u.services_suspended ? 'var(--amber-800)' : 'var(--ink-600)',
+                                    borderColor: u.services_suspended ? 'var(--amber-300)' : 'var(--sand-200)',
+                                    background: u.services_suspended ? 'var(--amber-50)' : undefined,
+                                  }}
+                                  onClick={e => handleToggleSuspension(e, item)}
+                                >
+                                  <Ban size={12} />
+                                  {togglingSuspension === u.id
+                                    ? '…'
+                                    : (u.services_suspended ? 'Quitar suspensión' : 'Suspensión de servicios')}
+                                </button>
+                              )}
                               <button
                                 className="btn btn-outline btn-sm"
                                 title="Ver plan de pago sugerido"

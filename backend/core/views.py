@@ -1050,6 +1050,39 @@ class UnitViewSet(viewsets.ModelViewSet):
                    object_repr=f'{unit.unit_id_code} {unit.unit_name}')
         return Response(UnitListSerializer(unit).data)
 
+    @action(detail=True, methods=['post'], url_path='services-suspension', permission_classes=[IsFinancialManager])
+    def services_suspension(self, request, tenant_id=None, pk=None):
+        """POST /api/tenants/{tenant_id}/units/{id}/services-suspension/
+           Body: { "active": true|false }
+           Activa o desactiva el aviso informativo de suspensión de servicios."""
+        unit = self.get_object()
+        if 'active' not in request.data:
+            return Response(
+                {'detail': 'Indique active (true o false).'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        raw = request.data.get('active')
+        if isinstance(raw, str):
+            active = raw.strip().lower() in ('1', 'true', 't', 'yes', 'si', 'sí')
+        else:
+            active = bool(raw)
+
+        if unit.services_suspended == active:
+            return Response(UnitListSerializer(unit).data)
+
+        unit.services_suspended = active
+        unit.services_suspended_at = timezone.now() if active else None
+        unit.save(update_fields=['services_suspended', 'services_suspended_at', 'updated_at'])
+        verb = 'activada' if active else 'desactivada'
+        _audit_log(
+            request, 'unidades', 'update',
+            f'Suspensión de servicios {verb}: {unit.unit_id_code} — {unit.unit_name}',
+            tenant_id=tenant_id,
+            object_type='Unit', object_id=str(unit.id),
+            object_repr=f'{unit.unit_id_code} {unit.unit_name}',
+        )
+        return Response(UnitListSerializer(unit).data)
+
     def _auto_create_residente(self, unit):
         """
         If the unit has an owner_email, create (or associate) a residente User
@@ -5903,6 +5936,7 @@ class ReporteAdeudosView(APIView):
             if total_adeudo > Decimal('0'):
                 units_with_debt += 1
                 grand_total += total_adeudo
+            if total_adeudo > Decimal('0') or unit.services_suspended:
                 result.append({
                     'unit': UnitSerializer(unit).data,
                     'net_prev_debt': float(net_prev_debt),
@@ -5911,9 +5945,10 @@ class ReporteAdeudosView(APIView):
                     'credit_balance': float(credit_balance),
                     'period_debts': period_debts,
                     'total_adeudo': float(total_adeudo),
+                    'services_suspended': bool(unit.services_suspended),
                 })
 
-        result.sort(key=lambda x: x['total_adeudo'], reverse=True)
+        result.sort(key=lambda x: (not x.get('services_suspended'), -x['total_adeudo']))
 
         return Response({
             'tenant': TenantDetailSerializer(tenant).data,
@@ -5922,6 +5957,7 @@ class ReporteAdeudosView(APIView):
             'units': result,
             'grand_total_adeudo': float(grand_total),
             'units_with_debt': units_with_debt,
+            'units_suspended': sum(1 for x in result if x.get('services_suspended')),
             'total_units': units.count(),
         })
 
@@ -9174,8 +9210,15 @@ class ClosingReportView(APIView):
             )
 
         from .closing_report import generate_closing_report_pdf
+        generated_by = (
+            (getattr(request.user, 'name', None) or '').strip()
+            or (getattr(request.user, 'email', None) or '').strip()
+            or '—'
+        )
         try:
-            pdf_bytes = generate_closing_report_pdf(tenant, period, closed_period=cp)
+            pdf_bytes = generate_closing_report_pdf(
+                tenant, period, closed_period=cp, generated_by=generated_by,
+            )
         except Exception:
             logger.exception('Error generando reporte de cierre %s (tenant %s)', period, tenant_id)
             return Response(

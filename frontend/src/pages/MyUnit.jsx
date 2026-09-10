@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import ResidenteOnboarding, { onboardingKey } from '../components/onboarding/VecinoOnboarding';
+import { ServicesSuspensionBanner } from '../components/ServicesSuspensionBadge';
 
 // ─── Formatters ────────────────────────────────────────────────────────────
 function _fmt(n, currency = 'MXN') {
@@ -576,6 +577,10 @@ export default function MyUnit() {
           <Sparkles size={13} /> Tour
         </button>
       </div>
+
+      {unit.services_suspended && (
+        <ServicesSuspensionBanner style={{ marginBottom: 16 }} />
+      )}
 
       {/* ── Tab bar + Period navigator ───────────────────────────────────── */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
