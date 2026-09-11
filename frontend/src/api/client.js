@@ -321,6 +321,14 @@ export const planeacionAPI = {
     deleteCost:     (tenantId, id, costId) => api.delete(`/tenants/${tenantId}/condo-projects/${id}/costs/${costId}/`),
     gastos:         (tenantId, id, params) => api.get(`/tenants/${tenantId}/condo-projects/${id}/import-gastos/`, { params }),
     importGastos:   (tenantId, id, data) => api.post(`/tenants/${tenantId}/condo-projects/${id}/import-gastos/`, data),
+    addQuote:       (tenantId, id, data) => api.post(`/tenants/${tenantId}/condo-projects/${id}/quotes/`, data),
+    updateQuote:    (tenantId, id, quoteId, data) => api.patch(`/tenants/${tenantId}/condo-projects/${id}/quotes/${quoteId}/`, data),
+    deleteQuote:    (tenantId, id, quoteId) => api.delete(`/tenants/${tenantId}/condo-projects/${id}/quotes/${quoteId}/`),
+    selectWinner:   (tenantId, id, quoteId) => api.post(`/tenants/${tenantId}/condo-projects/${id}/quotes/${quoteId}/select-winner/`),
+    uploadFile:     (tenantId, id, formData) => api.post(`/tenants/${tenantId}/condo-projects/${id}/files/`, formData),
+    deleteFile:     (tenantId, id, fileId) => api.delete(`/tenants/${tenantId}/condo-projects/${id}/files/${fileId}/`),
+    includeInBudget:(tenantId, id, data) => api.post(`/tenants/${tenantId}/condo-projects/${id}/include-in-budget/`, data),
+    unlinkBudget:   (tenantId, id) => api.post(`/tenants/${tenantId}/condo-projects/${id}/unlink-budget/`),
   },
 };
 

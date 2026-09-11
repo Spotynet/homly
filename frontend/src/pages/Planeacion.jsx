@@ -1,12 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { planeacionAPI } from '../api/client';
+import { planeacionAPI, api } from '../api/client';
 import { CURRENCIES, fmtCurrency, todayPeriod } from '../utils/helpers';
 import toast from 'react-hot-toast';
 import {
   Plus, Sparkles, Check, Archive, Trash2, X, Pencil, Wallet,
   FolderKanban, Building2, Users, AlertTriangle, Link2, Calendar,
   Printer, Copy, Settings2, Send, Percent, ChevronDown, SlidersHorizontal,
+  Trophy, Paperclip, Landmark, FileText, Award, Download, Upload,
 } from 'lucide-react';
 
 const MONTHS = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'];
@@ -41,6 +42,35 @@ const EMPTY_PROJECT = {
   name: '', description: '', status: 'idea', priority: 'media',
   extra_field_id: null, budget_amount: 0, start_period: '', end_period: '',
   responsible_name: '', notes: '',
+  funding_mode: 'condominio', funding_condo_pct: 100, funding_residents_pct: 0,
+  funding_units: 0, funding_notes: '',
+};
+
+const FUNDING_MODE = {
+  condominio: { label: 'Recursos del condominio' },
+  residentes: { label: 'Aportes de residentes' },
+  compartido: { label: 'Compartido' },
+};
+
+const CONTEST_STATUS = {
+  sin_concurso: { label: 'Sin concurso', color: 'var(--ink-500)', bg: 'var(--sand-50)' },
+  en_concurso: { label: 'En concurso', color: '#92400e', bg: 'var(--amber-50)' },
+  adjudicado: { label: 'Adjudicado', color: 'var(--teal-700)', bg: 'var(--teal-50)' },
+};
+
+const FILE_KINDS = {
+  cotizacion: 'Cotización',
+  plano: 'Plano',
+  contrato: 'Contrato',
+  foto: 'Foto',
+  documento: 'Documento',
+  otro: 'Otro',
+};
+
+const EMPTY_QUOTE = {
+  supplier_name: '', supplier_rfc: '', supplier_contact: '',
+  supplier_phone: '', supplier_email: '', supplier_notes: '',
+  amount: '', validity_date: '', delivery_days: '', warranty_months: '', scope: '',
 };
 
 const ROLE_LBL = { admin: 'Admin', tesorero: 'Tesorero', contador: 'Contador' };
@@ -71,6 +101,25 @@ function lineTotal(amounts) {
 
 function currencySymbol(currency) {
   return (CURRENCIES[currency] || CURRENCIES.MXN).symbol;
+}
+
+function isProjectLine(line) {
+  if (!line) return false;
+  if (line.project_id) return true;
+  const key = String(line.concept_key || '');
+  return key.startsWith('project:') || key.startsWith('project_income:');
+}
+
+async function downloadProtectedFile(url, name) {
+  const res = await api.get(url, { responseType: 'blob' });
+  const blobUrl = URL.createObjectURL(res.data);
+  const a = document.createElement('a');
+  a.href = blobUrl;
+  a.download = name || 'archivo';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 1500);
 }
 
 function flowEnabled(ctx) {
@@ -232,7 +281,7 @@ export default function Planeacion() {
           onSeeded={loadCtx} user={user}
         />
       ) : (
-        <ProyectosTab tenantId={tenantId} ctx={ctx} isReadOnly={isReadOnly} user={user} />
+        <ProyectosTab tenantId={tenantId} ctx={ctx} isReadOnly={isReadOnly} user={user} onCtxRefresh={loadCtx} />
       )}
 
       {flowOpen && (
@@ -261,6 +310,7 @@ function PresupuestoTab({ tenantId, year, setYear, years, ctx, isReadOnly, loadi
   const [seedName, setSeedName] = useState('');
   const [seedUnits, setSeedUnits] = useState('');
   const [seedFee, setSeedFee] = useState('');
+  const [budgetName, setBudgetName] = useState('');
   const currency = ctx?.currency || 'MXN';
   const maxUnits = ctx?.max_seed_units || ctx?.units_active || ctx?.units_count || 0;
 
@@ -269,6 +319,10 @@ function PresupuestoTab({ tenantId, year, setYear, years, ctx, isReadOnly, loadi
     setSeedUnits(ctx?.units_billable ?? '');
     setSeedFee(ctx?.maintenance_fee ?? '');
   }, [year, ctx?.units_billable, ctx?.maintenance_fee]);
+
+  useEffect(() => {
+    setBudgetName(budget?.name || '');
+  }, [budget?.id, budget?.name]);
 
   const loadList = (keepId) => {
     if (!tenantId) return;
@@ -458,6 +512,11 @@ function PresupuestoTab({ tenantId, year, setYear, years, ctx, isReadOnly, loadi
   };
 
   const removeLine = (id) => {
+    const line = (budget?.lines || []).find(l => l.id === id);
+    if (isProjectLine(line)) {
+      toast.error('Esta partida viene de un proyecto. Quítala desde la pestaña Proyectos.');
+      return;
+    }
     if (!window.confirm('¿Eliminar esta partida del escenario?')) return;
     setBudget(b => ({ ...b, lines: b.lines.filter(l => l.id !== id) }));
     setDirty(true);
@@ -474,29 +533,53 @@ function PresupuestoTab({ tenantId, year, setYear, years, ctx, isReadOnly, loadi
   return (
     <>
       <div className="plan-toolbar">
-        <div className="plan-toolbar-meta">
-          <select className="field-select" value={year} onChange={e => setYear(Number(e.target.value))} style={{ width: 112 }}>
-            {years.map(y => <option key={y} value={y}>{y}</option>)}
-          </select>
-          {scenarios.length > 0 && (
-            <select
-              className="field-select"
-              value={selectedId || ''}
-              onChange={e => openScenario(e.target.value)}
-              style={{ minWidth: 240 }}
-            >
-              {scenarios.map(s => (
-                <option key={s.id} value={s.id}>
-                  {s.name || `Escenario ${year}`} · {BUDGET_STATUS[s.status]?.label || s.status}
-                </option>
-              ))}
+        <div className="plan-id-row">
+          <div className="field" style={{ margin: 0 }}>
+            <div className="field-label">Año</div>
+            <select className="field-select" value={year} onChange={e => setYear(Number(e.target.value))}>
+              {years.map(y => <option key={y} value={y}>{y}</option>)}
             </select>
-          )}
-          {budget && <Pill map={BUDGET_STATUS} value={budget.status} />}
-          {budget?.status === 'aprobado' && (
-            <span className="plan-toolbar-flag">Aprobado final</span>
-          )}
-          {dirty && !locked && <span className="plan-toolbar-dirty">Cambios sin guardar</span>}
+          </div>
+          <div className="field plan-id-name" style={{ margin: 0 }}>
+            <div className="field-label">Nombre del presupuesto</div>
+            <div className="plan-id-name-controls">
+              {scenarios.length > 1 && (
+                <select
+                  className="field-select plan-id-switch"
+                  value={selectedId || ''}
+                  onChange={e => openScenario(e.target.value)}
+                  title="Cambiar escenario"
+                >
+                  {scenarios.map(s => (
+                    <option key={s.id} value={s.id}>{s.name || `Escenario ${year}`}</option>
+                  ))}
+                </select>
+              )}
+              <input
+                className="field-input"
+                value={budget ? budgetName : seedName}
+                disabled={budget ? locked : isReadOnly}
+                placeholder={budget ? 'Nombre del escenario' : 'Nombre del nuevo presupuesto'}
+                onChange={e => {
+                  if (budget) setBudgetName(e.target.value);
+                  else setSeedName(e.target.value);
+                }}
+                onBlur={() => {
+                  if (budget && !locked && budgetName.trim() && budgetName.trim() !== budget.name) {
+                    renameScenario(budgetName.trim());
+                  }
+                }}
+              />
+            </div>
+          </div>
+          <div className="field" style={{ margin: 0 }}>
+            <div className="field-label">Estado</div>
+            <div className="plan-id-status">
+              {budget ? <Pill map={BUDGET_STATUS} value={budget.status} /> : <span className="plan-id-status-empty">Sin presupuesto</span>}
+              {budget?.status === 'aprobado' && <span className="plan-toolbar-flag">Final</span>}
+              {dirty && !locked && <span className="plan-toolbar-dirty">Sin guardar</span>}
+            </div>
+          </div>
         </div>
         <div className="plan-toolbar-actions">
           {budget && (
@@ -541,10 +624,6 @@ function PresupuestoTab({ tenantId, year, setYear, years, ctx, isReadOnly, loadi
           </p>
           {!isReadOnly && (
             <div style={{ maxWidth: 520, margin: '0 auto', display: 'grid', gap: 10, textAlign: 'left' }}>
-              <div className="field">
-                <div className="field-label">Nombre del escenario</div>
-                <input className="field-input" value={seedName} onChange={e => setSeedName(e.target.value)} />
-              </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <div className="field">
                   <div className="field-label">Unidades (máx. {maxUnits})</div>
@@ -608,7 +687,6 @@ function PresupuestoTab({ tenantId, year, setYear, years, ctx, isReadOnly, loadi
             locked={locked}
             currency={currency}
             maxUnits={maxUnits}
-            onRename={renameScenario}
             onApplied={(next) => {
               setBudget(next);
               setDirty(false);
@@ -681,12 +759,18 @@ function PresupuestoTab({ tenantId, year, setYear, years, ctx, isReadOnly, loadi
                     const annual = lineTotal(line.monthly_amounts);
                     const real = Number(line.actual_annual) || 0;
                     const varn = annual ? real - annual : real;
+                    const fromProject = isProjectLine(line);
                     return (
                       <tr key={line.id}>
                         <td>
-                          <div style={{ fontWeight: 600, fontSize: 13 }}>{line.name || 'Sin nombre'}</div>
+                          <div style={{ fontWeight: 600, fontSize: 13 }}>
+                            {line.name || 'Sin nombre'}
+                            {fromProject && <span className="plan-line-proj">Proyecto</span>}
+                          </div>
                           <div style={{ fontSize: 11, color: 'var(--ink-400)' }}>
-                            {line.concept_key === 'maintenance' ? 'Cuota del tenant' : (line.extra_field_label || line.concept_key)}
+                            {fromProject
+                              ? (line.project_name || 'Ligado a un proyecto')
+                              : (line.concept_key === 'maintenance' ? 'Cuota del tenant' : (line.extra_field_label || line.concept_key))}
                           </div>
                         </td>
                         {MONTHS.map(m => {
@@ -704,8 +788,14 @@ function PresupuestoTab({ tenantId, year, setYear, years, ctx, isReadOnly, loadi
                         </td>
                         {!locked && (
                           <td>
-                            <button className="btn btn-outline btn-sm" onClick={() => setEditing(line)}><Pencil size={12} /></button>
-                            <button className="btn btn-outline btn-sm" style={{ marginLeft: 4 }} onClick={() => removeLine(line.id)}><Trash2 size={12} /></button>
+                            {fromProject ? (
+                              <span style={{ fontSize: 11, color: 'var(--ink-400)' }}>Desde proyectos</span>
+                            ) : (
+                              <>
+                                <button className="btn btn-outline btn-sm" onClick={() => setEditing(line)}><Pencil size={12} /></button>
+                                <button className="btn btn-outline btn-sm" style={{ marginLeft: 4 }} onClick={() => removeLine(line.id)}><Trash2 size={12} /></button>
+                              </>
+                            )}
                           </td>
                         )}
                       </tr>
@@ -733,18 +823,16 @@ function PresupuestoTab({ tenantId, year, setYear, years, ctx, isReadOnly, loadi
   );
 }
 
-function SeedVarsPanel({ budget, ctx, locked, currency, maxUnits, onRename, onApplied, tenantId }) {
-  const [name, setName] = useState(budget.name || '');
+function SeedVarsPanel({ budget, ctx, locked, currency, maxUnits, onApplied, tenantId }) {
   const [units, setUnits] = useState(budget.seed_units || ctx?.units_billable || 0);
   const [fee, setFee] = useState(Number(budget.seed_fee) || ctx?.maintenance_fee || 0);
   const [saving, setSaving] = useState(false);
   const monthly = (Number(units) || 0) * (Number(fee) || 0);
 
   useEffect(() => {
-    setName(budget.name || '');
     setUnits(budget.seed_units || ctx?.units_billable || 0);
     setFee(Number(budget.seed_fee) || ctx?.maintenance_fee || 0);
-  }, [budget.id, budget.name, budget.seed_units, budget.seed_fee]);
+  }, [budget.id, budget.seed_units, budget.seed_fee]);
 
   const apply = async () => {
     if (maxUnits && Number(units) > maxUnits) {
@@ -753,7 +841,6 @@ function SeedVarsPanel({ budget, ctx, locked, currency, maxUnits, onRename, onAp
     }
     try {
       setSaving(true);
-      if (name.trim() && name.trim() !== budget.name) await onRename(name.trim());
       const r = await planeacionAPI.budgets.applySeed(tenantId, budget.id, { units: Number(units) || 0, fee: Number(fee) || 0 });
       onApplied(r.data);
       toast.success('Sugerido actualizado (cuota y extras de ingreso que siguen en el escenario)');
@@ -771,10 +858,6 @@ function SeedVarsPanel({ budget, ctx, locked, currency, maxUnits, onRename, onAp
       summary={`${Number(units) || 0} un. · cuota ${fmtCurrency(fee, currency)}`}
     >
       <div className="plan-seed-grid">
-        <div className="field" style={{ margin: 0 }}>
-          <div className="field-label">Nombre del escenario</div>
-          <input className="field-input" value={name} disabled={locked} onChange={e => setName(e.target.value)} onBlur={() => { if (!locked && name.trim() && name.trim() !== budget.name) onRename(name.trim()); }} />
-        </div>
         <div className="field" style={{ margin: 0 }}>
           <div className="field-label">Unidades (máx. {maxUnits})</div>
           <input className="field-input" type="number" min="0" max={maxUnits || undefined} disabled={locked} value={units} onChange={e => setUnits(e.target.value)} />
@@ -1346,7 +1429,7 @@ function LineModal({ line, currency, locked, onClose, onSave }) {
   );
 }
 
-function ProyectosTab({ tenantId, ctx, isReadOnly, user }) {
+function ProyectosTab({ tenantId, ctx, isReadOnly, user, onCtxRefresh }) {
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
@@ -1398,7 +1481,7 @@ function ProyectosTab({ tenantId, ctx, isReadOnly, user }) {
           <FolderKanban size={28} style={{ color: 'var(--teal-600)', marginBottom: 10 }} />
           <h3 style={{ margin: '0 0 8px' }}>Sin proyectos todavía</h3>
           <p style={{ color: 'var(--ink-400)', fontSize: 13, maxWidth: 480, margin: '0 auto 16px' }}>
-            Usa esta pestaña para obras, mejoras y extraordinarios. Puedes ligarlos a una categoría de gastos y traer movimientos reales.
+            Usa esta pestaña para obras, mejoras y extraordinarios: concurso de proveedores, archivos, plan de fondeo e inclusión en el presupuesto anual.
           </p>
           {!isReadOnly && (
             <button className="btn btn-primary" onClick={() => setModal({ ...EMPTY_PROJECT, start_period: todayPeriod() })}>
@@ -1421,6 +1504,13 @@ function ProyectosTab({ tenantId, ctx, isReadOnly, user }) {
                 <div style={{ fontSize: 12, color: 'var(--ink-400)', marginTop: 4, textAlign: 'left' }}>
                   {p.extra_field_label || 'Sin categoría de gastos'}
                   {p.responsible_name ? ` · ${p.responsible_name}` : ''}
+                </div>
+                <div className="proj-card-meta">
+                  <Pill map={CONTEST_STATUS} value={p.contest_status || 'sin_concurso'} />
+                  {p.winner_supplier_name && <span className="proj-chip">Ganador: {p.winner_supplier_name}</span>}
+                  <span className="proj-chip">{FUNDING_MODE[p.funding_mode]?.label || 'Fondeo'}</span>
+                  {p.budget_name && <span className="proj-chip">En {p.budget_name}</span>}
+                  {(p.quotes_count || 0) > 0 && <span className="proj-chip">{p.quotes_count} cotiz.</span>}
                 </div>
                 <div style={{ marginTop: 12, height: 6, background: 'var(--sand-100)', borderRadius: 99, overflow: 'hidden' }}>
                   <div style={{ width: `${pct}%`, height: '100%', background: over ? 'var(--coral-500)' : 'var(--teal-500)' }} />
@@ -1466,10 +1556,10 @@ function ProyectosTab({ tenantId, ctx, isReadOnly, user }) {
           isReadOnly={isReadOnly}
           user={user}
           onClose={() => setDetail(null)}
-          onRefresh={() => { openDetail(detail.id); load(); }}
+          onRefresh={() => { openDetail(detail.id); load(); onCtxRefresh?.(); }}
           onEdit={() => { setModal(detail); setDetail(null); }}
           onDelete={async () => {
-            if (!window.confirm('¿Eliminar este proyecto y sus costos?')) return;
+            if (!window.confirm('¿Eliminar este proyecto, sus cotizaciones, archivos y costos?')) return;
             try {
               await planeacionAPI.projects.delete(tenantId, detail.id);
               toast.success('Proyecto eliminado');
@@ -1557,6 +1647,9 @@ function ProjectForm({ ctx, initial, isReadOnly, onClose, onSave }) {
               Permite importar gastos reales de esa categoría al proyecto.
             </div>
           </div>
+          <p style={{ fontSize: 12, color: 'var(--ink-400)', margin: 0 }}>
+            Después de guardar podrás cargar cotizaciones, archivos del proyecto, el plan de fondeo y sumarlo a un presupuesto.
+          </p>
         </div>
         <div className="modal-foot">
           <button className="btn btn-outline" onClick={onClose}>Cancelar</button>
@@ -1575,12 +1668,39 @@ function ProjectForm({ ctx, initial, isReadOnly, onClose, onSave }) {
 
 function ProjectDetail({ tenantId, project, ctx, isReadOnly, user, onClose, onRefresh, onEdit, onDelete }) {
   const currency = ctx?.currency || 'MXN';
+  const [tab, setTab] = useState('resumen');
   const [period, setPeriod] = useState(todayPeriod());
   const [gastos, setGastos] = useState([]);
   const [picked, setPicked] = useState({});
   const [cost, setCost] = useState({ period: todayPeriod(), amount: '', description: '' });
+  const [quote, setQuote] = useState({ ...EMPTY_QUOTE });
+  const [editingQuoteId, setEditingQuoteId] = useState(null);
+  const [fileKind, setFileKind] = useState('documento');
+  const [fileQuoteId, setFileQuoteId] = useState('');
+  const [funding, setFunding] = useState({
+    funding_mode: project.funding_mode || 'condominio',
+    funding_condo_pct: Number(project.funding_condo_pct) || 100,
+    funding_units: project.funding_units || 0,
+    funding_notes: project.funding_notes || '',
+  });
+  const [budgetId, setBudgetId] = useState(project.budget_id || '');
   const over = (project.progress_pct || 0) > 100;
   const flowOn = flowEnabled(ctx);
+  const quotes = project.quotes || [];
+  const files = project.files || [];
+  const breakdown = project.funding || {};
+  const budgets = ctx?.existing_budgets || [];
+  const yearHint = (project.start_period || '').slice(0, 4);
+
+  useEffect(() => {
+    setFunding({
+      funding_mode: project.funding_mode || 'condominio',
+      funding_condo_pct: Number(project.funding_condo_pct) || 100,
+      funding_units: project.funding_units || 0,
+      funding_notes: project.funding_notes || '',
+    });
+    setBudgetId(project.budget_id || '');
+  }, [project.id, project.funding_mode, project.funding_condo_pct, project.funding_units, project.funding_notes, project.budget_id]);
 
   const loadGastos = () => {
     planeacionAPI.projects.gastos(tenantId, project.id, { period })
@@ -1588,7 +1708,7 @@ function ProjectDetail({ tenantId, project, ctx, isReadOnly, user, onClose, onRe
       .catch(() => setGastos([]));
   };
 
-  useEffect(() => { loadGastos(); }, [period, project.id]);
+  useEffect(() => { if (tab === 'costos') loadGastos(); }, [period, project.id, tab]);
 
   const addManual = async () => {
     try {
@@ -1619,9 +1739,108 @@ function ProjectDetail({ tenantId, project, ctx, isReadOnly, user, onClose, onRe
     }
   };
 
+  const saveQuote = async () => {
+    if (!quote.supplier_name.trim() || !quote.amount) {
+      toast.error('Indica proveedor y monto');
+      return;
+    }
+    const payload = {
+      ...quote,
+      amount: Number(quote.amount) || 0,
+      delivery_days: quote.delivery_days === '' ? null : Number(quote.delivery_days),
+      warranty_months: quote.warranty_months === '' ? null : Number(quote.warranty_months),
+      validity_date: quote.validity_date || null,
+    };
+    try {
+      if (editingQuoteId) await planeacionAPI.projects.updateQuote(tenantId, project.id, editingQuoteId, payload);
+      else await planeacionAPI.projects.addQuote(tenantId, project.id, payload);
+      toast.success(editingQuoteId ? 'Cotización actualizada' : 'Cotización agregada');
+      setQuote({ ...EMPTY_QUOTE });
+      setEditingQuoteId(null);
+      onRefresh();
+    } catch (e) {
+      toast.error(errMsg(e, 'No se pudo guardar la cotización'));
+    }
+  };
+
+  const pickWinner = async (quoteId) => {
+    try {
+      await planeacionAPI.projects.selectWinner(tenantId, project.id, quoteId);
+      toast.success('Proveedor adjudicado. El monto pasa a ser el presupuesto del proyecto.');
+      onRefresh();
+    } catch (e) {
+      toast.error(errMsg(e, 'No se pudo adjudicar'));
+    }
+  };
+
+  const saveFunding = async () => {
+    try {
+      await planeacionAPI.projects.update(tenantId, project.id, {
+        funding_mode: funding.funding_mode,
+        funding_condo_pct: Number(funding.funding_condo_pct) || 0,
+        funding_units: Number(funding.funding_units) || 0,
+        funding_notes: funding.funding_notes,
+      });
+      toast.success('Plan de fondeo guardado');
+      onRefresh();
+    } catch (e) {
+      toast.error(errMsg(e, 'No se pudo guardar el fondeo'));
+    }
+  };
+
+  const include = async (id) => {
+    if (!id) {
+      toast.error('Elige un presupuesto');
+      return;
+    }
+    try {
+      await planeacionAPI.projects.includeInBudget(tenantId, project.id, { budget_id: id });
+      toast.success('Proyecto sumado al presupuesto');
+      onRefresh();
+    } catch (e) {
+      toast.error(errMsg(e, 'No se pudo incluir en el presupuesto'));
+    }
+  };
+
+  const includeBudget = () => include(budgetId || project.budget_id);
+
+  const unlinkBudget = async () => {
+    if (!window.confirm('¿Quitar este proyecto del presupuesto? Se eliminarán sus partidas.')) return;
+    try {
+      await planeacionAPI.projects.unlinkBudget(tenantId, project.id);
+      toast.success('Proyecto retirado del presupuesto');
+      onRefresh();
+    } catch (e) {
+      toast.error(errMsg(e, 'No se pudo retirar'));
+    }
+  };
+
+  const uploadFile = async (file, extra = {}) => {
+    if (!file) return;
+    const fd = new FormData();
+    fd.append('file', file, file.name);
+    fd.append('kind', extra.kind || fileKind);
+    if (extra.quote_id || fileQuoteId) fd.append('quote_id', extra.quote_id || fileQuoteId);
+    try {
+      await planeacionAPI.projects.uploadFile(tenantId, project.id, fd);
+      toast.success('Archivo cargado');
+      onRefresh();
+    } catch (e) {
+      toast.error(errMsg(e, 'No se pudo subir el archivo'));
+    }
+  };
+
+  const TABS = [
+    ['resumen', 'Resumen'],
+    ['concurso', `Concurso (${quotes.length})`],
+    ['fondeo', 'Fondeo'],
+    ['archivos', `Archivos (${files.length})`],
+    ['costos', 'Costos'],
+  ];
+
   return (
     <div className="modal-bg open" onClick={onClose}>
-      <div className="modal lg" onClick={e => e.stopPropagation()}>
+      <div className="modal xl" onClick={e => e.stopPropagation()}>
         <div className="modal-head">
           <h3>{project.name}</h3>
           <button className="modal-close" onClick={onClose}><X size={16} /></button>
@@ -1629,113 +1848,406 @@ function ProjectDetail({ tenantId, project, ctx, isReadOnly, user, onClose, onRe
         <div className="modal-body">
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
             <Pill map={PROJECT_STATUS} value={project.status} />
+            <Pill map={CONTEST_STATUS} value={project.contest_status || 'sin_concurso'} />
             <span style={{ fontSize: 12, color: PRIORITY[project.priority]?.color, fontWeight: 700 }}>{PRIORITY[project.priority]?.label}</span>
             {project.extra_field_label && <span style={{ fontSize: 12, color: 'var(--ink-400)' }}>{project.extra_field_label}</span>}
+            {project.winner_supplier_name && <span className="proj-chip"><Award size={11} /> {project.winner_supplier_name}</span>}
+            {project.budget_name && <span className="proj-chip">{project.budget_name}</span>}
           </div>
-          {project.description && <p style={{ fontSize: 13, color: 'var(--ink-500)' }}>{project.description}</p>}
-          <div style={{ margin: '12px 0 6px', height: 8, background: 'var(--sand-100)', borderRadius: 99, overflow: 'hidden' }}>
+          {project.description && tab === 'resumen' && <p style={{ fontSize: 13, color: 'var(--ink-500)' }}>{project.description}</p>}
+          <div style={{ margin: '8px 0 6px', height: 8, background: 'var(--sand-100)', borderRadius: 99, overflow: 'hidden' }}>
             <div style={{ width: `${Math.min(100, project.progress_pct || 0)}%`, height: '100%', background: over ? 'var(--coral-500)' : 'var(--teal-500)' }} />
           </div>
-          <div style={{ fontSize: 13, marginBottom: 16 }}>
+          <div style={{ fontSize: 13, marginBottom: 12 }}>
             {fmtCurrency(project.spent, currency)} de {fmtCurrency(project.budget_amount, currency)}
             {over && <span style={{ color: 'var(--coral-600)', marginLeft: 8 }}>Sobre presupuesto</span>}
           </div>
 
-          <ApprovalPanel
-            steps={project.approval_steps}
-            status={project.status}
-            userId={user?.id}
-            flowOn={flowOn}
-            onApprove={async (notes) => {
-              const r = await planeacionAPI.projects.approveStep(tenantId, project.id, { notes });
-              toast.success(r.data.status === 'aprobado' ? 'Proyecto aprobado' : 'Paso aprobado');
-              onRefresh();
-            }}
-            onReject={async (notes) => {
-              await planeacionAPI.projects.rejectStep(tenantId, project.id, { notes });
-              toast.success('Proyecto devuelto a idea');
-              onRefresh();
-            }}
-          />
+          <div className="proj-detail-tabs">
+            {TABS.map(([k, l]) => (
+              <button key={k} className={`tab ${tab === k ? 'active' : ''}`} onClick={() => setTab(k)}>{l}</button>
+            ))}
+          </div>
 
-          {!isReadOnly && project.status === 'idea' && (
-            <div style={{ marginBottom: 14 }}>
-              <button className="btn btn-outline" onClick={async () => {
-                try {
-                  const r = await planeacionAPI.projects.submitApproval(tenantId, project.id);
-                  toast.success(r.data.status === 'aprobado' ? 'Proyecto aprobado' : 'Enviado a aprobación');
-                  onRefresh();
-                } catch (e) {
-                  toast.error(errMsg(e, 'No se pudo enviar a aprobación'));
-                }
-              }}>
-                {flowOn ? <><Send size={14} /> Enviar a aprobación</> : <><Check size={14} /> Aprobar proyecto</>}
-              </button>
-            </div>
-          )}
-
-          <h4 style={{ margin: '0 0 8px', fontSize: 14 }}>Costos</h4>
-          {(project.costs || []).length === 0 ? (
-            <div style={{ fontSize: 13, color: 'var(--ink-400)', marginBottom: 12 }}>Todavía no hay costos. Registra uno o importa gastos del período.</div>
-          ) : (
-            <div className="table-wrap" style={{ marginBottom: 14 }}>
-              <table>
-                <thead><tr><th>Período</th><th>Descripción</th><th>Monto</th>{!isReadOnly && <th />}</tr></thead>
-                <tbody>
-                  {(project.costs || []).map(c => (
-                    <tr key={c.id}>
-                      <td>{c.period}</td>
-                      <td>{c.description || '—'}{c.gasto_entry_id ? ' · gasto' : ''}</td>
-                      <td>{fmtCurrency(c.amount, currency)}</td>
-                      {!isReadOnly && (
-                        <td>
-                          <button className="btn btn-outline btn-sm" onClick={async () => {
-                            await planeacionAPI.projects.deleteCost(tenantId, project.id, c.id);
-                            onRefresh();
-                          }}><Trash2 size={12} /></button>
-                        </td>
-                      )}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {!isReadOnly && (
+          {tab === 'resumen' && (
             <>
-              <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr 140px auto', gap: 8, marginBottom: 18 }}>
-                <input type="month" className="field-input" value={cost.period} onChange={e => setCost(c => ({ ...c, period: e.target.value }))} />
-                <input className="field-input" placeholder="Descripción del costo" value={cost.description} onChange={e => setCost(c => ({ ...c, description: e.target.value }))} />
-                <input type="number" className="field-input" placeholder={`Monto (${currencySymbol(currency)})`} value={cost.amount} onChange={e => setCost(c => ({ ...c, amount: e.target.value }))} />
-                <button className="btn btn-primary" disabled={!cost.amount} onClick={addManual}>Agregar</button>
+              <ApprovalPanel
+                steps={project.approval_steps}
+                status={project.status}
+                userId={user?.id}
+                flowOn={flowOn}
+                onApprove={async (notes) => {
+                  const r = await planeacionAPI.projects.approveStep(tenantId, project.id, { notes });
+                  toast.success(r.data.status === 'aprobado' ? 'Proyecto aprobado' : 'Paso aprobado');
+                  onRefresh();
+                }}
+                onReject={async (notes) => {
+                  await planeacionAPI.projects.rejectStep(tenantId, project.id, { notes });
+                  toast.success('Proyecto devuelto a idea');
+                  onRefresh();
+                }}
+              />
+              {!isReadOnly && project.status === 'idea' && (
+                <div style={{ marginBottom: 14 }}>
+                  <button className="btn btn-outline" onClick={async () => {
+                    try {
+                      const r = await planeacionAPI.projects.submitApproval(tenantId, project.id);
+                      toast.success(r.data.status === 'aprobado' ? 'Proyecto aprobado' : 'Enviado a aprobación');
+                      onRefresh();
+                    } catch (e) {
+                      toast.error(errMsg(e, 'No se pudo enviar a aprobación'));
+                    }
+                  }}>
+                    {flowOn ? <><Send size={14} /> Enviar a aprobación</> : <><Check size={14} /> Aprobar proyecto</>}
+                  </button>
+                </div>
+              )}
+              <div className="fund-bar">
+                <div className="fund-part">
+                  <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>Condominio ({breakdown.condo_pct ?? 100}%)</div>
+                  <strong>{fmtCurrency(breakdown.condo_amount, currency)}</strong>
+                </div>
+                <div className="fund-part">
+                  <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>Residentes ({breakdown.residents_pct ?? 0}%)</div>
+                  <strong>{fmtCurrency(breakdown.residents_amount, currency)}</strong>
+                  {breakdown.per_unit != null && (
+                    <div style={{ fontSize: 12, color: 'var(--ink-400)', marginTop: 4 }}>
+                      {fmtCurrency(breakdown.per_unit, currency)} por unidad · {breakdown.units} un.
+                    </div>
+                  )}
+                </div>
               </div>
+              <p style={{ fontSize: 12, color: 'var(--ink-400)', margin: '0 0 8px' }}>
+                {project.start_period || '—'} → {project.end_period || '—'}
+                {project.responsible_name ? ` · ${project.responsible_name}` : ''}
+                {quotes.length < 3 ? ' · Tip: junta 3 cotizaciones para un concurso sólido.' : ''}
+              </p>
+            </>
+          )}
 
-              <h4 style={{ margin: '0 0 8px', fontSize: 14 }}><Link2 size={14} /> Importar gastos del condominio</h4>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
-                <input type="month" className="field-input" value={period} onChange={e => setPeriod(e.target.value)} style={{ width: 160 }} />
-                <button className="btn btn-outline" onClick={importSelected}>Ligar seleccionados</button>
-              </div>
-              {gastos.length === 0 ? (
-                <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>No hay gastos en ese período{project.extra_field_label ? ` para ${project.extra_field_label}` : ''}.</div>
+          {tab === 'concurso' && (
+            <>
+              <p style={{ fontSize: 13, color: 'var(--ink-500)', margin: '0 0 12px' }}>
+                Compara proveedores y elige al ganador. Lo habitual es un concurso de 3 cotizaciones; puedes cargar hasta 8.
+              </p>
+              {quotes.length === 0 ? (
+                <div style={{ fontSize: 13, color: 'var(--ink-400)', marginBottom: 12 }}>Todavía no hay cotizaciones.</div>
               ) : (
-                <div className="table-wrap">
+                <>
+                  <div className="quote-grid">
+                    {quotes.map(q => (
+                      <div key={q.id} className={`quote-card ${q.is_winner ? 'is-winner' : ''}`}>
+                        <div className="quote-card-head">
+                          <div>
+                            <div style={{ fontWeight: 700 }}>{q.supplier_name}</div>
+                            <div style={{ fontSize: 11, color: 'var(--ink-400)' }}>
+                              {[q.supplier_rfc, q.supplier_phone || q.supplier_contact, q.supplier_email].filter(Boolean).join(' · ') || 'Sin datos de contacto'}
+                            </div>
+                          </div>
+                          {q.is_winner && <Pill map={CONTEST_STATUS} value="adjudicado" />}
+                        </div>
+                        <div className="quote-amount">{fmtCurrency(q.amount, currency)}</div>
+                        <div style={{ fontSize: 12, color: 'var(--ink-500)' }}>
+                          {q.delivery_days != null ? `${q.delivery_days} días de entrega` : 'Entrega no indicada'}
+                          {q.warranty_months != null ? ` · ${q.warranty_months} meses de garantía` : ''}
+                          {q.validity_date ? ` · vigencia ${q.validity_date}` : ''}
+                        </div>
+                        {q.scope && <div style={{ fontSize: 12, color: 'var(--ink-500)' }}>{q.scope}</div>}
+                        {(q.files || []).length > 0 && (
+                          <div style={{ fontSize: 12 }}>
+                            {q.files.map(f => (
+                              <button key={f.id} className="btn btn-outline btn-sm" style={{ marginRight: 4, marginTop: 4 }} onClick={() => downloadProtectedFile(f.file_url, f.original_name)}>
+                                <FileText size={12} /> {f.original_name}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                        {!isReadOnly && (
+                          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 'auto' }}>
+                            {!q.is_winner && quotes.length >= 2 && (
+                              <button className="btn btn-primary btn-sm" onClick={() => pickWinner(q.id)}><Trophy size={12} /> Elegir ganador</button>
+                            )}
+                            <button className="btn btn-outline btn-sm" onClick={() => {
+                              setEditingQuoteId(q.id);
+                              setQuote({
+                                supplier_name: q.supplier_name || '',
+                                supplier_rfc: q.supplier_rfc || '',
+                                supplier_contact: q.supplier_contact || '',
+                                supplier_phone: q.supplier_phone || '',
+                                supplier_email: q.supplier_email || '',
+                                supplier_notes: q.supplier_notes || '',
+                                amount: q.amount ?? '',
+                                validity_date: q.validity_date || '',
+                                delivery_days: q.delivery_days ?? '',
+                                warranty_months: q.warranty_months ?? '',
+                                scope: q.scope || '',
+                              });
+                            }}><Pencil size={12} /></button>
+                            <label className="btn btn-outline btn-sm" style={{ cursor: 'pointer' }}>
+                              <Paperclip size={12} />
+                              <input type="file" hidden onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; uploadFile(f, { kind: 'cotizacion', quote_id: q.id }); }} />
+                            </label>
+                            <button className="btn btn-outline btn-sm" onClick={async () => {
+                              if (!window.confirm('¿Eliminar esta cotización?')) return;
+                              await planeacionAPI.projects.deleteQuote(tenantId, project.id, q.id);
+                              onRefresh();
+                            }}><Trash2 size={12} /></button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  {quotes.length >= 2 && (
+                    <div className="quote-cmp table-wrap">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Criterio</th>
+                            {quotes.map(q => <th key={q.id}>{q.supplier_name}{q.is_winner ? ' ★' : ''}</th>)}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {[
+                            ['Monto', q => fmtCurrency(q.amount, currency)],
+                            ['RFC', q => q.supplier_rfc || '—'],
+                            ['Contacto', q => q.supplier_phone || q.supplier_email || q.supplier_contact || '—'],
+                            ['Entrega', q => q.delivery_days != null ? `${q.delivery_days} días` : '—'],
+                            ['Garantía', q => q.warranty_months != null ? `${q.warranty_months} meses` : '—'],
+                            ['Vigencia', q => q.validity_date || '—'],
+                          ].map(([label, fn]) => (
+                            <tr key={label}>
+                              <td style={{ fontWeight: 600 }}>{label}</td>
+                              {quotes.map(q => <td key={q.id}>{fn(q)}</td>)}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </>
+              )}
+              {!isReadOnly && quotes.length < 8 && (
+                <div className="card" style={{ padding: 14 }}>
+                  <h4 style={{ margin: '0 0 10px', fontSize: 14 }}>{editingQuoteId ? 'Editar cotización' : 'Nueva cotización'}</h4>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                    <div className="field"><div className="field-label">Proveedor</div><input className="field-input" value={quote.supplier_name} onChange={e => setQuote(q => ({ ...q, supplier_name: e.target.value }))} /></div>
+                    <div className="field"><div className="field-label">RFC</div><input className="field-input" value={quote.supplier_rfc} onChange={e => setQuote(q => ({ ...q, supplier_rfc: e.target.value }))} /></div>
+                    <div className="field"><div className="field-label">Monto ({currencySymbol(currency)})</div><input className="field-input" type="number" min="0" step="0.01" value={quote.amount} onChange={e => setQuote(q => ({ ...q, amount: e.target.value }))} /></div>
+                    <div className="field"><div className="field-label">Teléfono</div><input className="field-input" value={quote.supplier_phone} onChange={e => setQuote(q => ({ ...q, supplier_phone: e.target.value }))} /></div>
+                    <div className="field"><div className="field-label">Email</div><input className="field-input" value={quote.supplier_email} onChange={e => setQuote(q => ({ ...q, supplier_email: e.target.value }))} /></div>
+                    <div className="field"><div className="field-label">Contacto</div><input className="field-input" value={quote.supplier_contact} onChange={e => setQuote(q => ({ ...q, supplier_contact: e.target.value }))} /></div>
+                    <div className="field"><div className="field-label">Vigencia</div><input className="field-input" type="date" value={quote.validity_date} onChange={e => setQuote(q => ({ ...q, validity_date: e.target.value }))} /></div>
+                    <div className="field"><div className="field-label">Días de entrega</div><input className="field-input" type="number" min="0" value={quote.delivery_days} onChange={e => setQuote(q => ({ ...q, delivery_days: e.target.value }))} /></div>
+                    <div className="field"><div className="field-label">Garantía (meses)</div><input className="field-input" type="number" min="0" value={quote.warranty_months} onChange={e => setQuote(q => ({ ...q, warranty_months: e.target.value }))} /></div>
+                  </div>
+                  <div className="field" style={{ marginTop: 8 }}>
+                    <div className="field-label">Alcance / notas del proveedor</div>
+                    <textarea className="field-input" rows={2} value={quote.scope} onChange={e => setQuote(q => ({ ...q, scope: e.target.value }))} />
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                    {editingQuoteId && (
+                      <button className="btn btn-outline" onClick={() => { setEditingQuoteId(null); setQuote({ ...EMPTY_QUOTE }); }}>Cancelar</button>
+                    )}
+                    <button className="btn btn-primary" onClick={saveQuote}>{editingQuoteId ? 'Guardar cambios' : 'Agregar cotización'}</button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          {tab === 'fondeo' && (
+            <>
+              <p style={{ fontSize: 13, color: 'var(--ink-500)', margin: '0 0 12px' }}>
+                Define cómo se paga el proyecto. Si lo sumas a un presupuesto, la parte del condominio entra como gasto y los aportes de residentes como ingreso extraordinario.
+              </p>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div className="field">
+                  <div className="field-label">Origen de los recursos</div>
+                  <select className="field-select" disabled={isReadOnly} value={funding.funding_mode} onChange={e => setFunding(f => ({ ...f, funding_mode: e.target.value }))}>
+                    {Object.entries(FUNDING_MODE).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                  </select>
+                </div>
+                {funding.funding_mode === 'compartido' && (
+                  <div className="field">
+                    <div className="field-label">% condominio (residentes = {Math.round((100 - Number(funding.funding_condo_pct || 0)) * 100) / 100}%)</div>
+                    <input className="field-input" type="number" min="0" max="100" step="0.01" disabled={isReadOnly} value={funding.funding_condo_pct} onChange={e => setFunding(f => ({ ...f, funding_condo_pct: e.target.value }))} />
+                  </div>
+                )}
+                <div className="field">
+                  <div className="field-label">Unidades que aportan (0 = las activas)</div>
+                  <input className="field-input" type="number" min="0" disabled={isReadOnly} value={funding.funding_units} onChange={e => setFunding(f => ({ ...f, funding_units: e.target.value }))} />
+                </div>
+              </div>
+              <div className="field">
+                <div className="field-label">Notas de fondeo (asamblea, fondo de reserva, etc.)</div>
+                <textarea className="field-input" rows={3} disabled={isReadOnly} value={funding.funding_notes} onChange={e => setFunding(f => ({ ...f, funding_notes: e.target.value }))} />
+              </div>
+              <div className="fund-bar">
+                <div className="fund-part">
+                  <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>A cargo del condominio</div>
+                  <strong>{fmtCurrency(breakdown.condo_amount, currency)}</strong>
+                </div>
+                <div className="fund-part">
+                  <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>Aportes extraordinarios</div>
+                  <strong>{fmtCurrency(breakdown.residents_amount, currency)}</strong>
+                  {breakdown.per_unit != null && (
+                    <div style={{ fontSize: 12, color: 'var(--ink-400)', marginTop: 4 }}>
+                      {fmtCurrency(breakdown.per_unit, currency)} / unidad
+                    </div>
+                  )}
+                </div>
+              </div>
+              {!isReadOnly && <button className="btn btn-primary" onClick={saveFunding} style={{ marginBottom: 16 }}><Landmark size={14} /> Guardar fondeo</button>}
+
+              <h4 style={{ margin: '8px 0', fontSize: 14 }}>Incluir en presupuesto anual</h4>
+              <p style={{ fontSize: 12, color: 'var(--ink-400)', margin: '0 0 10px' }}>
+                Se crean partidas ligadas a este proyecto (no se pueden borrar desde el presupuesto). El monto se reparte entre los meses del proyecto.
+              </p>
+              {project.budget_id ? (
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <span className="proj-chip">Incluido en {project.budget_name} ({project.budget_year})</span>
+                  {!isReadOnly && <button className="btn btn-outline" onClick={unlinkBudget}>Quitar del presupuesto</button>}
+                  {!isReadOnly && <button className="btn btn-outline" onClick={includeBudget}>Actualizar montos</button>}
+                </div>
+              ) : (
+                <div style={{ display: 'flex', gap: 8, alignItems: 'end', flexWrap: 'wrap' }}>
+                  <div className="field" style={{ margin: 0, minWidth: 260 }}>
+                    <div className="field-label">Presupuesto</div>
+                    <select className="field-select" disabled={isReadOnly} value={budgetId} onChange={e => setBudgetId(e.target.value)}>
+                      <option value="">Selecciona un escenario</option>
+                      {budgets.filter(b => !['archivado'].includes(b.status)).map(b => (
+                        <option key={b.id} value={b.id}>
+                          {b.year} · {b.name || 'Sin nombre'} · {BUDGET_STATUS[b.status]?.label || b.status}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  {!isReadOnly && (
+                    <button className="btn btn-primary" disabled={!budgetId} onClick={includeBudget}>Sumar al presupuesto</button>
+                  )}
+                </div>
+              )}
+              {yearHint && budgets.some(b => String(b.year) === yearHint) === false && (
+                <div style={{ fontSize: 12, color: 'var(--ink-400)', marginTop: 8 }}>
+                  No hay presupuesto {yearHint}. Créalo primero en la pestaña Presupuesto.
+                </div>
+              )}
+            </>
+          )}
+
+          {tab === 'archivos' && (
+            <>
+              <p style={{ fontSize: 13, color: 'var(--ink-500)', margin: '0 0 12px' }}>
+                Planos, contratos y documentos generales. Las cotizaciones PDF también se pueden colgar en cada proveedor.
+              </p>
+              {files.length === 0 ? (
+                <div style={{ fontSize: 13, color: 'var(--ink-400)', marginBottom: 12 }}>Sin archivos del proyecto.</div>
+              ) : (
+                <div className="proj-file-list">
+                  {files.map(f => (
+                    <div key={f.id} className="proj-file-row">
+                      <FileText size={14} />
+                      <span className="name">{f.original_name}</span>
+                      <span className="proj-chip">{FILE_KINDS[f.kind] || f.kind}</span>
+                      {f.quote_supplier && <span className="proj-chip">{f.quote_supplier}</span>}
+                      <button className="btn btn-outline btn-sm" onClick={() => downloadProtectedFile(f.file_url, f.original_name)}><Download size={12} /></button>
+                      {!isReadOnly && (
+                        <button className="btn btn-outline btn-sm" onClick={async () => {
+                          await planeacionAPI.projects.deleteFile(tenantId, project.id, f.id);
+                          onRefresh();
+                        }}><Trash2 size={12} /></button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {!isReadOnly && (
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'end' }}>
+                  <div className="field" style={{ margin: 0 }}>
+                    <div className="field-label">Tipo</div>
+                    <select className="field-select" value={fileKind} onChange={e => setFileKind(e.target.value)}>
+                      {Object.entries(FILE_KINDS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                    </select>
+                  </div>
+                  <div className="field" style={{ margin: 0 }}>
+                    <div className="field-label">Ligar a cotización (opcional)</div>
+                    <select className="field-select" value={fileQuoteId} onChange={e => setFileQuoteId(e.target.value)}>
+                      <option value="">Archivo del proyecto</option>
+                      {quotes.map(q => <option key={q.id} value={q.id}>{q.supplier_name}</option>)}
+                    </select>
+                  </div>
+                  <label className="btn btn-primary" style={{ cursor: 'pointer' }}>
+                    <Upload size={14} /> Subir archivo
+                    <input type="file" hidden onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; uploadFile(f); }} />
+                  </label>
+                </div>
+              )}
+            </>
+          )}
+
+          {tab === 'costos' && (
+            <>
+              {(project.costs || []).length === 0 ? (
+                <div style={{ fontSize: 13, color: 'var(--ink-400)', marginBottom: 12 }}>Todavía no hay costos. Registra uno o importa gastos del período.</div>
+              ) : (
+                <div className="table-wrap" style={{ marginBottom: 14 }}>
                   <table>
-                    <thead><tr><th /><th>Período</th><th>Concepto</th><th>Monto</th></tr></thead>
+                    <thead><tr><th>Período</th><th>Descripción</th><th>Monto</th>{!isReadOnly && <th />}</tr></thead>
                     <tbody>
-                      {gastos.map(g => (
-                        <tr key={g.id} style={{ opacity: g.already_linked ? 0.45 : 1 }}>
-                          <td>
-                            <input type="checkbox" disabled={g.already_linked} checked={!!picked[g.id]} onChange={e => setPicked(p => ({ ...p, [g.id]: e.target.checked }))} />
-                          </td>
-                          <td>{g.period}</td>
-                          <td>{g.description}{g.provider_name ? ` · ${g.provider_name}` : ''}</td>
-                          <td>{fmtCurrency(g.amount, currency)}</td>
+                      {(project.costs || []).map(c => (
+                        <tr key={c.id}>
+                          <td>{c.period}</td>
+                          <td>{c.description || '—'}{c.gasto_entry_id ? ' · gasto' : ''}</td>
+                          <td>{fmtCurrency(c.amount, currency)}</td>
+                          {!isReadOnly && (
+                            <td>
+                              <button className="btn btn-outline btn-sm" onClick={async () => {
+                                await planeacionAPI.projects.deleteCost(tenantId, project.id, c.id);
+                                onRefresh();
+                              }}><Trash2 size={12} /></button>
+                            </td>
+                          )}
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
+              )}
+              {!isReadOnly && (
+                <>
+                  <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr 140px auto', gap: 8, marginBottom: 18 }}>
+                    <input type="month" className="field-input" value={cost.period} onChange={e => setCost(c => ({ ...c, period: e.target.value }))} />
+                    <input className="field-input" placeholder="Descripción del costo" value={cost.description} onChange={e => setCost(c => ({ ...c, description: e.target.value }))} />
+                    <input type="number" className="field-input" placeholder={`Monto (${currencySymbol(currency)})`} value={cost.amount} onChange={e => setCost(c => ({ ...c, amount: e.target.value }))} />
+                    <button className="btn btn-primary" disabled={!cost.amount} onClick={addManual}>Agregar</button>
+                  </div>
+                  <h4 style={{ margin: '0 0 8px', fontSize: 14 }}><Link2 size={14} /> Importar gastos del condominio</h4>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+                    <input type="month" className="field-input" value={period} onChange={e => setPeriod(e.target.value)} style={{ width: 160 }} />
+                    <button className="btn btn-outline" onClick={importSelected}>Ligar seleccionados</button>
+                  </div>
+                  {gastos.length === 0 ? (
+                    <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>No hay gastos en ese período{project.extra_field_label ? ` para ${project.extra_field_label}` : ''}.</div>
+                  ) : (
+                    <div className="table-wrap">
+                      <table>
+                        <thead><tr><th /><th>Período</th><th>Concepto</th><th>Monto</th></tr></thead>
+                        <tbody>
+                          {gastos.map(g => (
+                            <tr key={g.id} style={{ opacity: g.already_linked ? 0.45 : 1 }}>
+                              <td>
+                                <input type="checkbox" disabled={g.already_linked} checked={!!picked[g.id]} onChange={e => setPicked(p => ({ ...p, [g.id]: e.target.checked }))} />
+                              </td>
+                              <td>{g.period}</td>
+                              <td>{g.description}{g.provider_name ? ` · ${g.provider_name}` : ''}</td>
+                              <td>{fmtCurrency(g.amount, currency)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </>
               )}
             </>
           )}

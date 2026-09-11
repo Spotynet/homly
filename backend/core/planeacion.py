@@ -1,6 +1,7 @@
 """Planeación del condominio: presupuesto anual y proyectos."""
 from __future__ import annotations
 
+import os
 import uuid
 from collections import defaultdict
 from datetime import date
@@ -18,7 +19,8 @@ from rest_framework.views import APIView
 
 from .models import (
     CajaChicaEntry, CondoBudget, CondoBudgetLine, CondoProject, CondoProjectCost,
-    ExtraField, FieldPayment, GastoEntry, Notification, Tenant, TenantUser, Unit, User,
+    CondoProjectFile, CondoProjectQuote, ExtraField, FieldPayment, GastoEntry,
+    Notification, Tenant, TenantUser, Unit, User,
 )
 from .permissions import IsAdminOrTesOrAuditor
 
@@ -53,6 +55,230 @@ def _d(n):
         return Decimal(str(n or 0))
     except Exception:
         return Decimal('0')
+
+
+QUOTE_LIMIT = 8
+PROJECT_FILE_MAX = 20 * 1024 * 1024
+PROJECT_FILE_EXTS = {
+    '.pdf', '.png', '.jpg', '.jpeg', '.webp', '.doc', '.docx', '.xls', '.xlsx', '.zip',
+}
+
+
+def normalize_funding(mode, condo_pct, residents_pct):
+    mode = mode if mode in ('condominio', 'residentes', 'compartido') else 'condominio'
+    if mode == 'condominio':
+        return 'condominio', Decimal('100.00'), Decimal('0.00')
+    if mode == 'residentes':
+        return 'residentes', Decimal('0.00'), Decimal('100.00')
+    c = _d(condo_pct)
+    if c < 0:
+        c = Decimal('0')
+    if c > 100:
+        c = Decimal('100')
+    c = c.quantize(Decimal('0.01'))
+    r = (Decimal('100') - c).quantize(Decimal('0.01'))
+    return 'compartido', c, r
+
+
+def apply_funding_to_project(project, data):
+    if not isinstance(data, dict):
+        data = {}
+    keys = (
+        'funding_mode', 'funding_condo_pct', 'funding_residents_pct',
+        'funding_notes', 'funding_units',
+    )
+    if not any(k in data for k in keys):
+        return project
+    mode, condo, resi = normalize_funding(
+        data.get('funding_mode', project.funding_mode),
+        data.get('funding_condo_pct', project.funding_condo_pct),
+        data.get('funding_residents_pct', project.funding_residents_pct),
+    )
+    project.funding_mode = mode
+    project.funding_condo_pct = condo
+    project.funding_residents_pct = resi
+    if 'funding_notes' in data:
+        project.funding_notes = (data.get('funding_notes') or '')[:4000]
+    if 'funding_units' in data:
+        try:
+            project.funding_units = max(0, int(data.get('funding_units') or 0))
+        except (TypeError, ValueError):
+            pass
+    return project
+
+
+def project_contract_amount(project):
+    winner = getattr(project, 'winner_quote', None)
+    if winner is None and project.winner_quote_id:
+        winner = project.quotes.filter(id=project.winner_quote_id).first()
+    if winner is None:
+        quotes = list(project.quotes.all())
+        winner = next((q for q in quotes if q.is_winner), None)
+    if winner and _d(winner.amount) > 0:
+        return _d(winner.amount), 'winner'
+    return _d(project.budget_amount), 'budget_amount'
+
+
+def funding_units_for(project, tenant=None):
+    if project.funding_units:
+        return int(project.funding_units)
+    tenant = tenant or project.tenant
+    return Unit.objects.filter(tenant=tenant, is_active=True).count()
+
+
+def project_funding_breakdown(project):
+    amount, source = project_contract_amount(project)
+    mode, condo_pct, res_pct = normalize_funding(
+        project.funding_mode, project.funding_condo_pct, project.funding_residents_pct,
+    )
+    condo_amt = (amount * condo_pct / Decimal('100')).quantize(Decimal('0.01'))
+    res_amt = (amount - condo_amt).quantize(Decimal('0.01'))
+    units = funding_units_for(project)
+    per_unit = None
+    if units and res_amt > 0:
+        per_unit = (res_amt / Decimal(units)).quantize(Decimal('0.01'))
+    return {
+        'amount': _f(amount),
+        'source': source,
+        'funding_mode': mode,
+        'condo_pct': _f(condo_pct),
+        'residents_pct': _f(res_pct),
+        'condo_amount': _f(condo_amt),
+        'residents_amount': _f(res_amt),
+        'units': units,
+        'per_unit': _f(per_unit) if per_unit is not None else None,
+    }
+
+
+def months_for_project_in_year(project, year):
+    start = (project.start_period or '').strip() or f'{year}-01'
+    end = (project.end_period or '').strip() or f'{year}-12'
+    months = [m for m in MONTH_KEYS if start <= f'{year}-{m}' <= end]
+    return months or list(MONTH_KEYS)
+
+
+def spread_on_months(amount, months):
+    amount = _d(amount)
+    months = months or list(MONTH_KEYS)
+    amounts = {m: 0.0 for m in MONTH_KEYS}
+    n = len(months)
+    if amount <= 0 or n <= 0:
+        return amounts
+    base = (amount / n).quantize(Decimal('0.01'))
+    leftover = amount
+    for i, m in enumerate(months):
+        if i == n - 1:
+            amounts[m] = float(leftover)
+        else:
+            amounts[m] = float(base)
+            leftover -= base
+    return amounts
+
+
+def sync_contest_status(project, save=True):
+    quotes = list(project.quotes.all())
+    winner = next((q for q in quotes if q.is_winner), None)
+    if winner:
+        project.contest_status = 'adjudicado'
+        project.winner_quote = winner
+    elif quotes:
+        project.contest_status = 'en_concurso'
+        project.winner_quote = None
+    else:
+        project.contest_status = 'sin_concurso'
+        project.winner_quote = None
+    if save:
+        project.save(update_fields=['contest_status', 'winner_quote', 'updated_at'])
+    return project
+
+
+def maybe_resync_budget(project):
+    if not project.budget_id:
+        return project
+    budget = project.budget
+    if budget.status in BUDGET_LOCKED:
+        return project
+    return include_project_in_budget(project, budget)
+
+
+def include_project_in_budget(project, budget):
+    if str(budget.tenant_id) != str(project.tenant_id):
+        raise ValidationError({'detail': 'El presupuesto no pertenece a este condominio.'})
+    if budget.status in BUDGET_LOCKED:
+        raise ValidationError({'detail': 'Ese presupuesto no se puede editar en su estado actual.'})
+    breakdown = project_funding_breakdown(project)
+    year = budget.year
+    months = months_for_project_in_year(project, year)
+    CondoBudgetLine.objects.filter(project=project).delete()
+    next_gasto = budget.lines.filter(kind='gasto').count()
+    next_ing = budget.lines.filter(kind='ingreso').count()
+    if breakdown['condo_amount'] > 0 or breakdown['residents_amount'] <= 0:
+        CondoBudgetLine.objects.create(
+            budget=budget,
+            kind='gasto',
+            extra_field=project.extra_field,
+            concept_key=f'project:{project.id}',
+            name=f'Proyecto: {project.name}',
+            monthly_amounts=spread_on_months(breakdown['condo_amount'], months),
+            project=project,
+            sort_order=next_gasto + 50,
+        )
+    if breakdown['residents_amount'] > 0:
+        CondoBudgetLine.objects.create(
+            budget=budget,
+            kind='ingreso',
+            concept_key=f'project_income:{project.id}',
+            name=f'Aportes extra: {project.name}',
+            monthly_amounts=spread_on_months(breakdown['residents_amount'], months),
+            project=project,
+            sort_order=next_ing + 50,
+        )
+    project.budget = budget
+    fields = ['budget', 'updated_at']
+    if breakdown['source'] == 'winner' and breakdown['amount'] > 0:
+        project.budget_amount = _d(breakdown['amount'])
+        fields.append('budget_amount')
+    project.save(update_fields=fields)
+    mark_budget_saved(budget)
+    return project
+
+
+def unlink_project_from_budget(project):
+    CondoBudgetLine.objects.filter(project=project).delete()
+    project.budget = None
+    project.save(update_fields=['budget', 'updated_at'])
+    return project
+
+
+def validate_project_upload(uploaded):
+    if not uploaded:
+        raise ValidationError({'detail': 'Adjunta un archivo.'})
+    name = getattr(uploaded, 'name', '') or 'archivo'
+    ext = os.path.splitext(name)[1].lower()
+    if ext not in PROJECT_FILE_EXTS:
+        raise ValidationError({
+            'detail': f'Tipo de archivo no permitido ({ext or "sin extensión"}).',
+        })
+    size = getattr(uploaded, 'size', 0) or 0
+    if size > PROJECT_FILE_MAX:
+        raise ValidationError({'detail': 'El archivo no puede superar 20 MB.'})
+    return name[:240]
+
+
+def media_api_url(file_field, request=None):
+    if not file_field:
+        return None
+    path = f'/api/media/{file_field.name}'
+    if request:
+        return request.build_absolute_uri(path)
+    return path
+
+
+def is_project_managed_line(item):
+    if item.get('project_id'):
+        return True
+    key = str(item.get('concept_key') or '')
+    return key.startswith('project:') or key.startswith('project_income:')
 
 
 def year_periods(year: int):
@@ -528,13 +754,15 @@ class CondoBudgetLineSerializer(serializers.ModelSerializer):
     annual_amount = serializers.SerializerMethodField()
     actual_monthly = serializers.SerializerMethodField()
     actual_annual = serializers.SerializerMethodField()
+    project_id = serializers.UUIDField(required=False, allow_null=True)
+    project_name = serializers.SerializerMethodField()
 
     class Meta:
         model = CondoBudgetLine
         fields = (
             'id', 'kind', 'concept_key', 'name', 'extra_field_id', 'extra_field_label',
             'monthly_amounts', 'sort_order', 'annual_amount',
-            'actual_monthly', 'actual_annual',
+            'actual_monthly', 'actual_annual', 'project_id', 'project_name',
         )
         read_only_fields = ('id',)
 
@@ -543,6 +771,9 @@ class CondoBudgetLineSerializer(serializers.ModelSerializer):
 
     def get_extra_field_label(self, obj):
         return obj.extra_field.label if obj.extra_field_id else ''
+
+    def get_project_name(self, obj):
+        return obj.project.name if obj.project_id else ''
 
     def get_actual_monthly(self, obj):
         actuals = self.context.get('actuals')
@@ -636,13 +867,70 @@ class CondoProjectCostSerializer(serializers.ModelSerializer):
         return obj.extra_field.label if obj.extra_field_id else ''
 
 
+class CondoProjectFileSerializer(serializers.ModelSerializer):
+    quote_id = serializers.UUIDField(required=False, allow_null=True)
+    file_url = serializers.SerializerMethodField()
+    uploaded_by_name = serializers.SerializerMethodField()
+    size = serializers.SerializerMethodField()
+    quote_supplier = serializers.SerializerMethodField()
+
+    class Meta:
+        model = CondoProjectFile
+        fields = (
+            'id', 'kind', 'original_name', 'notes', 'quote_id', 'quote_supplier',
+            'file_url', 'size', 'uploaded_by_name', 'created_at',
+        )
+        read_only_fields = ('id', 'created_at')
+
+    def get_file_url(self, obj):
+        return media_api_url(obj.file, self.context.get('request'))
+
+    def get_uploaded_by_name(self, obj):
+        u = obj.uploaded_by
+        return (getattr(u, 'name', None) or getattr(u, 'email', '') or '') if u else ''
+
+    def get_size(self, obj):
+        try:
+            return obj.file.size
+        except Exception:
+            return None
+
+    def get_quote_supplier(self, obj):
+        return obj.quote.supplier_name if obj.quote_id else ''
+
+
+class CondoProjectQuoteSerializer(serializers.ModelSerializer):
+    files = CondoProjectFileSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = CondoProjectQuote
+        fields = (
+            'id', 'supplier_name', 'supplier_rfc', 'supplier_contact',
+            'supplier_phone', 'supplier_email', 'supplier_notes',
+            'amount', 'validity_date', 'delivery_days', 'warranty_months',
+            'scope', 'is_winner', 'sort_order', 'files', 'created_at', 'updated_at',
+        )
+        read_only_fields = ('id', 'is_winner', 'created_at', 'updated_at')
+
+
 class CondoProjectSerializer(serializers.ModelSerializer):
     extra_field_id = serializers.UUIDField(required=False, allow_null=True)
     extra_field_label = serializers.SerializerMethodField()
     created_by_name = serializers.SerializerMethodField()
     spent = serializers.SerializerMethodField()
     costs = CondoProjectCostSerializer(many=True, read_only=True)
+    quotes = CondoProjectQuoteSerializer(many=True, read_only=True)
+    files = serializers.SerializerMethodField()
     progress_pct = serializers.SerializerMethodField()
+    funding = serializers.SerializerMethodField()
+    budget_id = serializers.UUIDField(read_only=True)
+    budget_name = serializers.SerializerMethodField()
+    budget_year = serializers.SerializerMethodField()
+    budget_status = serializers.SerializerMethodField()
+    winner_quote_id = serializers.UUIDField(read_only=True)
+    winner_supplier_name = serializers.SerializerMethodField()
+    quotes_count = serializers.SerializerMethodField()
+    files_count = serializers.SerializerMethodField()
 
     class Meta:
         model = CondoProject
@@ -650,12 +938,21 @@ class CondoProjectSerializer(serializers.ModelSerializer):
             'id', 'name', 'description', 'status', 'priority',
             'extra_field_id', 'extra_field_label', 'budget_amount',
             'start_period', 'end_period', 'responsible_name', 'notes',
+            'funding_mode', 'funding_condo_pct', 'funding_residents_pct',
+            'funding_units', 'funding_notes', 'funding',
+            'contest_status', 'winner_quote_id', 'winner_supplier_name',
+            'budget_id', 'budget_name', 'budget_year', 'budget_status',
             'approval_steps', 'created_by_name', 'created_at', 'updated_at',
-            'spent', 'progress_pct', 'costs',
+            'spent', 'progress_pct', 'quotes_count', 'files_count',
+            'costs', 'quotes', 'files',
         )
-        read_only_fields = ('id', 'approval_steps', 'created_at', 'updated_at')
+        read_only_fields = (
+            'id', 'approval_steps', 'contest_status', 'created_at', 'updated_at',
+        )
 
     def get_spent(self, obj):
+        if hasattr(obj, '_prefetched_objects_cache') and 'costs' in obj._prefetched_objects_cache:
+            return round(sum(_f(c.amount) for c in obj.costs.all()), 2)
         total = obj.costs.aggregate(s=Sum('amount'))['s']
         return _f(total)
 
@@ -672,6 +969,38 @@ class CondoProjectSerializer(serializers.ModelSerializer):
             return 0
         return round(min(999, (_f(self.get_spent(obj)) / budget) * 100), 1)
 
+    def get_funding(self, obj):
+        return project_funding_breakdown(obj)
+
+    def get_budget_name(self, obj):
+        b = obj.budget
+        if not b:
+            return ''
+        return b.name or f'Presupuesto {b.year}'
+
+    def get_budget_year(self, obj):
+        return obj.budget.year if obj.budget_id else None
+
+    def get_budget_status(self, obj):
+        return obj.budget.status if obj.budget_id else ''
+
+    def get_winner_supplier_name(self, obj):
+        q = obj.winner_quote
+        return q.supplier_name if q else ''
+
+    def get_quotes_count(self, obj):
+        if hasattr(obj, '_prefetched_objects_cache') and 'quotes' in obj._prefetched_objects_cache:
+            return len(obj.quotes.all())
+        return obj.quotes.count()
+
+    def get_files_count(self, obj):
+        if hasattr(obj, '_prefetched_objects_cache') and 'files' in obj._prefetched_objects_cache:
+            return len(obj.files.all())
+        return obj.files.count()
+
+    def get_files(self, obj):
+        return CondoProjectFileSerializer(obj.files.all(), many=True, context=self.context).data
+
 
 class CondoProjectListSerializer(CondoProjectSerializer):
     class Meta(CondoProjectSerializer.Meta):
@@ -679,7 +1008,10 @@ class CondoProjectListSerializer(CondoProjectSerializer):
             'id', 'name', 'description', 'status', 'priority',
             'extra_field_id', 'extra_field_label', 'budget_amount',
             'start_period', 'end_period', 'responsible_name',
+            'funding_mode', 'contest_status', 'winner_supplier_name',
+            'budget_id', 'budget_name', 'budget_year',
             'approval_steps', 'created_at', 'spent', 'progress_pct',
+            'quotes_count', 'files_count', 'funding',
         )
 
 
@@ -724,7 +1056,7 @@ class CondoBudgetViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         qs = CondoBudget.objects.filter(
             tenant_id=self.kwargs['tenant_id']
-        ).prefetch_related('lines__extra_field')
+        ).prefetch_related('lines__extra_field', 'lines__project')
         year = self.request.query_params.get('year')
         if year:
             try:
@@ -884,6 +1216,7 @@ class CondoBudgetViewSet(viewsets.ModelViewSet):
                     sort_order=line.sort_order,
                 )
                 for line in src.lines.all()
+                if not line.project_id
             ])
         _audit(
             request, 'create', f'Escenario clonado desde {src.name}',
@@ -922,11 +1255,15 @@ class CondoBudgetViewSet(viewsets.ModelViewSet):
             str(f.id): f
             for f in ExtraField.objects.filter(tenant_id=tenant_id)
         }
+        project_lines = list(budget.lines.filter(project_id__isnull=False))
         with transaction.atomic():
             budget.lines.all().delete()
             objs = []
             for i, item in enumerate(ser.validated_data):
+                if is_project_managed_line(item):
+                    continue
                 fid = item.pop('extra_field_id', None)
+                item.pop('project_id', None)
                 extra = field_ids.get(str(fid)) if fid else None
                 objs.append(CondoBudgetLine(
                     budget=budget,
@@ -938,6 +1275,19 @@ class CondoBudgetViewSet(viewsets.ModelViewSet):
                     monthly_amounts=item.get('monthly_amounts') or even_months(0),
                 ))
             CondoBudgetLine.objects.bulk_create(objs)
+            CondoBudgetLine.objects.bulk_create([
+                CondoBudgetLine(
+                    budget=budget,
+                    kind=line.kind,
+                    extra_field_id=line.extra_field_id,
+                    concept_key=line.concept_key,
+                    name=line.name,
+                    monthly_amounts=line.monthly_amounts,
+                    project_id=line.project_id,
+                    sort_order=line.sort_order,
+                )
+                for line in project_lines
+            ])
         budget.refresh_from_db()
         mark_budget_saved(budget)
         return Response(budget_payload(budget, request))
@@ -1102,7 +1452,14 @@ class CondoProjectViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         qs = CondoProject.objects.filter(
             tenant_id=self.kwargs['tenant_id']
-        ).select_related('extra_field', 'created_by').prefetch_related('costs__extra_field')
+        ).select_related(
+            'extra_field', 'created_by', 'budget', 'winner_quote',
+        ).prefetch_related(
+            'costs__extra_field',
+            'quotes__files__uploaded_by',
+            'files__uploaded_by',
+            'files__quote',
+        )
         st = self.request.query_params.get('status')
         if st:
             qs = qs.filter(status=st)
@@ -1126,6 +1483,8 @@ class CondoProjectViewSet(viewsets.ModelViewSet):
         project = serializer.save(
             tenant=tenant, extra_field=extra, created_by=request_user(self.request),
         )
+        apply_funding_to_project(project, self.request.data)
+        project.save()
         _audit(
             self.request, 'create', f'Proyecto creado: {project.name}',
             tenant.id, 'CondoProject', project.id, project.name,
@@ -1150,6 +1509,9 @@ class CondoProjectViewSet(viewsets.ModelViewSet):
                 tenant_id=self.kwargs['tenant_id'], id=fid,
             ).first() if fid else None
         instance = serializer.save(**extra_kw)
+        apply_funding_to_project(instance, self.request.data)
+        instance.save()
+        maybe_resync_budget(instance)
         _audit(
             self.request, 'update', f'Proyecto actualizado: {instance.name}',
             instance.tenant_id, 'CondoProject', instance.id, instance.name,
@@ -1159,6 +1521,7 @@ class CondoProjectViewSet(viewsets.ModelViewSet):
         desc = instance.name
         oid = instance.id
         tid = instance.tenant_id
+        CondoBudgetLine.objects.filter(project=instance).delete()
         instance.delete()
         _audit(self.request, 'delete', f'Proyecto eliminado: {desc}', tid, 'CondoProject', oid, desc)
 
@@ -1363,3 +1726,192 @@ class CondoProjectViewSet(viewsets.ModelViewSet):
         data = dict(CondoProjectSerializer(project).data)
         data['imported'] = created
         return Response(data)
+
+    @action(detail=True, methods=['get', 'post'], url_path='quotes')
+    def quotes(self, request, tenant_id, pk=None):
+        project = self.get_object()
+        if request.method == 'GET':
+            return Response(
+                CondoProjectQuoteSerializer(
+                    project.quotes.all(), many=True, context={'request': request},
+                ).data
+            )
+        if project.quotes.count() >= QUOTE_LIMIT:
+            return Response(
+                {'detail': f'Solo se permiten {QUOTE_LIMIT} cotizaciones por proyecto.'},
+                status=400,
+            )
+        ser = CondoProjectQuoteSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        quote = CondoProjectQuote.objects.create(
+            project=project,
+            **ser.validated_data,
+            sort_order=ser.validated_data.get('sort_order') or project.quotes.count(),
+        )
+        sync_contest_status(project)
+        _audit(
+            request, 'create', f'Cotización {quote.supplier_name} en {project.name}',
+            tenant_id, 'CondoProjectQuote', quote.id, quote.supplier_name,
+        )
+        return Response(
+            CondoProjectQuoteSerializer(quote, context={'request': request}).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    @action(detail=True, methods=['patch', 'delete'], url_path='quotes/(?P<quote_id>[^/.]+)')
+    def quote_detail(self, request, tenant_id, pk=None, quote_id=None):
+        project = self.get_object()
+        quote = project.quotes.filter(id=quote_id).first()
+        if not quote:
+            return Response({'detail': 'Cotización no encontrada.'}, status=404)
+        if request.method == 'DELETE':
+            was_winner = quote.is_winner
+            name = quote.supplier_name
+            quote.delete()
+            sync_contest_status(project)
+            if was_winner:
+                maybe_resync_budget(project)
+            _audit(
+                request, 'delete', f'Cotización {name} eliminada de {project.name}',
+                tenant_id, 'CondoProjectQuote', quote_id, name,
+            )
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        ser = CondoProjectQuoteSerializer(quote, data=request.data, partial=True)
+        ser.is_valid(raise_exception=True)
+        ser.save()
+        if quote.is_winner:
+            project.budget_amount = quote.amount
+            project.save(update_fields=['budget_amount', 'updated_at'])
+            maybe_resync_budget(project)
+        _audit(
+            request, 'update', f'Cotización {quote.supplier_name} actualizada',
+            tenant_id, 'CondoProjectQuote', quote.id, quote.supplier_name,
+        )
+        return Response(CondoProjectQuoteSerializer(quote, context={'request': request}).data)
+
+    @action(detail=True, methods=['post'], url_path='quotes/(?P<quote_id>[^/.]+)/select-winner')
+    def select_winner(self, request, tenant_id, pk=None, quote_id=None):
+        project = self.get_object()
+        quote = project.quotes.filter(id=quote_id).first()
+        if not quote:
+            return Response({'detail': 'Cotización no encontrada.'}, status=404)
+        if project.quotes.count() < 2:
+            return Response(
+                {'detail': 'El concurso necesita al menos 2 cotizaciones para adjudicar.'},
+                status=400,
+            )
+        project.quotes.update(is_winner=False)
+        quote.is_winner = True
+        quote.save(update_fields=['is_winner', 'updated_at'])
+        project.winner_quote = quote
+        project.contest_status = 'adjudicado'
+        if _d(quote.amount) > 0:
+            project.budget_amount = quote.amount
+        project.save(update_fields=[
+            'winner_quote', 'contest_status', 'budget_amount', 'updated_at',
+        ])
+        maybe_resync_budget(project)
+        _audit(
+            request, 'update',
+            f'{quote.supplier_name} adjudicado en {project.name}',
+            tenant_id, 'CondoProjectQuote', quote.id, quote.supplier_name,
+        )
+        return Response(self._full_project(project, request))
+
+    @action(detail=True, methods=['get', 'post'], url_path='files')
+    def files(self, request, tenant_id, pk=None):
+        project = self.get_object()
+        if request.method == 'GET':
+            return Response(
+                CondoProjectFileSerializer(
+                    project.files.all(), many=True, context={'request': request},
+                ).data
+            )
+        uploaded = request.FILES.get('file') or request.FILES.get('archivo')
+        original = validate_project_upload(uploaded)
+        kind = (request.data.get('kind') or 'documento').strip()
+        if kind not in dict(CondoProjectFile.KIND_CHOICES):
+            kind = 'documento'
+        quote = None
+        qid = request.data.get('quote_id') or None
+        if qid:
+            quote = project.quotes.filter(id=qid).first()
+            if not quote:
+                return Response({'detail': 'La cotización no existe en este proyecto.'}, status=400)
+            if kind == 'documento':
+                kind = 'cotizacion'
+        obj = CondoProjectFile.objects.create(
+            project=project,
+            quote=quote,
+            kind=kind,
+            original_name=original,
+            notes=(request.data.get('notes') or '')[:400],
+            file=uploaded,
+            uploaded_by=request_user(request),
+        )
+        _audit(
+            request, 'create', f'Archivo {original} en {project.name}',
+            tenant_id, 'CondoProjectFile', obj.id, original,
+        )
+        return Response(
+            CondoProjectFileSerializer(obj, context={'request': request}).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    @action(detail=True, methods=['delete'], url_path='files/(?P<file_id>[^/.]+)')
+    def destroy_file(self, request, tenant_id, pk=None, file_id=None):
+        project = self.get_object()
+        obj = project.files.filter(id=file_id).first()
+        if not obj:
+            return Response({'detail': 'Archivo no encontrado.'}, status=404)
+        name = obj.original_name
+        if obj.file:
+            obj.file.delete(save=False)
+        obj.delete()
+        _audit(
+            request, 'delete', f'Archivo {name} eliminado de {project.name}',
+            tenant_id, 'CondoProjectFile', file_id, name,
+        )
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @action(detail=True, methods=['post'], url_path='include-in-budget')
+    def include_in_budget(self, request, tenant_id, pk=None):
+        project = self.get_object()
+        bid = request.data.get('budget_id')
+        if not bid:
+            return Response({'detail': 'Indica el presupuesto (budget_id).'}, status=400)
+        budget = CondoBudget.objects.filter(tenant_id=tenant_id, id=bid).first()
+        if not budget:
+            return Response({'detail': 'Presupuesto no encontrado.'}, status=404)
+        if project.budget_id and str(project.budget_id) != str(budget.id):
+            unlink_project_from_budget(project)
+            project.refresh_from_db()
+        include_project_in_budget(project, budget)
+        _audit(
+            request, 'update',
+            f'Proyecto {project.name} incluido en presupuesto {budget.year}',
+            tenant_id, 'CondoProject', project.id, project.name,
+        )
+        return Response(self._full_project(project, request))
+
+    @action(detail=True, methods=['post'], url_path='unlink-budget')
+    def unlink_budget(self, request, tenant_id, pk=None):
+        project = self.get_object()
+        if not project.budget_id:
+            return Response(self._full_project(project, request))
+        budget = project.budget
+        if budget and budget.status in BUDGET_LOCKED:
+            return Response(
+                {'detail': 'El presupuesto ligado ya no se puede editar. No se pueden quitar las partidas.'},
+                status=400,
+            )
+        unlink_project_from_budget(project)
+        _audit(
+            request, 'update', f'Proyecto {project.name} retirado del presupuesto',
+            tenant_id, 'CondoProject', project.id, project.name,
+        )
+        return Response(self._full_project(project, request))
+
+    def _full_project(self, project, request):
+        fresh = self.get_queryset().filter(pk=project.pk).first() or project
+        return CondoProjectSerializer(fresh, context={'request': request}).data

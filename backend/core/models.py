@@ -22,7 +22,7 @@ Model hierarchy:
 import uuid
 from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
-from django.core.validators import MinValueValidator
+from django.core.validators import MinValueValidator, MaxValueValidator
 
 
 # ═══════════════════════════════════════════════════════════
@@ -2579,6 +2579,11 @@ class CondoBudgetLine(models.Model):
     )
     name = models.CharField(max_length=200)
     monthly_amounts = models.JSONField(default=dict, blank=True)
+    project = models.ForeignKey(
+        'CondoProject', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='budget_lines',
+        help_text='Partida generada al incluir un proyecto en este presupuesto.',
+    )
     sort_order = models.PositiveSmallIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -2639,6 +2644,42 @@ class CondoProject(models.Model):
     end_period = models.CharField(max_length=7, blank=True, default='', help_text='YYYY-MM')
     responsible_name = models.CharField(max_length=200, blank=True, default='')
     notes = models.TextField(blank=True, default='')
+    FUNDING_CHOICES = [
+        ('condominio', 'Recursos del condominio'),
+        ('residentes', 'Aportes extraordinarios de residentes'),
+        ('compartido', 'Compartido'),
+    ]
+    CONTEST_CHOICES = [
+        ('sin_concurso', 'Sin concurso'),
+        ('en_concurso', 'En concurso'),
+        ('adjudicado', 'Adjudicado'),
+    ]
+    funding_mode = models.CharField(max_length=16, choices=FUNDING_CHOICES, default='condominio')
+    funding_condo_pct = models.DecimalField(
+        max_digits=5, decimal_places=2, default=100,
+        validators=[MinValueValidator(0), MaxValueValidator(100)],
+    )
+    funding_residents_pct = models.DecimalField(
+        max_digits=5, decimal_places=2, default=0,
+        validators=[MinValueValidator(0), MaxValueValidator(100)],
+    )
+    funding_units = models.PositiveIntegerField(
+        default=0,
+        help_text='Unidades que aportan la parte de residentes (0 = usar las activas del tenant).',
+    )
+    funding_notes = models.TextField(blank=True, default='')
+    contest_status = models.CharField(
+        max_length=16, choices=CONTEST_CHOICES, default='sin_concurso', db_index=True,
+    )
+    winner_quote = models.ForeignKey(
+        'CondoProjectQuote', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='won_projects',
+    )
+    budget = models.ForeignKey(
+        CondoBudget, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='linked_projects',
+        help_text='Presupuesto anual donde está incluida la partida del proyecto.',
+    )
     approval_steps = models.JSONField(
         default=list, blank=True,
         help_text='Pasos del flujo de aprobación en curso.',
@@ -2688,4 +2729,74 @@ class CondoProjectCost(models.Model):
 
     def __str__(self):
         return f'{self.project.name} {self.amount}'
+
+
+def condo_project_file_path(instance, filename):
+    ext = ''
+    if filename and '.' in filename:
+        ext = '.' + filename.rsplit('.', 1)[-1].lower()[:8]
+    return f'condo_project_files/{instance.project_id}/{uuid.uuid4().hex}{ext}'
+
+
+class CondoProjectQuote(models.Model):
+    """Cotización de un proveedor para el concurso del proyecto."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    project = models.ForeignKey(CondoProject, on_delete=models.CASCADE, related_name='quotes')
+    supplier_name = models.CharField(max_length=240)
+    supplier_rfc = models.CharField(max_length=20, blank=True, default='')
+    supplier_contact = models.CharField(max_length=200, blank=True, default='')
+    supplier_phone = models.CharField(max_length=40, blank=True, default='')
+    supplier_email = models.CharField(max_length=200, blank=True, default='')
+    supplier_notes = models.TextField(blank=True, default='')
+    amount = models.DecimalField(max_digits=14, decimal_places=2, validators=[MinValueValidator(0)])
+    validity_date = models.DateField(null=True, blank=True)
+    delivery_days = models.PositiveIntegerField(null=True, blank=True)
+    warranty_months = models.PositiveIntegerField(null=True, blank=True)
+    scope = models.TextField(blank=True, default='')
+    is_winner = models.BooleanField(default=False)
+    sort_order = models.PositiveSmallIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'condo_project_quotes'
+        ordering = ['sort_order', 'created_at']
+
+    def __str__(self):
+        return f'{self.supplier_name} — {self.project.name}'
+
+
+class CondoProjectFile(models.Model):
+    """Documento, plano, contrato o archivo de cotización del proyecto."""
+    KIND_CHOICES = [
+        ('cotizacion', 'Cotización'),
+        ('plano', 'Plano'),
+        ('contrato', 'Contrato'),
+        ('foto', 'Foto'),
+        ('documento', 'Documento'),
+        ('otro', 'Otro'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    project = models.ForeignKey(CondoProject, on_delete=models.CASCADE, related_name='files')
+    quote = models.ForeignKey(
+        CondoProjectQuote, on_delete=models.CASCADE, null=True, blank=True,
+        related_name='files',
+    )
+    kind = models.CharField(max_length=16, choices=KIND_CHOICES, default='documento')
+    original_name = models.CharField(max_length=240, blank=True, default='')
+    notes = models.CharField(max_length=400, blank=True, default='')
+    file = models.FileField(upload_to=condo_project_file_path)
+    uploaded_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='condo_project_files_uploaded',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'condo_project_files'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return self.original_name or str(self.id)
 
