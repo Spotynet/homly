@@ -2506,6 +2506,7 @@ class CondoBudget(models.Model):
     """Presupuesto anual del condominio. Varios escenarios (borradores) por año; uno aprobado final."""
     STATUS_CHOICES = [
         ('borrador', 'Borrador'),
+        ('guardado', 'Guardado'),
         ('en_aprobacion', 'En aprobación'),
         ('aprobado', 'Aprobado'),
         ('archivado', 'Archivado'),

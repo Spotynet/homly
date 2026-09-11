@@ -274,6 +274,26 @@ def _ensure_tenant_member(user, tenant_id):
         raise ValidationError({'detail': 'No perteneces a este condominio.'})
 
 
+def tenant_logo_src(tenant):
+    if getattr(tenant, 'logo_file', None):
+        try:
+            url = tenant.logo_file.url
+            if url:
+                return url
+        except Exception:
+            pass
+    raw = (getattr(tenant, 'logo', None) or '').strip()
+    if not raw:
+        return ''
+    if raw.startswith('data:') or raw.startswith('http') or raw.startswith('/'):
+        return raw
+    if raw.startswith('/9j/'):
+        return f'data:image/jpeg;base64,{raw}'
+    if raw.startswith('iVBOR'):
+        return f'data:image/png;base64,{raw}'
+    return f'data:image/png;base64,{raw}'
+
+
 def tenant_planning_context(tenant):
     units_qs = Unit.objects.filter(tenant=tenant)
     active = units_qs.filter(is_active=True)
@@ -295,9 +315,23 @@ def tenant_planning_context(tenant):
         start_year = int(str(start)[:4])
     except ValueError:
         start_year = date.today().year
+    addr = [
+        tenant.info_calle or tenant.addr_calle,
+        tenant.info_num_externo or tenant.addr_num_externo,
+        tenant.info_colonia or tenant.addr_colonia,
+        tenant.info_delegacion or tenant.addr_delegacion,
+        tenant.info_ciudad or tenant.addr_ciudad,
+        tenant.info_codigo_postal or tenant.addr_codigo_postal,
+    ]
     return {
         'currency': tenant.currency,
         'name': tenant.name,
+        'razon_social': tenant.razon_social or '',
+        'rfc': tenant.rfc or '',
+        'address': ', '.join(p for p in addr if p),
+        'country': tenant.country or '',
+        'state': tenant.state or '',
+        'logo': tenant_logo_src(tenant),
         'maintenance_fee': _f(tenant.maintenance_fee),
         'units_count': total,
         'units_active': active.count(),
@@ -459,6 +493,14 @@ def attach_actuals(line, actuals, year):
     for p in periods:
         monthly[p[-2:]] = _f(src.get(p, 0))
     return monthly
+
+
+def mark_budget_saved(budget):
+    """Pasa de borrador a guardado al persistir cambios del escenario."""
+    if budget.status == 'borrador':
+        budget.status = 'guardado'
+        budget.save(update_fields=['status', 'updated_at'])
+    return budget
 
 
 def mark_budget_approved(budget, user):
@@ -753,6 +795,7 @@ class CondoBudgetViewSet(viewsets.ModelViewSet):
                 tenant, serializer.validated_data['seed_units'],
             )
         instance = serializer.save()
+        mark_budget_saved(instance)
         _audit(
             self.request, 'update', f'Presupuesto {instance.year} actualizado',
             instance.tenant_id, 'CondoBudget', instance.id, instance.name,
@@ -858,6 +901,7 @@ class CondoBudgetViewSet(viewsets.ModelViewSet):
         units = request.data.get('units', request.data.get('seed_units', budget.seed_units or ctx['units_billable']))
         fee = request.data.get('fee', request.data.get('seed_fee', budget.seed_fee or tenant.maintenance_fee))
         apply_seed_to_existing_lines(budget, tenant, units, fee)
+        mark_budget_saved(budget)
         _audit(
             request, 'update', f'Variables base aplicadas a {budget.name}',
             tenant_id, 'CondoBudget', budget.id, budget.name,
@@ -895,6 +939,7 @@ class CondoBudgetViewSet(viewsets.ModelViewSet):
                 ))
             CondoBudgetLine.objects.bulk_create(objs)
         budget.refresh_from_db()
+        mark_budget_saved(budget)
         return Response(budget_payload(budget, request))
 
     @action(detail=True, methods=['post'])
@@ -923,8 +968,8 @@ class CondoBudgetViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='submit-approval')
     def submit_approval(self, request, tenant_id, pk=None):
         budget = self.get_object()
-        if budget.status not in ('borrador',):
-            return Response({'detail': 'Solo un borrador se puede enviar a aprobación.'}, status=400)
+        if budget.status not in ('borrador', 'guardado'):
+            return Response({'detail': 'Solo un presupuesto en borrador o guardado se puede enviar a aprobación.'}, status=400)
         tenant = budget.tenant
         if not planning_flow_enabled(tenant):
             return Response({'detail': 'Configura el flujo de aprobación antes de enviarlo.'}, status=400)
@@ -1017,7 +1062,7 @@ class CondoBudgetViewSet(viewsets.ModelViewSet):
                 })
             else:
                 new_steps.append(s)
-        budget.status = 'borrador'
+        budget.status = 'guardado'
         budget.approval_steps = new_steps
         budget.save(update_fields=['status', 'approval_steps', 'updated_at'])
         _audit(

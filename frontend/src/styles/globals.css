@@ -913,13 +913,15 @@ tr:hover td { background: rgba(59,185,144,0.02); }
   body.printing-planeacion .planeacion-print-layout {
     display: block !important;
     position: absolute !important; top: 0; left: 0;
-    width: 100% !important; padding: 10mm 12mm !important;
+    width: 100% !important; padding: 0 !important;
     background: white !important;
     -webkit-print-color-adjust: exact; print-color-adjust: exact;
   }
   body.printing-planeacion .planeacion-print-layout table { break-inside: auto; width: 100% !important; }
   body.printing-planeacion .planeacion-print-layout tr { break-inside: avoid; page-break-inside: avoid; }
   body.printing-planeacion .planeacion-print-layout thead { display: table-header-group; }
+  body.printing-planeacion,
+  body.printing-planeacion * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
 
 /* Layouts ejecutivos: solo visibles al imprimir, nunca en pantalla */

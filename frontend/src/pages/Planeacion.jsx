@@ -14,6 +14,7 @@ const MONTH_LBL = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep'
 
 const BUDGET_STATUS = {
   borrador: { label: 'Borrador', color: 'var(--ink-500)', bg: 'var(--sand-50)' },
+  guardado: { label: 'Guardado', color: 'var(--ink-700)', bg: 'var(--sand-100)' },
   en_aprobacion: { label: 'En aprobación', color: 'var(--blue-700)', bg: 'var(--blue-50)' },
   aprobado: { label: 'Aprobado', color: 'var(--teal-700)', bg: 'var(--teal-50)' },
   archivado: { label: 'Archivado', color: 'var(--ink-400)', bg: 'var(--sand-50)' },
@@ -85,19 +86,49 @@ function pickBudget(list, selectedId) {
   }
   return list.find(b => b.status === 'aprobado')
     || list.find(b => b.status === 'en_aprobacion')
+    || list.find(b => b.status === 'guardado')
     || list.find(b => b.status === 'borrador')
     || list[0];
 }
 
-function printPlaneacion() {
+function tenantLogoSrc(src) {
+  if (!src) return '';
+  if (src.startsWith('data:') || src.startsWith('http') || src.startsWith('/')) return src;
+  if (src.startsWith('/9j/')) return `data:image/jpeg;base64,${src}`;
+  if (src.startsWith('iVBOR')) return `data:image/png;base64,${src}`;
+  return `data:image/png;base64,${src}`;
+}
+
+function fmtPrintAmt(n, currency, compact = false) {
+  const c = CURRENCIES[currency] || CURRENCIES.MXN;
+  const num = Number(n) || 0;
+  if (!num) return '—';
+  return `${c.symbol}${num.toLocaleString('es-MX', {
+    minimumFractionDigits: compact ? 0 : 2,
+    maximumFractionDigits: compact ? 0 : 2,
+  })}`;
+}
+
+function printPlaneacion({ title } = {}) {
+  const prev = document.title;
+  if (title) document.title = title;
+  let pageStyle = document.getElementById('planeacion-print-page');
+  if (!pageStyle) {
+    pageStyle = document.createElement('style');
+    pageStyle.id = 'planeacion-print-page';
+    document.head.appendChild(pageStyle);
+  }
+  pageStyle.textContent = '@page { size: letter landscape; margin: 8mm 10mm; }';
   document.body.classList.add('printing-planeacion');
   const done = () => {
     document.body.classList.remove('printing-planeacion');
+    pageStyle.textContent = '';
+    document.title = prev;
     window.removeEventListener('afterprint', done);
   };
   window.addEventListener('afterprint', done);
   window.print();
-  setTimeout(done, 1200);
+  setTimeout(done, 1500);
 }
 
 function Pill({ map, value }) {
@@ -294,7 +325,8 @@ function PresupuestoTab({ tenantId, year, setYear, years, ctx, isReadOnly, loadi
       const r = await planeacionAPI.budgets.saveLines(tenantId, budget.id, budget.lines);
       setBudget(r.data);
       setDirty(false);
-      toast.success('Partidas guardadas');
+      setScenarios(list => list.map(s => s.id === r.data.id ? { ...s, status: r.data.status, name: r.data.name } : s));
+      toast.success(r.data.status === 'guardado' ? 'Presupuesto guardado' : 'Partidas guardadas');
     } catch (e) {
       toast.error(errMsg(e, 'No se pudieron guardar las partidas'));
     } finally {
@@ -445,7 +477,9 @@ function PresupuestoTab({ tenantId, year, setYear, years, ctx, isReadOnly, loadi
         {dirty && !locked && <span style={{ fontSize: 12, color: '#92400e' }}>Cambios sin guardar</span>}
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {budget && (
-            <button className="btn btn-outline" onClick={printPlaneacion}><Printer size={14} /> Imprimir</button>
+            <button className="btn btn-outline" onClick={() => printPlaneacion({
+              title: `Presupuesto ${budget.year} — ${budget.name || ''} — ${ctx?.name || 'Condominio'}`,
+            })}><Printer size={14} /> Imprimir</button>
           )}
           {budget && !isReadOnly && (
             <button className="btn btn-outline" onClick={cloneScenario}><Copy size={14} /> Duplicar escenario</button>
@@ -463,7 +497,7 @@ function PresupuestoTab({ tenantId, year, setYear, years, ctx, isReadOnly, loadi
             <>
               <button className="btn btn-outline" onClick={addLine}><Plus size={14} /> Partida</button>
               <button className="btn btn-primary" disabled={saving || !dirty} onClick={saveLines}>Guardar</button>
-              {budget.status === 'borrador' && (
+              {['borrador', 'guardado'].includes(budget.status) && (
                 flowEnabled(ctx)
                   ? <button className="btn btn-outline" onClick={submitApproval}><Send size={14} /> Enviar a aprobación</button>
                   : <button className="btn btn-outline" onClick={approve}><Check size={14} /> Aprobar</button>
@@ -514,7 +548,11 @@ function PresupuestoTab({ tenantId, year, setYear, years, ctx, isReadOnly, loadi
             currency={currency}
             maxUnits={maxUnits}
             onRename={renameScenario}
-            onApplied={(next) => { setBudget(next); setDirty(false); }}
+            onApplied={(next) => {
+              setBudget(next);
+              setDirty(false);
+              setScenarios(list => list.map(s => s.id === next.id ? { ...s, status: next.status, name: next.name } : s));
+            }}
             tenantId={tenantId}
           />
 
@@ -523,7 +561,10 @@ function PresupuestoTab({ tenantId, year, setYear, years, ctx, isReadOnly, loadi
             locked={locked}
             currency={currency}
             tenantId={tenantId}
-            onSaved={(next) => setBudget(next)}
+            onSaved={(next) => {
+              setBudget(next);
+              setScenarios(list => list.map(s => s.id === next.id ? { ...s, status: next.status, name: next.name } : s));
+            }}
           />
 
           <ApprovalPanel
@@ -540,11 +581,11 @@ function PresupuestoTab({ tenantId, year, setYear, years, ctx, isReadOnly, loadi
             onReject={async (notes) => {
               const r = await planeacionAPI.budgets.rejectStep(tenantId, budget.id, { notes });
               setBudget(r.data);
-              toast.success('Devuelto a borrador');
+              toast.success('Devuelto a guardado');
               loadList(r.data.id);
             }}
             flowOn={flowEnabled(ctx)}
-            canSubmit={!locked && budget.status === 'borrador' && !isReadOnly}
+            canSubmit={!locked && ['borrador', 'guardado'].includes(budget.status) && !isReadOnly}
           />
 
           <div className="cob-stats" style={{ marginBottom: 14 }}>
@@ -783,7 +824,7 @@ function ApprovalPanel({ steps, status, userId, onApprove, onReject, flowOn }) {
       <div style={{ fontSize: 12, fontWeight: 800, marginBottom: 8, color: 'var(--ink-600)' }}>Flujo de aprobación</div>
       {(steps || []).length === 0 ? (
         <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>
-          {status === 'borrador' ? 'Configura los aprobadores y envía este escenario a asamblea.' : 'Sin pasos registrados.'}
+          {status === 'borrador' || status === 'guardado' ? 'Configura los aprobadores y envía este escenario a asamblea.' : 'Sin pasos registrados.'}
         </div>
       ) : (
         <ol className="plan-flow-steps">
@@ -901,73 +942,255 @@ function BudgetPrintLayout({ budget, ctx, currency }) {
   const totals = budget?.totals || {};
   const ingresos = (budget.lines || []).filter(l => l.kind === 'ingreso');
   const gastos = (budget.lines || []).filter(l => l.kind === 'gasto');
-  const printTable = (title, rows) => (
-    <>
-      <h3 style={{ fontSize: 13, margin: '14px 0 6px' }}>{title}</h3>
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 10 }}>
+  const net = totals.net_income ?? totals.income ?? 0;
+  const expense = totals.expense || 0;
+  const surplus = totals.surplus ?? (net - expense);
+  const coverage = expense ? Math.round((net / expense) * 100) : 0;
+  const units = Number(budget.seed_units) || ctx?.units_billable || 0;
+  const fee = Number(budget.seed_fee) || ctx?.maintenance_fee || 0;
+  const monthlyQuota = units * fee;
+  const logo = tenantLogoSrc(ctx?.logo);
+  const tenantName = ctx?.razon_social || ctx?.name || 'Condominio';
+  const genDate = new Date().toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric' });
+  const statusLbl = BUDGET_STATUS[budget.status]?.label || budget.status;
+  const surplusPositive = surplus >= 0;
+
+  const monthTotals = (rows) => MONTHS.map(m => rows.reduce((s, l) => s + (Number(l.monthly_amounts?.[m]) || 0), 0));
+  const ingMonths = monthTotals(ingresos);
+  const gasMonths = monthTotals(gastos);
+
+  const th = {
+    background: '#0F5C54', color: '#fff', fontSize: 8, fontWeight: 700,
+    textTransform: 'uppercase', letterSpacing: '0.04em',
+    padding: '5px 4px', textAlign: 'right', whiteSpace: 'nowrap',
+    borderRight: '1px solid rgba(255,255,255,0.12)',
+  };
+  const td = (extra = {}) => ({
+    fontSize: 8, padding: '4px 4px', borderBottom: '1px solid #E7E5E4',
+    textAlign: 'right', fontVariantNumeric: 'tabular-nums', verticalAlign: 'middle',
+    ...extra,
+  });
+
+  const printTable = (title, color, rows, months, annualTotal) => (
+    <div style={{ marginTop: 10, breakInside: 'avoid' }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 8,
+        background: color === 'teal' ? '#E6F7F3' : '#FEF3C7',
+        borderLeft: `4px solid ${color === 'teal' ? '#0D6E55' : '#B45309'}`,
+        padding: '5px 10px',
+      }}>
+        <span style={{
+          fontSize: 10, fontWeight: 800, letterSpacing: '0.07em', textTransform: 'uppercase',
+          color: color === 'teal' ? '#0D6E55' : '#92400E', flex: 1,
+        }}>{title}</span>
+        <span style={{ fontSize: 9, color: '#57534e' }}>{rows.length} partida(s)</span>
+        <span style={{ fontSize: 11, fontWeight: 800, color: color === 'teal' ? '#0D6E55' : '#92400E' }}>
+          {fmtPrintAmt(annualTotal, currency)}
+        </span>
+      </div>
+      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead>
           <tr>
-            <th style={{ textAlign: 'left', borderBottom: '1px solid #ddd', padding: 4 }}>Concepto</th>
-            {MONTH_LBL.map(m => <th key={m} style={{ textAlign: 'right', borderBottom: '1px solid #ddd', padding: 4 }}>{m}</th>)}
-            <th style={{ textAlign: 'right', borderBottom: '1px solid #ddd', padding: 4 }}>Anual</th>
+            <th style={{ ...th, textAlign: 'left', width: '18%' }}>Concepto</th>
+            {MONTH_LBL.map(m => <th key={m} style={th}>{m}</th>)}
+            <th style={{ ...th, background: '#0A4A44' }}>Anual</th>
           </tr>
         </thead>
         <tbody>
-          {rows.map(line => (
-            <tr key={line.id}>
-              <td style={{ padding: 4, borderBottom: '1px solid #f0f0f0' }}>{line.name}</td>
-              {MONTHS.map(m => (
-                <td key={m} style={{ textAlign: 'right', padding: 4, borderBottom: '1px solid #f0f0f0' }}>
-                  {fmtCurrency(line.monthly_amounts?.[m] || 0, currency)}
-                </td>
-              ))}
-              <td style={{ textAlign: 'right', padding: 4, fontWeight: 700 }}>{fmtCurrency(lineTotal(line.monthly_amounts), currency)}</td>
+          {rows.length === 0 ? (
+            <tr>
+              <td colSpan={14} style={{ ...td({ textAlign: 'center', color: '#a8a29e', fontStyle: 'italic' }), padding: 10 }}>
+                Sin partidas en esta sección
+              </td>
             </tr>
-          ))}
+          ) : rows.map((line, i) => {
+            const annual = lineTotal(line.monthly_amounts);
+            return (
+              <tr key={line.id} style={{ background: i % 2 === 0 ? '#fff' : '#FAFAF9' }}>
+                <td style={td({ textAlign: 'left', fontWeight: 600, color: '#1C1917' })}>
+                  {line.name || 'Sin nombre'}
+                </td>
+                {MONTHS.map(m => (
+                  <td key={m} style={td({ color: Number(line.monthly_amounts?.[m]) ? '#1C1917' : '#D6D3D1' })}>
+                    {fmtPrintAmt(line.monthly_amounts?.[m], currency, true)}
+                  </td>
+                ))}
+                <td style={td({ fontWeight: 800 })}>{fmtPrintAmt(annual, currency)}</td>
+              </tr>
+            );
+          })}
+          <tr>
+            <td style={{ ...td({ textAlign: 'right', fontWeight: 800, background: '#F5F5F4' }) }}>Total</td>
+            {months.map((n, i) => (
+              <td key={MONTHS[i]} style={td({ fontWeight: 700, background: '#F5F5F4' })}>{fmtPrintAmt(n, currency, true)}</td>
+            ))}
+            <td style={td({ fontWeight: 800, background: '#F5F5F4' })}>{fmtPrintAmt(annualTotal, currency)}</td>
+          </tr>
         </tbody>
       </table>
-    </>
+    </div>
   );
 
+  const kpis = [
+    { label: 'Ingresos brutos', value: fmtPrintAmt(totals.income, currency), sub: 'Anual' },
+    { label: 'Incentivos', value: fmtPrintAmt(totals.discount_total || 0, currency), sub: `${(totals.discounts || []).length} regla(s)` },
+    { label: 'Ingreso neto', value: fmtPrintAmt(net, currency), sub: 'Después de descuentos' },
+    { label: 'Egresos', value: fmtPrintAmt(expense, currency), sub: 'Anual' },
+    { label: surplusPositive ? 'Superávit' : 'Déficit', value: fmtPrintAmt(surplus, currency), sub: `${coverage}% cubierto`, accent: surplusPositive ? '#0D6E55' : '#B42318' },
+    { label: 'Cuota × unidades', value: fmtPrintAmt(monthlyQuota, currency), sub: `${units} un. · ${fmtPrintAmt(fee, currency)}/mes` },
+  ];
+
   return (
-    <div className="planeacion-print-layout">
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
-        <div>
-          <div style={{ fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#0f766e' }}>Homly · Planeación</div>
-          <h2 style={{ margin: '4px 0 0', fontSize: 18 }}>{ctx?.name || 'Condominio'} — Presupuesto {budget.year}</h2>
-          <div style={{ fontSize: 12 }}>{budget.name} · {BUDGET_STATUS[budget.status]?.label || budget.status}</div>
+    <div className="planeacion-print-layout" style={{ fontFamily: 'Arial, Helvetica, sans-serif', color: '#1A1612', fontSize: 11 }}>
+      <div style={{
+        display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+        borderBottom: '3px solid #0F5C54', paddingBottom: 10, marginBottom: 12,
+      }}>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+          {logo ? (
+            <img src={logo} alt="" style={{ width: 56, height: 56, objectFit: 'contain', borderRadius: 6, border: '1px solid #E7E5E4', background: '#fff' }} />
+          ) : null}
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: '#0F5C54', lineHeight: 1.2 }}>{tenantName}</div>
+            {ctx?.razon_social && ctx?.name && ctx.razon_social !== ctx.name && (
+              <div style={{ fontSize: 10, color: '#57534e', marginTop: 1 }}>{ctx.name}</div>
+            )}
+            {ctx?.rfc && <div style={{ fontSize: 9, color: '#57534e', marginTop: 2 }}>RFC: <strong>{ctx.rfc}</strong></div>}
+            {ctx?.address && <div style={{ fontSize: 9, color: '#78716c', marginTop: 1 }}>{ctx.address}</div>}
+            {(ctx?.state || ctx?.country) && (
+              <div style={{ fontSize: 9, color: '#78716c' }}>{[ctx.state, ctx.country].filter(Boolean).join(', ')}</div>
+            )}
+          </div>
         </div>
-        <div style={{ textAlign: 'right', fontSize: 11, color: '#57534e' }}>
-          <div>Unidades: {budget.seed_units || '—'}</div>
-          <div>Cuota: {fmtCurrency(budget.seed_fee, currency)}</div>
-          {budget.approved_at && <div>Aprobado: {String(budget.approved_at).slice(0, 10)}</div>}
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ fontSize: 18, fontWeight: 800, color: '#0F5C54', letterSpacing: '-0.02em' }}>PRESUPUESTO ANUAL</div>
+          <div style={{ fontSize: 13, color: '#44403c', marginTop: 2 }}>
+            Ejercicio <strong style={{ color: '#0F5C54' }}>{budget.year}</strong>
+            {budget.name ? ` · ${budget.name}` : ''}
+          </div>
+          <div style={{
+            marginTop: 6, display: 'inline-block', padding: '3px 10px',
+            background: ({
+              borrador: '#78716c',
+              guardado: '#44403c',
+              en_aprobacion: '#1E3A5F',
+              aprobado: '#0D6E55',
+              archivado: '#a8a29e',
+            })[budget.status] || '#1E3A5F',
+            color: '#fff', borderRadius: 4, fontSize: 9, fontWeight: 700,
+            textTransform: 'uppercase', letterSpacing: '0.08em',
+          }}>
+            {statusLbl}
+          </div>
+          {budget.approved_at && (
+            <div style={{ fontSize: 8, color: '#78716c', marginTop: 4 }}>
+              Aprobado {String(budget.approved_at).slice(0, 10)}
+              {budget.approved_by_name ? ` · ${budget.approved_by_name}` : ''}
+            </div>
+          )}
         </div>
       </div>
-      {printTable('Ingresos', ingresos)}
-      {printTable('Gastos', gastos)}
+
+      <div style={{
+        display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 8, marginBottom: 4,
+      }}>
+        {kpis.map(k => (
+          <div key={k.label} style={{
+            border: '1px solid #E7E5E4', borderRadius: 6, padding: '8px 10px',
+            background: '#FAFAF9',
+          }}>
+            <div style={{ fontSize: 8, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#78716c' }}>
+              {k.label}
+            </div>
+            <div style={{ fontSize: 13, fontWeight: 800, color: k.accent || '#1C1917', marginTop: 2, lineHeight: 1.2 }}>
+              {k.value}
+            </div>
+            <div style={{ fontSize: 8, color: '#a8a29e', marginTop: 2 }}>{k.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      {printTable('Ingresos', 'teal', ingresos, ingMonths, totals.income || 0)}
+      {printTable('Egresos', 'amber', gastos, gasMonths, expense)}
+
       {(totals.discounts || []).length > 0 && (
-        <div style={{ marginTop: 12, fontSize: 11 }}>
-          <strong>Incentivos de cobranza</strong>
-          {(totals.discounts || []).map(d => (
-            <div key={d.id}>{d.name}: {fmtCurrency(d.amount, currency)}</div>
-          ))}
+        <div style={{ marginTop: 10, breakInside: 'avoid' }}>
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            background: '#EFF6FF', borderLeft: '4px solid #1D4ED8', padding: '5px 10px',
+          }}>
+            <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.07em', textTransform: 'uppercase', color: '#1D4ED8', flex: 1 }}>
+              Incentivos de flujo de caja
+            </span>
+            <span style={{ fontSize: 11, fontWeight: 800, color: '#1D4ED8' }}>
+              {fmtPrintAmt(totals.discount_total, currency)}
+            </span>
+          </div>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr>
+                <th style={{ ...th, textAlign: 'left', background: '#1E3A5F' }}>Incentivo</th>
+                <th style={{ ...th, background: '#1E3A5F' }}>% descuento</th>
+                <th style={{ ...th, background: '#1E3A5F' }}>% adopción</th>
+                <th style={{ ...th, background: '#1E3A5F' }}>Aplica a</th>
+                <th style={{ ...th, background: '#1E3A5F' }}>Monto estimado</th>
+              </tr>
+            </thead>
+            <tbody>
+              {totals.discounts.map((d, i) => (
+                <tr key={d.id || i} style={{ background: i % 2 === 0 ? '#fff' : '#F8FAFC' }}>
+                  <td style={td({ textAlign: 'left', fontWeight: 600 })}>{d.name}</td>
+                  <td style={td()}>{d.pct}%</td>
+                  <td style={td()}>{d.takeup_pct}%</td>
+                  <td style={td()}>{d.apply_to === 'maintenance' ? 'Cuota de mantenimiento' : 'Ingresos totales'}</td>
+                  <td style={td({ fontWeight: 700 })}>{fmtPrintAmt(d.amount, currency)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
-      <div style={{ marginTop: 14, fontSize: 12 }}>
-        <div>Ingresos brutos: {fmtCurrency(totals.income, currency)}</div>
-        <div>Descuentos: {fmtCurrency(totals.discount_total || 0, currency)}</div>
-        <div>Ingreso neto: {fmtCurrency(totals.net_income ?? totals.income, currency)}</div>
-        <div>Gastos: {fmtCurrency(totals.expense, currency)}</div>
-        <div style={{ fontWeight: 700 }}>Resultado neto: {fmtCurrency(totals.surplus, currency)}</div>
+
+      <div style={{
+        display: 'flex', justifyContent: 'space-between', alignItems: 'stretch',
+        marginTop: 12, gap: 10, breakInside: 'avoid',
+      }}>
+        <div style={{ flex: 1, background: '#0D6E55', color: '#fff', padding: '10px 14px', borderRadius: 6 }}>
+          <div style={{ fontSize: 8, letterSpacing: '0.08em', textTransform: 'uppercase', opacity: 0.8 }}>Ingreso neto anual</div>
+          <div style={{ fontSize: 18, fontWeight: 800, marginTop: 2 }}>{fmtPrintAmt(net, currency)}</div>
+        </div>
+        <div style={{ flex: 1, background: '#92400E', color: '#fff', padding: '10px 14px', borderRadius: 6 }}>
+          <div style={{ fontSize: 8, letterSpacing: '0.08em', textTransform: 'uppercase', opacity: 0.8 }}>Egresos anuales</div>
+          <div style={{ fontSize: 18, fontWeight: 800, marginTop: 2 }}>{fmtPrintAmt(expense, currency)}</div>
+        </div>
+        <div style={{
+          flex: 1, background: surplusPositive ? '#14532D' : '#7F1D1D',
+          color: '#fff', padding: '10px 14px', borderRadius: 6,
+        }}>
+          <div style={{ fontSize: 8, letterSpacing: '0.08em', textTransform: 'uppercase', opacity: 0.8 }}>
+            {surplusPositive ? 'Superávit' : 'Déficit'} · {coverage}% cubierto
+          </div>
+          <div style={{ fontSize: 18, fontWeight: 800, marginTop: 2 }}>{fmtPrintAmt(surplus, currency)}</div>
+        </div>
       </div>
+
       {(budget.approval_steps || []).length > 0 && (
-        <div style={{ marginTop: 12, fontSize: 11 }}>
-          <strong>Aprobaciones</strong>
+        <div style={{ marginTop: 10, fontSize: 8, color: '#57534e', breakInside: 'avoid' }}>
+          <strong style={{ textTransform: 'uppercase', letterSpacing: '0.06em' }}>Aprobaciones</strong>
+          {' · '}
           {(budget.approval_steps || []).map(s => (
-            <div key={s.order}>{s.order}. {s.label} — {s.user_name} — {s.status}</div>
-          ))}
+            `${s.order}. ${s.label || ''} (${s.user_name || '—'}): ${s.status === 'approved' ? 'Aprobado' : s.status === 'rejected' ? 'Rechazado' : 'Pendiente'}`
+          )).join('  ·  ')}
         </div>
       )}
+
+      <div style={{
+        marginTop: 12, paddingTop: 8, borderTop: '1px solid #DDD',
+        display: 'flex', justifyContent: 'space-between', fontSize: 8, color: '#a8a29e',
+      }}>
+        <span>Generado el {genDate} · Homly Planeación</span>
+        <span>Documento de uso interno — {statusLbl} {budget.year}</span>
+      </div>
     </div>
   );
 }
