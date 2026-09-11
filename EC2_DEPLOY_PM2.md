@@ -527,4 +527,4 @@ pm2 save && pm2 startup
 
 ---
 
-**Version:** Homly v10.1.0 — React + Django + PostgreSQL
+**Version:** Homly v10.3.0 — React + Django + PostgreSQL (condominios + Homly Rentas)

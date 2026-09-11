@@ -1,48 +1,75 @@
-# 🏠 Homly — Property Management System
+# Homly — Administración de condominios y gestión de rentas
 
 > La administración que tu hogar se merece.
 
-Full-stack property management application rebuilt with modern architecture for exponential growth.
+Plataforma multi-tenant: **Homly Condominios** y **Homly Rentas** son espacios de trabajo independientes. Un mismo administrador puede tener ambos, con planes, cobros e inventario separados.
 
 ## Tech Stack
 
 | Layer | Technology | Why |
 |-------|-----------|-----|
-| **Frontend** | React 18 + Tailwind CSS | Component-based, fast dev cycle |
+| **Frontend** | React 18 + Vite + Tailwind CSS | Component-based, fast dev cycle |
 | **Backend** | Django 5.1 + DRF | Battle-tested, ORM, admin panel |
 | **Database** | PostgreSQL 16 | ACID, JSONB, concurrency, scalable |
-| **Auth** | JWT (SimpleJWT) | Stateless, multi-tenant ready |
-| **Container** | Docker Compose | One-command deployment |
+| **Auth** | JWT (SimpleJWT) + cookie refresh | Stateless, multi-tenant ready |
+| **Process** | PM2 (`homly-dev` :3003, `homly-api-dev` :3004) | Dev and EC2 process manager |
 
-## 🗄️ Why PostgreSQL over SQLite?
+## Producto: dos espacios
 
-| Feature | PostgreSQL ✅ | SQLite ❌ |
-|---------|:------------:|:---------:|
-| Concurrent writes | MVCC, unlimited | Single writer, locks |
-| JSONB fields | Native, indexable | Text only |
-| Connection pooling | PgBouncer ready | N/A |
-| Horizontal scaling | Citus extension | Not possible |
-| Full-text search | Built-in | Limited |
-| Table partitioning | Native | Not supported |
-| Production ready | Yes | Dev only |
+| Espacio | `Tenant.workspace_type` | Para qué |
+|---------|-------------------------|----------|
+| Condominio | `condominio` (default) | Unidades, cuotas, gastos, reservas, asamblea |
+| Rentas | `rentas` | Inventario de inmuebles, CRM, contratos, cobranza de renta, Airbnb |
+
+- El login / switcher agrupa tenants por espacio y abre el dashboard correcto.
+- Los **planes de membresía** tienen `workspace_type`: un plan de condominio no se asigna a un tenant de rentas, y viceversa.
+- Módulos de rentas: `rentas_dashboard`, `rentas_propiedades`, `rentas_crm`, `rentas_contratos`, `rentas_cobranza`, `rentas_calendario`, `rentas_config`.
+- El CRM comercial de Homly (`/app/sistema/crm`) es **solo superadmin** y no comparte tablas con el CRM de rentas.
+
+## Homly Rentas (v10.3)
+
+### Inventario y contratos
+- `RentalProperty` — unidades en renta (`source`: `homly` \| `airbnb`).
+- `RentalParty` — inquilino, fiador, propietario.
+- `RentalContract` — vigencia, renta, depósito; alta en borrador y `POST …/activate/`.
+- `RentalCharge` / `RentalPayment` / `RentalChargeConcept` — cobranza del espacio de rentas.
+
+### CRM de rentas
+Pipeline **lead → cliente + contrato**, tenant-scoped (`rental_leads`, `rental_lead_activities`).
+
+Etapas: `nuevo` → `contactado` → `visita` → `propuesta` → `negociacion` → `ganado` \| `perdido`.
+
+Al **ganar** (`POST …/rental-leads/{id}/convert/`):
+1. Crea o reutiliza el inquilino (`RentalParty`).
+2. Crea el contrato de la unidad (código `CT-NNNN` o el que envíe el admin).
+3. Lo deja en **borrador** (unidad `reservada`) o lo **activa** si `activate: true`.
+4. No convierte si la unidad ya tiene contrato vigente.
+
+UI: `/app/rentas/crm`.
+
+### Airbnb
+Airbnb **no** ofrece API pública de anfitrión. Homly no guarda contraseñas ni scrapea anuncios.
+
+Flujo permitido hoy:
+1. Registrar cuenta de anfitrión (etiqueta + correo).
+2. Pegar URL del anuncio (`airbnb.com/rooms/{id}`) y URL **iCal** (Calendario → Exportar).
+3. Homly crea la propiedad (`AB-{id}`), sincroniza ocupación y muestra reservas en el calendario.
+
+APIs: `/api/tenants/{id}/airbnb-connections/`, `…/airbnb-listings/`.  
+Cron: `python manage.py sync_airbnb_icals`.  
+El campo `mode=oauth` queda listo para cuando Homly sea Preferred Software Partner.
 
 ## 🚀 Quick Start (Docker)
 
 ```bash
-# Clone & start everything
 git clone <repo>
 cd homly
 docker compose up -d
-
-# The system will automatically:
-# 1. Start PostgreSQL 16
-# 2. Run Django migrations
-# 3. Seed demo data
-# 4. Start Django on :8000
-# 5. Start React on :3000
 ```
 
 Open **http://localhost:3000** in your browser.
+
+Dev local (este entorno): `./dev.sh` → frontend `homly-dev` :3003, API `homly-api-dev` :3004.
 
 ## 🛠️ Manual Setup (Development)
 
@@ -55,28 +82,12 @@ Open **http://localhost:3000** in your browser.
 
 ```bash
 cd backend
-
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
-
-# Install dependencies
+python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
-
-# Create database
 createdb homly_db
-
-# Configure environment
 cp .env.example .env
-# Edit .env with your PostgreSQL credentials
-
-# Run migrations
 python manage.py migrate
-
-# Seed demo data
 python manage.py seed_data
-
-# Start server
 python manage.py runserver
 ```
 
@@ -84,19 +95,8 @@ python manage.py runserver
 
 ```bash
 cd frontend
-
-# Install dependencies
 npm install
-
-# Start development server
 npm start
-```
-
-### Run Tests
-
-```bash
-cd backend
-python manage.py test core -v 2
 ```
 
 ## 📋 Demo Accounts
@@ -114,110 +114,90 @@ python manage.py test core -v 2
 
 ```
 homly/
-├── docker-compose.yml          # Full stack orchestration
+├── deploy.sh / dev.sh
 ├── backend/
-│   ├── Dockerfile
 │   ├── manage.py
-│   ├── requirements.txt
-│   ├── homly_project/          # Django project config
-│   │   ├── settings.py         # PostgreSQL, JWT, CORS
-│   │   ├── urls.py
-│   │   └── wsgi.py
-│   └── core/                   # Main application
-│       ├── models.py           # 15 models, UUID PKs, JSONB
-│       ├── serializers.py      # DRF serializers
-│       ├── views.py            # ViewSets + custom endpoints
-│       ├── permissions.py      # Role-based access control
-│       ├── urls.py             # REST API routes
-│       ├── admin.py            # Django admin config
-│       ├── tests.py            # 34 automated tests
-│       └── management/
-│           └── commands/
-│               └── seed_data.py
-└── frontend/
-    ├── Dockerfile
-    ├── package.json
-    ├── tailwind.config.js      # Brand colors
-    └── src/
-        ├── App.jsx             # Router + protected routes
-        ├── api/
-        │   └── client.js       # Axios + JWT interceptors
-        ├── context/
-        │   └── AuthContext.jsx  # Auth state management
-        ├── pages/
-        │   ├── Landing.jsx     # Marketing page
-        │   ├── Login.jsx       # Auth with tenant select
-        │   ├── Dashboard.jsx   # KPIs + charts
-        │   ├── Cobranza.jsx    # Monthly collections
-        │   ├── Gastos.jsx      # Expenses + petty cash
-        │   ├── EstadoCuenta.jsx
-        │   ├── Config.jsx      # Tenant settings
-        │   ├── Units.jsx       # CRUD units
-        │   ├── Users.jsx       # CRUD users + roles
-        │   ├── MyUnit.jsx      # Vecino portal
-        │   └── Tenants.jsx     # Super admin
-        ├── components/
-        │   └── layout/
-        │       └── AppLayout.jsx  # Sidebar + header
-        ├── utils/
-        │   └── helpers.js      # Formatters, logo, constants
-        └── styles/
-            └── globals.css     # Tailwind + custom styles
+│   ├── homly_project/
+│   └── core/
+│       ├── models.py              # Condominio + Rentas + Airbnb + CRM rentas
+│       ├── views.py               # Condominios, auth, CRM comercial Homly
+│       ├── rental_views.py        # Inventario, contratos, cobranza, dashboard
+│       ├── rental_crm_views.py    # Leads y conversión a contrato
+│       ├── airbnb_views.py / airbnb_sync.py
+│       ├── rental_serializers.py
+│       ├── urls.py
+│       └── management/commands/sync_airbnb_icals.py
+└── frontend/src/
+    ├── pages/rentas/              # Dashboard, propiedades, CRM, contratos, …
+    ├── pages/Landing.jsx          # Dos servicios, una cuenta
+    ├── constants/modulePermissions.js
+    └── utils/helpers.jsx          # APP_VERSION
 ```
+
+Migraciones relevantes: `0055` workspace rentas, `0056` planes por espacio, `0057` Airbnb, `0058` CRM de leads.
 
 ## 🔌 API Endpoints
 
 ### Auth
-- `POST /api/auth/login/` — Login with JWT
-- `POST /api/auth/request-code/` — Request email verification code
-- `POST /api/auth/login-with-code/` — Login with code (passwordless)
-- `GET  /api/auth/tenants/` — List tenants for login
+- `POST /api/auth/login/`
+- `POST /api/auth/request-code/`
+- `POST /api/auth/login-with-code/`
+- `GET  /api/auth/tenants/`
+- `POST /api/auth/switch-tenant/`
+- `POST /api/auth/token/refresh/`
 
 ### Tenants (Super Admin)
 - `GET|POST /api/tenants/`
 - `GET|PATCH|DELETE /api/tenants/{id}/`
+- `POST /api/tenants/{id}/subscription/record-payment/` — recibo de cobro → pago (Mi Membresía)
 
-### Tenant-scoped (requires tenant_id)
+### Condominio (tenant-scoped)
 - `CRUD /api/tenants/{id}/units/`
 - `CRUD /api/tenants/{id}/users/`
-- `CRUD /api/tenants/{id}/extra-fields/`
 - `CRUD /api/tenants/{id}/payments/`
-- `POST /api/tenants/{id}/payments/capture/`
 - `CRUD /api/tenants/{id}/gasto-entries/`
 - `CRUD /api/tenants/{id}/caja-chica/`
-- `CRUD /api/tenants/{id}/bank-statements/`
-- `CRUD /api/tenants/{id}/closed-periods/`
-- `CRUD /api/tenants/{id}/reopen-requests/`
-- `POST /api/tenants/{id}/reopen-requests/{id}/approve/`
-- `CRUD /api/tenants/{id}/assembly-positions/`
-- `CRUD /api/tenants/{id}/committees/`
+- Dashboard / estado de cuenta / reservas / notificaciones / planes de pago
 
-### Reports
-- `GET /api/tenants/{id}/dashboard/?period=YYYY-MM`
-- `GET /api/tenants/{id}/estado-cuenta/?unit_id=X`
-- `GET /api/tenants/{id}/reporte-general/?period=YYYY-MM`
+### Homly Rentas (requiere `workspace_type=rentas`)
+- `GET  /api/tenants/{id}/rental-dashboard/`
+- `GET  /api/tenants/{id}/rental-calendar/`
+- `CRUD /api/tenants/{id}/rental-properties/`
+- `CRUD /api/tenants/{id}/rental-parties/`
+- `CRUD /api/tenants/{id}/rental-contracts/` + `…/activate/` + `…/finish/`
+- `CRUD /api/tenants/{id}/rental-charges/` + `…/generate-period/`
+- `CRUD /api/tenants/{id}/rental-payments/`
+- `CRUD /api/tenants/{id}/airbnb-connections/` + `…/sync/` + `…/import-listings/`
+- `GET|PATCH|DELETE /api/tenants/{id}/airbnb-listings/` + `…/sync/`
+- `CRUD /api/tenants/{id}/rental-leads/` + `…/move/` + `…/convert/` + `…/activities/`
 
-## 🔐 Roles & Permissions
+### CRM comercial Homly (superadmin)
+- `/api/crm/contacts|opportunities|activities|campaigns|tickets/`
 
-| Role | Tenants | Units | Users | Cobranza | Gastos | Config |
-|------|:-------:|:-----:|:-----:|:--------:|:------:|:------:|
-| Super Admin | ✅ CRUD | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Admin | Read own | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Tesorero | — | Read | — | ✅ | ✅ | — |
-| Contador | — | Read | — | Read | Read | — |
-| Auditor | — | Read | — | Read | Read | — |
-| Vecino | — | Own | — | Own | — | — |
+## 🔐 Roles
 
-## 📊 Scaling Path
+Los mismos roles (`admin`, `tesorero`, `contador`, `auditor`, …) aplican en ambos espacios; el menú y los módulos cambian con `workspace_type` (`ROLE_BASE_MODULES` vs `RENTAL_ROLE_BASE_MODULES`).
 
-1. **0-100 tenants**: Single PostgreSQL instance
-2. **100-1K**: Add read replicas, PgBouncer connection pooling
-3. **1K-10K**: Table partitioning on payments (by period)
-4. **10K+**: Citus distributed PostgreSQL, horizontal sharding by tenant_id
+| Role | Condominio | Rentas |
+|------|------------|--------|
+| Super Admin | Todo + Sistema | Todo el espacio de rentas |
+| Admin | Config + operación | Inventario, CRM, contratos, cobranza, config |
+| Tesorero / Contador | Finanzas | Propiedades, CRM, contratos, cobranza |
+| Auditor | Lectura | Lectura (CRM/contratos sin escribir) |
+| Vecino | Mi unidad | No aplica |
 
 ## Version
 
-**v10.1.0** — Full React + Django + PostgreSQL rewrite
+**v10.3.0** (septiembre 2026)
+
+- Espacio **Homly Rentas** independiente (`workspace_type`).
+- Planes de membresía por tipo de espacio; recibo de cobro y de pago en Mi Membresía.
+- Landing: dos servicios, una cuenta de administrador.
+- **CRM de rentas**: pipeline de leads y conversión a inquilino + contrato.
+- **Airbnb**: importación de anuncios por URL + iCal oficial (sin contraseña).
+- Calendario y dashboard de rentas con ocupación Airbnb y KPIs de CRM.
+
+Anterior: **v10.1.0** — rewrite React + Django + PostgreSQL.
 
 ---
 
