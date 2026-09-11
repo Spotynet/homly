@@ -23,10 +23,10 @@ Plataforma multi-tenant: **Homly Condominios** y **Homly Rentas** son espacios d
 
 - El login / switcher agrupa tenants por espacio y abre el dashboard correcto.
 - Los **planes de membresía** tienen `workspace_type`: un plan de condominio no se asigna a un tenant de rentas, y viceversa.
-- Módulos de rentas: `rentas_dashboard`, `rentas_propiedades`, `rentas_crm`, `rentas_contratos`, `rentas_cobranza`, `rentas_calendario`, `rentas_config`.
+- Módulos de rentas: `rentas_dashboard`, `rentas_propiedades`, `rentas_crm`, `rentas_contratos`, `rentas_cobranza`, `rentas_rentroll`, `rentas_calendario`, `rentas_config`.
 - El CRM comercial de Homly (`/app/sistema/crm`) es **solo superadmin** y no comparte tablas con el CRM de rentas.
 
-## Homly Rentas (v10.3)
+## Homly Rentas (v10.4)
 
 ### Inventario y contratos
 - `RentalProperty` — unidades en renta (`source`: `homly` \| `airbnb`).
@@ -47,6 +47,9 @@ Al **ganar** (`POST …/rental-leads/{id}/convert/`):
 
 UI: `/app/rentas/crm`.
 
+### Rent Roll
+Snapshot de portafolio a una fecha: ocupación (aviso, holdover, Airbnb iCal), renta in-place, GPR, vacancia, loss-to-lease, depósitos y morosidad. UI: `/app/rentas/rentroll`. API: `GET /api/tenants/{id}/rental-rentroll/`.
+
 ### Airbnb
 Airbnb **no** ofrece API pública de anfitrión. Homly no guarda contraseñas ni scrapea anuncios.
 
@@ -58,6 +61,10 @@ Flujo permitido hoy:
 APIs: `/api/tenants/{id}/airbnb-connections/`, `…/airbnb-listings/`.  
 Cron: `python manage.py sync_airbnb_icals`.  
 El campo `mode=oauth` queda listo para cuando Homly sea Preferred Software Partner.
+
+## Homly Condominios — Planeación
+
+Módulo `planeacion` (`/app/planeacion`): presupuesto anual (partidas vs cobranza y gastos reales) y proyectos de obra/extraordinarios ligados a categorías de gastos.
 
 ## 🚀 Quick Start (Docker)
 
@@ -157,6 +164,9 @@ Migraciones relevantes: `0055` workspace rentas, `0056` planes por espacio, `005
 - `CRUD /api/tenants/{id}/payments/`
 - `CRUD /api/tenants/{id}/gasto-entries/`
 - `CRUD /api/tenants/{id}/caja-chica/`
+- `GET  /api/tenants/{id}/planeacion-context/`
+- `CRUD /api/tenants/{id}/condo-budgets/` + `…/seed/` + `…/lines/` + `…/approve/` + `…/archive/`
+- `CRUD /api/tenants/{id}/condo-projects/` + `…/costs/` + `…/import-gastos/`
 - Dashboard / estado de cuenta / reservas / notificaciones / planes de pago
 
 ### Homly Rentas (requiere `workspace_type=rentas`)
@@ -167,6 +177,7 @@ Migraciones relevantes: `0055` workspace rentas, `0056` planes por espacio, `005
 - `CRUD /api/tenants/{id}/rental-contracts/` + `…/activate/` + `…/finish/`
 - `CRUD /api/tenants/{id}/rental-charges/` + `…/generate-period/`
 - `CRUD /api/tenants/{id}/rental-payments/`
+- `GET  /api/tenants/{id}/rental-rentroll/?as_of=YYYY-MM-DD` (+ `format=csv`)
 - `CRUD /api/tenants/{id}/airbnb-connections/` + `…/sync/` + `…/import-listings/`
 - `GET|PATCH|DELETE /api/tenants/{id}/airbnb-listings/` + `…/sync/`
 - `CRUD /api/tenants/{id}/rental-leads/` + `…/move/` + `…/convert/` + `…/activities/`
@@ -181,23 +192,19 @@ Los mismos roles (`admin`, `tesorero`, `contador`, `auditor`, …) aplican en am
 | Role | Condominio | Rentas |
 |------|------------|--------|
 | Super Admin | Todo + Sistema | Todo el espacio de rentas |
-| Admin | Config + operación | Inventario, CRM, contratos, cobranza, config |
-| Tesorero / Contador | Finanzas | Propiedades, CRM, contratos, cobranza |
+| Admin | Config + operación + planeación | Inventario, CRM, contratos, cobranza, rent roll, config |
+| Tesorero / Contador | Finanzas + planeación | Propiedades, CRM, contratos, cobranza, rent roll |
 | Auditor | Lectura | Lectura (CRM/contratos sin escribir) |
 | Vecino | Mi unidad | No aplica |
 
 ## Version
 
-**v10.3.0** (septiembre 2026)
+**v10.4.0** (septiembre 2026)
 
-- Espacio **Homly Rentas** independiente (`workspace_type`).
-- Planes de membresía por tipo de espacio; recibo de cobro y de pago en Mi Membresía.
-- Landing: dos servicios, una cuenta de administrador.
-- **CRM de rentas**: pipeline de leads y conversión a inquilino + contrato.
-- **Airbnb**: importación de anuncios por URL + iCal oficial (sin contraseña).
-- Calendario y dashboard de rentas con ocupación Airbnb y KPIs de CRM.
+- **Rent Roll** en Homly Rentas: ocupación, renta in-place, GPR, vacancia, loss-to-lease y morosidad.
+- **Planeación** en Condominios: presupuesto anual vs datos reales y proyectos de obra.
 
-Anterior: **v10.1.0** — rewrite React + Django + PostgreSQL.
+Anterior: **v10.3.0** — espacios Condominio/Rentas, CRM de rentas, Airbnb iCal.
 
 ---
 

@@ -11,19 +11,19 @@
  * array format (which acted as an explicit allowlist).
  */
 export const ROLE_BASE_MODULES = {
-  admin:     ['dashboard', 'reservas', 'cobranza', 'gastos', 'caja_chica', 'estado_cuenta', 'plan_pagos', 'cierre_periodo', 'notificaciones', 'onboarding', 'mi_membresia', 'config', 'blog'],
-  tesorero:  ['dashboard', 'reservas', 'cobranza', 'gastos', 'caja_chica', 'estado_cuenta', 'plan_pagos', 'cierre_periodo', 'notificaciones', 'onboarding', 'blog'],
-  contador:  ['dashboard', 'reservas', 'cobranza', 'gastos', 'caja_chica', 'estado_cuenta', 'plan_pagos', 'cierre_periodo', 'notificaciones', 'onboarding', 'blog'],
-  auditor:   ['dashboard', 'cobranza', 'reservas', 'gastos', 'caja_chica', 'estado_cuenta', 'plan_pagos', 'cierre_periodo', 'notificaciones', 'onboarding', 'blog'],
+  admin:     ['dashboard', 'reservas', 'cobranza', 'gastos', 'caja_chica', 'estado_cuenta', 'plan_pagos', 'cierre_periodo', 'planeacion', 'notificaciones', 'onboarding', 'mi_membresia', 'config', 'blog'],
+  tesorero:  ['dashboard', 'reservas', 'cobranza', 'gastos', 'caja_chica', 'estado_cuenta', 'plan_pagos', 'cierre_periodo', 'planeacion', 'notificaciones', 'onboarding', 'blog'],
+  contador:  ['dashboard', 'reservas', 'cobranza', 'gastos', 'caja_chica', 'estado_cuenta', 'plan_pagos', 'cierre_periodo', 'planeacion', 'notificaciones', 'onboarding', 'blog'],
+  auditor:   ['dashboard', 'cobranza', 'reservas', 'gastos', 'caja_chica', 'estado_cuenta', 'plan_pagos', 'cierre_periodo', 'planeacion', 'notificaciones', 'onboarding', 'blog'],
   vigilante: ['dashboard', 'reservas', 'notificaciones', 'blog'],
   vecino:    ['my_unit', 'reservas', 'estado_cuenta', 'plan_pagos', 'notificaciones', 'onboarding', 'blog', 'enviar_pago'],
 };
 
 /** Módulos del espacio de rentas (inmobiliaria). Independiente del condominio. */
 export const RENTAL_ROLE_BASE_MODULES = {
-  admin:    ['rentas_dashboard', 'rentas_propiedades', 'rentas_crm', 'rentas_contratos', 'rentas_cobranza', 'rentas_calendario', 'rentas_config', 'mi_membresia'],
-  tesorero: ['rentas_dashboard', 'rentas_propiedades', 'rentas_crm', 'rentas_contratos', 'rentas_cobranza', 'rentas_calendario'],
-  contador: ['rentas_dashboard', 'rentas_propiedades', 'rentas_crm', 'rentas_contratos', 'rentas_cobranza', 'rentas_calendario'],
-  auditor:  ['rentas_dashboard', 'rentas_propiedades', 'rentas_crm', 'rentas_contratos', 'rentas_cobranza', 'rentas_calendario'],
-  superadmin: ['rentas_dashboard', 'rentas_propiedades', 'rentas_crm', 'rentas_contratos', 'rentas_cobranza', 'rentas_calendario', 'rentas_config', 'mi_membresia'],
+  admin:    ['rentas_dashboard', 'rentas_propiedades', 'rentas_crm', 'rentas_contratos', 'rentas_cobranza', 'rentas_rentroll', 'rentas_calendario', 'rentas_config', 'mi_membresia'],
+  tesorero: ['rentas_dashboard', 'rentas_propiedades', 'rentas_crm', 'rentas_contratos', 'rentas_cobranza', 'rentas_rentroll', 'rentas_calendario'],
+  contador: ['rentas_dashboard', 'rentas_propiedades', 'rentas_crm', 'rentas_contratos', 'rentas_cobranza', 'rentas_rentroll', 'rentas_calendario'],
+  auditor:  ['rentas_dashboard', 'rentas_propiedades', 'rentas_crm', 'rentas_contratos', 'rentas_cobranza', 'rentas_rentroll', 'rentas_calendario'],
+  superadmin: ['rentas_dashboard', 'rentas_propiedades', 'rentas_crm', 'rentas_contratos', 'rentas_cobranza', 'rentas_rentroll', 'rentas_calendario', 'rentas_config', 'mi_membresia'],
 };

@@ -66,6 +66,8 @@ export const queryKeys = {
 
   // ── Plan de Pagos ─────────────────────────────────────────────────────────
   planPagos:      (tenantId, params) => ['plan-pagos',     tenantId, params],
+  planeacion:     (tenantId, year)   => ['planeacion',     tenantId, year],
+  projects:       (tenantId)         => ['projects',       tenantId],
 };
 
 // ── Constantes de staleTime reutilizables ─────────────────────────────────────

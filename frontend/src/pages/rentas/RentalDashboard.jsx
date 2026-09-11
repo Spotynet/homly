@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { rentalAPI, tenantsAPI } from '../../api/client';
-import { Building2, FileText, Calendar, Receipt, AlertCircle, CheckCircle, Clock, Home, Target } from 'lucide-react';
+import { Building2, FileText, Calendar, Receipt, AlertCircle, CheckCircle, Clock, Home, Target, ClipboardList } from 'lucide-react';
 import { CONTRACT_STATUS, fmtDate, fmtMoney, StatusPill, todayPeriod } from './rentalUtils';
 
 export default function RentalDashboard() {
@@ -140,6 +140,7 @@ export default function RentalDashboard() {
             <Shortcut icon={Target} title="CRM" text="Leads y conversión a contrato" onClick={() => navigate('/app/rentas/crm')} />
             <Shortcut icon={FileText} title="Nuevo contrato" text="Formalizar una renta" onClick={() => navigate('/app/rentas/contratos')} />
             <Shortcut icon={Receipt} title="Registrar cobro" text="Pagos de renta y extras" onClick={() => navigate('/app/rentas/cobranza')} />
+            <Shortcut icon={ClipboardList} title="Rent Roll" text="Ocupación, in-place y vacancia" onClick={() => navigate('/app/rentas/rentroll')} />
             <Shortcut icon={Calendar} title="Calendario" text="Supervisar vigencias a tiempo" onClick={() => navigate('/app/rentas/calendario')} />
             <Shortcut icon={Home} title="Airbnb" text="Cuentas y anuncios en el inventario" onClick={() => navigate('/app/rentas/config#airbnb')} />
           </div>

@@ -59,6 +59,7 @@ const MODULE_DEFINITIONS = [
   { key: 'estado_cuenta',   label: 'Estado de Cuenta',    icon: FileText,     desc: 'Reportes y movimientos financieros' },
   { key: 'plan_pagos',      label: 'Plan de Pagos',       icon: TrendingUp,   desc: 'Gestión de planes de pago para adeudos de unidades' },
   { key: 'cierre_periodo',  label: 'Cierre de Período',   icon: Lock,         desc: 'Cierre y flujo de aprobación de períodos contables' },
+  { key: 'planeacion',      label: 'Planeación',          icon: TrendingUp,   desc: 'Presupuesto anual y proyectos del condominio' },
   { key: 'notificaciones',  label: 'Notificaciones',      icon: Bell,         desc: 'Centro de avisos y notificaciones' },
   { key: 'onboarding',      label: 'Guía de Inicio',      icon: Sparkles,     desc: 'Tour interactivo para configurar el tenant paso a paso' },
   { key: 'config',          label: 'Configuración',       icon: Settings,     desc: 'Configuración del condominio' },

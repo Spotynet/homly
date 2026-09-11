@@ -280,11 +280,11 @@ export default function Landing() {
               zIndex: 0, pointerEvents: 'none',
             }} />
 
-            <div style={{ ...cardStyle, position: 'relative', zIndex: 1, marginBottom: 16 }}>
+            <div style={{ ...cardStyle, position: 'relative', zIndex: 1, marginBottom: 12 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
                 <div>
                   <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#1F7D5B', marginBottom: 4 }}>Condominio</div>
-                  <div style={{ fontWeight: 700, color: '#1A1612', fontSize: 15 }}>Residencial Los Olivos</div>
+                  <div style={{ fontWeight: 700, color: '#1A1612', fontSize: 15 }}>Homly Residencial</div>
                   <div style={{ fontSize: 12, color: '#9E9588', marginTop: 2 }}>48 unidades · cobranza del mes</div>
                 </div>
                 <div style={{ background: '#EFFAF6', borderRadius: 10, padding: '6px 12px', fontSize: 12, fontWeight: 700, color: '#1F7D5B' }}>Activo</div>
@@ -293,6 +293,24 @@ export default function Landing() {
                 <StatCard value="92%" label="Cobranza" bg="#EFFAF6" color="#175F45" />
                 <StatCard value="$148K" label="Recaudado" bg="#FFF5F2" color="#D04E37" />
                 <StatCard value="4" label="Pendientes" bg="#FFFBEB" color="#B45309" />
+              </div>
+            </div>
+
+            <div style={{
+              position: 'relative', zIndex: 2,
+              margin: '0 auto 12px',
+              maxWidth: 260,
+              background: '#fff', borderRadius: 14, padding: '10px 16px',
+              boxShadow: '0 8px 32px rgba(26,22,18,0.12)',
+              border: '1px solid #F3EDE4',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+            }}>
+              <div style={{ width: 32, height: 32, borderRadius: 10, background: '#FFF5F2', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <IconSwitch />
+              </div>
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: '#1A1612' }}>Cambia de espacio</div>
+                <div style={{ fontSize: 11, color: '#9E9588' }}>Condominio ↔ Rentas</div>
               </div>
             </div>
 
@@ -309,22 +327,6 @@ export default function Landing() {
                 <StatCard value="10/12" label="Ocupadas" bg="#EFF6FF" color="#1D4ED8" />
                 <StatCard value="$86K" label="Rentas" bg="#FFF5F2" color="#D04E37" />
                 <StatCard value="2" label="Por vencer" bg="#FFFBEB" color="#B45309" />
-              </div>
-            </div>
-
-            <div style={{
-              position: 'absolute', bottom: -18, left: -12, zIndex: 2,
-              background: '#fff', borderRadius: 14, padding: '10px 14px',
-              boxShadow: '0 8px 32px rgba(26,22,18,0.12)',
-              border: '1px solid #F3EDE4',
-              display: 'flex', alignItems: 'center', gap: 10,
-            }}>
-              <div style={{ width: 32, height: 32, borderRadius: 10, background: '#FFF5F2', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <IconSwitch />
-              </div>
-              <div>
-                <div style={{ fontSize: 12, fontWeight: 700, color: '#1A1612' }}>Cambia de espacio</div>
-                <div style={{ fontSize: 11, color: '#9E9588' }}>Condominio ↔ Rentas</div>
               </div>
             </div>
           </div>

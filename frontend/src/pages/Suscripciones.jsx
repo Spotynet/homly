@@ -89,6 +89,7 @@ const SYSTEM_MODULES = [
   { key: 'estado_cuenta',   label: 'Estado de Cuenta',       desc: 'Resumen financiero por unidad' },
   { key: 'plan_pagos',      label: 'Plan de Pagos',          desc: 'Acuerdos de pago diferido' },
   { key: 'cierre_periodo',  label: 'Cierre de Período',      desc: 'Cierre y reapertura de períodos' },
+  { key: 'planeacion',      label: 'Planeación',             desc: 'Presupuesto anual y proyectos del condominio' },
   { key: 'config',          label: 'Configuración',          desc: 'Ajustes generales del condominio' },
   { key: 'my_unit',         label: 'Mi Unidad',              desc: 'Vista individual para residentes' },
 ];
@@ -99,6 +100,7 @@ const RENTAS_MODULES = [
   { key: 'rentas_crm',          label: 'CRM de rentas', desc: 'Leads, pipeline y conversión a contrato' },
   { key: 'rentas_contratos',    label: 'Contratos',     desc: 'Contratos y partes' },
   { key: 'rentas_cobranza',     label: 'Cobranza',      desc: 'Cargos y pagos de rentas' },
+  { key: 'rentas_rentroll',     label: 'Rent Roll',     desc: 'Ocupación, renta in-place y vacancia' },
   { key: 'rentas_calendario',   label: 'Calendario',    desc: 'Vencimientos y ocupación' },
   { key: 'rentas_config',       label: 'Configuración', desc: 'Ajustes del espacio de rentas' },
 ];

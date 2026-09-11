@@ -282,7 +282,7 @@ export const HOMLY_LOGO_FULL = (
   />
 );
 
-export const APP_VERSION = '10.3.0';
+export const APP_VERSION = '10.4.0';
 
 /** True for any PDF the OS may report with a non-standard MIME (empty, octet-stream, .PDF). */
 export function isPdfFile(file) {

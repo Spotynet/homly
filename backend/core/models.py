@@ -2471,3 +2471,172 @@ class RentalLeadActivity(models.Model):
     def __str__(self):
         return f'{self.kind} — {self.lead.full_name}'
 
+
+# ═══════════════════════════════════════════════════════════
+#  PLANEACIÓN (Presupuesto anual + Proyectos del condominio)
+# ═══════════════════════════════════════════════════════════
+
+class CondoBudget(models.Model):
+    """Presupuesto anual del condominio, alineado al calendario fiscal Homly."""
+    STATUS_CHOICES = [
+        ('borrador', 'Borrador'),
+        ('aprobado', 'Aprobado'),
+        ('archivado', 'Archivado'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='condo_budgets')
+    year = models.PositiveSmallIntegerField(db_index=True)
+    name = models.CharField(max_length=200, blank=True, default='')
+    notes = models.TextField(blank=True, default='')
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default='borrador', db_index=True)
+    created_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='condo_budgets_created',
+    )
+    approved_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='condo_budgets_approved',
+    )
+    approved_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'condo_budgets'
+        ordering = ['-year', '-created_at']
+        unique_together = ['tenant', 'year']
+        indexes = [
+            models.Index(fields=['tenant', 'year']),
+            models.Index(fields=['tenant', 'status']),
+        ]
+
+    def __str__(self):
+        return f'Presupuesto {self.year} — {self.tenant.name}'
+
+
+class CondoBudgetLine(models.Model):
+    """Partida de ingreso o gasto. monthly_amounts: {'01': 1000, ..., '12': 1000}."""
+    KIND_CHOICES = [
+        ('ingreso', 'Ingreso'),
+        ('gasto', 'Gasto'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    budget = models.ForeignKey(CondoBudget, on_delete=models.CASCADE, related_name='lines')
+    kind = models.CharField(max_length=12, choices=KIND_CHOICES, db_index=True)
+    extra_field = models.ForeignKey(
+        ExtraField, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='budget_lines',
+    )
+    concept_key = models.CharField(
+        max_length=80, db_index=True,
+        help_text='maintenance | caja_chica | extra_field UUID | custom',
+    )
+    name = models.CharField(max_length=200)
+    monthly_amounts = models.JSONField(default=dict, blank=True)
+    sort_order = models.PositiveSmallIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'condo_budget_lines'
+        ordering = ['kind', 'sort_order', 'name']
+
+    def __str__(self):
+        return f'{self.kind} {self.name}'
+
+    @property
+    def annual_amount(self):
+        total = 0
+        amounts = self.monthly_amounts or {}
+        for m in range(1, 13):
+            try:
+                total += float(amounts.get(f'{m:02d}', 0) or 0)
+            except (TypeError, ValueError):
+                pass
+        return total
+
+
+class CondoProject(models.Model):
+    """Obra, mejora o proyecto extraordinario del condominio."""
+    STATUS_CHOICES = [
+        ('idea', 'Idea'),
+        ('aprobado', 'Aprobado'),
+        ('en_curso', 'En curso'),
+        ('pausado', 'Pausado'),
+        ('concluido', 'Concluido'),
+        ('cancelado', 'Cancelado'),
+    ]
+    PRIORITY_CHOICES = [
+        ('baja', 'Baja'),
+        ('media', 'Media'),
+        ('alta', 'Alta'),
+        ('urgente', 'Urgente'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='condo_projects')
+    name = models.CharField(max_length=240)
+    description = models.TextField(blank=True, default='')
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default='idea', db_index=True)
+    priority = models.CharField(max_length=12, choices=PRIORITY_CHOICES, default='media')
+    extra_field = models.ForeignKey(
+        ExtraField, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='condo_projects',
+        help_text='Categoría de gastos con la que se compara el avance.',
+    )
+    budget_amount = models.DecimalField(
+        max_digits=14, decimal_places=2, default=0,
+        validators=[MinValueValidator(0)],
+    )
+    start_period = models.CharField(max_length=7, blank=True, default='', help_text='YYYY-MM')
+    end_period = models.CharField(max_length=7, blank=True, default='', help_text='YYYY-MM')
+    responsible_name = models.CharField(max_length=200, blank=True, default='')
+    notes = models.TextField(blank=True, default='')
+    created_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='condo_projects_created',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'condo_projects'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['tenant', 'status']),
+        ]
+
+    def __str__(self):
+        return self.name
+
+
+class CondoProjectCost(models.Model):
+    """Costo registrado en un proyecto; puede enlazar un gasto real del tenant."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    project = models.ForeignKey(CondoProject, on_delete=models.CASCADE, related_name='costs')
+    period = models.CharField(max_length=7, db_index=True)
+    amount = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(0)])
+    description = models.CharField(max_length=400, blank=True, default='')
+    cost_date = models.DateField(null=True, blank=True)
+    extra_field = models.ForeignKey(
+        ExtraField, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='project_costs',
+    )
+    gasto_entry = models.ForeignKey(
+        GastoEntry, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='project_costs',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'condo_project_costs'
+        ordering = ['-period', '-created_at']
+        indexes = [
+            models.Index(fields=['project', 'period']),
+        ]
+
+    def __str__(self):
+        return f'{self.project.name} {self.amount}'
+

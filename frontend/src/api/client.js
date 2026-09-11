@@ -136,6 +136,8 @@ export const tenantsAPI = {
 export const rentalAPI = {
   dashboard: (tenantId, params) => api.get(`/tenants/${tenantId}/rental-dashboard/`, { params }),
   calendar:  (tenantId, params) => api.get(`/tenants/${tenantId}/rental-calendar/`, { params }),
+  rentroll:  (tenantId, params) => api.get(`/tenants/${tenantId}/rental-rentroll/`, { params }),
+  rentrollCsv:(tenantId, params) => api.get(`/tenants/${tenantId}/rental-rentroll/`, { params: { ...(params || {}), format: 'csv' }, responseType: 'blob' }),
   properties: {
     list:   (tenantId, params) => api.get(`/tenants/${tenantId}/rental-properties/`, { params }),
     get:    (tenantId, id) => api.get(`/tenants/${tenantId}/rental-properties/${id}/`),
@@ -285,6 +287,32 @@ export const cajaChicaAPI = {
   create: (tenantId, data)         => api.post(`/tenants/${tenantId}/caja-chica/`, data),
   update: (tenantId, id, data)     => api.patch(`/tenants/${tenantId}/caja-chica/${id}/`, data),
   delete: (tenantId, id)           => api.delete(`/tenants/${tenantId}/caja-chica/${id}/`),
+};
+
+export const planeacionAPI = {
+  context: (tenantId, params) => api.get(`/tenants/${tenantId}/planeacion-context/`, { params }),
+  budgets: {
+    list:      (tenantId, params) => api.get(`/tenants/${tenantId}/condo-budgets/`, { params }),
+    get:       (tenantId, id, params) => api.get(`/tenants/${tenantId}/condo-budgets/${id}/`, { params }),
+    seed:      (tenantId, data) => api.post(`/tenants/${tenantId}/condo-budgets/seed/`, data),
+    create:    (tenantId, data) => api.post(`/tenants/${tenantId}/condo-budgets/`, data),
+    update:    (tenantId, id, data) => api.patch(`/tenants/${tenantId}/condo-budgets/${id}/`, data),
+    saveLines: (tenantId, id, lines) => api.put(`/tenants/${tenantId}/condo-budgets/${id}/lines/`, { lines }),
+    approve:   (tenantId, id) => api.post(`/tenants/${tenantId}/condo-budgets/${id}/approve/`),
+    archive:   (tenantId, id) => api.post(`/tenants/${tenantId}/condo-budgets/${id}/archive/`),
+    delete:    (tenantId, id) => api.delete(`/tenants/${tenantId}/condo-budgets/${id}/`),
+  },
+  projects: {
+    list:         (tenantId, params) => api.get(`/tenants/${tenantId}/condo-projects/`, { params }),
+    get:          (tenantId, id) => api.get(`/tenants/${tenantId}/condo-projects/${id}/`),
+    create:       (tenantId, data) => api.post(`/tenants/${tenantId}/condo-projects/`, data),
+    update:       (tenantId, id, data) => api.patch(`/tenants/${tenantId}/condo-projects/${id}/`, data),
+    delete:       (tenantId, id) => api.delete(`/tenants/${tenantId}/condo-projects/${id}/`),
+    addCost:      (tenantId, id, data) => api.post(`/tenants/${tenantId}/condo-projects/${id}/costs/`, data),
+    deleteCost:   (tenantId, id, costId) => api.delete(`/tenants/${tenantId}/condo-projects/${id}/costs/${costId}/`),
+    gastos:       (tenantId, id, params) => api.get(`/tenants/${tenantId}/condo-projects/${id}/import-gastos/`, { params }),
+    importGastos: (tenantId, id, data) => api.post(`/tenants/${tenantId}/condo-projects/${id}/import-gastos/`, data),
+  },
 };
 
 // ─── Periods ────────────────────────────────────

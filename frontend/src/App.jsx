@@ -13,6 +13,7 @@ import RentalCobranza from './pages/rentas/RentalCobranza';
 import RentalCalendar from './pages/rentas/RentalCalendar';
 import RentalConfig from './pages/rentas/RentalConfig';
 import RentalCRM from './pages/rentas/RentalCRM';
+import RentalRentRoll from './pages/rentas/RentalRentRoll';
 
 // Pages
 import Landing from './pages/Landing';
@@ -41,6 +42,7 @@ import Onboarding from './pages/Onboarding';
 import MiMembresia from './pages/MiMembresia';
 import Blog from './pages/Blog';
 import EnviarPago from './pages/EnviarPago';
+import Planeacion from './pages/Planeacion';
 
 const LOADER = (
   <div className="flex items-center justify-center h-screen bg-white">
@@ -131,6 +133,7 @@ function AppRoutes() {
         <Route path="rentas/crm"           element={<RoleRoute module="rentas_crm" workspace="rentas"><RentalCRM /></RoleRoute>} />
         <Route path="rentas/contratos"     element={<RoleRoute module="rentas_contratos" workspace="rentas"><RentalContracts /></RoleRoute>} />
         <Route path="rentas/cobranza"      element={<RoleRoute module="rentas_cobranza" workspace="rentas"><RentalCobranza /></RoleRoute>} />
+        <Route path="rentas/rentroll"      element={<RoleRoute module="rentas_rentroll" workspace="rentas"><RentalRentRoll /></RoleRoute>} />
         <Route path="rentas/calendario"    element={<RoleRoute module="rentas_calendario" workspace="rentas"><RentalCalendar /></RoleRoute>} />
         <Route path="rentas/config"        element={<RoleRoute module="rentas_config" workspace="rentas"><RentalConfig /></RoleRoute>} />
         {isSuperAdmin && (
@@ -153,6 +156,7 @@ function AppRoutes() {
         <Route path="reservas"      element={<RoleRoute module="reservas" workspace="condominio"><Reservas /></RoleRoute>} />
         <Route path="notificaciones" element={<RoleRoute module="notificaciones" workspace="condominio"><Notificaciones /></RoleRoute>} />
         <Route path="cierre-periodo" element={<RoleRoute module="cierre_periodo" workspace="condominio"><CierrePeriodo /></RoleRoute>} />
+        <Route path="planeacion"    element={<RoleRoute module="planeacion" workspace="condominio"><Planeacion /></RoleRoute>} />
         <Route path="plan-pagos"    element={<RoleRoute module="plan_pagos" workspace="condominio"><PlanPagos /></RoleRoute>} />
         <Route path="onboarding"    element={<RoleRoute module="onboarding" workspace="condominio"><Onboarding /></RoleRoute>} />
         <Route path="mi-membresia"  element={<RoleRoute module="mi_membresia"><MiMembresia /></RoleRoute>} />

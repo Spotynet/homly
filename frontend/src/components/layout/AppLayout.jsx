@@ -4,14 +4,14 @@ import { useAuth } from '../../context/AuthContext';
 import { useGuide } from '../../context/GuideContext';
 import { HomlyBrand, APP_VERSION, ROLES } from '../../utils/helpers';
 import { notificationsAPI, tenantsAPI, paymentPlansAPI } from '../../api/client';
-import { ROLE_BASE_MODULES } from '../../constants/modulePermissions';
+import { ROLE_BASE_MODULES, RENTAL_ROLE_BASE_MODULES } from '../../constants/modulePermissions';
 import GuideModal from '../onboarding/GuideModal';
 import HelpDrawer from './HelpDrawer';
 import {
   Home, Globe, FileText, ShoppingBag, Receipt, Settings,
   Users, Building, Shield, LogOut, Menu, X, Calendar,
   ChevronDown, Check, Building2, Bell, CheckCheck, Activity, Lock, TrendingDown,
-  Sparkles, CreditCard, DollarSign, Target, Newspaper, Send, HelpCircle,
+  Sparkles, CreditCard, DollarSign, Target, Newspaper, Send, HelpCircle, ClipboardList, ClipboardCheck,
 } from 'lucide-react';
 
 const NAV_ITEMS = {
@@ -37,6 +37,7 @@ const NAV_ITEMS = {
       { path: '/app/estado-cuenta',  icon: FileText,     label: 'Estado de Cuenta'  },
       { path: '/app/plan-pagos',     icon: TrendingDown, label: 'Plan de Pagos'     },
       { path: '/app/cierre-periodo', icon: Lock,         label: 'Cierre de Período' },
+      { path: '/app/planeacion',     icon: ClipboardCheck, label: 'Planeación' },
     ]},
     { section: 'tenant_ajustes', label: 'Ajustes', items: [
       { path: '/app/mi-membresia', icon: CreditCard, label: 'Mi Membresía'  },
@@ -59,6 +60,7 @@ const NAV_ITEMS = {
       { path: '/app/estado-cuenta',  icon: FileText,     label: 'Estado de Cuenta'  },
       { path: '/app/plan-pagos',     icon: TrendingDown, label: 'Plan de Pagos'     },
       { path: '/app/cierre-periodo', icon: Lock,         label: 'Cierre de Período' },
+      { path: '/app/planeacion',     icon: ClipboardCheck, label: 'Planeación' },
     ]},
     { section: 'ajustes', label: 'Ajustes', items: [
       { path: '/app/mi-membresia', icon: CreditCard, label: 'Mi Membresía'  },
@@ -81,6 +83,7 @@ const NAV_ITEMS = {
       { path: '/app/estado-cuenta',  icon: FileText,     label: 'Estado de Cuenta'  },
       { path: '/app/plan-pagos',     icon: TrendingDown, label: 'Plan de Pagos'     },
       { path: '/app/cierre-periodo', icon: Lock,         label: 'Cierre de Período' },
+      { path: '/app/planeacion',     icon: ClipboardCheck, label: 'Planeación' },
     ]},
   ],
 
@@ -99,6 +102,7 @@ const NAV_ITEMS = {
       { path: '/app/estado-cuenta',  icon: FileText,     label: 'Estado de Cuenta'  },
       { path: '/app/plan-pagos',     icon: TrendingDown, label: 'Plan de Pagos'     },
       { path: '/app/cierre-periodo', icon: Lock,         label: 'Cierre de Período' },
+      { path: '/app/planeacion',     icon: ClipboardCheck, label: 'Planeación' },
     ]},
   ],
 
@@ -117,6 +121,7 @@ const NAV_ITEMS = {
       { path: '/app/estado-cuenta',  icon: FileText,     label: 'Estado de Cuenta'  },
       { path: '/app/plan-pagos',     icon: TrendingDown, label: 'Plan de Pagos'     },
       { path: '/app/cierre-periodo', icon: Lock,         label: 'Cierre de Período' },
+      { path: '/app/planeacion',     icon: ClipboardCheck, label: 'Planeación' },
     ]},
   ],
 
@@ -155,7 +160,8 @@ const RENTAL_NAV_ITEMS = {
       { path: '/app/rentas/calendario',   icon: Calendar,  label: 'Vigencias'     },
     ]},
     { section: 'finanzas', label: 'Finanzas', items: [
-      { path: '/app/rentas/cobranza', icon: Receipt, label: 'Cobranza' },
+      { path: '/app/rentas/cobranza',  icon: Receipt,       label: 'Cobranza' },
+      { path: '/app/rentas/rentroll',  icon: ClipboardList, label: 'Rent Roll' },
     ]},
     { section: 'ajustes', label: 'Ajustes', items: [
       { path: '/app/mi-membresia',   icon: CreditCard, label: 'Mi Membresía'  },
@@ -171,7 +177,8 @@ const RENTAL_NAV_ITEMS = {
       { path: '/app/rentas/calendario',   icon: Calendar,  label: 'Vigencias'   },
     ]},
     { section: 'finanzas', label: 'Finanzas', items: [
-      { path: '/app/rentas/cobranza', icon: Receipt, label: 'Cobranza' },
+      { path: '/app/rentas/cobranza',  icon: Receipt,       label: 'Cobranza' },
+      { path: '/app/rentas/rentroll',  icon: ClipboardList, label: 'Rent Roll' },
     ]},
   ],
   contador: [
@@ -183,7 +190,8 @@ const RENTAL_NAV_ITEMS = {
       { path: '/app/rentas/calendario',   icon: Calendar,  label: 'Vigencias'   },
     ]},
     { section: 'finanzas', label: 'Finanzas', items: [
-      { path: '/app/rentas/cobranza', icon: Receipt, label: 'Cobranza' },
+      { path: '/app/rentas/cobranza',  icon: Receipt,       label: 'Cobranza' },
+      { path: '/app/rentas/rentroll',  icon: ClipboardList, label: 'Rent Roll' },
     ]},
   ],
   auditor: [
@@ -195,7 +203,8 @@ const RENTAL_NAV_ITEMS = {
       { path: '/app/rentas/calendario',   icon: Calendar,  label: 'Vigencias'   },
     ]},
     { section: 'finanzas', label: 'Finanzas', items: [
-      { path: '/app/rentas/cobranza', icon: Receipt, label: 'Cobranza' },
+      { path: '/app/rentas/cobranza',  icon: Receipt,       label: 'Cobranza' },
+      { path: '/app/rentas/rentroll',  icon: ClipboardList, label: 'Rent Roll' },
     ]},
   ],
 };
@@ -210,6 +219,7 @@ const PATH_TO_MODULE = {
   '/app/estado-cuenta':   'estado_cuenta',
   '/app/plan-pagos':      'plan_pagos',
   '/app/cierre-periodo':  'cierre_periodo',
+  '/app/planeacion':      'planeacion',
   '/app/notificaciones':  'notificaciones',
   '/app/config':          'config',
   '/app/my-unit':         'my_unit',
@@ -222,6 +232,7 @@ const PATH_TO_MODULE = {
   '/app/rentas/crm':          'rentas_crm',
   '/app/rentas/contratos':    'rentas_contratos',
   '/app/rentas/cobranza':     'rentas_cobranza',
+  '/app/rentas/rentroll':     'rentas_rentroll',
   '/app/rentas/calendario':   'rentas_calendario',
   '/app/rentas/config':       'rentas_config',
 };
@@ -237,6 +248,7 @@ const PAGE_TITLES = {
   'estado-cuenta': 'Estado de Cuenta',
   'plan-pagos': 'Plan de Pagos',
   'cierre-periodo': 'Cierre de Período',
+  planeacion: 'Planeación',
   config: 'Configuración',
   units: 'Unidades',
   users: 'Usuarios',
@@ -252,6 +264,7 @@ const PAGE_TITLES = {
   'rentas/crm': 'CRM de rentas',
   'rentas/contratos': 'Contratos de renta',
   'rentas/cobranza': 'Cobranza de rentas',
+  'rentas/rentroll': 'Rent Roll',
   'rentas/calendario': 'Vigencias de contratos',
   'rentas/config': 'Configuración de rentas',
 };
@@ -532,7 +545,7 @@ function NotificationBell({ tenantId, role, tenantModulePerms, activeProfile }) 
     }
     if (!permsEntry) return true;
     if (Array.isArray(permsEntry)) {
-      return permsEntry.includes(moduleKey) || !!(ROLE_BASE_MODULES[role]?.includes(moduleKey));
+      return permsEntry.includes(moduleKey) || !!(ROLE_BASE_MODULES[role]?.includes(moduleKey) || RENTAL_ROLE_BASE_MODULES[role]?.includes(moduleKey));
     }
     const level = permsEntry[moduleKey];
     return level === undefined || level !== 'hidden';
@@ -789,7 +802,7 @@ export default function AppLayout() {
       // For profile arrays each entry is a module key explicitly allowed:
       if (isProfilePerms) return false;
       // For role configs: if module added after save, default to visible.
-      if (roleKey && ROLE_BASE_MODULES[roleKey]?.includes(moduleKey)) return true;
+      if (roleKey && (ROLE_BASE_MODULES[roleKey]?.includes(moduleKey) || RENTAL_ROLE_BASE_MODULES[roleKey]?.includes(moduleKey))) return true;
       return false;
     }
     // New object format: { moduleKey: "write"|"read"|"hidden" }

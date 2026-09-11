@@ -890,6 +890,21 @@ tr:hover td { background: rgba(59,185,144,0.02); }
   body.printing-general .general-print-layout table { break-inside: auto; width: 100% !important; }
   body.printing-general .general-print-layout tr { break-inside: avoid; page-break-inside: avoid; }
   body.printing-general .general-print-layout thead { display: table-header-group; }
+
+  /* ── Rent Roll PDF (body.printing-rentroll) ─── */
+  body.printing-rentroll * { visibility: hidden !important; }
+  body.printing-rentroll .rentroll-print-layout,
+  body.printing-rentroll .rentroll-print-layout * { visibility: visible !important; }
+  body.printing-rentroll .rentroll-print-layout {
+    display: block !important;
+    position: absolute !important; top: 0; left: 0;
+    width: 100% !important; padding: 10mm 12mm !important;
+    background: white !important;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  body.printing-rentroll .rentroll-print-layout table { break-inside: auto; width: 100% !important; }
+  body.printing-rentroll .rentroll-print-layout tr { break-inside: avoid; page-break-inside: avoid; }
+  body.printing-rentroll .rentroll-print-layout thead { display: table-header-group; }
 }
 
 /* Layouts ejecutivos: solo visibles al imprimir, nunca en pantalla */
@@ -898,6 +913,63 @@ tr:hover td { background: rgba(59,185,144,0.02); }
 .units-print-layout    { display: none; }
 .adeudos-print-layout  { display: none; }
 .general-print-layout  { display: none; }
+.rentroll-print-layout { display: none; }
+.print-only { display: none; }
+
+/* ─── Planeación ─── */
+.plan-context {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  background: var(--teal-50);
+  border: 1px solid var(--sand-100);
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  color: var(--ink-600);
+  font-weight: 600;
+}
+.plan-context span { display: inline-flex; align-items: center; gap: 6px; }
+.plan-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  margin-bottom: 14px;
+  background: var(--amber-50);
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  color: #92400e;
+}
+.plan-table-wrap { overflow-x: auto; }
+.plan-table { min-width: 960px; }
+.plan-table th, .plan-table td { white-space: nowrap; }
+.plan-table th:first-child, .plan-table td:first-child {
+  position: sticky; left: 0; background: var(--white); z-index: 1; min-width: 180px; white-space: normal;
+}
+.plan-month-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+.proj-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+}
+.proj-card {
+  text-align: left;
+  padding: 16px;
+  border: 1px solid var(--sand-100);
+  border-radius: var(--radius-lg);
+  background: var(--white);
+  cursor: pointer;
+  font-family: inherit;
+  color: inherit;
+  box-shadow: var(--shadow-xs);
+}
+.proj-card:hover { border-color: var(--teal-200); }
 
 /* ─── Status ─── */
 .status-indicator { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
