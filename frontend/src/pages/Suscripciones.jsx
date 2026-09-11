@@ -1225,7 +1225,7 @@ function printKardexPDF({ cycles, sub, tenantData, adminName, adminEmail }) {
   </div>
   <div class="footer">
     <span>Generado: ${generatedAt}</span>
-    <span>Homly v${APP_VERSION} — Sistema de administración de condominios</span>
+    <span>Homly v${APP_VERSION} — Administración de condominios y gestión de rentas</span>
   </div>
 </div></body></html>`;
   const w = window.open('', '_blank', 'width=1100,height=800');
