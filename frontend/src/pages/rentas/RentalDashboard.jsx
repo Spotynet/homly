@@ -88,7 +88,6 @@ export default function RentalDashboard() {
         </div>
         <button className="btn btn-outline" onClick={() => navigate('/app/rentas/crm')}>Abrir CRM</button>
       </div>
-      </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 16 }}>
         <div className="card">
