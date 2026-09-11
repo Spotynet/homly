@@ -1833,6 +1833,202 @@ tr:hover td { background: rgba(59,185,144,0.02); }
   gap: 64px;
   align-items: center;
 }
+.landing-mockup-glow {
+  position: absolute;
+  top: -48px;
+  right: -36px;
+  width: 280px;
+  height: 280px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(232,93,67,0.12) 0%, transparent 70%);
+  z-index: 0;
+  pointer-events: none;
+}
+.landing-space-card {
+  position: relative;
+  z-index: 1;
+  background: #fff;
+  border-radius: 20px;
+  overflow: hidden;
+  border: 1px solid #E8DFD1;
+  box-shadow: 0 12px 40px rgba(26,22,18,0.10);
+}
+.landing-space-card--rentas {
+  border-color: #BFDBFE;
+  box-shadow: 0 12px 40px rgba(29,78,216,0.10);
+}
+.landing-space-chrome {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: #FDFBF7;
+  border-bottom: 1px solid #F3EDE4;
+}
+.landing-space-dots {
+  display: flex;
+  gap: 5px;
+}
+.landing-space-dots i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: block;
+  background: #E8DFD1;
+}
+.landing-space-dots i:nth-child(1) { background: #FECACA; }
+.landing-space-dots i:nth-child(2) { background: #FDE68A; }
+.landing-space-dots i:nth-child(3) { background: #A7F3D0; }
+.landing-space-chrome-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #443D33;
+  flex: 1;
+}
+.landing-space-badge {
+  font-size: 11px;
+  font-weight: 800;
+  padding: 3px 9px;
+  border-radius: 999px;
+}
+.landing-space-badge--teal { background: #EFFAF6; color: #1F7D5B; }
+.landing-space-badge--blue { background: #EFF6FF; color: #1D4ED8; }
+.landing-space-art {
+  height: 118px;
+  overflow: hidden;
+}
+.landing-space-svg {
+  width: 100%;
+  height: 118px;
+  display: block;
+}
+.landing-space-body { padding: 14px 16px 16px; }
+.landing-space-kicker {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.landing-space-meta {
+  font-size: 12px;
+  color: #9E9588;
+  margin: 2px 0 12px;
+}
+.landing-space-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.landing-space-stats div {
+  background: #F8F4EE;
+  border-radius: 10px;
+  padding: 8px 6px;
+  text-align: center;
+}
+.landing-space-stats strong {
+  display: block;
+  font-size: 16px;
+  font-weight: 800;
+  color: #124A36;
+  line-height: 1.1;
+}
+.landing-space-stats span {
+  font-size: 10px;
+  font-weight: 600;
+  color: #7A7166;
+}
+.landing-space-bar-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  font-weight: 700;
+  color: #5C5347;
+  margin-bottom: 6px;
+}
+.landing-space-bar {
+  height: 7px;
+  background: #F3EDE4;
+  border-radius: 99px;
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+.landing-space-bar i {
+  display: block;
+  height: 100%;
+  border-radius: 99px;
+}
+.landing-space-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.landing-rr-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.landing-rr-row {
+  display: grid;
+  grid-template-columns: 48px 1fr auto;
+  gap: 8px;
+  align-items: center;
+  font-size: 11px;
+  padding: 6px 8px;
+  background: #F8FAFC;
+  border-radius: 8px;
+}
+.landing-rr-row strong { font-family: ui-monospace, monospace; color: #1D4ED8; }
+.landing-rr-row span { color: #5C5347; }
+.landing-rr-row em {
+  font-style: normal;
+  font-weight: 800;
+  font-size: 10px;
+  color: #1F7D5B;
+  background: #EFFAF6;
+  padding: 2px 7px;
+  border-radius: 999px;
+}
+.landing-rr-row em.is-vacant {
+  color: #9E9588;
+  background: #F3EDE4;
+}
+.landing-space-switch {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  justify-content: center;
+  margin: -10px 0;
+  padding: 4px 0;
+}
+.landing-space-switch-line {
+  position: absolute;
+  left: 50%;
+  top: -8px;
+  bottom: -8px;
+  width: 2px;
+  background: linear-gradient(#1F7D5B, #E85D43, #2563EB);
+  opacity: 0.35;
+  transform: translateX(-50%);
+}
+.landing-space-switch-pill {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #fff;
+  border: 1px solid #F3EDE4;
+  border-radius: 16px;
+  padding: 10px 16px;
+  box-shadow: 0 10px 28px rgba(26,22,18,0.12);
+  min-width: 220px;
+}
+.landing-space-switch-pill svg {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+}
 .landing-stats-bar {
   background: #124A36;
   padding: 40px 32px;

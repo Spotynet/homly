@@ -91,6 +91,23 @@ const IconHome = () => (
     <polyline points="9 22 9 12 15 12 15 22"/>
   </svg>
 );
+const IconClipboard = () => (
+  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#E85D43" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
+    <rect x="8" y="2" width="8" height="4" rx="1"/>
+    <path d="M8 12h8M8 16h5"/>
+  </svg>
+);
+const IconTarget = () => (
+  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#E85D43" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>
+  </svg>
+);
+const IconList = () => (
+  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#E85D43" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>
+  </svg>
+);
 const IconSwitch = () => (
   <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#E85D43" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/>
@@ -122,6 +139,7 @@ const CONDO_FEATURES = [
   { icon: <IconChart />, title: 'Dashboard financiero', desc: 'Cobranza, ingresos, egresos y saldo del condominio, en un vistazo.' },
   { icon: <IconReceipt />, title: 'Cobranza mensual', desc: 'Registra cuotas, genera recibos con folio y ve quién ya pagó.' },
   { icon: <IconShoppingBag />, title: 'Gastos y caja chica', desc: 'Controla egresos con comprobantes y categorías claras.' },
+  { icon: <IconClipboard />, title: 'Planeación', desc: 'Presupuesto anual frente a lo real, y proyectos de obra del condominio.' },
   { icon: <IconCalendar />, title: 'Reservas de áreas', desc: 'Salón, alberca o gimnasio, con calendario y reglas por área.' },
   { icon: <IconFileText />, title: 'Estado de cuenta', desc: 'Cada unidad ve su saldo, adeudos y comprobantes en PDF.' },
   { icon: <IconTrendingDown />, title: 'Plan de pagos', desc: 'Acuerdos a plazos para adeudos, aceptados por el residente.' },
@@ -132,9 +150,12 @@ const CONDO_FEATURES = [
 
 const RENTAS_FEATURES = [
   { icon: <IconHome />, title: 'Catálogo de propiedades', desc: 'Casas, departamentos u oficinas: alta, estado y ocupación.' },
+  { icon: <IconTarget />, title: 'CRM de rentas', desc: 'Leads, visitas y conversión a inquilino con contrato.' },
   { icon: <IconFileText />, title: 'Contratos y partes', desc: 'Inquilinos, propietarios y contratos con fechas de vigencia.' },
+  { icon: <IconList />, title: 'Rent Roll', desc: 'Ocupación, renta in-place, vacancia, depósitos y morosidad.' },
   { icon: <IconReceipt />, title: 'Cobranza de rentas', desc: 'Cargos del mes, pagos parciales y recibos de la inmobiliaria.' },
   { icon: <IconCalendar />, title: 'Calendario de vigencias', desc: 'Vencimientos, renovaciones y ocupaciones en un solo calendario.' },
+  { icon: <IconKey />, title: 'Airbnb (iCal)', desc: 'Importa anuncios con URL e iCal oficial, sin guardar contraseña.' },
   { icon: <IconChart />, title: 'Dashboard inmobiliario', desc: 'Rentas cobradas, pendientes y propiedades activas.' },
   { icon: <IconUsers />, title: 'Equipo de la inmobiliaria', desc: 'Admin, tesorero y contador, con acceso solo a rentas.' },
 ];
@@ -274,61 +295,19 @@ export default function Landing() {
           </div>
 
           <div className="landing-hero-mockup" style={{ position: 'relative' }}>
-            <div style={{
-              position: 'absolute', top: -40, right: -40, width: 280, height: 280,
-              borderRadius: '50%', background: 'radial-gradient(circle, rgba(232,93,67,0.10) 0%, transparent 70%)',
-              zIndex: 0, pointerEvents: 'none',
-            }} />
-
-            <div style={{ ...cardStyle, position: 'relative', zIndex: 1, marginBottom: 12 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-                <div>
-                  <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#1F7D5B', marginBottom: 4 }}>Condominio</div>
-                  <div style={{ fontWeight: 700, color: '#1A1612', fontSize: 15 }}>Homly Residencial</div>
-                  <div style={{ fontSize: 12, color: '#9E9588', marginTop: 2 }}>48 unidades · cobranza del mes</div>
-                </div>
-                <div style={{ background: '#EFFAF6', borderRadius: 10, padding: '6px 12px', fontSize: 12, fontWeight: 700, color: '#1F7D5B' }}>Activo</div>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
-                <StatCard value="92%" label="Cobranza" bg="#EFFAF6" color="#175F45" />
-                <StatCard value="$148K" label="Recaudado" bg="#FFF5F2" color="#D04E37" />
-                <StatCard value="4" label="Pendientes" bg="#FFFBEB" color="#B45309" />
-              </div>
-            </div>
-
-            <div style={{
-              position: 'relative', zIndex: 2,
-              margin: '0 auto 12px',
-              maxWidth: 260,
-              background: '#fff', borderRadius: 14, padding: '10px 16px',
-              boxShadow: '0 8px 32px rgba(26,22,18,0.12)',
-              border: '1px solid #F3EDE4',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
-            }}>
-              <div style={{ width: 32, height: 32, borderRadius: 10, background: '#FFF5F2', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <div className="landing-mockup-glow" aria-hidden="true" />
+            <CondoSpaceCard />
+            <div className="landing-space-switch">
+              <div className="landing-space-switch-line" aria-hidden="true" />
+              <div className="landing-space-switch-pill">
                 <IconSwitch />
-              </div>
-              <div>
-                <div style={{ fontSize: 12, fontWeight: 700, color: '#1A1612' }}>Cambia de espacio</div>
-                <div style={{ fontSize: 11, color: '#9E9588' }}>Condominio ↔ Rentas</div>
-              </div>
-            </div>
-
-            <div style={{ ...cardStyle, position: 'relative', zIndex: 1, border: '1.5px solid #BFDBFE' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
                 <div>
-                  <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#1D4ED8', marginBottom: 4 }}>Rentas</div>
-                  <div style={{ fontWeight: 700, color: '#1A1612', fontSize: 15 }}>Homly Inmobiliaria</div>
-                  <div style={{ fontSize: 12, color: '#9E9588', marginTop: 2 }}>12 propiedades · rentas del mes</div>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: '#1A1612' }}>Cambia de espacio</div>
+                  <div style={{ fontSize: 11, color: '#9E9588' }}>Condominio ↔ Rentas · un clic</div>
                 </div>
-                <div style={{ background: '#EFF6FF', borderRadius: 10, padding: '6px 12px', fontSize: 12, fontWeight: 700, color: '#1D4ED8' }}>Activo</div>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
-                <StatCard value="10/12" label="Ocupadas" bg="#EFF6FF" color="#1D4ED8" />
-                <StatCard value="$86K" label="Rentas" bg="#FFF5F2" color="#D04E37" />
-                <StatCard value="2" label="Por vencer" bg="#FFFBEB" color="#B45309" />
               </div>
             </div>
+            <RentasSpaceCard />
           </div>
         </div>
         </div>
@@ -376,9 +355,9 @@ export default function Landing() {
               points={[
                 'Cobranza de cuotas y recibos con folio',
                 'Gastos, caja chica y cierre de período',
+                'Planeación: presupuesto anual y proyectos de obra',
                 'Estado de cuenta por unidad',
                 'Reservas, avisos y roles de la comunidad',
-                'Varios condominios en la misma cuenta',
               ]}
             />
             <ServiceCard
@@ -389,10 +368,10 @@ export default function Landing() {
               lead="Para inmobiliarias y quien renta casas, departamentos u oficinas."
               points={[
                 'Catálogo de propiedades e inquilinos',
-                'Contratos con fechas de vigencia',
-                'Cobranza de rentas y recibos',
-                'Calendario de vencimientos',
-                'Equipo propio, sin mezclar con el condominio',
+                'CRM de leads y conversión a contrato',
+                'Rent Roll de ocupación y renta in-place',
+                'Cobranza de rentas y calendario de vigencias',
+                'Airbnb por iCal, sin mezclar con el condominio',
               ]}
             />
           </div>
@@ -664,6 +643,10 @@ export default function Landing() {
                 a: 'Sí. Esa es una de las ventajas. Entras con un usuario, ves tus espacios y cambias entre un condominio y la inmobiliaria. Cada espacio tiene su propio equipo, su propia cobranza y su propia membresía.',
               },
               {
+                q: '¿Qué módulos nuevos tiene cada servicio?',
+                a: 'En condominios, Planeación arma el presupuesto anual y sigue proyectos de obra contra los gastos reales. En rentas, el CRM convierte leads a contrato, el Rent Roll muestra ocupación y vacancia, y Airbnb entra por iCal oficial sin guardar contraseña.',
+              },
+              {
                 q: '¿Se mezclan el dinero del condominio y el de las rentas?',
                 a: 'No. Son espacios de trabajo independientes. Las cuotas de mantenimiento no se mezclan con las rentas de inquilinos. Los recibos, reportes y planes de membresía van por separado.',
               },
@@ -846,6 +829,154 @@ export default function Landing() {
           .hidden-mobile { display: flex !important; }
         }
       `}</style>
+    </div>
+  );
+}
+
+function Chip({ children, color, bg }) {
+  return (
+    <span style={{
+      fontSize: 10, fontWeight: 800, letterSpacing: '0.04em', textTransform: 'uppercase',
+      color, background: bg, padding: '3px 8px', borderRadius: 999,
+    }}>{children}</span>
+  );
+}
+
+function CondoArt() {
+  return (
+    <svg viewBox="0 0 420 148" preserveAspectRatio="xMidYMid slice" className="landing-space-svg" aria-hidden="true">
+      <defs>
+        <linearGradient id="condoSky" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#C8EBD9" />
+          <stop offset="100%" stopColor="#EFFAF6" />
+        </linearGradient>
+      </defs>
+      <rect width="420" height="148" fill="url(#condoSky)" />
+      <circle cx="340" cy="28" r="18" fill="#F6E7A1" opacity="0.9" />
+      <rect x="28" y="48" width="78" height="100" rx="5" fill="#124A36" />
+      <rect x="118" y="28" width="96" height="120" rx="5" fill="#1F7D5B" />
+      <rect x="226" y="56" width="72" height="92" rx="5" fill="#175F45" />
+      <rect x="310" y="70" width="58" height="78" rx="5" fill="#2A9A6E" />
+      {[38, 54, 70, 86].map(y => (
+        <g key={y}>
+          <rect x="38" y={y} width="10" height="10" rx="1.5" fill="#D8F3E8" opacity="0.85" />
+          <rect x="56" y={y} width="10" height="10" rx="1.5" fill="#D8F3E8" opacity="0.55" />
+          <rect x="74" y={y} width="10" height="10" rx="1.5" fill="#D8F3E8" opacity="0.85" />
+        </g>
+      ))}
+      {[40, 58, 76, 94].map(y => (
+        <g key={`m${y}`}>
+          <rect x="132" y={y} width="12" height="12" rx="2" fill="#EFFAF6" opacity="0.9" />
+          <rect x="152" y={y} width="12" height="12" rx="2" fill="#EFFAF6" opacity="0.5" />
+          <rect x="172" y={y} width="12" height="12" rx="2" fill="#EFFAF6" opacity="0.9" />
+        </g>
+      ))}
+      <rect x="154" y="118" width="22" height="30" rx="2" fill="#0E3A2A" />
+      <ellipse cx="48" cy="142" rx="18" ry="8" fill="#0F3D2C" opacity="0.35" />
+      <ellipse cx="250" cy="142" rx="22" ry="8" fill="#0F3D2C" opacity="0.28" />
+    </svg>
+  );
+}
+
+function RentasArt() {
+  return (
+    <svg viewBox="0 0 420 148" preserveAspectRatio="xMidYMid slice" className="landing-space-svg" aria-hidden="true">
+      <defs>
+        <linearGradient id="rentasSky" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#C7D8F8" />
+          <stop offset="100%" stopColor="#EFF6FF" />
+        </linearGradient>
+      </defs>
+      <rect width="420" height="148" fill="url(#rentasSky)" />
+      <circle cx="72" cy="26" r="16" fill="#FDE68A" />
+      <path d="M36 118 L88 62 L140 118 Z" fill="#1D4ED8" />
+      <rect x="52" y="88" width="72" height="60" fill="#2563EB" />
+      <rect x="78" y="108" width="20" height="40" fill="#1E3A8A" />
+      <rect x="62" y="96" width="14" height="12" rx="1.5" fill="#DBEAFE" />
+      <rect x="100" y="96" width="14" height="12" rx="1.5" fill="#DBEAFE" opacity="0.7" />
+      <path d="M168 122 L232 48 L296 122 Z" fill="#E85D43" />
+      <rect x="188" y="90" width="88" height="58" fill="#F87171" />
+      <rect x="218" y="112" width="22" height="36" fill="#9A3412" />
+      <rect x="200" y="100" width="16" height="12" rx="1.5" fill="#FFE4DC" />
+      <rect x="248" y="100" width="16" height="12" rx="1.5" fill="#FFE4DC" opacity="0.75" />
+      <rect x="318" y="78" width="70" height="70" rx="8" fill="#1E40AF" />
+      <rect x="332" y="96" width="16" height="16" rx="2" fill="#BFDBFE" />
+      <rect x="356" y="96" width="16" height="16" rx="2" fill="#BFDBFE" opacity="0.6" />
+      <rect x="332" y="118" width="16" height="16" rx="2" fill="#BFDBFE" opacity="0.6" />
+      <rect x="356" y="118" width="16" height="16" rx="2" fill="#BFDBFE" />
+      <rect x="20" y="138" width="380" height="10" fill="#93C5FD" opacity="0.45" />
+    </svg>
+  );
+}
+
+function CondoSpaceCard() {
+  return (
+    <div className="landing-space-card landing-space-card--condo">
+      <div className="landing-space-chrome">
+        <span className="landing-space-dots" aria-hidden="true"><i /><i /><i /></span>
+        <span className="landing-space-chrome-title">Homly Residencial</span>
+        <span className="landing-space-badge landing-space-badge--teal">Activo</span>
+      </div>
+      <div className="landing-space-art"><CondoArt /></div>
+      <div className="landing-space-body">
+        <div className="landing-space-kicker" style={{ color: '#1F7D5B' }}>Condominio</div>
+        <div className="landing-space-meta">48 unidades · cobranza y planeación del mes</div>
+        <div className="landing-space-stats">
+          <div><strong>92%</strong><span>Cobranza</span></div>
+          <div><strong>$148K</strong><span>Recaudado</span></div>
+          <div><strong>4</strong><span>Pendientes</span></div>
+        </div>
+        <div className="landing-space-bar-label">
+          <span>Planeación 2026</span>
+          <span>78% ejecutado</span>
+        </div>
+        <div className="landing-space-bar"><i style={{ width: '78%', background: '#1F7D5B' }} /></div>
+        <div className="landing-space-chips">
+          <Chip color="#175F45" bg="#EFFAF6">Cobranza</Chip>
+          <Chip color="#175F45" bg="#EFFAF6">Gastos</Chip>
+          <Chip color="#B45309" bg="#FFFBEB">Planeación</Chip>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RentasSpaceCard() {
+  return (
+    <div className="landing-space-card landing-space-card--rentas">
+      <div className="landing-space-chrome">
+        <span className="landing-space-dots" aria-hidden="true"><i /><i /><i /></span>
+        <span className="landing-space-chrome-title">Homly Inmobiliaria</span>
+        <span className="landing-space-badge landing-space-badge--blue">Activo</span>
+      </div>
+      <div className="landing-space-art"><RentasArt /></div>
+      <div className="landing-space-body">
+        <div className="landing-space-kicker" style={{ color: '#1D4ED8' }}>Rentas</div>
+        <div className="landing-space-meta">12 propiedades · rent roll al corte</div>
+        <div className="landing-space-bar-label">
+          <span>Ocupación física</span>
+          <span>10 / 12 · 83%</span>
+        </div>
+        <div className="landing-space-bar"><i style={{ width: '83%', background: '#2563EB' }} /></div>
+        <div className="landing-rr-rows">
+          {[
+            ['C-01', 'Ana López', 'Ocupada'],
+            ['C-04', '—', 'Vacante'],
+            ['AB-12', 'Airbnb', 'iCal'],
+          ].map(([code, tenant, st]) => (
+            <div key={code} className="landing-rr-row">
+              <strong>{code}</strong>
+              <span>{tenant}</span>
+              <em className={st === 'Vacante' ? 'is-vacant' : ''}>{st}</em>
+            </div>
+          ))}
+        </div>
+        <div className="landing-space-chips">
+          <Chip color="#1D4ED8" bg="#EFF6FF">CRM</Chip>
+          <Chip color="#1D4ED8" bg="#EFF6FF">Rent Roll</Chip>
+          <Chip color="#9A3412" bg="#FFF5F2">Airbnb</Chip>
+        </div>
+      </div>
     </div>
   );
 }
