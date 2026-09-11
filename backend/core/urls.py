@@ -5,6 +5,8 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from . import views
 from . import rental_views
+from . import airbnb_views
+from . import rental_crm_views
 
 router = DefaultRouter()
 router.register(r'tenants', views.TenantViewSet, basename='tenants')
@@ -52,6 +54,9 @@ tenant_router.register(r'rental-concepts', rental_views.RentalChargeConceptViewS
 tenant_router.register(r'rental-contracts', rental_views.RentalContractViewSet, basename='rental-contracts')
 tenant_router.register(r'rental-charges', rental_views.RentalChargeViewSet, basename='rental-charges')
 tenant_router.register(r'rental-payments', rental_views.RentalPaymentViewSet, basename='rental-payments')
+tenant_router.register(r'airbnb-connections', airbnb_views.AirbnbConnectionViewSet, basename='airbnb-connections')
+tenant_router.register(r'airbnb-listings', airbnb_views.AirbnbListingViewSet, basename='airbnb-listings')
+tenant_router.register(r'rental-leads', rental_crm_views.RentalLeadViewSet, basename='rental-leads')
 
 urlpatterns = [
     # Auth

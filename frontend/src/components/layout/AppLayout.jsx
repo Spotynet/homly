@@ -150,6 +150,7 @@ const RENTAL_NAV_ITEMS = {
     { section: 'general', label: 'Gestión', items: [
       { path: '/app/rentas/dashboard',    icon: Home,      label: 'Dashboard'     },
       { path: '/app/rentas/propiedades',  icon: Building2, label: 'Propiedades'   },
+      { path: '/app/rentas/crm',          icon: Target,    label: 'CRM'           },
       { path: '/app/rentas/contratos',    icon: FileText,  label: 'Contratos'     },
       { path: '/app/rentas/calendario',   icon: Calendar,  label: 'Vigencias'     },
     ]},
@@ -165,6 +166,7 @@ const RENTAL_NAV_ITEMS = {
     { section: 'general', label: 'Gestión', items: [
       { path: '/app/rentas/dashboard',    icon: Home,      label: 'Dashboard'   },
       { path: '/app/rentas/propiedades',  icon: Building2, label: 'Propiedades' },
+      { path: '/app/rentas/crm',          icon: Target,    label: 'CRM'         },
       { path: '/app/rentas/contratos',    icon: FileText,  label: 'Contratos'   },
       { path: '/app/rentas/calendario',   icon: Calendar,  label: 'Vigencias'   },
     ]},
@@ -176,6 +178,7 @@ const RENTAL_NAV_ITEMS = {
     { section: 'general', label: 'Gestión', items: [
       { path: '/app/rentas/dashboard',    icon: Home,      label: 'Dashboard'   },
       { path: '/app/rentas/propiedades',  icon: Building2, label: 'Propiedades' },
+      { path: '/app/rentas/crm',          icon: Target,    label: 'CRM'         },
       { path: '/app/rentas/contratos',    icon: FileText,  label: 'Contratos'   },
       { path: '/app/rentas/calendario',   icon: Calendar,  label: 'Vigencias'   },
     ]},
@@ -187,6 +190,7 @@ const RENTAL_NAV_ITEMS = {
     { section: 'general', label: 'Gestión', items: [
       { path: '/app/rentas/dashboard',    icon: Home,      label: 'Dashboard'   },
       { path: '/app/rentas/propiedades',  icon: Building2, label: 'Propiedades' },
+      { path: '/app/rentas/crm',          icon: Target,    label: 'CRM'         },
       { path: '/app/rentas/contratos',    icon: FileText,  label: 'Contratos'   },
       { path: '/app/rentas/calendario',   icon: Calendar,  label: 'Vigencias'   },
     ]},
@@ -215,6 +219,7 @@ const PATH_TO_MODULE = {
   '/app/enviar-pago':     'enviar_pago',
   '/app/rentas/dashboard':    'rentas_dashboard',
   '/app/rentas/propiedades':  'rentas_propiedades',
+  '/app/rentas/crm':          'rentas_crm',
   '/app/rentas/contratos':    'rentas_contratos',
   '/app/rentas/cobranza':     'rentas_cobranza',
   '/app/rentas/calendario':   'rentas_calendario',
@@ -244,6 +249,7 @@ const PAGE_TITLES = {
   'enviar-pago': 'Enviar pago',
   'rentas/dashboard': 'Rentas',
   'rentas/propiedades': 'Propiedades en renta',
+  'rentas/crm': 'CRM de rentas',
   'rentas/contratos': 'Contratos de renta',
   'rentas/cobranza': 'Cobranza de rentas',
   'rentas/calendario': 'Vigencias de contratos',

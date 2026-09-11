@@ -173,7 +173,35 @@ export const rentalAPI = {
     create: (tenantId, data) => api.post(`/tenants/${tenantId}/rental-payments/`, data),
     delete: (tenantId, id) => api.delete(`/tenants/${tenantId}/rental-payments/${id}/`),
   },
-};
+    airbnb: {
+      connections: {
+        list:   (tenantId) => api.get(`/tenants/${tenantId}/airbnb-connections/`, { params: { page_size: 200 } }),
+        create: (tenantId, data) => api.post(`/tenants/${tenantId}/airbnb-connections/`, data),
+        update: (tenantId, id, data) => api.patch(`/tenants/${tenantId}/airbnb-connections/${id}/`, data),
+        remove: (tenantId, id) => api.delete(`/tenants/${tenantId}/airbnb-connections/${id}/`),
+        sync:   (tenantId, id) => api.post(`/tenants/${tenantId}/airbnb-connections/${id}/sync/`),
+        importListings: (tenantId, id, data) => api.post(`/tenants/${tenantId}/airbnb-connections/${id}/import-listings/`, data),
+      },
+      listings: {
+        list: (tenantId) => api.get(`/tenants/${tenantId}/airbnb-listings/`, { params: { page_size: 500 } }),
+        update: (tenantId, id, data) => api.patch(`/tenants/${tenantId}/airbnb-listings/${id}/`, data),
+        remove: (tenantId, id) => api.delete(`/tenants/${tenantId}/airbnb-listings/${id}/`),
+        sync: (tenantId, id) => api.post(`/tenants/${tenantId}/airbnb-listings/${id}/sync/`),
+      },
+    },
+    leads: {
+      list:       (tenantId, params) => api.get(`/tenants/${tenantId}/rental-leads/`, { params: { page_size: 500, ...(params || {}) } }),
+      get:        (tenantId, id) => api.get(`/tenants/${tenantId}/rental-leads/${id}/`),
+      create:     (tenantId, data) => api.post(`/tenants/${tenantId}/rental-leads/`, data),
+      update:     (tenantId, id, data) => api.patch(`/tenants/${tenantId}/rental-leads/${id}/`, data),
+      remove:     (tenantId, id) => api.delete(`/tenants/${tenantId}/rental-leads/${id}/`),
+      pipeline:   (tenantId) => api.get(`/tenants/${tenantId}/rental-leads/pipeline/`),
+      move:       (tenantId, id, data) => api.post(`/tenants/${tenantId}/rental-leads/${id}/move/`, data),
+      convert:    (tenantId, id, data) => api.post(`/tenants/${tenantId}/rental-leads/${id}/convert/`, data),
+      activities: (tenantId, id) => api.get(`/tenants/${tenantId}/rental-leads/${id}/activities/`),
+      addActivity:(tenantId, id, data) => api.post(`/tenants/${tenantId}/rental-leads/${id}/activities/`, data),
+    },
+  };
 
 // ─── Units ──────────────────────────────────────
 export const unitsAPI = {

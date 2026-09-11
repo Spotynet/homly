@@ -9,6 +9,8 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from django.core.exceptions import ObjectDoesNotExist
+
 from .models import (
     Tenant, RentalProperty, RentalParty, RentalChargeConcept,
     RentalContract, RentalCharge, RentalPayment,
@@ -35,6 +37,25 @@ def _require_rentas(tenant):
         raise ValidationError({'detail': 'Este módulo solo aplica al espacio de rentas.'})
 
 
+def _crm_dashboard(tenant):
+    from .rental_crm_views import crm_dashboard
+    return crm_dashboard(tenant)
+
+
+def _airbnb_dashboard(tenant):
+    from .models import AirbnbConnection, AirbnbListing
+    conns = AirbnbConnection.objects.filter(tenant=tenant, is_active=True)
+    listings = AirbnbListing.objects.filter(tenant=tenant)
+    last = listings.exclude(last_synced_at=None).order_by('-last_synced_at').first()
+    return {
+        'connections': conns.count(),
+        'listings': listings.count(),
+        'mapped': listings.filter(property__isnull=False).count(),
+        'occupied_now': listings.filter(occupied_now=True).count(),
+        'last_synced_at': last.last_synced_at.isoformat() if last and last.last_synced_at else None,
+    }
+
+
 def _ensure_default_concepts(tenant):
     if RentalChargeConcept.objects.filter(tenant=tenant).exists():
         return
@@ -47,8 +68,14 @@ def _ensure_default_concepts(tenant):
 
 def _sync_property_occupancy(prop):
     active = prop.contracts.exclude(status__in=('cancelado', 'finalizado', 'borrador')).exists()
-    new = 'ocupada' if active else 'disponible'
-    if prop.status in ('disponible', 'ocupada') and prop.status != new:
+    airbnb_busy = False
+    try:
+        listing = prop.airbnb_listing
+        airbnb_busy = bool(listing and listing.occupied_now)
+    except ObjectDoesNotExist:
+        airbnb_busy = False
+    new = 'ocupada' if (active or airbnb_busy) else 'disponible'
+    if prop.status in ('disponible', 'ocupada', 'reservada') and prop.status != new:
         prop.status = new
         prop.save(update_fields=['status', 'updated_at'])
 
@@ -85,6 +112,9 @@ class RentalPropertyViewSet(_RentalTenantMixin, viewsets.ModelViewSet):
             )
         if st:
             qs = qs.filter(status=st)
+        source = (self.request.query_params.get('source') or '').strip()
+        if source:
+            qs = qs.filter(source=source)
         return qs
 
 
@@ -354,6 +384,8 @@ class RentalDashboardView(APIView):
                 x for x in calendar if 0 <= x['days_left'] <= 60
             ][:12],
             'calendar': calendar,
+            'airbnb': _airbnb_dashboard(tenant),
+            'crm': _crm_dashboard(tenant),
         })
 
 
@@ -389,4 +421,9 @@ class RentalCalendarView(APIView):
                 'kind': 'end' if c.end_date <= until else 'active',
             })
         rows.sort(key=lambda x: x['end_date'])
+        include_ab = (request.query_params.get('airbnb') or '1') not in ('0', 'false', 'False')
+        if include_ab:
+            from .airbnb_views import airbnb_calendar_rows
+            rows.extend(airbnb_calendar_rows(tenant, since, until))
+            rows.sort(key=lambda x: x.get('end_date') or x.get('start_date') or '')
         return Response({'today': str(today), 'items': rows})

@@ -96,6 +96,7 @@ const SYSTEM_MODULES = [
 const RENTAS_MODULES = [
   { key: 'rentas_dashboard',    label: 'Dashboard',     desc: 'Vista general de la inmobiliaria' },
   { key: 'rentas_propiedades',  label: 'Propiedades',   desc: 'Catálogo de inmuebles en renta' },
+  { key: 'rentas_crm',          label: 'CRM de rentas', desc: 'Leads, pipeline y conversión a contrato' },
   { key: 'rentas_contratos',    label: 'Contratos',     desc: 'Contratos y partes' },
   { key: 'rentas_cobranza',     label: 'Cobranza',      desc: 'Cargos y pagos de rentas' },
   { key: 'rentas_calendario',   label: 'Calendario',    desc: 'Vencimientos y ocupación' },

@@ -17,10 +17,12 @@ export default function RentalCalendar() {
   }, [tenantId]);
 
   const groups = useMemo(() => {
-    const overdue = items.filter(i => i.days_left < 0 && i.status !== 'finalizado');
-    const soon = items.filter(i => i.days_left >= 0 && i.days_left <= 45);
-    const later = items.filter(i => i.days_left > 45);
-    return { overdue, soon, later };
+    const contracts = items.filter(i => i.kind !== 'airbnb' && i.source !== 'airbnb');
+    const airbnb = items.filter(i => i.kind === 'airbnb' || i.source === 'airbnb');
+    const overdue = contracts.filter(i => i.days_left < 0 && i.status !== 'finalizado');
+    const soon = contracts.filter(i => i.days_left >= 0 && i.days_left <= 45);
+    const later = contracts.filter(i => i.days_left > 45);
+    return { overdue, soon, later, airbnb };
   }, [items]);
 
   return (
@@ -29,7 +31,7 @@ export default function RentalCalendar() {
         <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', color: 'var(--teal-600)', textTransform: 'uppercase' }}>Supervisión</div>
         <h2 style={{ margin: '4px 0 0', fontSize: 22 }}>Vigencias de contratos</h2>
         <p style={{ color: 'var(--ink-400)', fontSize: 13, marginTop: 4 }}>
-          Calendario de vida de los contratos para renovar o cerrar a tiempo.
+          Calendario de vida de los contratos y reservas sincronizadas de Airbnb.
         </p>
       </div>
 
@@ -40,14 +42,15 @@ export default function RentalCalendar() {
           <Section title="Vencidos" hint="Requieren renovación o cierre" rows={groups.overdue} tone="coral" />
           <Section title="Por vencer (45 días)" hint="Atiende renovación con anticipación" rows={groups.soon} tone="amber" />
           <Section title="Vigentes más adelante" hint="Próximos 6 meses" rows={groups.later} tone="teal" />
+          <Section title="Reservas Airbnb" hint="Bloqueos y reservas del calendario exportado" rows={groups.airbnb} tone="airbnb" empty="Sin reservas Airbnb en este rango. Importa anuncios y sincroniza el iCal." />
         </div>
       )}
     </div>
   );
 }
 
-function Section({ title, hint, rows, tone }) {
-  const accent = tone === 'coral' ? 'var(--coral-400)' : tone === 'amber' ? 'var(--amber-400)' : 'var(--teal-400)';
+function Section({ title, hint, rows, tone, empty }) {
+  const accent = tone === 'coral' ? 'var(--coral-400)' : tone === 'amber' ? 'var(--amber-400)' : tone === 'airbnb' ? '#E61E4D' : 'var(--teal-400)';
   return (
     <div className="card">
       <div className="card-head">
@@ -60,7 +63,7 @@ function Section({ title, hint, rows, tone }) {
         </div>
       </div>
       {rows.length === 0 ? (
-        <div style={{ padding: 22, color: 'var(--ink-400)', fontSize: 13 }}>Sin contratos en este rango.</div>
+        <div style={{ padding: 22, color: 'var(--ink-400)', fontSize: 13 }}>{empty || 'Sin contratos en este rango.'}</div>
       ) : (
         <div className="table-wrap">
           <table>

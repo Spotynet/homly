@@ -21,9 +21,9 @@ export const ROLE_BASE_MODULES = {
 
 /** Módulos del espacio de rentas (inmobiliaria). Independiente del condominio. */
 export const RENTAL_ROLE_BASE_MODULES = {
-  admin:    ['rentas_dashboard', 'rentas_propiedades', 'rentas_contratos', 'rentas_cobranza', 'rentas_calendario', 'rentas_config', 'mi_membresia'],
-  tesorero: ['rentas_dashboard', 'rentas_propiedades', 'rentas_contratos', 'rentas_cobranza', 'rentas_calendario'],
-  contador: ['rentas_dashboard', 'rentas_propiedades', 'rentas_contratos', 'rentas_cobranza', 'rentas_calendario'],
-  auditor:  ['rentas_dashboard', 'rentas_propiedades', 'rentas_contratos', 'rentas_cobranza', 'rentas_calendario'],
-  superadmin: ['rentas_dashboard', 'rentas_propiedades', 'rentas_contratos', 'rentas_cobranza', 'rentas_calendario', 'rentas_config', 'mi_membresia'],
+  admin:    ['rentas_dashboard', 'rentas_propiedades', 'rentas_crm', 'rentas_contratos', 'rentas_cobranza', 'rentas_calendario', 'rentas_config', 'mi_membresia'],
+  tesorero: ['rentas_dashboard', 'rentas_propiedades', 'rentas_crm', 'rentas_contratos', 'rentas_cobranza', 'rentas_calendario'],
+  contador: ['rentas_dashboard', 'rentas_propiedades', 'rentas_crm', 'rentas_contratos', 'rentas_cobranza', 'rentas_calendario'],
+  auditor:  ['rentas_dashboard', 'rentas_propiedades', 'rentas_crm', 'rentas_contratos', 'rentas_cobranza', 'rentas_calendario'],
+  superadmin: ['rentas_dashboard', 'rentas_propiedades', 'rentas_crm', 'rentas_contratos', 'rentas_cobranza', 'rentas_calendario', 'rentas_config', 'mi_membresia'],
 };

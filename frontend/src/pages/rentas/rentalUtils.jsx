@@ -47,6 +47,7 @@ export const CONTRACT_STATUS = {
   renovado: { label: 'Renovado', color: 'var(--blue-700)', bg: 'var(--blue-50)' },
   finalizado: { label: 'Finalizado', color: 'var(--ink-500)', bg: 'var(--sand-50)' },
   cancelado: { label: 'Cancelado', color: 'var(--ink-400)', bg: 'var(--sand-50)' },
+  airbnb: { label: 'Airbnb', color: '#E61E4D', bg: '#FFF0F3' },
 };
 
 export const CHARGE_STATUS = {
@@ -54,6 +55,28 @@ export const CHARGE_STATUS = {
   parcial: { label: 'Parcial', color: 'var(--blue-700)', bg: 'var(--blue-50)' },
   pagado: { label: 'Pagado', color: 'var(--teal-700)', bg: 'var(--teal-50)' },
   cancelado: { label: 'Cancelado', color: 'var(--ink-400)', bg: 'var(--sand-50)' },
+};
+
+export const LEAD_STAGES = [
+  { key: 'nuevo', label: 'Nuevo', color: 'var(--ink-500)', bg: 'var(--sand-50)' },
+  { key: 'contactado', label: 'Contactado', color: 'var(--blue-700)', bg: 'var(--blue-50)' },
+  { key: 'visita', label: 'Visita', color: '#6d28d9', bg: '#f5f3ff' },
+  { key: 'propuesta', label: 'Propuesta', color: '#92400e', bg: 'var(--amber-50)' },
+  { key: 'negociacion', label: 'Negociación', color: '#9a3412', bg: '#fff7ed' },
+  { key: 'ganado', label: 'Ganado', color: 'var(--teal-700)', bg: 'var(--teal-50)' },
+  { key: 'perdido', label: 'Perdido', color: 'var(--coral-600)', bg: 'var(--coral-50)' },
+];
+
+export const LEAD_STAGE_MAP = Object.fromEntries(LEAD_STAGES.map(s => [s.key, { label: s.label, color: s.color, bg: s.bg }]));
+
+export const LEAD_SOURCES = {
+  web: 'Sitio web',
+  whatsapp: 'WhatsApp',
+  telefono: 'Teléfono',
+  visita: 'Visita',
+  airbnb: 'Airbnb',
+  referido: 'Referido',
+  otro: 'Otro',
 };
 
 export function StatusPill({ map, value }) {

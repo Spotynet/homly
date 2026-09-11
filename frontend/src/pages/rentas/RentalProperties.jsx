@@ -4,6 +4,7 @@ import { rentalAPI, tenantsAPI } from '../../api/client';
 import { Plus, Search } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { fmtMoney, PROPERTY_STATUS, PROPERTY_TYPES, StatusPill } from './rentalUtils';
+import AirbnbPanel from './AirbnbPanel';
 
 const EMPTY = {
   code: '', name: '', property_type: 'departamento', status: 'disponible',
@@ -20,6 +21,7 @@ export default function RentalProperties() {
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [showAirbnb, setShowAirbnb] = useState(false);
 
   const load = () => {
     if (!tenantId) return;
@@ -65,6 +67,7 @@ export default function RentalProperties() {
             <input className="field-input" placeholder="Buscar…" value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => e.key === 'Enter' && load()} style={{ paddingLeft: 30, width: 220 }} />
           </div>
           <button className="btn btn-outline btn-sm" onClick={load}>Buscar</button>
+          <button className="btn btn-outline" onClick={() => setShowAirbnb(true)}>Importar Airbnb</button>
           <button className="btn btn-primary" onClick={() => setForm({ ...EMPTY })}><Plus size={15} /> Nueva propiedad</button>
         </div>
       </div>
@@ -75,7 +78,8 @@ export default function RentalProperties() {
         ) : items.length === 0 ? (
           <div style={{ padding: 48, textAlign: 'center', color: 'var(--ink-400)' }}>
             <div style={{ fontWeight: 600 }}>Aún no hay propiedades</div>
-            <div style={{ fontSize: 13, marginTop: 6 }}>Registra el inventario que administra esta inmobiliaria.</div>
+            <div style={{ fontSize: 13, marginTop: 6 }}>Registra el inventario o importa anuncios de Airbnb.</div>
+            <button className="btn btn-outline" style={{ marginTop: 12 }} onClick={() => setShowAirbnb(true)}>Importar Airbnb</button>
           </div>
         ) : (
           <div className="table-wrap">
@@ -95,7 +99,12 @@ export default function RentalProperties() {
                   <tr key={p.id} style={{ cursor: 'pointer' }} onClick={() => setForm({ ...p })}>
                     <td style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--teal-600)' }}>{p.code}</td>
                     <td>
-                      <div style={{ fontWeight: 600 }}>{p.name}</div>
+                      <div style={{ fontWeight: 600 }}>
+                        {p.name}
+                        {p.source === 'airbnb' && (
+                          <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 800, letterSpacing: '0.04em', textTransform: 'uppercase', color: '#E61E4D', background: '#FFF0F3', border: '1px solid #FFCDD8', borderRadius: 999, padding: '2px 8px' }}>Airbnb</span>
+                        )}
+                      </div>
                       <div style={{ fontSize: 11, color: 'var(--ink-400)' }}>{p.address_line || 'Sin dirección'}</div>
                     </td>
                     <td>{PROPERTY_TYPES[p.property_type] || p.property_type}</td>
@@ -152,6 +161,23 @@ export default function RentalProperties() {
             <div className="modal-foot">
               <button className="btn btn-secondary" onClick={() => setForm(null)}>Cancelar</button>
               <button className="btn btn-primary" disabled={saving} onClick={handleSave}>{saving ? 'Guardando…' : 'Guardar'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showAirbnb && (
+        <div className="modal-bg open" onClick={() => setShowAirbnb(false)}>
+          <div className="modal lg" onClick={e => e.stopPropagation()} style={{ maxWidth: 820 }}>
+            <div className="modal-head">
+              <h3>Integrar propiedades de Airbnb</h3>
+              <button className="modal-close" onClick={() => setShowAirbnb(false)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <AirbnbPanel tenantId={tenantId} compact onImported={() => { load(); }} />
+            </div>
+            <div className="modal-foot">
+              <button className="btn btn-secondary" onClick={() => setShowAirbnb(false)}>Cerrar</button>
             </div>
           </div>
         </div>

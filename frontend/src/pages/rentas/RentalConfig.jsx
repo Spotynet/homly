@@ -3,6 +3,7 @@ import { useAuth } from '../../context/AuthContext';
 import { rentalAPI, tenantsAPI, usersAPI } from '../../api/client';
 import { CURRENCIES, COUNTRIES, getStatesForCountry } from '../../utils/helpers';
 import toast from 'react-hot-toast';
+import AirbnbPanel from './AirbnbPanel';
 
 export default function RentalConfig() {
   const { tenantId } = useAuth();
@@ -11,6 +12,10 @@ export default function RentalConfig() {
   const [concepts, setConcepts] = useState([]);
   const [users, setUsers] = useState([]);
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (window.location.hash === '#airbnb') setTab('airbnb');
+  }, []);
 
   useEffect(() => {
     if (!tenantId) return;
@@ -68,6 +73,7 @@ export default function RentalConfig() {
       <div className="tabs" style={{ marginBottom: 16 }}>
         {[
           ['general', 'General'],
+          ['airbnb', 'Airbnb'],
           ['concepts', 'Conceptos de cobro'],
           ['users', 'Usuarios'],
         ].map(([k, label]) => (
@@ -127,6 +133,10 @@ export default function RentalConfig() {
             <button className="btn btn-primary" disabled={saving} onClick={saveGeneral}>{saving ? 'Guardando…' : 'Guardar configuración'}</button>
           </div>
         </div>
+      )}
+
+      {tab === 'airbnb' && (
+        <AirbnbPanel tenantId={tenantId} />
       )}
 
       {tab === 'concepts' && (

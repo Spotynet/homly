@@ -2056,6 +2056,11 @@ class RentalProperty(models.Model):
     owner_phone = models.CharField(max_length=40, blank=True, default='')
     notes = models.TextField(blank=True, default='')
     is_active = models.BooleanField(default=True)
+    source = models.CharField(
+        max_length=20, default='homly', db_index=True,
+        help_text='homly | airbnb',
+    )
+    airbnb_listing_id = models.CharField(max_length=40, blank=True, default='', db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -2289,4 +2294,180 @@ class RentalPayment(models.Model):
 
     def __str__(self):
         return f'{self.payment_date} {self.amount}'
+
+
+# ═══════════════════════════════════════════════════════════
+#  AIRBNB — cuentas y anuncios vinculados al inventario de rentas
+# ═══════════════════════════════════════════════════════════
+
+class AirbnbConnection(models.Model):
+    """Cuenta de anfitrión Airbnb asociada a un espacio de rentas.
+    No guarda contraseñas. La visibilidad automática de anuncios vía API
+    oficial requiere ser partner de Airbnb; mientras tanto se usan
+    listing ID + calendario iCal que el anfitrión exporta desde Airbnb.
+    """
+    MODE_CHOICES = [
+        ('ical', 'Calendario iCal (oficial del anfitrión)'),
+        ('oauth', 'API partner (cuando Homly esté aprobado)'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='airbnb_connections')
+    label = models.CharField(max_length=160, help_text='Ej. Cuenta personal, Cuenta de la inmobiliaria')
+    host_email = models.EmailField(blank=True, default='', help_text='Correo del anfitrión en Airbnb (identificador, no contraseña)')
+    mode = models.CharField(max_length=12, choices=MODE_CHOICES, default='ical')
+    notes = models.TextField(blank=True, default='')
+    last_synced_at = models.DateTimeField(null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'airbnb_connections'
+        ordering = ['label']
+
+    def __str__(self):
+        return f'{self.label} ({self.tenant.name})'
+
+
+class AirbnbListing(models.Model):
+    """Anuncio de Airbnb mapeado a una propiedad del inventario Homly."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='airbnb_listings')
+    connection = models.ForeignKey(
+        AirbnbConnection, on_delete=models.CASCADE, related_name='listings',
+    )
+    property = models.OneToOneField(
+        'RentalProperty', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='airbnb_listing',
+    )
+    airbnb_listing_id = models.CharField(max_length=40, db_index=True)
+    listing_url = models.URLField(max_length=500, blank=True, default='')
+    ical_url = models.URLField(max_length=800, blank=True, default='',
+                               help_text='URL de exportación de calendario que Airbnb da al anfitrión')
+    listing_name = models.CharField(max_length=300)
+    sync_enabled = models.BooleanField(default=True)
+    occupied_now = models.BooleanField(default=False)
+    ical_events = models.JSONField(default=list, blank=True)
+    last_synced_at = models.DateTimeField(null=True, blank=True)
+    last_sync_error = models.CharField(max_length=400, blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'airbnb_listings'
+        ordering = ['listing_name']
+        unique_together = ['tenant', 'airbnb_listing_id']
+
+    def __str__(self):
+        return f'{self.airbnb_listing_id} — {self.listing_name}'
+
+
+# ═══════════════════════════════════════════════════════════
+#  CRM DE RENTAS — leads por unidad → cliente + contrato
+# ═══════════════════════════════════════════════════════════
+
+class RentalLead(models.Model):
+    """Prospecto interesado en una unidad del inventario de rentas."""
+    STAGE_CHOICES = [
+        ('nuevo', 'Nuevo'),
+        ('contactado', 'Contactado'),
+        ('visita', 'Visita'),
+        ('propuesta', 'Propuesta'),
+        ('negociacion', 'Negociación'),
+        ('ganado', 'Ganado'),
+        ('perdido', 'Perdido'),
+    ]
+    SOURCE_CHOICES = [
+        ('web', 'Sitio web'),
+        ('whatsapp', 'WhatsApp'),
+        ('telefono', 'Teléfono'),
+        ('visita', 'Visita al inmueble'),
+        ('airbnb', 'Airbnb'),
+        ('referido', 'Referido'),
+        ('otro', 'Otro'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='rental_leads')
+    rental_property = models.ForeignKey(
+        RentalProperty, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='leads',
+    )
+    first_name = models.CharField(max_length=150)
+    last_name = models.CharField(max_length=150, blank=True, default='')
+    email = models.EmailField(blank=True, default='')
+    phone = models.CharField(max_length=40, blank=True, default='')
+    source = models.CharField(max_length=20, choices=SOURCE_CHOICES, default='otro', db_index=True)
+    stage = models.CharField(max_length=20, choices=STAGE_CHOICES, default='nuevo', db_index=True)
+    interested_rent = models.DecimalField(
+        max_digits=12, decimal_places=2, default=0, validators=[MinValueValidator(0)],
+    )
+    expected_start = models.DateField(null=True, blank=True)
+    notes = models.TextField(blank=True, default='')
+    lost_reason = models.CharField(max_length=300, blank=True, default='')
+    assigned_to = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='rental_leads_assigned',
+    )
+    created_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='rental_leads_created',
+    )
+    party = models.ForeignKey(
+        'RentalParty', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='leads',
+    )
+    contract = models.ForeignKey(
+        'RentalContract', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='source_leads',
+    )
+    converted_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'rental_leads'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['tenant', 'stage']),
+            models.Index(fields=['tenant', 'rental_property']),
+        ]
+
+    def __str__(self):
+        return f'{self.full_name} ({self.stage})'
+
+    @property
+    def full_name(self):
+        return f'{self.first_name} {self.last_name}'.strip()
+
+
+class RentalLeadActivity(models.Model):
+    """Nota o seguimiento sobre un lead de rentas."""
+    KIND_CHOICES = [
+        ('note', 'Nota'),
+        ('call', 'Llamada'),
+        ('whatsapp', 'WhatsApp'),
+        ('email', 'Correo'),
+        ('visit', 'Visita'),
+        ('system', 'Sistema'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='rental_lead_activities')
+    lead = models.ForeignKey(RentalLead, on_delete=models.CASCADE, related_name='activities')
+    kind = models.CharField(max_length=16, choices=KIND_CHOICES, default='note')
+    body = models.TextField()
+    created_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='rental_lead_activities_created',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'rental_lead_activities'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.kind} — {self.lead.full_name}'
 

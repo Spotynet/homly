@@ -12,6 +12,7 @@ import RentalContracts from './pages/rentas/RentalContracts';
 import RentalCobranza from './pages/rentas/RentalCobranza';
 import RentalCalendar from './pages/rentas/RentalCalendar';
 import RentalConfig from './pages/rentas/RentalConfig';
+import RentalCRM from './pages/rentas/RentalCRM';
 
 // Pages
 import Landing from './pages/Landing';
@@ -127,6 +128,7 @@ function AppRoutes() {
         <Route path="dashboard"      element={<RoleRoute module="dashboard" workspace="condominio"><Dashboard /></RoleRoute>} />
         <Route path="rentas/dashboard"     element={<RoleRoute module="rentas_dashboard" workspace="rentas"><RentalDashboard /></RoleRoute>} />
         <Route path="rentas/propiedades"   element={<RoleRoute module="rentas_propiedades" workspace="rentas"><RentalProperties /></RoleRoute>} />
+        <Route path="rentas/crm"           element={<RoleRoute module="rentas_crm" workspace="rentas"><RentalCRM /></RoleRoute>} />
         <Route path="rentas/contratos"     element={<RoleRoute module="rentas_contratos" workspace="rentas"><RentalContracts /></RoleRoute>} />
         <Route path="rentas/cobranza"      element={<RoleRoute module="rentas_cobranza" workspace="rentas"><RentalCobranza /></RoleRoute>} />
         <Route path="rentas/calendario"    element={<RoleRoute module="rentas_calendario" workspace="rentas"><RentalCalendar /></RoleRoute>} />
