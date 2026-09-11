@@ -6,7 +6,7 @@ import toast from 'react-hot-toast';
 import {
   Plus, Sparkles, Check, Archive, Trash2, X, Pencil, Wallet,
   FolderKanban, Building2, Users, AlertTriangle, Link2, Calendar,
-  Printer, Copy, Settings2, Send, Percent,
+  Printer, Copy, Settings2, Send, Percent, ChevronDown, SlidersHorizontal,
 } from 'lucide-react';
 
 const MONTHS = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'];
@@ -141,6 +141,27 @@ function Pill({ map, value }) {
   );
 }
 
+function CollapsibleCard({ title, icon: Icon, summary, defaultOpen = false, children, actions }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="plan-collapse">
+      <div className="plan-collapse-row">
+        <button type="button" className="plan-collapse-head" onClick={() => setOpen(o => !o)} aria-expanded={open}>
+          <ChevronDown
+            size={16}
+            className={`plan-collapse-chevron ${open ? 'is-open' : ''}`}
+          />
+          {Icon && <span className="plan-collapse-icon"><Icon size={15} /></span>}
+          <span className="plan-collapse-title">{title}</span>
+          {!open && summary ? <span className="plan-collapse-summary">{summary}</span> : null}
+        </button>
+        {open && actions ? <div className="plan-collapse-actions">{actions}</div> : null}
+      </div>
+      {open && <div className="plan-collapse-body">{children}</div>}
+    </div>
+  );
+}
+
 export default function Planeacion() {
   const { tenantId, isReadOnly, user } = useAuth();
   const [tab, setTab] = useState('presupuesto');
@@ -233,7 +254,7 @@ function PresupuestoTab({ tenantId, year, setYear, years, ctx, isReadOnly, loadi
   const [scenarios, setScenarios] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [budget, setBudget] = useState(null);
-  const [kind, setKind] = useState('gasto');
+  const [kind, setKind] = useState('ingreso');
   const [editing, setEditing] = useState(null);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -452,37 +473,39 @@ function PresupuestoTab({ tenantId, year, setYear, years, ctx, isReadOnly, loadi
 
   return (
     <>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 14 }}>
-        <select className="field-select" value={year} onChange={e => setYear(Number(e.target.value))} style={{ width: 120 }}>
-          {years.map(y => <option key={y} value={y}>{y}</option>)}
-        </select>
-        {scenarios.length > 0 && (
-          <select
-            className="field-select"
-            value={selectedId || ''}
-            onChange={e => openScenario(e.target.value)}
-            style={{ minWidth: 220 }}
-          >
-            {scenarios.map(s => (
-              <option key={s.id} value={s.id}>
-                {s.name || `Escenario ${year}`} · {BUDGET_STATUS[s.status]?.label || s.status}
-              </option>
-            ))}
+      <div className="plan-toolbar">
+        <div className="plan-toolbar-meta">
+          <select className="field-select" value={year} onChange={e => setYear(Number(e.target.value))} style={{ width: 112 }}>
+            {years.map(y => <option key={y} value={y}>{y}</option>)}
           </select>
-        )}
-        {budget && <Pill map={BUDGET_STATUS} value={budget.status} />}
-        {budget?.status === 'aprobado' && (
-          <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--teal-700)' }}>Aprobado final del año</span>
-        )}
-        {dirty && !locked && <span style={{ fontSize: 12, color: '#92400e' }}>Cambios sin guardar</span>}
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {scenarios.length > 0 && (
+            <select
+              className="field-select"
+              value={selectedId || ''}
+              onChange={e => openScenario(e.target.value)}
+              style={{ minWidth: 240 }}
+            >
+              {scenarios.map(s => (
+                <option key={s.id} value={s.id}>
+                  {s.name || `Escenario ${year}`} · {BUDGET_STATUS[s.status]?.label || s.status}
+                </option>
+              ))}
+            </select>
+          )}
+          {budget && <Pill map={BUDGET_STATUS} value={budget.status} />}
+          {budget?.status === 'aprobado' && (
+            <span className="plan-toolbar-flag">Aprobado final</span>
+          )}
+          {dirty && !locked && <span className="plan-toolbar-dirty">Cambios sin guardar</span>}
+        </div>
+        <div className="plan-toolbar-actions">
           {budget && (
             <button className="btn btn-outline" onClick={() => printPlaneacion({
               title: `Presupuesto ${budget.year} — ${budget.name || ''} — ${ctx?.name || 'Condominio'}`,
             })}><Printer size={14} /> Imprimir</button>
           )}
           {budget && !isReadOnly && (
-            <button className="btn btn-outline" onClick={cloneScenario}><Copy size={14} /> Duplicar escenario</button>
+            <button className="btn btn-outline" onClick={cloneScenario}><Copy size={14} /> Duplicar</button>
           )}
           {!isReadOnly && scenarios.length > 0 && (
             <button className="btn btn-outline" disabled={saving} onClick={() => {
@@ -495,15 +518,14 @@ function PresupuestoTab({ tenantId, year, setYear, years, ctx, isReadOnly, loadi
           )}
           {budget && !locked && (
             <>
-              <button className="btn btn-outline" onClick={addLine}><Plus size={14} /> Partida</button>
-              <button className="btn btn-primary" disabled={saving || !dirty} onClick={saveLines}>Guardar</button>
               {['borrador', 'guardado'].includes(budget.status) && (
                 flowEnabled(ctx)
                   ? <button className="btn btn-outline" onClick={submitApproval}><Send size={14} /> Enviar a aprobación</button>
                   : <button className="btn btn-outline" onClick={approve}><Check size={14} /> Aprobar</button>
               )}
-              <button className="btn btn-outline" onClick={archive}><Archive size={14} /></button>
-              {budget.status !== 'aprobado' && <button className="btn btn-outline" onClick={removeBudget}><Trash2 size={14} /></button>}
+              <button className="btn btn-primary" disabled={saving || !dirty} onClick={saveLines}>Guardar</button>
+              <button className="btn btn-outline" title="Archivar" onClick={archive}><Archive size={14} /></button>
+              {budget.status !== 'aprobado' && <button className="btn btn-outline" title="Eliminar" onClick={removeBudget}><Trash2 size={14} /></button>}
             </>
           )}
         </div>
@@ -541,6 +563,45 @@ function PresupuestoTab({ tenantId, year, setYear, years, ctx, isReadOnly, loadi
         </div>
       ) : (
         <>
+          <div className="cob-stats plan-kpis">
+            <Mini
+              label="Ingresos brutos"
+              value={fmtCurrency(totals.income, currency)}
+              sub={totals.actual_income != null ? `Real ${fmtCurrency(totals.actual_income, currency)}` : 'Presupuestado anual'}
+              accent="teal"
+            />
+            <Mini
+              label="Total gastos"
+              value={fmtCurrency(totals.expense, currency)}
+              sub={totals.actual_expense != null ? `Real ${fmtCurrency(totals.actual_expense, currency)}` : 'Presupuestado anual'}
+              accent="coral"
+            />
+            <Mini
+              label="Descuentos de cobranza"
+              value={fmtCurrency(totals.discount_total || 0, currency)}
+              sub={`${(totals.discounts || []).length} incentivo(s)`}
+            />
+            <Mini
+              label="Ingreso neto"
+              value={fmtCurrency(totals.net_income ?? totals.income, currency)}
+              sub="Después de incentivos"
+              accent="teal"
+            />
+            <Mini
+              label={totals.surplus >= 0 ? 'Superávit neto' : 'Déficit neto'}
+              value={fmtCurrency(totals.surplus, currency)}
+              sub={totals.expense ? `${Math.round(((totals.net_income ?? totals.income) / (totals.expense || 1)) * 100)}% cubierto` : ''}
+              accent={totals.surplus >= 0 ? 'teal' : 'coral'}
+            />
+          </div>
+
+          {(totals.expense > (totals.net_income ?? totals.income)) && ctx?.units_billable > 0 && (
+            <div className="plan-hint">
+              <AlertTriangle size={14} /> El gasto anual supera el ingreso neto.
+              Faltarían {fmtCurrency((totals.expense - (totals.net_income ?? totals.income)) / 12 / ctx.units_billable, currency)} extra por unidad al mes para equilibrar.
+            </div>
+          )}
+
           <SeedVarsPanel
             budget={budget}
             ctx={ctx}
@@ -588,30 +649,19 @@ function PresupuestoTab({ tenantId, year, setYear, years, ctx, isReadOnly, loadi
             canSubmit={!locked && ['borrador', 'guardado'].includes(budget.status) && !isReadOnly}
           />
 
-          <div className="cob-stats" style={{ marginBottom: 14 }}>
-            <Mini label="Ingresos brutos" value={fmtCurrency(totals.income, currency)} sub={totals.actual_income != null ? `Real ${fmtCurrency(totals.actual_income, currency)}` : ''} />
-            <Mini label="Descuentos de cobranza" value={fmtCurrency(totals.discount_total || 0, currency)} sub={`${(totals.discounts || []).length} incentivo(s)`} />
-            <Mini label="Ingreso neto" value={fmtCurrency(totals.net_income ?? totals.income, currency)} sub="Después de incentivos" />
-            <Mini
-              label={totals.surplus >= 0 ? 'Superávit neto' : 'Déficit neto'}
-              value={fmtCurrency(totals.surplus, currency)}
-              sub={totals.expense ? `${Math.round(((totals.net_income ?? totals.income) / (totals.expense || 1)) * 100)}% cubierto` : ''}
-            />
-          </div>
-
-          {(totals.expense > (totals.net_income ?? totals.income)) && ctx?.units_billable > 0 && (
-            <div className="plan-hint">
-              <AlertTriangle size={14} /> El gasto anual supera el ingreso neto.
-              Faltarían {fmtCurrency((totals.expense - (totals.net_income ?? totals.income)) / 12 / ctx.units_billable, currency)} extra por unidad al mes para equilibrar.
+          <div className="card plan-table-card">
+            <div className="plan-table-toolbar">
+              <div className="tabs" style={{ marginBottom: 0 }}>
+                <button className={`tab ${kind === 'ingreso' ? 'active' : ''}`} onClick={() => setKind('ingreso')}>Ingresos</button>
+                <button className={`tab ${kind === 'gasto' ? 'active' : ''}`} onClick={() => setKind('gasto')}>Gastos</button>
+              </div>
+              <div className="plan-table-toolbar-side">
+                <span className="plan-table-count">{lines.length} partida(s)</span>
+                {!locked && (
+                  <button className="btn btn-outline btn-sm" onClick={addLine}><Plus size={13} /> Partida</button>
+                )}
+              </div>
             </div>
-          )}
-
-          <div className="tabs" style={{ marginBottom: 12 }}>
-            <button className={`tab ${kind === 'ingreso' ? 'active' : ''}`} onClick={() => setKind('ingreso')}>Ingresos</button>
-            <button className={`tab ${kind === 'gasto' ? 'active' : ''}`} onClick={() => setKind('gasto')}>Gastos</button>
-          </div>
-
-          <div className="card">
             <div className="table-wrap plan-table-wrap">
               <table className="plan-table">
                 <thead>
@@ -715,9 +765,12 @@ function SeedVarsPanel({ budget, ctx, locked, currency, maxUnits, onRename, onAp
   };
 
   return (
-    <div className="card" style={{ padding: 14, marginBottom: 12 }}>
-      <div style={{ fontSize: 12, fontWeight: 800, marginBottom: 8, color: 'var(--ink-600)' }}>Variables del sugerido</div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr auto', gap: 10, alignItems: 'end' }}>
+    <CollapsibleCard
+      title="Variables del sugerido"
+      icon={SlidersHorizontal}
+      summary={`${Number(units) || 0} un. · cuota ${fmtCurrency(fee, currency)}`}
+    >
+      <div className="plan-seed-grid">
         <div className="field" style={{ margin: 0 }}>
           <div className="field-label">Nombre del escenario</div>
           <input className="field-input" value={name} disabled={locked} onChange={e => setName(e.target.value)} onBlur={() => { if (!locked && name.trim() && name.trim() !== budget.name) onRename(name.trim()); }} />
@@ -738,7 +791,7 @@ function SeedVarsPanel({ budget, ctx, locked, currency, maxUnits, onRename, onAp
         Ingreso mensual de cuota: {fmtCurrency(monthly, currency)} · anual {fmtCurrency(monthly * 12, currency)}.
         No se recrean partidas que hayas eliminado.
       </div>
-    </div>
+    </CollapsibleCard>
   );
 }
 
@@ -771,25 +824,24 @@ function CashflowPanel({ budget, locked, currency, tenantId, onSaved }) {
   const discounts = budget.totals?.discounts || [];
 
   return (
-    <div className="card" style={{ padding: 14, marginBottom: 12 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center', marginBottom: 8 }}>
-        <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--ink-600)' }}>
-          <Percent size={13} style={{ verticalAlign: -1 }} /> Incentivos de flujo de caja
-        </div>
-        {!locked && (
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button className="btn btn-outline btn-sm" onClick={add}><Plus size={12} /> Incentivo</button>
-            <button className="btn btn-primary btn-sm" disabled={saving} onClick={save}>Guardar incentivos</button>
-          </div>
-        )}
-      </div>
+    <CollapsibleCard
+      title="Incentivos de flujo de caja"
+      icon={Percent}
+      summary={`${rules.length} incentivo(s) · ${fmtCurrency(discounts.reduce((s, d) => s + (Number(d.amount) || 0), 0), currency)}`}
+      actions={!locked ? (
+        <>
+          <button className="btn btn-outline btn-sm" onClick={add}><Plus size={12} /> Incentivo</button>
+          <button className="btn btn-primary btn-sm" disabled={saving} onClick={save}>Guardar incentivos</button>
+        </>
+      ) : null}
+    >
       <p style={{ fontSize: 12, color: 'var(--ink-400)', margin: '0 0 10px' }}>
         El descuento estimado es ingreso × % descuento × % de unidades que lo toman. Sirve para presentar a asamblea el efecto de pronto pago u otros incentivos, sin mezclarlo con las partidas.
       </p>
       {rules.length === 0 ? (
         <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>Sin incentivos. Agrega uno para modelar descuentos de cobranza.</div>
       ) : rules.map((rule, idx) => (
-        <div key={rule.id || idx} style={{ display: 'grid', gridTemplateColumns: '1.4fr 90px 90px 1.1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+        <div key={rule.id || idx} className="plan-incentive-row">
           <input className="field-input" disabled={locked} value={rule.name} onChange={e => setRules(rs => rs.map((x, i) => i === idx ? { ...x, name: e.target.value } : x))} />
           <input className="field-input" type="number" min="0" max="100" step="0.1" disabled={locked} value={rule.pct} onChange={e => setRules(rs => rs.map((x, i) => i === idx ? { ...x, pct: e.target.value } : x))} title="% descuento" />
           <input className="field-input" type="number" min="0" max="100" step="0.1" disabled={locked} value={rule.takeup_pct} onChange={e => setRules(rs => rs.map((x, i) => i === idx ? { ...x, takeup_pct: e.target.value } : x))} title="% adopción" />
@@ -809,22 +861,38 @@ function CashflowPanel({ budget, locked, currency, tenantId, onSaved }) {
           ))}
         </div>
       )}
-    </div>
+    </CollapsibleCard>
   );
 }
 
 function ApprovalPanel({ steps, status, userId, onApprove, onReject, flowOn }) {
   const [notes, setNotes] = useState('');
-  if (!flowOn && status !== 'en_aprobacion') return null;
   const pending = (steps || []).find(s => s.status === 'pending');
   const isMine = pending && String(pending.user_id) === String(userId);
+  const done = (steps || []).filter(s => s.status === 'approved').length;
+  const total = (steps || []).length;
+  const summary = !flowOn && status !== 'en_aprobacion'
+    ? 'Aprobación en un clic'
+    : status === 'en_aprobacion'
+      ? `Paso ${Math.min(done + 1, total || 1)} de ${total || 1}`
+      : total ? `${done}/${total} paso(s)` : 'Sin pasos configurados';
 
   return (
-    <div className="card" style={{ padding: 14, marginBottom: 12 }}>
-      <div style={{ fontSize: 12, fontWeight: 800, marginBottom: 8, color: 'var(--ink-600)' }}>Flujo de aprobación</div>
-      {(steps || []).length === 0 ? (
+    <CollapsibleCard
+      title="Flujo de aprobación"
+      icon={Send}
+      summary={summary}
+      defaultOpen={status === 'en_aprobacion'}
+    >
+      {!flowOn && status !== 'en_aprobacion' ? (
         <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>
-          {status === 'borrador' || status === 'guardado' ? 'Configura los aprobadores y envía este escenario a asamblea.' : 'Sin pasos registrados.'}
+          El flujo está desactivado. Admin o tesorero pueden aprobar este escenario en un clic desde la barra superior. Configúralo con «Flujo de aprobación».
+        </div>
+      ) : (steps || []).length === 0 ? (
+        <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>
+          {status === 'borrador' || status === 'guardado'
+            ? 'Configura los aprobadores y envía este escenario a asamblea.'
+            : 'Sin pasos registrados.'}
         </div>
       ) : (
         <ol className="plan-flow-steps">
@@ -848,7 +916,7 @@ function ApprovalPanel({ steps, status, userId, onApprove, onReject, flowOn }) {
           }}>Rechazar</button>
         </div>
       )}
-    </div>
+    </CollapsibleCard>
   );
 }
 
@@ -1682,9 +1750,9 @@ function ProjectDetail({ tenantId, project, ctx, isReadOnly, user, onClose, onRe
   );
 }
 
-function Mini({ label, value, sub }) {
+function Mini({ label, value, sub, accent }) {
   return (
-    <div className="cob-stat">
+    <div className={`cob-stat plan-kpi ${accent ? `plan-kpi-${accent}` : ''}`}>
       <div>
         <div className="cob-stat-label">{label}</div>
         <div className="cob-stat-value" style={{ fontSize: 18 }}>{value}</div>
