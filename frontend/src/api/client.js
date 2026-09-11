@@ -74,6 +74,7 @@ api.interceptors.response.use(
         localStorage.removeItem('role');
         localStorage.removeItem('tenant_id');
         localStorage.removeItem('tenant_name');
+        localStorage.removeItem('workspace_type');
         localStorage.removeItem('must_change_password');
         localStorage.removeItem('profile_id');
         if (window.location.pathname !== '/login') {
@@ -125,6 +126,52 @@ export const tenantsAPI = {
   onboardingComplete: (id) => api.post(`/tenants/${id}/onboarding/complete/`),
   onboardingDismiss: (id) => api.post(`/tenants/${id}/onboarding/dismiss/`),
   onboardingReset: (id) => api.post(`/tenants/${id}/onboarding/reset/`),
+  assignAdmin: (id, data) => api.post(`/tenants/${id}/assign-admin/`, data),
+  workspaceAdmin: (email) => api.get('/tenants/workspace-admin/', { params: { email } }),
+  assignWorkspaces: (data) => api.post('/tenants/assign-workspaces/', data),
+};
+
+// ─── Rentas (inmobiliaria) ──────────────────────
+export const rentalAPI = {
+  dashboard: (tenantId, params) => api.get(`/tenants/${tenantId}/rental-dashboard/`, { params }),
+  calendar:  (tenantId, params) => api.get(`/tenants/${tenantId}/rental-calendar/`, { params }),
+  properties: {
+    list:   (tenantId, params) => api.get(`/tenants/${tenantId}/rental-properties/`, { params }),
+    get:    (tenantId, id) => api.get(`/tenants/${tenantId}/rental-properties/${id}/`),
+    create: (tenantId, data) => api.post(`/tenants/${tenantId}/rental-properties/`, data),
+    update: (tenantId, id, data) => api.patch(`/tenants/${tenantId}/rental-properties/${id}/`, data),
+    delete: (tenantId, id) => api.delete(`/tenants/${tenantId}/rental-properties/${id}/`),
+  },
+  parties: {
+    list:   (tenantId, params) => api.get(`/tenants/${tenantId}/rental-parties/`, { params }),
+    create: (tenantId, data) => api.post(`/tenants/${tenantId}/rental-parties/`, data),
+    update: (tenantId, id, data) => api.patch(`/tenants/${tenantId}/rental-parties/${id}/`, data),
+    delete: (tenantId, id) => api.delete(`/tenants/${tenantId}/rental-parties/${id}/`),
+  },
+  concepts: {
+    list:   (tenantId) => api.get(`/tenants/${tenantId}/rental-concepts/`),
+    create: (tenantId, data) => api.post(`/tenants/${tenantId}/rental-concepts/`, data),
+    update: (tenantId, id, data) => api.patch(`/tenants/${tenantId}/rental-concepts/${id}/`, data),
+    delete: (tenantId, id) => api.delete(`/tenants/${tenantId}/rental-concepts/${id}/`),
+  },
+  contracts: {
+    list:     (tenantId, params) => api.get(`/tenants/${tenantId}/rental-contracts/`, { params }),
+    get:      (tenantId, id) => api.get(`/tenants/${tenantId}/rental-contracts/${id}/`),
+    create:   (tenantId, data) => api.post(`/tenants/${tenantId}/rental-contracts/`, data),
+    update:   (tenantId, id, data) => api.patch(`/tenants/${tenantId}/rental-contracts/${id}/`, data),
+    activate: (tenantId, id) => api.post(`/tenants/${tenantId}/rental-contracts/${id}/activate/`),
+    finish:   (tenantId, id, data) => api.post(`/tenants/${tenantId}/rental-contracts/${id}/finish/`, data || {}),
+  },
+  charges: {
+    list:     (tenantId, params) => api.get(`/tenants/${tenantId}/rental-charges/`, { params }),
+    create:   (tenantId, data) => api.post(`/tenants/${tenantId}/rental-charges/`, data),
+    generate: (tenantId, period) => api.post(`/tenants/${tenantId}/rental-charges/generate-period/`, { period }),
+  },
+  payments: {
+    list:   (tenantId, params) => api.get(`/tenants/${tenantId}/rental-payments/`, { params }),
+    create: (tenantId, data) => api.post(`/tenants/${tenantId}/rental-payments/`, data),
+    delete: (tenantId, id) => api.delete(`/tenants/${tenantId}/rental-payments/${id}/`),
+  },
 };
 
 // ─── Units ──────────────────────────────────────

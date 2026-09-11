@@ -449,7 +449,7 @@ class TenantListSerializer(serializers.ModelSerializer):
     class Meta:
         model = Tenant
         fields = [
-            'id', 'name', 'units_count', 'units_actual', 'users_count',
+            'id', 'name', 'workspace_type', 'units_count', 'units_actual', 'users_count',
             'maintenance_fee', 'currency', 'country', 'state',
             'is_active', 'hibernated', 'hibernation_reason', 'created_at',
             'subscription_status', 'subscription_plan_name', 'subscription_trial_end',

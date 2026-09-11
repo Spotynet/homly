@@ -4,6 +4,7 @@ Homly — API URL Configuration
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from . import views
+from . import rental_views
 
 router = DefaultRouter()
 router.register(r'tenants', views.TenantViewSet, basename='tenants')
@@ -45,6 +46,12 @@ tenant_router.register(r'notifications', views.NotificationViewSet, basename='no
 tenant_router.register(r'payment-plans', views.PaymentPlanViewSet, basename='payment-plans')
 tenant_router.register(r'blog-posts',        views.BlogPostViewSet,                basename='blog-posts')
 tenant_router.register(r'payment-vouchers',  views.PaymentVoucherSubmissionViewSet, basename='payment-vouchers')
+tenant_router.register(r'rental-properties', rental_views.RentalPropertyViewSet, basename='rental-properties')
+tenant_router.register(r'rental-parties', rental_views.RentalPartyViewSet, basename='rental-parties')
+tenant_router.register(r'rental-concepts', rental_views.RentalChargeConceptViewSet, basename='rental-concepts')
+tenant_router.register(r'rental-contracts', rental_views.RentalContractViewSet, basename='rental-contracts')
+tenant_router.register(r'rental-charges', rental_views.RentalChargeViewSet, basename='rental-charges')
+tenant_router.register(r'rental-payments', rental_views.RentalPaymentViewSet, basename='rental-payments')
 
 urlpatterns = [
     # Auth
@@ -93,6 +100,10 @@ urlpatterns = [
          views.CartaNoAdeudoView.as_view(), name='carta-no-adeudo'),
     path('tenants/<uuid:tenant_id>/closing-report/',
          views.ClosingReportView.as_view(), name='closing-report'),
+    path('tenants/<uuid:tenant_id>/rental-dashboard/',
+         rental_views.RentalDashboardView.as_view(), name='rental-dashboard'),
+    path('tenants/<uuid:tenant_id>/rental-calendar/',
+         rental_views.RentalCalendarView.as_view(), name='rental-calendar'),
 
     # CRM Dashboard (aggregate stats)
     path('crm/dashboard/', views.CRMDashboardView.as_view(), name='crm-dashboard'),

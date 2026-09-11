@@ -145,6 +145,57 @@ const NAV_ITEMS = {
   ],
 };
 
+const RENTAL_NAV_ITEMS = {
+  admin: [
+    { section: 'general', label: 'Gestión', items: [
+      { path: '/app/rentas/dashboard',    icon: Home,      label: 'Dashboard'     },
+      { path: '/app/rentas/propiedades',  icon: Building2, label: 'Propiedades'   },
+      { path: '/app/rentas/contratos',    icon: FileText,  label: 'Contratos'     },
+      { path: '/app/rentas/calendario',   icon: Calendar,  label: 'Vigencias'     },
+    ]},
+    { section: 'finanzas', label: 'Finanzas', items: [
+      { path: '/app/rentas/cobranza', icon: Receipt, label: 'Cobranza' },
+    ]},
+    { section: 'ajustes', label: 'Ajustes', items: [
+      { path: '/app/mi-membresia',   icon: CreditCard, label: 'Mi Membresía'  },
+      { path: '/app/rentas/config',  icon: Settings,   label: 'Configuración' },
+    ]},
+  ],
+  tesorero: [
+    { section: 'general', label: 'Gestión', items: [
+      { path: '/app/rentas/dashboard',    icon: Home,      label: 'Dashboard'   },
+      { path: '/app/rentas/propiedades',  icon: Building2, label: 'Propiedades' },
+      { path: '/app/rentas/contratos',    icon: FileText,  label: 'Contratos'   },
+      { path: '/app/rentas/calendario',   icon: Calendar,  label: 'Vigencias'   },
+    ]},
+    { section: 'finanzas', label: 'Finanzas', items: [
+      { path: '/app/rentas/cobranza', icon: Receipt, label: 'Cobranza' },
+    ]},
+  ],
+  contador: [
+    { section: 'general', label: 'Gestión', items: [
+      { path: '/app/rentas/dashboard',    icon: Home,      label: 'Dashboard'   },
+      { path: '/app/rentas/propiedades',  icon: Building2, label: 'Propiedades' },
+      { path: '/app/rentas/contratos',    icon: FileText,  label: 'Contratos'   },
+      { path: '/app/rentas/calendario',   icon: Calendar,  label: 'Vigencias'   },
+    ]},
+    { section: 'finanzas', label: 'Finanzas', items: [
+      { path: '/app/rentas/cobranza', icon: Receipt, label: 'Cobranza' },
+    ]},
+  ],
+  auditor: [
+    { section: 'general', label: 'Gestión', items: [
+      { path: '/app/rentas/dashboard',    icon: Home,      label: 'Dashboard'   },
+      { path: '/app/rentas/propiedades',  icon: Building2, label: 'Propiedades' },
+      { path: '/app/rentas/contratos',    icon: FileText,  label: 'Contratos'   },
+      { path: '/app/rentas/calendario',   icon: Calendar,  label: 'Vigencias'   },
+    ]},
+    { section: 'finanzas', label: 'Finanzas', items: [
+      { path: '/app/rentas/cobranza', icon: Receipt, label: 'Cobranza' },
+    ]},
+  ],
+};
+
 // Maps each nav path to its module key (for permission filtering)
 const PATH_TO_MODULE = {
   '/app/dashboard':       'dashboard',
@@ -162,6 +213,12 @@ const PATH_TO_MODULE = {
   '/app/mi-membresia':    'mi_membresia',
   '/app/blog':            'blog',
   '/app/enviar-pago':     'enviar_pago',
+  '/app/rentas/dashboard':    'rentas_dashboard',
+  '/app/rentas/propiedades':  'rentas_propiedades',
+  '/app/rentas/contratos':    'rentas_contratos',
+  '/app/rentas/cobranza':     'rentas_cobranza',
+  '/app/rentas/calendario':   'rentas_calendario',
+  '/app/rentas/config':       'rentas_config',
 };
 
 const PAGE_TITLES = {
@@ -185,11 +242,18 @@ const PAGE_TITLES = {
   'mi-membresia': 'Mi Membresía',
   'blog': 'Comunicación',
   'enviar-pago': 'Enviar pago',
+  'rentas/dashboard': 'Rentas',
+  'rentas/propiedades': 'Propiedades en renta',
+  'rentas/contratos': 'Contratos de renta',
+  'rentas/cobranza': 'Cobranza de rentas',
+  'rentas/calendario': 'Vigencias de contratos',
+  'rentas/config': 'Configuración de rentas',
 };
 
 function getPageTitle(pathname) {
-  for (const [key, title] of Object.entries(PAGE_TITLES)) {
-    if (pathname.includes(key)) return title;
+  const keys = Object.keys(PAGE_TITLES).sort((a, b) => b.length - a.length);
+  for (const key of keys) {
+    if (pathname.includes(key)) return PAGE_TITLES[key];
   }
   return '';
 }
@@ -272,11 +336,11 @@ function TenantSwitcher({ tenantId, tenantName, userTenants, onSwitch }) {
             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
             fontStyle: tenantName ? 'normal' : 'italic',
           }}>
-            {switching ? 'Cambiando…' : (tenantName || 'Seleccionar condominio…')}
+            {switching ? 'Cambiando…' : (tenantName || 'Seleccionar espacio…')}
           </div>
           {userTenants.length > 0 && (
             <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 1 }}>
-              {userTenants.length} condominio{userTenants.length !== 1 ? 's' : ''}
+              {userTenants.length} espacio{userTenants.length !== 1 ? 's' : ''} de trabajo
             </div>
           )}
         </div>
@@ -299,40 +363,47 @@ function TenantSwitcher({ tenantId, tenantName, userTenants, onSwitch }) {
           borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
           overflow: 'hidden',
         }}>
-          <div style={{
-            padding: '8px 12px 6px',
-            fontSize: 10, fontWeight: 800, letterSpacing: '0.06em',
-            color: 'var(--ink-400)', textTransform: 'uppercase',
-          }}>
-            Mis condominios
-          </div>
-          {userTenants.map(t => {
-            const active = t.id === tenantId;
+          {['condominio', 'rentas'].map(ws => {
+            const group = userTenants.filter(t => (t.workspace_type || 'condominio') === ws);
+            if (!group.length) return null;
             return (
-              <button
-                key={t.id}
-                onClick={() => handleSelect(t)}
-                style={{
-                  width: '100%', display: 'flex', alignItems: 'center', gap: 10,
-                  padding: '9px 12px',
-                  background: active ? 'var(--teal-50)' : 'transparent',
-                  border: 'none', cursor: 'pointer', textAlign: 'left',
-                  transition: 'background 0.1s',
-                }}
-                onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'var(--sand-50)'; }}
-                onMouseLeave={e => { e.currentTarget.style.background = active ? 'var(--teal-50)' : 'transparent'; }}
-              >
-                {/* Logo del tenant en la opción del dropdown */}
-                <TenantAvatar logo={t.logo} size={28} active={active} radius={6} />
-                <span style={{
-                  flex: 1, fontSize: 13, fontWeight: active ? 700 : 500,
-                  color: active ? 'var(--teal-700)' : 'var(--ink-700)',
-                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              <div key={ws}>
+                <div style={{
+                  padding: '8px 12px 6px',
+                  fontSize: 10, fontWeight: 800, letterSpacing: '0.06em',
+                  color: 'var(--ink-400)', textTransform: 'uppercase',
                 }}>
-                  {t.name}
-                </span>
-                {active && <Check size={13} color="var(--teal-500)" style={{ flexShrink: 0 }} />}
-              </button>
+                  {ws === 'rentas' ? 'Rentas · Inmobiliaria' : 'Condominios'}
+                </div>
+                {group.map(t => {
+                  const active = t.id === tenantId;
+                  return (
+                    <button
+                      key={t.id}
+                      onClick={() => handleSelect(t)}
+                      style={{
+                        width: '100%', display: 'flex', alignItems: 'center', gap: 10,
+                        padding: '9px 12px',
+                        background: active ? 'var(--teal-50)' : 'transparent',
+                        border: 'none', cursor: 'pointer', textAlign: 'left',
+                        transition: 'background 0.1s',
+                      }}
+                      onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'var(--sand-50)'; }}
+                      onMouseLeave={e => { e.currentTarget.style.background = active ? 'var(--teal-50)' : 'transparent'; }}
+                    >
+                      <TenantAvatar logo={t.logo} size={28} active={active} radius={6} />
+                      <span style={{
+                        flex: 1, fontSize: 13, fontWeight: active ? 700 : 500,
+                        color: active ? 'var(--teal-700)' : 'var(--ink-700)',
+                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                      }}>
+                        {t.name}
+                      </span>
+                      {active && <Check size={13} color="var(--teal-500)" style={{ flexShrink: 0 }} />}
+                    </button>
+                  );
+                })}
+              </div>
             );
           })}
         </div>
@@ -623,7 +694,7 @@ function NotificationBell({ tenantId, role, tenantModulePerms, activeProfile }) 
 // ── Main Layout ─────────────────────────────────────────────────────────────
 export default function AppLayout() {
   const {
-    user, role, tenantId, tenantName,
+    user, role, tenantId, tenantName, workspaceType,
     userTenants, loadUserTenants, switchTenant,
     logout, isSuperAdmin, profileId,
   } = useAuth();
@@ -722,7 +793,17 @@ export default function AppLayout() {
   };
 
   // Filter nav based on module permissions or custom profile modules
-  const rawNav = NAV_ITEMS[navRole] || NAV_ITEMS.vecino;
+  const isRentalWorkspace = workspaceType === 'rentas';
+  const rentalNav = RENTAL_NAV_ITEMS[navRole] || RENTAL_NAV_ITEMS.admin;
+  const condoNav = NAV_ITEMS[navRole] || NAV_ITEMS.vecino;
+  const rawNav = isRentalWorkspace
+    ? (isSuperAdmin
+        ? [
+            ...(NAV_ITEMS.superadmin?.filter(g => g.section === 'system') || []),
+            ...rentalNav,
+          ]
+        : rentalNav)
+    : condoNav;
   const effectiveNav = role === 'superadmin'
     ? rawNav
     : rawNav.map(group => ({
@@ -765,8 +846,9 @@ export default function AppLayout() {
 
   // Switch tenant + navigate to dashboard
   const handleSwitchTenant = async (newTenantId) => {
-    await switchTenant(newTenantId);
-    navigate('/app/dashboard');
+    const data = await switchTenant(newTenantId);
+    const ws = data?.workspace_type || userTenants.find(t => t.id === newTenantId)?.workspace_type;
+    navigate(ws === 'rentas' ? '/app/rentas/dashboard' : '/app/dashboard');
     setSidebarOpen(false);
   };
 

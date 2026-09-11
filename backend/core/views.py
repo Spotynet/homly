@@ -401,6 +401,7 @@ class LoginView(APIView):
             'role': role,
             'tenant_id': str(tenant.id) if tenant else None,
             'tenant_name': tenant.name if tenant else None,
+            'workspace_type': tenant.workspace_type if tenant else None,
             'must_change_password': user.must_change_password,
             'profile_id': profile_id or '',
             # System staff fields — null for regular tenant users
@@ -498,6 +499,7 @@ class LoginWithCodeView(APIView):
             'role': role,
             'tenant_id': str(tenant.id) if tenant else None,
             'tenant_name': tenant.name if tenant else None,
+            'workspace_type': tenant.workspace_type if tenant else None,
             'must_change_password': False,  # Code-only: never prompt for password
             'profile_id': profile_id or '',
             'system_role': user.system_role,
@@ -563,6 +565,7 @@ class SwitchTenantView(APIView):
             'role':                 role,
             'tenant_id':            str(tenant.id),
             'tenant_name':          tenant.name,
+            'workspace_type':       tenant.workspace_type,
             'must_change_password': user.must_change_password,
             'profile_id':           profile_id,
             # System staff fields — null for regular tenant users
@@ -581,10 +584,20 @@ class UserTenantsView(APIView):
     def get(self, request):
         user = request.user
         if user.is_super_admin:
-            tenants = Tenant.objects.all().values('id', 'name')
-            return Response([{'id': str(t['id']), 'name': t['name']} for t in tenants])
+            tenants = Tenant.objects.all().values('id', 'name', 'workspace_type')
+            return Response([
+                {'id': str(t['id']), 'name': t['name'], 'workspace_type': t['workspace_type']}
+                for t in tenants
+            ])
         qs = TenantUser.objects.filter(user=user).select_related('tenant')
-        return Response([{'id': str(tu.tenant.id), 'name': tu.tenant.name} for tu in qs])
+        return Response([
+            {
+                'id': str(tu.tenant.id),
+                'name': tu.tenant.name,
+                'workspace_type': tu.tenant.workspace_type,
+            }
+            for tu in qs
+        ])
 
 
 class ProtectedMediaView(APIView):
@@ -743,13 +756,21 @@ class TenantViewSet(viewsets.ModelViewSet):
         # Pre-fetch subscription + plan to avoid N+1 queries in TenantListSerializer
         qs_base = Tenant.objects.select_related('subscription', 'subscription__plan')
         if user.is_super_admin:
-            return qs_base.all()
-        # Regular users: only tenants they belong to
-        tenant_ids = TenantUser.objects.filter(user=user).values_list('tenant_id', flat=True)
-        return qs_base.filter(id__in=tenant_ids)
+            qs = qs_base.all()
+        else:
+            # Regular users: only tenants they belong to
+            tenant_ids = TenantUser.objects.filter(user=user).values_list('tenant_id', flat=True)
+            qs = qs_base.filter(id__in=tenant_ids)
+        ws = (self.request.query_params.get('workspace_type') or '').strip()
+        if ws in ('condominio', 'rentas'):
+            qs = qs.filter(workspace_type=ws)
+        return qs
 
     def perform_create(self, serializer):
         obj = serializer.save()
+        if obj.workspace_type == 'rentas':
+            from .rental_views import _ensure_default_concepts
+            _ensure_default_concepts(obj)
         _audit_log(self.request, 'tenants', 'create',
                    f'Tenant creado: {obj.name}',
                    object_type='Tenant', object_id=str(obj.id), object_repr=obj.name)
@@ -796,6 +817,133 @@ class TenantViewSet(viewsets.ModelViewSet):
                 f'de forma segura.'
             )
         raise PermissionDenied(detail)
+
+    @action(detail=False, methods=['get'], url_path='workspace-admin',
+            permission_classes=[IsSuperAdmin])
+    def workspace_admin(self, request):
+        """GET /api/tenants/workspace-admin/?email=
+        Membresías de un administrador (ambos espacios de trabajo)."""
+        email = (request.query_params.get('email') or '').strip().lower()
+        if not email:
+            return Response({'detail': 'Indique email.'}, status=400)
+        try:
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            return Response({'exists': False, 'memberships': []})
+        memberships = []
+        for tu in TenantUser.objects.filter(user=user).select_related('tenant').order_by('tenant__name'):
+            memberships.append({
+                'tenant_id': str(tu.tenant_id),
+                'tenant_name': tu.tenant.name,
+                'workspace_type': tu.tenant.workspace_type,
+                'role': tu.role,
+            })
+        return Response({
+            'exists': True,
+            'user': {'id': str(user.id), 'email': user.email, 'name': user.name},
+            'memberships': memberships,
+        })
+
+    @action(detail=False, methods=['post'], url_path='assign-workspaces',
+            permission_classes=[IsSuperAdmin])
+    def assign_workspaces(self, request):
+        """POST /api/tenants/assign-workspaces/
+        Sincroniza los espacios (condominio y/o rentas) de un administrador.
+        Body: { email, name?, memberships: [{ tenant_id, role }] }
+        """
+        import secrets
+        email = (request.data.get('email') or '').strip().lower()
+        name = (request.data.get('name') or '').strip()
+        memberships = request.data.get('memberships') or []
+        if not email:
+            return Response({'detail': 'Indique email.'}, status=400)
+        if not isinstance(memberships, list):
+            return Response({'detail': 'memberships debe ser una lista.'}, status=400)
+
+        user = User.objects.filter(email=email).first()
+        if not user:
+            if not name:
+                return Response({'detail': 'El nombre es obligatorio para un usuario nuevo.'}, status=400)
+            user = User.objects.create_user(
+                email=email, name=name, password=secrets.token_urlsafe(24),
+            )
+            user.must_change_password = False
+            user.save(update_fields=['must_change_password'])
+
+        wanted = {}
+        for item in memberships:
+            tid = str(item.get('tenant_id') or '')
+            role = item.get('role') or 'admin'
+            if tid:
+                wanted[tid] = role
+
+        existing = {
+            str(tu.tenant_id): tu
+            for tu in TenantUser.objects.filter(user=user)
+        }
+        created = updated = removed = 0
+        for tid, role in wanted.items():
+            if not Tenant.objects.filter(id=tid).exists():
+                continue
+            tu = existing.get(tid)
+            if tu:
+                if tu.role != role:
+                    tu.role = role
+                    tu.save(update_fields=['role'])
+                    updated += 1
+            else:
+                TenantUser.objects.create(user=user, tenant_id=tid, role=role)
+                created += 1
+        for tid, tu in existing.items():
+            if tid not in wanted:
+                tu.delete()
+                removed += 1
+
+        _audit_log(
+            request, 'tenants', 'update',
+            f'Espacios asignados a {user.email}: +{created} ~{updated} -{removed}',
+            object_type='User', object_id=str(user.id), object_repr=user.email,
+        )
+        return Response({
+            'user': {'id': str(user.id), 'email': user.email, 'name': user.name},
+            'created': created, 'updated': updated, 'removed': removed,
+        })
+
+    @action(detail=True, methods=['post'], url_path='assign-admin',
+            permission_classes=[IsSuperAdmin])
+    def assign_admin(self, request, pk=None):
+        """POST /api/tenants/{id}/assign-admin/  { email, name? }"""
+        import secrets
+        tenant = self.get_object()
+        email = (request.data.get('email') or '').strip().lower()
+        name = (request.data.get('name') or '').strip()
+        if not email:
+            return Response({'detail': 'Indique email.'}, status=400)
+        user = User.objects.filter(email=email).first()
+        if not user:
+            if not name:
+                return Response({'detail': 'El nombre es obligatorio para un usuario nuevo.'}, status=400)
+            user = User.objects.create_user(
+                email=email, name=name, password=secrets.token_urlsafe(24),
+            )
+            user.must_change_password = False
+            user.save(update_fields=['must_change_password'])
+        tu, created = TenantUser.objects.get_or_create(
+            user=user, tenant=tenant, defaults={'role': 'admin'},
+        )
+        if not created and tu.role != 'admin':
+            tu.role = 'admin'
+            tu.save(update_fields=['role'])
+        _audit_log(
+            request, 'tenants', 'update',
+            f'Administrador asignado a {tenant.name}: {user.email}',
+            tenant_id=str(tenant.id),
+            object_type='Tenant', object_id=str(tenant.id), object_repr=tenant.name,
+        )
+        return Response({
+            'created': created,
+            'user': {'id': str(user.id), 'email': user.email, 'name': user.name},
+        })
 
     # ─── Hibernate / Reactivate ────────────────────────────────
 

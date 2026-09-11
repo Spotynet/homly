@@ -5,7 +5,13 @@ import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { queryClient } from './lib/queryClient';
 import { GuideProvider } from './context/GuideContext';
-import { ROLE_BASE_MODULES } from './constants/modulePermissions';
+import { ROLE_BASE_MODULES, RENTAL_ROLE_BASE_MODULES } from './constants/modulePermissions';
+import RentalDashboard from './pages/rentas/RentalDashboard';
+import RentalProperties from './pages/rentas/RentalProperties';
+import RentalContracts from './pages/rentas/RentalContracts';
+import RentalCobranza from './pages/rentas/RentalCobranza';
+import RentalCalendar from './pages/rentas/RentalCalendar';
+import RentalConfig from './pages/rentas/RentalConfig';
 
 // Pages
 import Landing from './pages/Landing';
@@ -61,15 +67,24 @@ function PrivateRoute({ children }) {
 // Role-based route guard — redirects to /app (index) if the current role
 // does not include the given module in ROLE_BASE_MODULES.
 // superadmin bypasses all checks. Loading state defers the check.
-function RoleRoute({ module: moduleKey, children }) {
-  const { role, isSuperAdmin, loading } = useAuth();
+function RoleRoute({ module: moduleKey, workspace, children }) {
+  const { role, isSuperAdmin, loading, workspaceType } = useAuth();
 
   if (loading) return LOADER;
+
+  if (workspace === 'rentas' && workspaceType && workspaceType !== 'rentas') {
+    return <Navigate to="/app/dashboard" replace />;
+  }
+  if (workspace === 'condominio' && workspaceType === 'rentas') {
+    return <Navigate to="/app/rentas/dashboard" replace />;
+  }
 
   // Superadmin has unrestricted access
   if (isSuperAdmin) return children;
 
-  const allowedModules = ROLE_BASE_MODULES[role] || [];
+  const allowedModules = workspace === 'rentas'
+    ? (RENTAL_ROLE_BASE_MODULES[role] || [])
+    : (ROLE_BASE_MODULES[role] || []);
   if (!allowedModules.includes(moduleKey)) {
     return <Navigate to="/app" replace />;
   }
@@ -78,7 +93,7 @@ function RoleRoute({ module: moduleKey, children }) {
 }
 
 function AppRoutes() {
-  const { isAuthenticated, isResidente, isSuperAdmin, systemRole, loading } = useAuth();
+  const { isAuthenticated, isResidente, isSuperAdmin, systemRole, loading, workspaceType } = useAuth();
 
   // Wait for auth to be restored from localStorage before rendering routes.
   // Without this, super admins get flashed to /app/dashboard (no tenantId) on refresh.
@@ -102,13 +117,20 @@ function AppRoutes() {
               to={
                 isSuperAdmin ? '/app/sistema/tenants'
                 : isResidente   ? '/app/my-unit'
+                : workspaceType === 'rentas' ? '/app/rentas/dashboard'
                 :              '/app/dashboard'
               }
               replace
             />
           }
         />
-        <Route path="dashboard"      element={<RoleRoute module="dashboard">     <Dashboard />     </RoleRoute>} />
+        <Route path="dashboard"      element={<RoleRoute module="dashboard" workspace="condominio"><Dashboard /></RoleRoute>} />
+        <Route path="rentas/dashboard"     element={<RoleRoute module="rentas_dashboard" workspace="rentas"><RentalDashboard /></RoleRoute>} />
+        <Route path="rentas/propiedades"   element={<RoleRoute module="rentas_propiedades" workspace="rentas"><RentalProperties /></RoleRoute>} />
+        <Route path="rentas/contratos"     element={<RoleRoute module="rentas_contratos" workspace="rentas"><RentalContracts /></RoleRoute>} />
+        <Route path="rentas/cobranza"      element={<RoleRoute module="rentas_cobranza" workspace="rentas"><RentalCobranza /></RoleRoute>} />
+        <Route path="rentas/calendario"    element={<RoleRoute module="rentas_calendario" workspace="rentas"><RentalCalendar /></RoleRoute>} />
+        <Route path="rentas/config"        element={<RoleRoute module="rentas_config" workspace="rentas"><RentalConfig /></RoleRoute>} />
         {isSuperAdmin && (
           <Route path="sistema">
             <Route path="tenants"       element={<Tenants />} />
@@ -118,22 +140,22 @@ function AppRoutes() {
             <Route path="usuarios"      element={<SystemUsers currentUserRole={systemRole} />} />
           </Route>
         )}
-        <Route path="cobranza"      element={<RoleRoute module="cobranza">      <Cobranza />      </RoleRoute>} />
-        <Route path="gastos"        element={<RoleRoute module="gastos">        <Gastos />        </RoleRoute>} />
-        <Route path="caja-chica"    element={<RoleRoute module="caja_chica">    <CajaChica />     </RoleRoute>} />
-        <Route path="estado-cuenta" element={<RoleRoute module="estado_cuenta"> <EstadoCuenta />  </RoleRoute>} />
-        <Route path="config"        element={<RoleRoute module="config">        <Config />        </RoleRoute>} />
-        <Route path="units"         element={<RoleRoute module="config">        <Units />         </RoleRoute>} />
-        <Route path="users"         element={<RoleRoute module="config">        <Users />         </RoleRoute>} />
-        <Route path="my-unit"       element={<RoleRoute module="my_unit">       <MyUnit />        </RoleRoute>} />
-        <Route path="reservas"      element={<RoleRoute module="reservas">      <Reservas />      </RoleRoute>} />
-        <Route path="notificaciones" element={<RoleRoute module="notificaciones"><Notificaciones /></RoleRoute>} />
-        <Route path="cierre-periodo" element={<RoleRoute module="cierre_periodo"><CierrePeriodo /> </RoleRoute>} />
-        <Route path="plan-pagos"    element={<RoleRoute module="plan_pagos">    <PlanPagos />     </RoleRoute>} />
-        <Route path="onboarding"    element={<RoleRoute module="onboarding">    <Onboarding />    </RoleRoute>} />
-        <Route path="mi-membresia"  element={<RoleRoute module="mi_membresia">  <MiMembresia />   </RoleRoute>} />
-        <Route path="blog"          element={<RoleRoute module="blog">          <Blog />          </RoleRoute>} />
-        <Route path="enviar-pago"   element={<RoleRoute module="enviar_pago">   <EnviarPago />    </RoleRoute>} />
+        <Route path="cobranza"      element={<RoleRoute module="cobranza" workspace="condominio"><Cobranza /></RoleRoute>} />
+        <Route path="gastos"        element={<RoleRoute module="gastos" workspace="condominio"><Gastos /></RoleRoute>} />
+        <Route path="caja-chica"    element={<RoleRoute module="caja_chica" workspace="condominio"><CajaChica /></RoleRoute>} />
+        <Route path="estado-cuenta" element={<RoleRoute module="estado_cuenta" workspace="condominio"><EstadoCuenta /></RoleRoute>} />
+        <Route path="config"        element={<RoleRoute module="config" workspace="condominio"><Config /></RoleRoute>} />
+        <Route path="units"         element={<RoleRoute module="config" workspace="condominio"><Units /></RoleRoute>} />
+        <Route path="users"         element={<RoleRoute module="config" workspace="condominio"><Users /></RoleRoute>} />
+        <Route path="my-unit"       element={<RoleRoute module="my_unit" workspace="condominio"><MyUnit /></RoleRoute>} />
+        <Route path="reservas"      element={<RoleRoute module="reservas" workspace="condominio"><Reservas /></RoleRoute>} />
+        <Route path="notificaciones" element={<RoleRoute module="notificaciones" workspace="condominio"><Notificaciones /></RoleRoute>} />
+        <Route path="cierre-periodo" element={<RoleRoute module="cierre_periodo" workspace="condominio"><CierrePeriodo /></RoleRoute>} />
+        <Route path="plan-pagos"    element={<RoleRoute module="plan_pagos" workspace="condominio"><PlanPagos /></RoleRoute>} />
+        <Route path="onboarding"    element={<RoleRoute module="onboarding" workspace="condominio"><Onboarding /></RoleRoute>} />
+        <Route path="mi-membresia"  element={<RoleRoute module="mi_membresia"><MiMembresia /></RoleRoute>} />
+        <Route path="blog"          element={<RoleRoute module="blog" workspace="condominio"><Blog /></RoleRoute>} />
+        <Route path="enviar-pago"   element={<RoleRoute module="enviar_pago" workspace="condominio"><EnviarPago /></RoleRoute>} />
       </Route>
 
       {/* Fallback */}

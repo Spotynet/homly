@@ -7,7 +7,7 @@ import {
   Plus, Edit, LogIn, Building2, Check, X, CreditCard,
   AlertCircle, CheckCircle, Clock, XCircle, ShieldOff, RefreshCw,
   DollarSign, Calendar, ChevronDown, ChevronUp,
-  Moon, RotateCcw, Lock,
+  Moon, RotateCcw, Lock, Users,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -710,6 +710,8 @@ export default function Tenants() {
   const [hibernating,    setHibernating]    = useState(false);
   const [reactivating,   setReactivating]   = useState(null); // tenant id
   const [statusFilter,   setStatusFilter]   = useState('all');
+  const [workspaceFilter, setWorkspaceFilter] = useState('all');
+  const [assignOpen, setAssignOpen] = useState(false);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -744,19 +746,24 @@ export default function Tenants() {
     : statusFilter === 'hibernated' ? tenants.filter(t => !!t.hibernated)
     : tenants;
 
+  const workspaceFiltered = workspaceFilter === 'all'
+    ? statusFiltered
+    : statusFiltered.filter(t => (t.workspace_type || 'condominio') === workspaceFilter);
+
   // Further filter by search term
   const filtered = search.trim()
-    ? statusFiltered.filter(t => t.name?.toLowerCase().includes(search.trim().toLowerCase()))
-    : statusFiltered;
+    ? workspaceFiltered.filter(t => t.name?.toLowerCase().includes(search.trim().toLowerCase()))
+    : workspaceFiltered;
 
   const handleEnter = async (t) => {
     if (entering) return;
     setEntering(t.id);
     try {
-      await switchTenant(t.id);
-      navigate('/app/dashboard');
+      const data = await switchTenant(t.id);
+      const ws = data?.workspace_type || t.workspace_type;
+      navigate(ws === 'rentas' ? '/app/rentas/dashboard' : '/app/dashboard');
     } catch {
-      toast.error('No se pudo acceder al condominio.');
+      toast.error('No se pudo acceder al espacio de trabajo.');
     } finally {
       setEntering(null);
     }
@@ -767,6 +774,7 @@ export default function Tenants() {
     try {
       const payload = {
         name: form.name,
+        workspace_type: form.workspace_type || 'condominio',
         units_count: form.units_count,
         maintenance_fee: form.maintenance_fee,
         currency: form.currency,
@@ -775,10 +783,18 @@ export default function Tenants() {
       };
       if (form.id) {
         await tenantsAPI.update(form.id, payload);
-        toast.success('Condominio actualizado');
+        toast.success('Espacio actualizado');
       } else {
         const res = await tenantsAPI.create(payload);
         const newTenantId = res.data.id;
+        if (newTenantId && form.admin_email) {
+          try {
+            await tenantsAPI.assignAdmin(newTenantId, {
+              email: form.admin_email,
+              name: form.admin_name || '',
+            });
+          } catch { /* optional */ }
+        }
         // Create initial subscription if a plan was selected
         if (newTenantId) {
           const subPayload = {
@@ -794,7 +810,7 @@ export default function Tenants() {
             }
           } catch { /* subscription creation is optional — don't block tenant creation */ }
         }
-        toast.success('Condominio creado');
+        toast.success('Espacio creado');
       }
       setShowModal(false);
       load();
@@ -924,6 +940,18 @@ export default function Tenants() {
         ))}
       </div>
 
+      <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+        {[
+          { id: 'all', label: 'Todos los espacios' },
+          { id: 'condominio', label: 'Condominios' },
+          { id: 'rentas', label: 'Rentas' },
+        ].map(f => (
+          <button key={f.id} onClick={() => setWorkspaceFilter(f.id)} className={`tab ${workspaceFilter === f.id ? 'active' : ''}`} style={{ fontSize: 12 }}>
+            {f.label}
+          </button>
+        ))}
+      </div>
+
       {/* ── Toolbar ────────────────────────────────────────────────────────── */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
 
@@ -1003,8 +1031,15 @@ export default function Tenants() {
                   : <><Clock size={14} /> Inicializar Prueba</>
                 }
               </button>
-              <button className="btn btn-primary" onClick={() => { setForm({}); setShowModal(true); }}>
-                <Plus size={16} /> Nuevo Condominio
+              <button
+                className="btn btn-outline"
+                onClick={() => setAssignOpen(true)}
+                title="Asignar condominios y/o rentas a un administrador"
+              >
+                <Users size={15} /> Asignar espacios
+              </button>
+              <button className="btn btn-primary" onClick={() => { setForm({ workspace_type: 'condominio' }); setShowModal(true); }}>
+                <Plus size={16} /> Nuevo espacio
               </button>
             </>
           )}
@@ -1139,6 +1174,15 @@ export default function Tenants() {
                           padding: '1px 7px', textTransform: 'uppercase', letterSpacing: '0.04em',
                         }}>Hibernado</span>
                       )}
+                      <span style={{
+                        flexShrink: 0, fontSize: 9, fontWeight: 700,
+                        color: (t.workspace_type || 'condominio') === 'rentas' ? '#1d4ed8' : 'var(--teal-700)',
+                        background: (t.workspace_type || 'condominio') === 'rentas' ? '#eff6ff' : 'var(--teal-50)',
+                        border: `1px solid ${(t.workspace_type || 'condominio') === 'rentas' ? '#bfdbfe' : 'var(--teal-200)'}`,
+                        borderRadius: 10, padding: '1px 7px', textTransform: 'uppercase', letterSpacing: '0.04em',
+                      }}>
+                        {(t.workspace_type || 'condominio') === 'rentas' ? 'Rentas' : 'Condominio'}
+                      </span>
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 1, display: 'flex', alignItems: 'center', gap: 4 }}>
                       {(t.state || t.country) && (
@@ -1278,15 +1322,41 @@ export default function Tenants() {
         <div className="modal-bg open" onClick={() => setShowModal(false)}>
           <div className="modal lg" onClick={e => e.stopPropagation()}>
             <div className="modal-head">
-              <h3>{form.id ? 'Editar' : 'Nuevo'} Condominio</h3>
+              <h3>{form.id ? 'Editar espacio' : 'Nuevo espacio de trabajo'}</h3>
               <button className="modal-close" onClick={() => setShowModal(false)}>✕</button>
             </div>
             <div className="modal-body">
               <div className="form-grid">
                 <div className="field field-full">
+                  <label className="field-label">Tipo de espacio</label>
+                  <select
+                    className="field-select"
+                    value={form.workspace_type || 'condominio'}
+                    disabled={!!form.id}
+                    onChange={e => setForm({ ...form, workspace_type: e.target.value })}
+                  >
+                    <option value="condominio">Administración de condominios</option>
+                    <option value="rentas">Gestión de rentas (inmobiliaria)</option>
+                  </select>
+                </div>
+                <div className="field field-full">
                   <label className="field-label">Nombre</label>
                   <input className="field-input" value={form.name || ''} onChange={e => setForm({...form, name: e.target.value})} />
                 </div>
+                {!form.id && (
+                  <>
+                    <div className="field">
+                      <label className="field-label">Admin · email</label>
+                      <input className="field-input" value={form.admin_email || ''} onChange={e => setForm({ ...form, admin_email: e.target.value })} placeholder="admin@correo.com" />
+                    </div>
+                    <div className="field">
+                      <label className="field-label">Admin · nombre</label>
+                      <input className="field-input" value={form.admin_name || ''} onChange={e => setForm({ ...form, admin_name: e.target.value })} placeholder="Solo si es usuario nuevo" />
+                    </div>
+                  </>
+                )}
+                {(form.workspace_type || 'condominio') === 'condominio' && (
+                  <>
                 <div className="field">
                   <label className="field-label">Unidades Planeadas</label>
                   <input type="number" className="field-input" value={form.units_count || ''} onChange={e => setForm({...form, units_count: e.target.value})} />
@@ -1295,6 +1365,8 @@ export default function Tenants() {
                   <label className="field-label">Cuota Mantenimiento</label>
                   <input type="number" className="field-input" step="0.01" min="0" value={form.maintenance_fee || ''} onChange={e => setForm({...form, maintenance_fee: e.target.value})} />
                 </div>
+                  </>
+                )}
                 <div className="field">
                   <label className="field-label">Moneda</label>
                   <select className="field-select" value={form.currency || 'MXN'} onChange={e => setForm({...form, currency: e.target.value})}>
@@ -1383,6 +1455,123 @@ export default function Tenants() {
           loading={hibernating}
         />
       )}
+
+      {assignOpen && (
+        <AssignWorkspacesModal
+          tenants={tenants}
+          onClose={() => setAssignOpen(false)}
+          onSaved={load}
+        />
+      )}
+    </div>
+  );
+}
+
+function AssignWorkspacesModal({ tenants, onClose, onSaved }) {
+  const [email, setEmail] = useState('');
+  const [name, setName] = useState('');
+  const [selected, setSelected] = useState({});
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const lookup = async () => {
+    if (!email) return;
+    setLoading(true);
+    try {
+      const res = await tenantsAPI.workspaceAdmin(email);
+      if (res.data.exists) {
+        setName(res.data.user?.name || '');
+        const next = {};
+        (res.data.memberships || []).forEach(m => { next[m.tenant_id] = m.role || 'admin'; });
+        setSelected(next);
+        toast.success('Administrador encontrado');
+      } else {
+        setSelected({});
+        toast('Usuario nuevo: se creará al guardar');
+      }
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'No se pudo consultar');
+    } finally { setLoading(false); }
+  };
+
+  const toggle = (id) => {
+    setSelected(prev => {
+      const copy = { ...prev };
+      if (copy[id]) delete copy[id];
+      else copy[id] = 'admin';
+      return copy;
+    });
+  };
+
+  const save = async () => {
+    if (!email) { toast.error('Indica el email'); return; }
+    setSaving(true);
+    try {
+      await tenantsAPI.assignWorkspaces({
+        email,
+        name,
+        memberships: Object.entries(selected).map(([tenant_id, role]) => ({ tenant_id, role })),
+      });
+      toast.success('Espacios actualizados');
+      onSaved?.();
+      onClose();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'No se pudieron asignar los espacios');
+    } finally { setSaving(false); }
+  };
+
+  const condos = tenants.filter(t => (t.workspace_type || 'condominio') === 'condominio' && !t.hibernated);
+  const rentas = tenants.filter(t => t.workspace_type === 'rentas' && !t.hibernated);
+
+  return (
+    <div className="modal-bg open" onClick={onClose}>
+      <div className="modal lg" onClick={e => e.stopPropagation()}>
+        <div className="modal-head">
+          <h3>Asignar espacios a un administrador</h3>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body">
+          <p style={{ fontSize: 13, color: 'var(--ink-500)', marginBottom: 14 }}>
+            Un mismo administrador puede convivir con tenants de condominios y de rentas. Marca los espacios que debe administrar.
+          </p>
+          <div className="form-grid">
+            <div className="field">
+              <label className="field-label">Email</label>
+              <input className="field-input" value={email} onChange={e => setEmail(e.target.value)} onBlur={lookup} placeholder="admin@correo.com" />
+            </div>
+            <div className="field">
+              <label className="field-label">Nombre</label>
+              <input className="field-input" value={name} onChange={e => setName(e.target.value)} />
+            </div>
+          </div>
+          <button className="btn btn-outline btn-sm" style={{ margin: '8px 0 16px' }} onClick={lookup} disabled={loading}>
+            {loading ? 'Buscando…' : 'Buscar membresías'}
+          </button>
+
+          <Group title="Condominios" items={condos} selected={selected} toggle={toggle} />
+          <Group title="Rentas · Inmobiliaria" items={rentas} selected={selected} toggle={toggle} />
+        </div>
+        <div className="modal-foot">
+          <button className="btn btn-outline" onClick={onClose}>Cancelar</button>
+          <button className="btn btn-primary" disabled={saving} onClick={save}>{saving ? 'Guardando…' : 'Guardar asignación'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Group({ title, items, selected, toggle }) {
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.06em', color: 'var(--ink-400)', textTransform: 'uppercase', marginBottom: 8 }}>{title}</div>
+      {items.length === 0 ? (
+        <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>No hay espacios de este tipo.</div>
+      ) : items.map(t => (
+        <label key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid var(--sand-50)', cursor: 'pointer' }}>
+          <input type="checkbox" checked={!!selected[t.id]} onChange={() => toggle(t.id)} />
+          <span style={{ fontWeight: 600, fontSize: 13 }}>{t.name}</span>
+        </label>
+      ))}
     </div>
   );
 }

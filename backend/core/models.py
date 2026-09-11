@@ -130,9 +130,25 @@ class Tenant(models.Model):
         ('administrador', 'Administrador Externo'),
         ('comite', 'Comité'),
     ]
+    WORKSPACE_TYPE_CHOICES = [
+        ('condominio', 'Administración de condominios'),
+        ('rentas', 'Gestión de rentas'),
+    ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=300, db_index=True)
+    workspace_type = models.CharField(
+        max_length=20,
+        choices=WORKSPACE_TYPE_CHOICES,
+        default='condominio',
+        db_index=True,
+        help_text='Espacio de trabajo: condominio o inmobiliaria de rentas.',
+    )
+    rental_settings = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text='Ajustes propios del espacio de rentas (día de cobro, aviso de vencimiento, etc.).',
+    )
     units_count = models.PositiveIntegerField(default=0, help_text='Planned number of units')
     common_areas = models.JSONField(default=list, blank=True)
     maintenance_fee = models.DecimalField(max_digits=12, decimal_places=2, default=0,
@@ -1981,4 +1997,285 @@ class PaymentVoucherSubmission(models.Model):
 
     def __str__(self):
         return f'Voucher {self.unit} {self.period} [{self.status}]'
+
+
+# ═══════════════════════════════════════════════════════════
+#  RENTAS — inventario, contratos y cobranza (workspace independiente)
+# ═══════════════════════════════════════════════════════════
+
+class RentalProperty(models.Model):
+    """Inmueble administrado en renta por un tenant tipo inmobiliaria."""
+    PROPERTY_TYPE_CHOICES = [
+        ('casa', 'Casa'),
+        ('departamento', 'Departamento'),
+        ('local', 'Local comercial'),
+        ('oficina', 'Oficina'),
+        ('bodega', 'Bodega'),
+        ('terreno', 'Terreno'),
+        ('otro', 'Otro'),
+    ]
+    STATUS_CHOICES = [
+        ('disponible', 'Disponible'),
+        ('ocupada', 'Ocupada'),
+        ('reservada', 'Reservada'),
+        ('mantenimiento', 'En mantenimiento'),
+        ('inactiva', 'Inactiva'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='rental_properties')
+    code = models.CharField(max_length=40, db_index=True)
+    name = models.CharField(max_length=300)
+    property_type = models.CharField(max_length=20, choices=PROPERTY_TYPE_CHOICES, default='departamento')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='disponible', db_index=True)
+    street = models.CharField(max_length=300, blank=True, default='')
+    ext_number = models.CharField(max_length=50, blank=True, default='')
+    int_number = models.CharField(max_length=50, blank=True, default='')
+    neighborhood = models.CharField(max_length=200, blank=True, default='')
+    city = models.CharField(max_length=200, blank=True, default='')
+    state = models.CharField(max_length=100, blank=True, default='')
+    postal_code = models.CharField(max_length=12, blank=True, default='')
+    bedrooms = models.PositiveSmallIntegerField(default=0)
+    bathrooms = models.DecimalField(max_digits=4, decimal_places=1, default=0)
+    area_m2 = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    suggested_rent = models.DecimalField(max_digits=12, decimal_places=2, default=0,
+                                         validators=[MinValueValidator(0)])
+    owner_name = models.CharField(max_length=200, blank=True, default='')
+    owner_email = models.EmailField(blank=True, default='')
+    owner_phone = models.CharField(max_length=40, blank=True, default='')
+    notes = models.TextField(blank=True, default='')
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'rental_properties'
+        ordering = ['code']
+        unique_together = ['tenant', 'code']
+
+    def __str__(self):
+        return f'{self.code} — {self.name}'
+
+    @property
+    def address_line(self):
+        parts = [
+            ' '.join(p for p in [self.street, self.ext_number] if p).strip(),
+            self.int_number and f'Int. {self.int_number}',
+            self.neighborhood, self.city, self.state, self.postal_code,
+        ]
+        return ', '.join(p for p in parts if p)
+
+
+class RentalParty(models.Model):
+    """Contacto del espacio de rentas: inquilino, fiador o propietario."""
+    KIND_CHOICES = [
+        ('inquilino', 'Inquilino'),
+        ('fiador', 'Fiador'),
+        ('propietario', 'Propietario'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='rental_parties')
+    kind = models.CharField(max_length=20, choices=KIND_CHOICES, default='inquilino', db_index=True)
+    first_name = models.CharField(max_length=150)
+    last_name = models.CharField(max_length=150, blank=True, default='')
+    email = models.EmailField(blank=True, default='')
+    phone = models.CharField(max_length=40, blank=True, default='')
+    rfc = models.CharField(max_length=20, blank=True, default='')
+    notes = models.TextField(blank=True, default='')
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'rental_parties'
+        ordering = ['last_name', 'first_name']
+
+    def __str__(self):
+        return self.full_name
+
+    @property
+    def full_name(self):
+        return f'{self.first_name} {self.last_name}'.strip()
+
+
+class RentalChargeConcept(models.Model):
+    """Conceptos cobrables del tenant de rentas (renta, depósito, extras)."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='rental_concepts')
+    name = models.CharField(max_length=120)
+    default_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0,
+                                         validators=[MinValueValidator(0)])
+    is_recurring = models.BooleanField(default=True)
+    is_rent = models.BooleanField(default=False)
+    enabled = models.BooleanField(default=True)
+    sort_order = models.PositiveSmallIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'rental_charge_concepts'
+        ordering = ['sort_order', 'name']
+        unique_together = ['tenant', 'name']
+
+    def __str__(self):
+        return self.name
+
+
+class RentalContract(models.Model):
+    """Contrato de arrendamiento."""
+    STATUS_CHOICES = [
+        ('borrador', 'Borrador'),
+        ('activo', 'Activo'),
+        ('por_vencer', 'Por vencer'),
+        ('vencido', 'Vencido'),
+        ('renovado', 'Renovado'),
+        ('finalizado', 'Finalizado'),
+        ('cancelado', 'Cancelado'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='rental_contracts')
+    property = models.ForeignKey(RentalProperty, on_delete=models.PROTECT, related_name='contracts')
+    tenant_party = models.ForeignKey(
+        RentalParty, on_delete=models.PROTECT, related_name='contracts',
+        help_text='Inquilino titular del contrato.',
+    )
+    guarantor = models.ForeignKey(
+        RentalParty, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='guaranteed_contracts',
+    )
+    code = models.CharField(max_length=40, db_index=True)
+    start_date = models.DateField()
+    end_date = models.DateField()
+    rent_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0,
+                                      validators=[MinValueValidator(0)])
+    deposit_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0,
+                                         validators=[MinValueValidator(0)])
+    payment_day = models.PositiveSmallIntegerField(default=1)
+    increment_pct = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    late_fee_pct = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='borrador', db_index=True)
+    notes = models.TextField(blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'rental_contracts'
+        ordering = ['-start_date']
+        unique_together = ['tenant', 'code']
+        indexes = [
+            models.Index(fields=['tenant', 'status']),
+            models.Index(fields=['tenant', 'end_date']),
+        ]
+
+    def __str__(self):
+        return f'{self.code} — {self.property.code}'
+
+    def refresh_lifecycle_status(self, today=None):
+        """Actualiza status operativo según vigencia. No toca borrador/cancelado/finalizado/renovado."""
+        from datetime import date, timedelta
+        if self.status in ('borrador', 'cancelado', 'finalizado', 'renovado'):
+            return False
+        today = today or date.today()
+        if today > self.end_date:
+            new = 'vencido'
+        elif self.end_date <= today + timedelta(days=45):
+            new = 'por_vencer'
+        else:
+            new = 'activo'
+        if new != self.status:
+            self.status = new
+            self.save(update_fields=['status', 'updated_at'])
+            return True
+        return False
+
+
+class RentalCharge(models.Model):
+    """Cargo a un contrato (renta u otro concepto) para un período."""
+    STATUS_CHOICES = [
+        ('pendiente', 'Pendiente'),
+        ('parcial', 'Parcial'),
+        ('pagado', 'Pagado'),
+        ('cancelado', 'Cancelado'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='rental_charges')
+    contract = models.ForeignKey(RentalContract, on_delete=models.CASCADE, related_name='charges')
+    concept = models.ForeignKey(
+        RentalChargeConcept, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='charges',
+    )
+    period = models.CharField(max_length=7, db_index=True, help_text='YYYY-MM')
+    description = models.CharField(max_length=200)
+    amount = models.DecimalField(max_digits=12, decimal_places=2, default=0,
+                                 validators=[MinValueValidator(0)])
+    due_date = models.DateField(null=True, blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pendiente', db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'rental_charges'
+        ordering = ['-period', 'description']
+        indexes = [
+            models.Index(fields=['tenant', 'period', 'status']),
+        ]
+
+    def __str__(self):
+        return f'{self.period} {self.description}'
+
+    @property
+    def paid_amount(self):
+        from django.db.models import Sum
+        total = self.payments.aggregate(s=Sum('amount'))['s']
+        return total or 0
+
+    def sync_status(self):
+        if self.status == 'cancelado':
+            return
+        paid = self.paid_amount
+        if paid <= 0:
+            new = 'pendiente'
+        elif paid >= self.amount:
+            new = 'pagado'
+        else:
+            new = 'parcial'
+        if new != self.status:
+            self.status = new
+            self.save(update_fields=['status', 'updated_at'])
+
+
+class RentalPayment(models.Model):
+    """Pago registrado contra un cargo (o abono general al contrato)."""
+    PAYMENT_TYPE_CHOICES = [
+        ('transfer', 'Transferencia'),
+        ('cash', 'Efectivo'),
+        ('card', 'Tarjeta'),
+        ('check', 'Cheque'),
+        ('other', 'Otro'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='rental_payments')
+    contract = models.ForeignKey(RentalContract, on_delete=models.CASCADE, related_name='payments')
+    charge = models.ForeignKey(
+        RentalCharge, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='payments',
+    )
+    amount = models.DecimalField(max_digits=12, decimal_places=2,
+                                 validators=[MinValueValidator(0)])
+    payment_date = models.DateField()
+    payment_type = models.CharField(max_length=20, choices=PAYMENT_TYPE_CHOICES, default='transfer')
+    reference = models.CharField(max_length=120, blank=True, default='')
+    notes = models.TextField(blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'rental_payments'
+        ordering = ['-payment_date', '-created_at']
+
+    def __str__(self):
+        return f'{self.payment_date} {self.amount}'
 

@@ -9,7 +9,8 @@ export function AuthProvider({ children }) {
   const [role,               setRole]               = useState(null);
   const [tenantId,           setTenantId]           = useState(null);
   const [tenantName,         setTenantName]         = useState(null);
-  const [userTenants,        setUserTenants]        = useState([]); // [{id, name}]
+  const [workspaceType,      setWorkspaceType]      = useState(null); // condominio | rentas
+  const [userTenants,        setUserTenants]        = useState([]); // [{id, name, workspace_type}]
   const [loading,            setLoading]            = useState(true);
   const [mustChangePassword, setMustChangePassword] = useState(false);
   const [profileId,          setProfileId]          = useState('');
@@ -22,6 +23,7 @@ export function AuthProvider({ children }) {
     const savedRole       = localStorage.getItem('role');
     const savedTenant     = localStorage.getItem('tenant_id');
     const savedTenantName = localStorage.getItem('tenant_name');
+    const savedWorkspace  = localStorage.getItem('workspace_type');
     const savedMustChange = localStorage.getItem('must_change_password');
     const savedProfileId  = localStorage.getItem('profile_id');
     const savedSystemRole = localStorage.getItem('system_role');
@@ -35,6 +37,7 @@ export function AuthProvider({ children }) {
           setRole(savedRole);
           setTenantId(savedTenant && savedTenant !== 'null' ? savedTenant : null);
           setTenantName(savedTenantName && savedTenantName !== 'null' ? savedTenantName : null);
+          setWorkspaceType(savedWorkspace && savedWorkspace !== 'null' ? savedWorkspace : null);
           setMustChangePassword(savedMustChange === 'true');
           setProfileId(savedProfileId || '');
           setSystemRole(savedSystemRole && savedSystemRole !== 'null' ? savedSystemRole : null);
@@ -45,6 +48,7 @@ export function AuthProvider({ children }) {
         localStorage.removeItem('role');
         localStorage.removeItem('tenant_id');
         localStorage.removeItem('tenant_name');
+        localStorage.removeItem('workspace_type');
         localStorage.removeItem('must_change_password');
         localStorage.removeItem('profile_id');
         localStorage.removeItem('system_role');
@@ -67,9 +71,11 @@ export function AuthProvider({ children }) {
     if (data.tenant_id) {
       localStorage.setItem('tenant_id',   data.tenant_id);
       localStorage.setItem('tenant_name', data.tenant_name);
+      localStorage.setItem('workspace_type', data.workspace_type || 'condominio');
     } else {
       localStorage.removeItem('tenant_id');
       localStorage.removeItem('tenant_name');
+      localStorage.removeItem('workspace_type');
     }
   };
 
@@ -83,6 +89,7 @@ export function AuthProvider({ children }) {
     setRole(data.role);
     setTenantId(data.tenant_id);
     setTenantName(data.tenant_name);
+    setWorkspaceType(data.workspace_type || (data.tenant_id ? 'condominio' : null));
     setMustChangePassword(data.must_change_password);
     setProfileId(data.profile_id || '');
     setSystemRole(data.system_role || null);
@@ -99,6 +106,7 @@ export function AuthProvider({ children }) {
     setRole(data.role);
     setTenantId(data.tenant_id);
     setTenantName(data.tenant_name);
+    setWorkspaceType(data.workspace_type || (data.tenant_id ? 'condominio' : null));
     setMustChangePassword(data.must_change_password);
     setProfileId(data.profile_id || '');
     setSystemRole(data.system_role || null);
@@ -123,6 +131,7 @@ export function AuthProvider({ children }) {
     setRole(data.role);
     setTenantId(data.tenant_id);
     setTenantName(data.tenant_name);
+    setWorkspaceType(data.workspace_type || (data.tenant_id ? 'condominio' : null));
     setMustChangePassword(data.must_change_password);
     setProfileId(data.profile_id || '');
     setSystemRole(data.system_role || null);
@@ -137,6 +146,7 @@ export function AuthProvider({ children }) {
     localStorage.removeItem('role');
     localStorage.removeItem('tenant_id');
     localStorage.removeItem('tenant_name');
+    localStorage.removeItem('workspace_type');
     localStorage.removeItem('must_change_password');
     localStorage.removeItem('profile_id');
     localStorage.removeItem('system_role');
@@ -144,6 +154,7 @@ export function AuthProvider({ children }) {
     setRole(null);
     setTenantId(null);
     setTenantName(null);
+    setWorkspaceType(null);
     setUserTenants([]);
     setMustChangePassword(false);
     setProfileId('');
@@ -151,7 +162,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   const value = {
-    user, role, tenantId, tenantName, userTenants, loading,
+    user, role, tenantId, tenantName, workspaceType, userTenants, loading,
     mustChangePassword, setMustChangePassword,
     profileId, setProfileId,
     systemRole,
