@@ -122,6 +122,7 @@ export const tenantsAPI = {
   getSubscription: (id) => api.get(`/tenants/${id}/subscription/`),
   // Subscription payment history (accessible to tenant admin and superadmin)
   getSubscriptionPayments: (id) => api.get(`/tenants/${id}/subscription/payments/`),
+  recordSubscriptionPayment: (id, data) => api.post(`/tenants/${id}/subscription/record-payment/`, data),
   // Onboarding tour state
   onboardingComplete: (id) => api.post(`/tenants/${id}/onboarding/complete/`),
   onboardingDismiss: (id) => api.post(`/tenants/${id}/onboarding/dismiss/`),

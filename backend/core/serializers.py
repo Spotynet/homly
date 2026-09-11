@@ -1099,7 +1099,7 @@ class SubscriptionPlanSerializer(serializers.ModelSerializer):
     class Meta:
         model = SubscriptionPlan
         fields = [
-            'id', 'name', 'description',
+            'id', 'name', 'workspace_type', 'description',
             'price_per_unit', 'currency', 'billing_cycle',
             'annual_discount_percent',
             'trial_days',
@@ -1115,16 +1115,17 @@ class SubscriptionPlanSerializer(serializers.ModelSerializer):
 
 
 class TenantSubscriptionSerializer(serializers.ModelSerializer):
-    tenant_name          = serializers.SerializerMethodField()
-    plan_name            = serializers.SerializerMethodField()
-    plan_billing_cycle   = serializers.SerializerMethodField()
-    trial_days_remaining = serializers.SerializerMethodField()
-    status_label         = serializers.SerializerMethodField()
+    tenant_name            = serializers.SerializerMethodField()
+    tenant_workspace_type  = serializers.SerializerMethodField()
+    plan_name              = serializers.SerializerMethodField()
+    plan_billing_cycle     = serializers.SerializerMethodField()
+    trial_days_remaining   = serializers.SerializerMethodField()
+    status_label           = serializers.SerializerMethodField()
 
     class Meta:
         model = TenantSubscription
         fields = [
-            'id', 'tenant', 'tenant_name',
+            'id', 'tenant', 'tenant_name', 'tenant_workspace_type',
             'plan', 'plan_name', 'plan_billing_cycle',
             'status', 'status_label',
             'trial_start', 'trial_end', 'trial_days_remaining',
@@ -1138,6 +1139,9 @@ class TenantSubscriptionSerializer(serializers.ModelSerializer):
 
     def get_tenant_name(self, obj):
         return obj.tenant.name if obj.tenant else None
+
+    def get_tenant_workspace_type(self, obj):
+        return getattr(obj.tenant, 'workspace_type', 'condominio') if obj.tenant else 'condominio'
 
     def get_plan_name(self, obj):
         return obj.plan.name if obj.plan else None
@@ -1163,6 +1167,16 @@ class TenantSubscriptionSerializer(serializers.ModelSerializer):
         On UPDATE (self.instance exists) we trust the caller's explicit value so
         that superadmins can store negotiated/custom amounts.
         """
+        plan = data.get('plan') if 'plan' in data else (self.instance.plan if self.instance else None)
+        tenant = data.get('tenant') if 'tenant' in data else (self.instance.tenant if self.instance else None)
+        if plan and tenant:
+            plan_ws = getattr(plan, 'workspace_type', 'condominio') or 'condominio'
+            tenant_ws = getattr(tenant, 'workspace_type', 'condominio') or 'condominio'
+            if plan_ws != tenant_ws:
+                raise serializers.ValidationError({
+                    'plan': 'El plan debe ser del mismo espacio de trabajo que el tenant (condominio o rentas).',
+                })
+
         if self.instance:
             # UPDATE — do not override an explicitly provided amount
             return data

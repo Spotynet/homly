@@ -1785,6 +1785,24 @@ tr:hover td { background: rgba(59,185,144,0.02); }
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 20px;
 }
+.landing-services-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 20px;
+}
+.landing-who-grid,
+.landing-adv-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+.landing-contact-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  max-width: 860px;
+  margin: 0 auto;
+}
 .landing-steps-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
@@ -1816,6 +1834,10 @@ tr:hover td { background: rgba(59,185,144,0.02); }
   .landing-stats-grid { gap: 24px; grid-template-columns: repeat(2, 1fr); }
   .landing-section { padding: 64px 20px; }
   .landing-features-grid { grid-template-columns: 1fr; gap: 14px; }
+  .landing-services-grid,
+  .landing-who-grid,
+  .landing-adv-grid,
+  .landing-contact-grid { grid-template-columns: 1fr; gap: 14px; }
   .landing-steps-grid { grid-template-columns: 1fr; gap: 24px; }
   .landing-mobile-menu-btn { display: flex; }
 }

@@ -5,9 +5,11 @@ import {
   CreditCard, AlertCircle, CheckCircle, Clock, XCircle, ShieldOff,
   Calendar, DollarSign, RefreshCw, Building2, Receipt, Eye,
   TrendingUp, Award, AlertTriangle, Bell, Info, FileText, Printer,
-  ChevronDown, ChevronUp,
+  ChevronDown, ChevronUp, X,
 } from 'lucide-react';
+import toast from 'react-hot-toast';
 import SubscriptionReceiptModal from '../components/SubscriptionReceiptModal';
+import MembershipBillingNoteModal from '../components/MembershipBillingNote';
 import { APP_VERSION } from '../utils/helpers.jsx';
 
 // ─── Status config ─────────────────────────────────────────────────────────────
@@ -95,16 +97,24 @@ function parsePeriodLabel(label) {
  * then by date range as a fallback.
  */
 function generateBillingCycles(sub, payments) {
-  if (!sub?.billing_start) return [];
+  if (!sub) return [];
 
   const today = new Date();
   today.setHours(23, 59, 59, 0);
 
-  const isAnnual  = sub.plan_billing_cycle === 'annual';
+  const isAnnual  = sub?.plan_billing_cycle === 'annual';
   const GRACE     = 5; // days
 
-  const [sy, sm, sd] = sub.billing_start.split('-').map(Number);
-  let cs = new Date(sy, sm - 1, sd); // cycle start
+  let startStr = sub?.billing_start;
+  if (!startStr) {
+    if (sub.status === 'trial') return [];
+    // Sin inicio de facturación: mostrar el ciclo actual para poder emitir el recibo de cobro.
+    const now = new Date();
+    startStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+  }
+
+  const [sy, sm, sd] = startStr.split('-').map(Number);
+  let cs = new Date(sy, sm - 1, sd || 1); // cycle start
 
   const cycles = [];
 
@@ -418,7 +428,7 @@ const CYCLE_STATUS = {
   overdue: { label: 'Vencido',   color: '#991B1B', bg: '#FEE2E2', border: '#FECACA' },
 };
 
-function KardexSection({ cycles, sub, tenantData, adminName, adminEmail, onViewReceipt }) {
+function KardexSection({ cycles, sub, tenantData, adminName, adminEmail, onViewReceipt, onViewBillingNote, onRecordPayment, canRecordPayment }) {
   const [expanded, setExpanded] = useState(true);
 
   const sym = { MXN: '$', USD: 'US$', EUR: '€', COP: 'COP$' };
@@ -545,6 +555,51 @@ function KardexSection({ cycles, sub, tenantData, adminName, adminEmail, onViewR
                     {c.payment?.reference && (
                       <div style={{ fontSize: 10, color: 'var(--ink-300)', marginTop: 1 }}>Ref: {c.payment.reference}</div>
                     )}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
+                      <button
+                        type="button"
+                        onClick={() => onViewBillingNote?.(c)}
+                        style={{
+                          padding: '3px 7px', background: '#F5F3FF', border: '1.5px solid #DDD6FE',
+                          borderRadius: 6, fontSize: 10, fontWeight: 700, color: '#6D28D9',
+                          cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4,
+                        }}
+                        title="Recibo de cobro del mes"
+                      >
+                        <FileText size={10} /> Recibo de cobro
+                      </button>
+                      {c.payment ? (
+                        onViewReceipt && (
+                          <button
+                            type="button"
+                            onClick={() => onViewReceipt(c.payment)}
+                            style={{
+                              padding: '3px 7px', background: 'var(--teal-50)', border: '1.5px solid var(--teal-200)',
+                              borderRadius: 6, fontSize: 10, fontWeight: 700, color: 'var(--teal-700)',
+                              cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4,
+                            }}
+                            title="Recibo de pago"
+                          >
+                            <Receipt size={10} /> Recibo de pago
+                          </button>
+                        )
+                      ) : (
+                        canRecordPayment && (
+                          <button
+                            type="button"
+                            onClick={() => onRecordPayment?.(c)}
+                            style={{
+                              padding: '3px 7px', background: 'var(--teal-600)', border: '1.5px solid var(--teal-600)',
+                              borderRadius: 6, fontSize: 10, fontWeight: 700, color: 'white',
+                              cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4,
+                            }}
+                            title="Registrar el pago y emitir recibo"
+                          >
+                            <DollarSign size={10} /> Registrar pago
+                          </button>
+                        )
+                      )}
+                    </div>
                   </div>
                   <span style={{ fontSize: 11, color: 'var(--ink-500)' }}>{fmtD(c.cycleStart)}</span>
                   <span style={{ fontSize: 11, color: 'var(--ink-500)' }}>{fmtD(c.dueDate)}</span>
@@ -572,7 +627,7 @@ function KardexSection({ cycles, sub, tenantData, adminName, adminEmail, onViewR
                           borderRadius: 6, fontSize: 10, fontWeight: 700, color: 'var(--teal-700)',
                           cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4,
                         }}
-                        title="Ver recibo"
+                        title="Ver recibo de pago"
                       >
                         <Eye size={10} /> Recibo
                       </button>
@@ -672,8 +727,112 @@ function AlertBanner({ type, title, message }) {
 }
 
 // ─── Main page ─────────────────────────────────────────────────────────────────
+function MembershipPaymentModal({ cycle, sub, tenantId, onClose, onSaved }) {
+  const [saving, setSaving] = useState(false);
+  const [pay, setPay] = useState(() => ({
+    amount: String(cycle.expectedAmount || sub?.amount_per_cycle || ''),
+    currency: cycle.currency || sub?.currency || 'MXN',
+    period_label: cycle.periodLabel || '',
+    payment_date: new Date().toISOString().slice(0, 10),
+    payment_method: 'transfer',
+    reference: '',
+    notes: '',
+  }));
+  const f = (k) => (e) => setPay(p => ({ ...p, [k]: e.target.value }));
+  const inputSt = { width: '100%', border: '1.5px solid var(--sand-200)', borderRadius: 8, padding: '8px 10px', fontSize: 13, boxSizing: 'border-box' };
+  const labelSt = { display: 'block', fontSize: 11, fontWeight: 700, color: 'var(--ink-500)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!pay.amount || !pay.payment_date) {
+      toast.error('Indica el importe y la fecha de pago');
+      return;
+    }
+    setSaving(true);
+    try {
+      const { data } = await tenantsAPI.recordSubscriptionPayment(tenantId, {
+        ...pay,
+        amount: Number(pay.amount),
+      });
+      toast.success('Pago registrado. Ya puedes emitir el recibo de pago.');
+      onSaved(data);
+    } catch (err) {
+      const detail = err?.response?.data;
+      toast.error(detail?.detail || detail?.amount?.[0] || 'No se pudo registrar el pago');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 9000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+      onClick={onClose}>
+      <form
+        onSubmit={handleSubmit}
+        onClick={e => e.stopPropagation()}
+        style={{ background: 'white', borderRadius: 16, width: '100%', maxWidth: 440, boxShadow: '0 24px 64px rgba(0,0,0,0.2)' }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid var(--sand-100)' }}>
+          <div>
+            <div style={{ fontWeight: 800, fontSize: 15, color: 'var(--ink-800)' }}>Registrar pago</div>
+            <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>{cycle.periodLabel}</div>
+          </div>
+          <button type="button" onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-400)' }}>
+            <X size={18} />
+          </button>
+        </div>
+        <div style={{ padding: 20, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div>
+            <label style={labelSt}>Importe</label>
+            <input type="number" min="0" step="0.01" required value={pay.amount} onChange={f('amount')} style={inputSt} />
+          </div>
+          <div>
+            <label style={labelSt}>Moneda</label>
+            <select value={pay.currency} onChange={f('currency')} style={inputSt}>
+              {['MXN', 'USD', 'EUR', 'COP'].map(c => <option key={c}>{c}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={labelSt}>Período</label>
+            <input value={pay.period_label} onChange={f('period_label')} style={inputSt} />
+          </div>
+          <div>
+            <label style={labelSt}>Fecha de pago</label>
+            <input type="date" required value={pay.payment_date} onChange={f('payment_date')} style={inputSt} />
+          </div>
+          <div>
+            <label style={labelSt}>Método</label>
+            <select value={pay.payment_method} onChange={f('payment_method')} style={inputSt}>
+              <option value="transfer">Transferencia</option>
+              <option value="cash">Efectivo</option>
+              <option value="card">Tarjeta</option>
+              <option value="other">Otro</option>
+            </select>
+          </div>
+          <div>
+            <label style={labelSt}>Referencia</label>
+            <input value={pay.reference} onChange={f('reference')} placeholder="Folio / CLABE" style={inputSt} />
+          </div>
+          <div style={{ gridColumn: '1 / -1' }}>
+            <label style={labelSt}>Notas</label>
+            <textarea value={pay.notes} onChange={f('notes')} rows={2} style={{ ...inputSt, resize: 'vertical' }} />
+          </div>
+        </div>
+        <div style={{ padding: '0 20px 20px', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <button type="button" onClick={onClose} style={{ padding: '8px 14px', borderRadius: 8, border: 'none', background: 'var(--sand-100)', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+            Cancelar
+          </button>
+          <button type="submit" disabled={saving} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--teal-600)', color: 'white', fontWeight: 700, fontSize: 13, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.6 : 1 }}>
+            {saving ? 'Registrando…' : 'Guardar pago'}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 export default function MiMembresia() {
-  const { tenantId, tenantName, user: authUser } = useAuth();
+  const { tenantId, tenantName, user: authUser, workspaceType, isAdmin } = useAuth();
 
   const [sub,            setSub]            = useState(null);
   const [loading,        setLoading]        = useState(true);
@@ -682,6 +841,8 @@ export default function MiMembresia() {
   const [tenantData,     setTenantData]     = useState(null);
   const [receiptPayment, setReceiptPayment] = useState(null);
   const [adminUser,      setAdminUser]      = useState(null);
+  const [billingNoteCycle, setBillingNoteCycle] = useState(null);
+  const [payCycle, setPayCycle] = useState(null);
 
   const loadSub = useCallback(async () => {
     if (!tenantId) return;
@@ -809,7 +970,7 @@ export default function MiMembresia() {
             Sin membresía configurada
           </p>
           <p style={{ fontSize: 14, color: 'var(--ink-400)' }}>
-            Este condominio aún no tiene una membresía asignada. Comunícate con el equipo de Homly para activar tu plan.
+            Este {workspaceType === 'rentas' ? 'espacio de rentas' : 'condominio'} aún no tiene una membresía asignada. Comunícate con el equipo de Homly para activar tu plan.
           </p>
         </div>
       </div>
@@ -1194,7 +1355,10 @@ export default function MiMembresia() {
           tenantData={tenantData}
           adminName={adminName}
           adminEmail={adminEmail}
+          canRecordPayment={isAdmin}
           onViewReceipt={(p) => setReceiptPayment(p)}
+          onViewBillingNote={(c) => setBillingNoteCycle(c)}
+          onRecordPayment={(c) => setPayCycle(c)}
         />
 
         {/* ── Contact CTA ── */}
@@ -1236,6 +1400,31 @@ export default function MiMembresia() {
         tenant={tenantData}
         sub={sub}
         onClose={() => setReceiptPayment(null)}
+      />
+    )}
+    {billingNoteCycle && (
+      <MembershipBillingNoteModal
+        cycle={billingNoteCycle}
+        sub={sub}
+        tenantData={tenantData}
+        planName={sub?.plan_name}
+        tenantAdmin={{ name: adminName, email: adminEmail }}
+        workspaceType={workspaceType || tenantData?.workspace_type}
+        onClose={() => setBillingNoteCycle(null)}
+      />
+    )}
+    {payCycle && (
+      <MembershipPaymentModal
+        cycle={payCycle}
+        sub={sub}
+        tenantId={tenantId}
+        onClose={() => setPayCycle(null)}
+        onSaved={(payment) => {
+          setPayCycle(null);
+          setPayments(prev => [payment, ...prev]);
+          setReceiptPayment(payment);
+          loadSub();
+        }}
       />
     )}
   </>

@@ -730,6 +730,48 @@ class TenantsForEmailView(APIView):
             )
 
 
+def _record_membership_payment(sub, data, user):
+    """Registra un pago de membresía y avanza next_billing_date.
+    Returns (payment, None) or (None, error_dict)."""
+    from django.utils import timezone as tz
+
+    payload = data.copy() if hasattr(data, 'copy') else dict(data)
+    payload['subscription'] = str(sub.id)
+    ser = SubscriptionPaymentSerializer(data=payload)
+    if not ser.is_valid():
+        return None, ser.errors
+    payment = ser.save(recorded_by=user)
+
+    update_fields = ['updated_at']
+    if sub.status in ('past_due', 'expired'):
+        sub.status = 'active'
+        update_fields.append('status')
+
+    today = tz.now().date()
+    if sub.plan:
+        if sub.plan.billing_cycle == 'annual':
+            base = sub.next_billing_date or today
+            try:
+                sub.next_billing_date = base.replace(year=base.year + 1)
+            except ValueError:
+                sub.next_billing_date = base.replace(year=base.year + 1, day=28)
+        else:
+            if today.month == 12:
+                sub.next_billing_date = today.replace(year=today.year + 1, month=1, day=1)
+            else:
+                sub.next_billing_date = today.replace(month=today.month + 1, day=1)
+    else:
+        if today.month == 12:
+            sub.next_billing_date = today.replace(year=today.year + 1, month=1, day=1)
+        else:
+            sub.next_billing_date = today.replace(month=today.month + 1, day=1)
+
+    update_fields.append('next_billing_date')
+    sub.save(update_fields=update_fields)
+    sub.sync_tenant_active()
+    return payment, None
+
+
 # ═══════════════════════════════════════════════════════════
 #  TENANTS (Super Admin)
 # ═══════════════════════════════════════════════════════════
@@ -1075,6 +1117,35 @@ class TenantViewSet(viewsets.ModelViewSet):
             return Response(SubscriptionPaymentSerializer(payments, many=True).data)
         except Exception:
             return Response([], status=200)
+
+    @action(detail=True, methods=['post'], url_path='subscription/record-payment',
+            permission_classes=[permissions.IsAuthenticated])
+    def record_subscription_payment(self, request, pk=None):
+        """POST /api/tenants/{id}/subscription/record-payment/
+        El admin del tenant o un superadmin registra el pago de la membresía
+        y con eso se puede emitir el recibo de pago."""
+        tenant = self.get_object()
+        if not request.user.is_super_admin:
+            is_admin = TenantUser.objects.filter(
+                user=request.user, tenant=tenant, role='admin',
+            ).exists()
+            if not is_admin:
+                return Response({'detail': 'Solo el administrador puede registrar el pago de membresía.'}, status=403)
+        try:
+            sub = tenant.subscription
+        except Exception:
+            return Response({'detail': 'Sin suscripción registrada.'}, status=404)
+        payment, err = _record_membership_payment(sub, request.data, request.user)
+        if err:
+            return Response(err, status=400)
+        _audit_log(
+            request, 'membresia', 'create',
+            f'Pago de membresía registrado: {tenant.name} · {payment.period_label} · {payment.amount}',
+            tenant_id=str(tenant.id),
+            object_type='SubscriptionPayment', object_id=str(payment.id),
+            object_repr=str(payment.period_label),
+        )
+        return Response(SubscriptionPaymentSerializer(payment).data, status=201)
 
     @action(detail=True, methods=['post'], url_path='onboarding/complete')
     def mark_onboarding_complete(self, request, pk=None):
@@ -7503,6 +7574,9 @@ class SubscriptionPlanViewSet(viewsets.ModelViewSet):
         active_only = self.request.query_params.get('active_only')
         if active_only in ('1', 'true', 'True'):
             qs = qs.filter(is_active=True)
+        ws = (self.request.query_params.get('workspace_type') or '').strip()
+        if ws in ('condominio', 'rentas'):
+            qs = qs.filter(workspace_type=ws)
         return qs
 
 
@@ -7714,6 +7788,9 @@ class TenantSubscriptionViewSet(viewsets.ModelViewSet):
         tenant_id = self.request.query_params.get('tenant')
         if tenant_id:
             qs = qs.filter(tenant_id=tenant_id)
+        ws = (self.request.query_params.get('workspace_type') or '').strip()
+        if ws in ('condominio', 'rentas'):
+            qs = qs.filter(tenant__workspace_type=ws)
         return qs
 
     def perform_update(self, serializer):
@@ -7725,50 +7802,10 @@ class TenantSubscriptionViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='record-payment')
     def record_payment(self, request, pk=None):
         """Record a manual payment for this subscription (superadmin only)."""
-        import datetime
-        from django.utils import timezone as tz
         sub = self.get_object()
-        data = request.data.copy()
-        data['subscription'] = str(sub.id)
-        ser = SubscriptionPaymentSerializer(data=data)
-        if not ser.is_valid():
-            return Response(ser.errors, status=400)
-        payment = ser.save(recorded_by=request.user)
-
-        # Activate if was past_due, and update next_billing_date
-        update_fields = ['updated_at']
-        if sub.status in ('past_due', 'expired'):
-            sub.status = 'active'
-            update_fields.append('status')
-
-        # Calculate next_billing_date based on billing cycle
-        today = tz.now().date()
-        if sub.plan:
-            if sub.plan.billing_cycle == 'annual':
-                # Annual: same day next year
-                base = sub.next_billing_date or today
-                try:
-                    sub.next_billing_date = base.replace(year=base.year + 1)
-                except ValueError:
-                    # Feb 29 edge case
-                    sub.next_billing_date = base.replace(year=base.year + 1, day=28)
-            else:
-                # Monthly: 1st of next month from today
-                if today.month == 12:
-                    sub.next_billing_date = today.replace(year=today.year + 1, month=1, day=1)
-                else:
-                    sub.next_billing_date = today.replace(month=today.month + 1, day=1)
-        else:
-            # No plan: default to 1st of next month
-            if today.month == 12:
-                sub.next_billing_date = today.replace(year=today.year + 1, month=1, day=1)
-            else:
-                sub.next_billing_date = today.replace(month=today.month + 1, day=1)
-
-        update_fields.append('next_billing_date')
-        sub.save(update_fields=update_fields)
-        sub.sync_tenant_active()
-
+        payment, err = _record_membership_payment(sub, request.data, request.user)
+        if err:
+            return Response(err, status=400)
         return Response(SubscriptionPaymentSerializer(payment).data, status=201)
 
     @action(detail=True, methods=['get'], url_path='payments')
@@ -8060,6 +8097,10 @@ class TenantSubscriptionViewSet(viewsets.ModelViewSet):
         plan         = sub.plan
         plan_name    = plan.name if plan else '—'
         tenant_name  = tenant.name or '—'
+        is_rentas    = (getattr(tenant, 'workspace_type', 'condominio') or 'condominio') == 'rentas'
+        space_noun   = 'inmobiliaria' if is_rentas else 'condominio'
+        brand_line   = 'Sistema de gestión de rentas' if is_rentas else 'Sistema de administración de condominios'
+        client_label = 'Cliente / Inmobiliaria' if is_rentas else 'Cliente / Condominio'
         tenant_rfc   = getattr(tenant, 'rfc', '') or ''
         tenant_addr_parts = [
             getattr(tenant, 'info_calle', '') or '',
@@ -8103,11 +8144,11 @@ class TenantSubscriptionViewSet(viewsets.ModelViewSet):
   <div class="header">
     <div>
       <div class="brand">Homly</div>
-      <div class="brand-sub">by Spotynet · Sistema de administración de condominios</div>
+      <div class="brand-sub">by Spotynet · {brand_line}</div>
       <div style="margin-top:8px;font-size:11px;color:#64748B">RFC: SPO-XXXXXX-XXX · contacto@spotynet.com</div>
     </div>
     <div style="text-align:right">
-      <div class="note-title">Nota de Cobro</div>
+      <div class="note-title">Recibo de Cobro</div>
       <div class="note-num">N° {cycle_number:02d if isinstance(cycle_number, int) else cycle_number} · {period_label}</div>
       <div style="margin-top:6px;font-size:12px;color:#64748B">Emitida: {generated_at}</div>
     </div>
@@ -8124,7 +8165,7 @@ class TenantSubscriptionViewSet(viewsets.ModelViewSet):
       </div>
     </div>
     <div class="party-box">
-      <div class="party-label">Cliente / Tenant</div>
+      <div class="party-label">{client_label}</div>
       <div class="party-name">{tenant_name}</div>
       <div class="party-detail">
         {f'RFC: {tenant_rfc}<br>' if tenant_rfc else ''}{f'{tenant_addr}<br>' if tenant_addr else ''}{f'{tenant_city}' if tenant_city else ''}
@@ -8167,14 +8208,14 @@ class TenantSubscriptionViewSet(viewsets.ModelViewSet):
   </div>
 
   <div class="footer-note">
-    Nota de cobro generada automáticamente por Homly para el condominio <strong>{tenant_name}</strong>.<br>
-    {generated_at} · Homly — Sistema de Administración de Condominios · www.homly.com.mx
+    Recibo de cobro generado automáticamente por Homly para la {space_noun} <strong>{tenant_name}</strong>.<br>
+    {generated_at} · Homly — {brand_line} · www.homly.com.mx
   </div>
 </div></body></html>"""
 
-        subject = f"Nota de Cobro — {tenant_name} — {period_label}"
+        subject = f"Recibo de Cobro — {tenant_name} — {period_label}"
         plain   = (
-            f"Nota de Cobro | Homly\n\n"
+            f"Recibo de Cobro | Homly\n\n"
             f"Cliente: {tenant_name}\n"
             f"Período: {period_label}\n"
             f"Plan: {plan_name}\n"
@@ -8193,8 +8234,8 @@ class TenantSubscriptionViewSet(viewsets.ModelViewSet):
             subject=subject,
             plain=plain,
             html=f"""
-            <p>Adjuntamos la nota de cobro correspondiente al período <strong>{period_label}</strong>
-            para el condominio <strong>{tenant_name}</strong>.</p>
+            <p>Adjuntamos el recibo de cobro correspondiente al período <strong>{period_label}</strong>
+            para la {space_noun} <strong>{tenant_name}</strong>.</p>
             <p>Importe: <strong>{fmt_money(amount)}</strong></p>
             <p>Si tienes alguna pregunta, comunícate con tu asesor de Homly.</p>
             """,
@@ -8204,7 +8245,7 @@ class TenantSubscriptionViewSet(viewsets.ModelViewSet):
         if not sent:
             return Response({'detail': 'No se pudo enviar el correo. Verifica la configuración SMTP.'}, status=500)
 
-        return Response({'detail': f'Nota de cobro enviada a {to_email}.'})
+        return Response({'detail': f'Recibo de cobro enviado a {to_email}.'})
 
     def create(self, request, *args, **kwargs):
         """

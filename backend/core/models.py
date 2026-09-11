@@ -1299,9 +1299,20 @@ class SubscriptionPlan(models.Model):
         ('monthly', 'Mensual'),
         ('annual',  'Anual'),
     ]
+    WORKSPACE_TYPE_CHOICES = [
+        ('condominio', 'Administración de condominios'),
+        ('rentas', 'Gestión de rentas'),
+    ]
 
     id               = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name             = models.CharField(max_length=100)
+    workspace_type   = models.CharField(
+        max_length=20,
+        choices=WORKSPACE_TYPE_CHOICES,
+        default='condominio',
+        db_index=True,
+        help_text='Catálogo de planes independiente por espacio de trabajo.',
+    )
     description      = models.TextField(blank=True, default='')
     price_per_unit   = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     currency         = models.CharField(max_length=3, choices=CURRENCY_CHOICES, default='MXN')

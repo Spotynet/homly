@@ -89,7 +89,7 @@ const errorStyle = {
    STEPS CONFIG
    ═══════════════════════════════════════ */
 const STEPS = [
-  { id: 1, label: 'Condominio', icon: <IconBuilding /> },
+  { id: 1, label: 'Espacio', icon: <IconBuilding /> },
   { id: 2, label: 'Responsable', icon: <IconUser /> },
   { id: 3, label: 'Confirmar', icon: <IconStar /> },
 ];
@@ -124,6 +124,7 @@ export default function Registro() {
     condominio_unidades:   '',
     condominio_tipo_admin: 'mesa_directiva',
     condominio_currency:   'MXN',
+    interes:              'condominio',
     // Step 2 — Admin
     admin_nombre:    '',
     admin_apellido:  '',
@@ -180,9 +181,20 @@ export default function Registro() {
   const handleSubmit = async () => {
     setLoading(true);
     try {
+      const { interes, ...rest } = form;
+      const interesLabel = {
+        condominio: 'Condominios',
+        rentas: 'Rentas inmobiliarias',
+        ambos: 'Condominios y rentas',
+      }[interes] || interes;
+      const mensaje = [
+        `Interés: ${interesLabel}`,
+        form.mensaje?.trim(),
+      ].filter(Boolean).join('\n\n');
       await axios.post(`${API_BASE}/public/registro/`, {
-        ...form,
+        ...rest,
         condominio_unidades: parseInt(form.condominio_unidades) || 0,
+        mensaje,
       });
       setStep(4); // success screen
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -245,12 +257,36 @@ export default function Registro() {
 
         {/* ── STEP 1: Condominio ── */}
         {step === 1 && (
-          <StepCard title="Datos del condominio" subtitle="Cuéntanos sobre el condominio que deseas administrar con Homly.">
+          <StepCard title="Datos del espacio" subtitle="Cuéntanos si administras un condominio, rentas, o ambos.">
 
-            <FormField label="Nombre del condominio *" error={errors.condominio_nombre}>
+            <FormField label="¿Qué te interesa? *">
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                {[
+                  { id: 'condominio', label: 'Condominio' },
+                  { id: 'rentas', label: 'Rentas' },
+                  { id: 'ambos', label: 'Ambos' },
+                ].map(opt => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => set('interes', opt.id)}
+                    style={{
+                      padding: '10px 8px', borderRadius: 10, cursor: 'pointer', fontWeight: 700, fontSize: 13,
+                      border: form.interes === opt.id ? `1.5px solid ${C.coral}` : `1.5px solid ${C.sandBd}`,
+                      background: form.interes === opt.id ? C.coralBg : '#fff',
+                      color: form.interes === opt.id ? C.coralDark : C.ink7,
+                    }}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </FormField>
+
+            <FormField label="Nombre del condominio o inmobiliaria *" error={errors.condominio_nombre}>
               <input
                 style={inputStyle(!!errors.condominio_nombre)}
-                placeholder="Ej. Residencial Los Pinos"
+                placeholder={form.interes === 'rentas' ? 'Ej. Inmobiliaria Los Pinos' : 'Ej. Residencial Los Pinos'}
                 value={form.condominio_nombre}
                 onChange={e => set('condominio_nombre', e.target.value)}
               />
@@ -301,7 +337,7 @@ export default function Registro() {
             </FormField>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-              <FormField label="Número de unidades *" error={errors.condominio_unidades}>
+              <FormField label={form.interes === 'rentas' ? 'Número de propiedades *' : 'Número de unidades *'} error={errors.condominio_unidades}>
                 <input
                   type="number"
                   min="1"
@@ -442,7 +478,8 @@ export default function Registro() {
         {step === 3 && (
           <StepCard title="Revisa tu solicitud" subtitle="Confirma que los datos son correctos antes de enviar.">
 
-            <SummarySection title="Condominio">
+            <SummarySection title="Espacio">
+              <SummaryRow label="Interés" value={{ condominio: 'Condominios', rentas: 'Rentas inmobiliarias', ambos: 'Condominios y rentas' }[form.interes]} />
               <SummaryRow label="Nombre" value={form.condominio_nombre} />
               <SummaryRow label="País" value={form.condominio_pais} />
               {form.condominio_estado && <SummaryRow label="Estado" value={form.condominio_estado} />}
@@ -517,13 +554,13 @@ function PageShell({ children }) {
       {/* Hero header */}
       <div style={{ background: C.green, padding: 'clamp(36px, 6vw, 52px) clamp(16px, 4vw, 32px) clamp(40px, 6vw, 56px)', textAlign: 'center' }}>
         <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'rgba(232,93,67,0.15)', border: '1px solid rgba(232,93,67,0.3)', borderRadius: 999, padding: '5px 14px', fontSize: 13, fontWeight: 700, color: C.coral, marginBottom: 20 }}>
-          ✦ Registro de condominio
+          ✦ Condominios y rentas
         </div>
-        <h1 style={{ fontSize: 'clamp(26px, 4vw, 40px)', fontWeight: 800, color: '#FDFBF7', letterSpacing: '-1px', lineHeight: 1.2, margin: '0 auto 14px', maxWidth: 520 }}>
-          Empieza a administrar tu condominio con Homly
+        <h1 style={{ fontSize: 'clamp(26px, 4vw, 40px)', fontWeight: 800, color: '#FDFBF7', letterSpacing: '-1px', lineHeight: 1.2, margin: '0 auto 14px', maxWidth: 560 }}>
+          Empieza a administrar con Homly
         </h1>
-        <p style={{ fontSize: 15, color: 'rgba(253,251,247,0.65)', maxWidth: 440, margin: '0 auto', lineHeight: 1.65 }}>
-          Llena el formulario y nuestro equipo te contactará en menos de 24 horas para activar tu cuenta.
+        <p style={{ fontSize: 15, color: 'rgba(253,251,247,0.65)', maxWidth: 480, margin: '0 auto', lineHeight: 1.65 }}>
+          Condominio, rentas inmobiliarias, o ambos. Llena el formulario y te contactamos en menos de 24 horas.
         </p>
 
         {/* Trust badges */}

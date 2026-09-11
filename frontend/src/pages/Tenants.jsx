@@ -412,7 +412,9 @@ function SubscriptionModal({ tenant, onClose, onUpdated }) {
                       <select value={upd.plan || ''} onChange={e => setUpd(p => ({ ...p, plan: e.target.value || null }))}
                         style={{ width: '100%', border: '1px solid var(--sand-200)', borderRadius: 8, padding: '8px 10px', fontSize: 13 }}>
                         <option value="">Sin plan</option>
-                        {plans.map(pl => <option key={pl.id} value={pl.id}>{pl.name}</option>)}
+                        {plans
+                          .filter(pl => (pl.workspace_type || 'condominio') === (tenant.workspace_type || 'condominio'))
+                          .map(pl => <option key={pl.id} value={pl.id}>{pl.name}</option>)}
                       </select>
                     </div>
                     {[
@@ -1333,7 +1335,7 @@ export default function Tenants() {
                     className="field-select"
                     value={form.workspace_type || 'condominio'}
                     disabled={!!form.id}
-                    onChange={e => setForm({ ...form, workspace_type: e.target.value })}
+                    onChange={e => setForm({ ...form, workspace_type: e.target.value, initial_plan: '' })}
                   >
                     <option value="condominio">Administración de condominios</option>
                     <option value="rentas">Gestión de rentas (inmobiliaria)</option>
@@ -1411,9 +1413,11 @@ export default function Tenants() {
                       <select className="field-select" value={form.initial_plan || ''}
                         onChange={e => setForm({...form, initial_plan: e.target.value})}>
                         <option value="">Sin plan (solo registrar)</option>
-                        {plans.map(p => (
-                          <option key={p.id} value={p.id}>{p.name}</option>
-                        ))}
+                        {plans
+                          .filter(p => (p.workspace_type || 'condominio') === (form.workspace_type || 'condominio'))
+                          .map(p => (
+                            <option key={p.id} value={p.id}>{p.name}</option>
+                          ))}
                       </select>
                     </div>
                     <div className="field">

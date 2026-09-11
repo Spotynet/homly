@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import SubscriptionReceiptModal from '../components/SubscriptionReceiptModal';
+import MembershipBillingNoteModal from '../components/MembershipBillingNote';
 import { APP_VERSION } from '../utils/helpers.jsx';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -92,8 +93,20 @@ const SYSTEM_MODULES = [
   { key: 'my_unit',         label: 'Mi Unidad',              desc: 'Vista individual para residentes' },
 ];
 
+const RENTAS_MODULES = [
+  { key: 'rentas_dashboard',    label: 'Dashboard',     desc: 'Vista general de la inmobiliaria' },
+  { key: 'rentas_propiedades',  label: 'Propiedades',   desc: 'Catálogo de inmuebles en renta' },
+  { key: 'rentas_contratos',    label: 'Contratos',     desc: 'Contratos y partes' },
+  { key: 'rentas_cobranza',     label: 'Cobranza',      desc: 'Cargos y pagos de rentas' },
+  { key: 'rentas_calendario',   label: 'Calendario',    desc: 'Vencimientos y ocupación' },
+  { key: 'rentas_config',       label: 'Configuración', desc: 'Ajustes del espacio de rentas' },
+];
+
+const ALL_PLAN_MODULES = [...SYSTEM_MODULES, ...RENTAS_MODULES];
+const MODULES_BY_WS = { condominio: SYSTEM_MODULES, rentas: RENTAS_MODULES };
+
 const EMPTY_PLAN = {
-  name: '', description: '', price_per_unit: '', currency: 'MXN',
+  name: '', workspace_type: 'condominio', description: '', price_per_unit: '', currency: 'MXN',
   billing_cycle: 'monthly', annual_discount_percent: 0,
   trial_days: 7, is_active: true, sort_order: 0,
   volume_tiers: [], features: [], allowed_modules: [],
@@ -103,9 +116,12 @@ function PlanForm({ initial, onSave, onClose, saving }) {
   const [form, setForm] = useState(() => ({
     ...EMPTY_PLAN,
     ...(initial || {}),
+    workspace_type: initial?.workspace_type || 'condominio',
     // Ensure allowed_modules is always an array (older plans may not have it)
     allowed_modules: Array.isArray(initial?.allowed_modules) ? initial.allowed_modules : [],
   }));
+  const planModules = MODULES_BY_WS[form.workspace_type] || SYSTEM_MODULES;
+  const unitNoun = form.workspace_type === 'rentas' ? 'propiedad' : 'unidad';
   const [newFeature, setNewFeature] = useState('');
   const [newTier, setNewTier] = useState({ min_units: '', max_units: '', price_per_unit: '' });
 
@@ -152,13 +168,37 @@ function PlanForm({ initial, onSave, onClose, saving }) {
             placeholder="Ej: Básico, Profesional, Enterprise" />
         </div>
         <div className="col-span-2">
+          <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">Espacio de trabajo</label>
+          <select
+            value={form.workspace_type || 'condominio'}
+            onChange={e => {
+              const ws = e.target.value;
+              const allowed = new Set((MODULES_BY_WS[ws] || []).map(m => m.key));
+              setForm(p => ({
+                ...p,
+                workspace_type: ws,
+                allowed_modules: (p.allowed_modules || []).filter(k => allowed.has(k)),
+              }));
+            }}
+            className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+          >
+            <option value="condominio">Administración de condominios</option>
+            <option value="rentas">Gestión de rentas</option>
+          </select>
+          <p className="text-xs text-slate-400 mt-1">
+            Los planes de condominios y de rentas se crean y asignan por separado.
+          </p>
+        </div>
+        <div className="col-span-2">
           <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">Descripción</label>
           <textarea value={form.description} onChange={f('description')} rows={2}
             className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
             placeholder="Descripción breve del plan" />
         </div>
         <div>
-          <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">Precio por Unidad</label>
+          <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">
+            Precio por {form.workspace_type === 'rentas' ? 'Propiedad' : 'Unidad'}
+          </label>
           <input type="number" min="0" step="0.01" value={form.price_per_unit} onChange={f('price_per_unit')} required
             className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" />
         </div>
@@ -197,7 +237,7 @@ function PlanForm({ initial, onSave, onClose, saving }) {
               <span className="text-slate-400 line-through">
                 {fmtAmt(Number(form.price_per_unit) * 12, form.currency)}
               </span>
-              {' '}por unidad/año
+              {' '}por {unitNoun}/año
             </p>
           )}
         </div>
@@ -251,7 +291,7 @@ function PlanForm({ initial, onSave, onClose, saving }) {
           Tiers de Volumen (opcional)
         </label>
         <div className="grid grid-cols-3 gap-2 mb-2">
-          <input type="number" min="0" placeholder="Mín unidades" value={newTier.min_units}
+          <input type="number" min="0" placeholder={form.workspace_type === 'rentas' ? 'Mín propiedades' : 'Mín unidades'} value={newTier.min_units}
             onChange={e => setNewTier(p => ({ ...p, min_units: e.target.value }))}
             className="border border-slate-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-teal-500" />
           <input type="number" min="0" placeholder="Máx (vacío=∞)" value={newTier.max_units}
@@ -307,7 +347,7 @@ function PlanForm({ initial, onSave, onClose, saving }) {
           Deja todo sin marcar para incluir todos los módulos. Selecciona sólo los que quieres habilitar en este plan.
         </p>
         <div className="grid grid-cols-1 gap-1.5">
-          {SYSTEM_MODULES.map(mod => {
+          {planModules.map(mod => {
             const checked = form.allowed_modules.includes(mod.key);
             const toggle  = () => setForm(p => ({
               ...p,
@@ -367,6 +407,7 @@ function PlanForm({ initial, onSave, onClose, saving }) {
 
 function TabPlanes() {
   const [plans, setPlans] = useState([]);
+  const [wsFilter, setWsFilter] = useState('all');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showModal, setShowModal] = useState(false);
@@ -426,6 +467,10 @@ function TabPlanes() {
     }
   };
 
+  const visiblePlans = wsFilter === 'all'
+    ? plans
+    : plans.filter(p => (p.workspace_type || 'condominio') === wsFilter);
+
   if (loading) return (
     <div className="flex justify-center items-center py-20">
       <div className="w-8 h-8 border-4 border-teal-600 border-t-transparent rounded-full animate-spin" />
@@ -437,15 +482,23 @@ function TabPlanes() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h3 className="text-base font-bold text-slate-800">Planes de Suscripción</h3>
-          <p className="text-sm text-slate-500 mt-0.5">Configura los planes disponibles para tus clientes</p>
+          <p className="text-sm text-slate-500 mt-0.5">Catálogos independientes para condominios y rentas</p>
         </div>
+        <div className="flex items-center gap-3">
+          <select value={wsFilter} onChange={e => setWsFilter(e.target.value)}
+            className="border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500">
+            <option value="all">Todos los espacios</option>
+            <option value="condominio">Condominios</option>
+            <option value="rentas">Rentas</option>
+          </select>
         <button onClick={openCreate}
           className="flex items-center gap-2 px-4 py-2 bg-teal-600 text-white text-sm font-semibold rounded-xl hover:bg-teal-700 transition-colors">
           <Plus size={16} /> Nuevo Plan
         </button>
+        </div>
       </div>
 
-      {plans.length === 0 ? (
+      {visiblePlans.length === 0 ? (
         <div className="text-center py-16 text-slate-400">
           <Star size={40} className="mx-auto mb-3 opacity-30" />
           <p className="font-medium">Sin planes configurados</p>
@@ -453,7 +506,7 @@ function TabPlanes() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-          {plans.map(plan => (
+          {visiblePlans.map(plan => (
             <div key={plan.id}
               className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm hover:shadow-md transition-shadow">
               <div className="flex items-start justify-between mb-3">
@@ -461,16 +514,25 @@ function TabPlanes() {
                   <h4 className="font-bold text-slate-800">{plan.name}</h4>
                   <p className="text-xs text-slate-500 mt-0.5">{plan.description || 'Sin descripción'}</p>
                 </div>
-                <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${plan.is_active ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
-                  {plan.is_active ? 'Activo' : 'Inactivo'}
-                </span>
+                <div className="flex flex-col items-end gap-1">
+                  <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
+                    (plan.workspace_type || 'condominio') === 'rentas'
+                      ? 'bg-blue-100 text-blue-700'
+                      : 'bg-teal-50 text-teal-700'
+                  }`}>
+                    {(plan.workspace_type || 'condominio') === 'rentas' ? 'Rentas' : 'Condominio'}
+                  </span>
+                  <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${plan.is_active ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
+                    {plan.is_active ? 'Activo' : 'Inactivo'}
+                  </span>
+                </div>
               </div>
 
               <div className="flex items-baseline gap-1 mb-1">
                 <span className="text-2xl font-extrabold text-teal-700">
                   {fmtAmt(plan.price_per_unit, plan.currency)}
                 </span>
-                <span className="text-sm text-slate-500">/ unidad / {plan.billing_cycle === 'monthly' ? 'mes' : 'año'}</span>
+                <span className="text-sm text-slate-500">/ {(plan.workspace_type || 'condominio') === 'rentas' ? 'propiedad' : 'unidad'} / {plan.billing_cycle === 'monthly' ? 'mes' : 'año'}</span>
               </div>
 
               {Number(plan.annual_discount_percent) > 0 && (
@@ -520,7 +582,7 @@ function TabPlanes() {
                     <p className="text-xs font-semibold text-slate-500 mb-1.5">Módulos:</p>
                     <div className="flex flex-wrap gap-1">
                       {plan.allowed_modules.map(key => {
-                        const mod = SYSTEM_MODULES.find(m => m.key === key);
+                        const mod = ALL_PLAN_MODULES.find(m => m.key === key);
                         return (
                           <span key={key}
                             className="px-2 py-0.5 bg-teal-50 text-teal-700 text-xs font-medium rounded-full border border-teal-200">
@@ -715,7 +777,7 @@ function TabSolicitudes() {
     setLoading(true);
     Promise.all([
       trialRequestsAPI.list({ status: statusFilter || undefined }),
-      subscriptionPlansAPI.list({ active_only: 1 }),
+      subscriptionPlansAPI.list({ active_only: 1, workspace_type: 'condominio' }),
     ])
       .then(([rReq, rPlans]) => {
         setRequests(rReq.data.results || rReq.data);
@@ -940,13 +1002,19 @@ function parsePeriodLabel(label) {
 }
 
 function generateBillingCycles(sub, payments) {
-  if (!sub?.billing_start) return [];
+  if (!sub) return [];
   const today = new Date();
   today.setHours(23, 59, 59, 0);
   const isAnnual = sub.plan_billing_cycle === 'annual';
   const GRACE = 5;
-  const [sy, sm, sd] = sub.billing_start.split('-').map(Number);
-  let cs = new Date(sy, sm - 1, sd);
+  let billingStart = sub.billing_start;
+  if (!billingStart) {
+    if (sub.status === 'trial') return [];
+    const now = new Date();
+    billingStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+  }
+  const [sy, sm, sd] = billingStart.split('-').map(Number);
+  let cs = new Date(sy, sm - 1, sd || 1);
   const cycles = [];
   while (cs <= today) {
     const ce = new Date(cs);
@@ -1167,324 +1235,24 @@ function printKardexPDF({ cycles, sub, tenantData, adminName, adminEmail }) {
   setTimeout(() => { w.print(); }, 600);
 }
 
-// ─── Nota de Cobro ────────────────────────────────────────────────────────────
-
-function buildBillingNoteHTML({ cycle, sub, tenantData, planName, tenantAdmin }) {
-  const sym = { MXN: '$', USD: 'US$', EUR: '€', COP: 'COP$' };
-  const cs  = sym[cycle.currency] || '$';
-  const fmtM = (n) => `${cs}${Number(n || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })} ${cycle.currency}`;
-  const fmtD = (d) => {
-    if (!d) return '—';
-    try { return new Date(d + 'T00:00:00').toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }); }
-    catch { return d; }
-  };
-  const tn        = tenantData?.name || '—';
-  const rfc       = tenantData?.rfc  || '';
-  const addr      = [tenantData?.info_calle, tenantData?.info_num_externo].filter(Boolean).join(' ');
-  const city      = [tenantData?.info_colonia, tenantData?.info_ciudad, tenantData?.info_codigo_postal ? `C.P. ${tenantData.info_codigo_postal}` : ''].filter(Boolean).join(', ');
-  const adminName  = tenantAdmin?.name  || '';
-  const adminEmail = tenantAdmin?.email || '';
-  // Fecha de vencimiento de pago = inicio del período + 5 días (solo para nota de cobro)
-  const noteDueDate = (() => {
-    if (!cycle.cycleStart) return cycle.dueDate;
-    const d = new Date(cycle.cycleStart + 'T00:00:00');
-    d.setDate(d.getDate() + 5);
-    return d.toISOString().slice(0, 10);
-  })();
-  const now     = new Date().toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-  const cycleNo = String(cycle.number).padStart(2, '0');
-  const logoUrl = (typeof window !== 'undefined' ? window.location.origin : '') + '/img/homly-full.png';
-
-  return `<!DOCTYPE html>
-<html lang="es"><head><meta charset="UTF-8">
-<title>Nota de Cobro — ${tn} — ${cycle.periodLabel}</title>
-<style>
-  *{margin:0;padding:0;box-sizing:border-box}
-  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;font-size:13px;color:#1E293B;background:#fff}
-  @page{size:A4;margin:16mm 18mm}
-  @media print{body{print-color-adjust:exact;-webkit-print-color-adjust:exact}}
-  .wrap{max-width:680px;margin:0 auto;padding:32px 28px}
-  .header{display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:18px;border-bottom:3px solid #0D9488;margin-bottom:22px}
-  .brand{font-size:22px;font-weight:900;color:#0D9488;letter-spacing:-0.5px}
-  .brand-sub{font-size:11px;color:#64748B;margin-top:2px;line-height:1.4}
-  .note-title{font-size:19px;font-weight:800;color:#0F172A;margin-bottom:2px;text-align:right}
-  .note-meta{font-size:11px;color:#64748B;text-align:right;line-height:1.5}
-  .parties{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:22px}
-  .party-box{background:#F8FAFC;border:1px solid #E2E8F0;border-radius:10px;padding:14px}
-  .party-label{font-size:9px;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;color:#94A3B8;margin-bottom:5px}
-  .party-name{font-size:14px;font-weight:700;color:#0F172A;margin-bottom:3px}
-  .party-detail{font-size:11px;color:#64748B;line-height:1.5}
-  table{width:100%;border-collapse:collapse;margin-bottom:20px}
-  th{background:#F1F5F9;padding:9px 12px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:#64748B}
-  td{padding:11px 12px;border-bottom:1px solid #F1F5F9;font-size:13px;color:#334155;vertical-align:top}
-  .total td{background:#0D9488;color:#fff!important;font-weight:800;font-size:15px;padding:13px 12px;border-bottom:none}
-  .info-box{background:#F0FDF4;border:1px solid #BBF7D0;border-radius:10px;padding:14px;margin-bottom:20px}
-  .info-title{font-size:11px;font-weight:800;color:#15803D;margin-bottom:5px}
-  .info-body{font-size:11px;color:#166534;line-height:1.6}
-  .footer{font-size:10px;color:#94A3B8;text-align:center;border-top:1px solid #E2E8F0;padding-top:14px;line-height:1.6}
-</style></head>
-<body><div class="wrap">
-  <div class="header">
-    <div>
-      <img src="${logoUrl}" alt="Homly" style="height:38px;width:auto;object-fit:contain;display:block;margin-bottom:6px">
-      <div class="brand-sub">by Spotynet · Property Management<br>contacto@spotynet.com · www.homly.com.mx</div>
-    </div>
-    <div>
-      <div class="note-title">Nota de Cobro</div>
-      <div class="note-meta">N° ${cycleNo} · ${cycle.periodLabel}<br>Emitida: ${now}</div>
-    </div>
-  </div>
-
-  <div class="parties">
-    <div class="party-box">
-      <div class="party-label">Cobrador / Proveedor</div>
-      <div class="party-name">Spotynet</div>
-      <div class="party-detail">Homly — Sistema de Administración<br>contacto@spotynet.com<br>www.homly.com.mx</div>
-    </div>
-    <div class="party-box">
-      <div class="party-label">Cliente / Condominio</div>
-      <div class="party-name">${tn}</div>
-      <div class="party-detail">
-        ${rfc ? `RFC: ${rfc}<br>` : ''}${addr ? `${addr}<br>` : ''}${city ? `${city}<br>` : ''}
-        ${adminName  ? `Contacto: ${adminName}<br>` : ''}
-        ${adminEmail ? `${adminEmail}` : ''}
-      </div>
-    </div>
-  </div>
-
-  <table>
-    <thead><tr>
-      <th style="width:38%">Concepto</th>
-      <th>Período</th>
-      <th>Inicio</th>
-      <th>Vencimiento</th>
-      <th style="text-align:right">Importe</th>
-    </tr></thead>
-    <tbody>
-      <tr>
-        <td><strong>Membresía Homly</strong><br><span style="font-size:11px;color:#64748B">${planName}</span></td>
-        <td>${cycle.periodLabel}</td>
-        <td>${fmtD(cycle.cycleStart)}</td>
-        <td><strong>${fmtD(noteDueDate)}</strong></td>
-        <td style="text-align:right;font-weight:700">${fmtM(cycle.expectedAmount)}</td>
-      </tr>
-      <tr class="total">
-        <td colspan="4">Total a pagar</td>
-        <td style="text-align:right">${fmtM(cycle.expectedAmount)}</td>
-      </tr>
-    </tbody>
-  </table>
-
-  <div class="info-box">
-    <div class="info-title">Datos bancarios para transferencia</div>
-    <div class="info-body">
-      <table style="border-collapse:collapse;width:100%;margin-bottom:8px">
-        <tr><td style="padding:3px 0;color:#166534;font-weight:700;width:140px">Banco</td><td style="padding:3px 0;color:#166534">BBVA</td></tr>
-        <tr><td style="padding:3px 0;color:#166534;font-weight:700">Titular</td><td style="padding:3px 0;color:#166534">Spotynet S.A. de C.V.</td></tr>
-        <tr><td style="padding:3px 0;color:#166534;font-weight:700">No. de Cuenta</td><td style="padding:3px 0;color:#166534;font-family:monospace">0117857578</td></tr>
-        <tr><td style="padding:3px 0;color:#166534;font-weight:700">CLABE</td><td style="padding:3px 0;color:#166534;font-family:monospace">012 180 00117857578</td></tr>
-        <tr><td style="padding:3px 0;color:#166534;font-weight:700">Referencia</td><td style="padding:3px 0;color:#166534"><strong>${tn} — ${cycle.periodLabel}</strong></td></tr>
-      </table>
-      Fecha límite de pago: <strong>${fmtD(noteDueDate)}</strong><br>
-      Al realizar el pago, envía tu comprobante a tu asesor de Homly para registrarlo en el sistema.
-    </div>
-  </div>
-
-  <div class="footer">
-    Nota de cobro generada automáticamente por Homly para el condominio <strong>${tn}</strong>.<br>
-    ${now} · Homly — Sistema de Administración de Condominios · www.homly.com.mx
-  </div>
-</div></body></html>`;
-}
+// ─── Recibo de Cobro ─────────────────────────────────────────────────────────
 
 function BillingNoteModal({ cycle, sub, tenantData, planName, tenantAdmin, onClose }) {
-  const [emailTo,   setEmailTo]   = useState(tenantAdmin?.email || '');
-  const [sending,   setSending]   = useState(false);
-
-  const html = React.useMemo(
-    () => buildBillingNoteHTML({ cycle, sub, tenantData, planName, tenantAdmin }),
-    [cycle, sub, tenantData, planName, tenantAdmin]
-  );
-
-  const handlePreview = () => {
-    const w = window.open('', '_blank', 'width=820,height=900');
-    if (!w) { alert('Permite ventanas emergentes para previsualizar.'); return; }
-    w.document.open(); w.document.write(html); w.document.close();
-  };
-
-  const handleDownload = () => {
-    const w = window.open('', '_blank', 'width=820,height=900');
-    if (!w) { alert('Permite ventanas emergentes para descargar.'); return; }
-    w.document.open(); w.document.write(html); w.document.close();
-    setTimeout(() => w.print(), 600);
-  };
-
-  const handleSendEmail = async () => {
-    if (!emailTo.trim()) { toast.error('Ingresa el email destino'); return; }
-    setSending(true);
-    try {
-      await tenantSubscriptionsAPI.sendBillingNote(sub.id, {
-        period_label:  cycle.periodLabel,
-        cycle_start:   cycle.cycleStart,
-        cycle_end:     cycle.cycleEnd,
-        due_date:      noteDueDate,
-        amount:        cycle.expectedAmount,
-        currency:      cycle.currency,
-        cycle_number:  cycle.number,
-        to_email:      emailTo.trim(),
-      });
-      toast.success(`Nota de cobro enviada a ${emailTo.trim()}`);
-      onClose();
-    } catch (e) {
-      toast.error(e.response?.data?.detail || 'No se pudo enviar el correo');
-    } finally {
-      setSending(false);
-    }
-  };
-
-  const sym  = { MXN: '$', USD: 'US$', EUR: '€', COP: 'COP$' };
-  const cs   = sym[cycle.currency] || '$';
-  const fmtM = (n) => `${cs}${Number(n || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })} ${cycle.currency}`;
-  const fmtD = (d) => {
-    if (!d) return '—';
-    try { return new Date(d + 'T00:00:00').toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }); }
-    catch { return d; }
-  };
-  // Vencimiento de pago = inicio del período + 5 días
-  const noteDueDate = (() => {
-    if (!cycle.cycleStart) return cycle.dueDate;
-    const d = new Date(cycle.cycleStart + 'T00:00:00');
-    d.setDate(d.getDate() + 5);
-    return d.toISOString().slice(0, 10);
-  })();
-
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 9000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
-      onClick={onClose}>
-      <div style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 680, maxHeight: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 24px 64px rgba(0,0,0,0.25)' }}
-        onClick={e => e.stopPropagation()}>
-
-        {/* Header */}
-        <div style={{ padding: '18px 24px', borderBottom: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ width: 36, height: 36, borderRadius: 10, background: '#F0FDF4', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              <FileOutput size={18} color="#0D9488" />
-            </div>
-            <div>
-              <div style={{ fontWeight: 800, fontSize: 15, color: '#0F172A' }}>Nota de Cobro</div>
-              <div style={{ fontSize: 12, color: '#64748B' }}>N° {String(cycle.number).padStart(2,'0')} · {cycle.periodLabel}</div>
-            </div>
-          </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94A3B8', padding: 4 }}>
-            <X size={18} />
-          </button>
-        </div>
-
-        {/* Preview */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px' }}>
-
-          {/* Datos resumen */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 20 }}>
-            {[
-              { label: 'Condominio', value: tenantData?.name || '—' },
-              { label: 'Plan', value: planName },
-              { label: 'Período', value: cycle.periodLabel },
-              { label: 'Vencimiento pago', value: fmtD(noteDueDate) },
-              { label: 'Importe', value: fmtM(cycle.expectedAmount) },
-              { label: 'Estatus', value: { paid: '✓ Pagado', current: '⏳ Vigente', grace: '⚠ En gracia', overdue: '✗ Vencido' }[cycle.status] || cycle.status },
-            ].map(({ label, value }) => (
-              <div key={label} style={{ background: '#F8FAFC', borderRadius: 8, padding: '10px 14px', border: '1px solid #E2E8F0' }}>
-                <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#94A3B8', marginBottom: 3 }}>{label}</div>
-                <div style={{ fontSize: 13, fontWeight: 700, color: '#0F172A' }}>{value}</div>
-              </div>
-            ))}
-          </div>
-
-          {/* Partes */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 20 }}>
-            <div style={{ background: '#F0FDF4', borderRadius: 10, padding: 14, border: '1px solid #BBF7D0' }}>
-              <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#16A34A', marginBottom: 5 }}>Cobrador / Proveedor</div>
-              <div style={{ fontWeight: 700, fontSize: 14, color: '#0F172A', marginBottom: 2 }}>Spotynet</div>
-              <div style={{ fontSize: 12, color: '#15803D', lineHeight: 1.5 }}>Homly — Sistema de Administración<br />contacto@spotynet.com<br />www.homly.com.mx</div>
-            </div>
-            <div style={{ background: '#EFF6FF', borderRadius: 10, padding: 14, border: '1px solid #BFDBFE' }}>
-              <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#2563EB', marginBottom: 5 }}>Cliente / Condominio</div>
-              <div style={{ fontWeight: 700, fontSize: 14, color: '#0F172A', marginBottom: 2 }}>{tenantData?.name || '—'}</div>
-              <div style={{ fontSize: 12, color: '#1D4ED8', lineHeight: 1.5 }}>
-                {tenantData?.rfc && <>{`RFC: ${tenantData.rfc}`}<br /></>}
-                {[tenantData?.info_calle, tenantData?.info_num_externo].filter(Boolean).join(' ')}
-                {tenantAdmin?.name  && <><br />{`Contacto: ${tenantAdmin.name}`}</>}
-                {tenantAdmin?.email && <><br />{tenantAdmin.email}</>}
-              </div>
-            </div>
-          </div>
-
-          {/* Importe */}
-          <div style={{ background: '#0D9488', borderRadius: 10, padding: '14px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-            <div style={{ color: '#fff', fontSize: 13, fontWeight: 600 }}>Total a pagar — {cycle.periodLabel}</div>
-            <div style={{ color: '#fff', fontSize: 20, fontWeight: 900 }}>{fmtM(cycle.expectedAmount)}</div>
-          </div>
-
-          {/* Datos bancarios */}
-          <div style={{ background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: 10, padding: '12px 16px', marginBottom: 20 }}>
-            <div style={{ fontSize: 11, fontWeight: 800, color: '#15803D', marginBottom: 8, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Datos bancarios para transferencia</div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 16px', fontSize: 12 }}>
-              {[
-                ['Banco',        'BBVA'],
-                ['Titular',      'Spotynet S.A. de C.V.'],
-                ['No. de Cuenta','0117857578'],
-                ['CLABE',        '012 180 00117857578'],
-                ['Referencia',   `${tenantData?.name || '—'} — ${cycle.periodLabel}`],
-                ['Fecha límite', fmtD(noteDueDate)],
-              ].map(([k, v]) => (
-                <React.Fragment key={k}>
-                  <span style={{ fontWeight: 700, color: '#166534', whiteSpace: 'nowrap' }}>{k}</span>
-                  <span style={{ color: '#15803D', fontFamily: k === 'No. de Cuenta' || k === 'CLABE' ? 'monospace' : 'inherit', fontWeight: k === 'Fecha límite' ? 700 : 400 }}>{v}</span>
-                </React.Fragment>
-              ))}
-            </div>
-          </div>
-
-          {/* Acciones: preview + download */}
-          <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
-            <button onClick={handlePreview}
-              style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '9px 16px', borderRadius: 8, border: '1.5px solid #E2E8F0', background: '#fff', color: '#475569', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
-              <Eye size={14} /> Vista previa
-            </button>
-            <button onClick={handleDownload}
-              style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '9px 16px', borderRadius: 8, border: '1.5px solid #0D9488', background: '#F0FDF4', color: '#0D9488', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
-              <Download size={14} /> Descargar PDF
-            </button>
-          </div>
-
-          {/* Enviar por correo */}
-          <div style={{ background: '#FAFAFA', borderRadius: 10, padding: 16, border: '1px solid #E2E8F0' }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: '#334155', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
-              <Mail size={13} color="#0D9488" /> Enviar por correo electrónico
-            </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input
-                type="email"
-                value={emailTo}
-                onChange={e => setEmailTo(e.target.value)}
-                placeholder="correo@condominio.com"
-                style={{ flex: 1, border: '1.5px solid #E2E8F0', borderRadius: 8, padding: '8px 12px', fontSize: 13, outline: 'none' }}
-              />
-              <button
-                onClick={handleSendEmail}
-                disabled={sending || !emailTo.trim()}
-                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderRadius: 8, border: 'none', background: sending ? '#94A3B8' : '#0D9488', color: '#fff', fontWeight: 700, fontSize: 13, cursor: sending ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap' }}>
-                {sending ? <RefreshCw size={13} className="animate-spin" /> : <Mail size={13} />}
-                {sending ? 'Enviando…' : 'Enviar'}
-              </button>
-            </div>
-            <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 6 }}>
-              La nota de cobro se enviará con los datos del período al correo indicado.
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+    <MembershipBillingNoteModal
+      cycle={cycle}
+      sub={sub}
+      tenantData={tenantData}
+      planName={planName}
+      tenantAdmin={tenantAdmin}
+      workspaceType={tenantData?.workspace_type || sub?.tenant_workspace_type}
+      onClose={onClose}
+      onSendEmail={async (payload) => {
+        await tenantSubscriptionsAPI.sendBillingNote(sub.id, payload);
+        toast.success(`Recibo de cobro enviado a ${payload.to_email}`);
+        onClose();
+      }}
+    />
   );
 }
 
@@ -1820,7 +1588,9 @@ function RowPanel({ sub, plans, onRefresh }) {
             <label style={labelSt}>Plan</label>
             <select value={plan} onChange={e => handlePlanChange(e.target.value)} style={inputSt}>
               <option value="">Sin plan</option>
-              {plans.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              {plans
+                .filter(p => (p.workspace_type || 'condominio') === (sub.tenant_workspace_type || 'condominio'))
+                .map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           </div>
         </div>
@@ -2120,12 +1890,12 @@ function RowPanel({ sub, plans, onRefresh }) {
                                 {isPayingThis ? 'Cancelar' : 'Registrar'}
                               </button>
                             )}
-                            {/* Nota de Cobro */}
+                            {/* Recibo de Cobro */}
                             <button
                               onClick={() => setBillingNoteCycle(cycle)}
-                              title="Ver / enviar nota de cobro"
+                              title="Ver / enviar recibo de cobro"
                               className="inline-flex items-center gap-1 px-2 py-1 text-xs text-violet-700 bg-violet-50 border border-violet-200 rounded-lg hover:bg-violet-100 transition-colors font-semibold mt-1">
-                              <FileOutput size={11} /> Nota
+                              <FileOutput size={11} /> Recibo de cobro
                             </button>
                           </td>
                         </tr>
@@ -2678,11 +2448,18 @@ function NewSubModal({ plans, onClose, onDone }) {
                 </p>
               ) : (
                 <>
-                  <select value={form.tenant} onChange={f('tenant')} required className={inputCls}>
+                  <select value={form.tenant} onChange={e => {
+                    const tenantId = e.target.value;
+                    const t = allTenants.find(tn => String(tn.id) === String(tenantId));
+                    const ws = t?.workspace_type || 'condominio';
+                    const currentPlan = plans.find(p => String(p.id) === String(form.plan));
+                    const planOk = currentPlan && (currentPlan.workspace_type || 'condominio') === ws;
+                    setForm(p => ({ ...p, tenant: tenantId, plan: planOk ? p.plan : '' }));
+                  }} required className={inputCls}>
                     <option value="">Selecciona un tenant…</option>
                     {available.map(t => (
                       <option key={t.id} value={t.id}>
-                        {t.name}{isResubscribe(t.id) ? ' — Reactivar suscripción' : ''}
+                        {t.name} · {(t.workspace_type || 'condominio') === 'rentas' ? 'Rentas' : 'Condominio'}{isResubscribe(t.id) ? ' — Reactivar suscripción' : ''}
                       </option>
                     ))}
                   </select>
@@ -2701,7 +2478,12 @@ function NewSubModal({ plans, onClose, onDone }) {
                 <label className={labelCls}>Plan</label>
                 <select value={form.plan} onChange={e => handleNewPlanChange(e.target.value)} className={inputCls}>
                   <option value="">Sin plan</option>
-                  {plans.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  {plans
+                    .filter(p => {
+                      const t = allTenants.find(tn => String(tn.id) === String(form.tenant));
+                      return (p.workspace_type || 'condominio') === (t?.workspace_type || 'condominio');
+                    })
+                    .map(p => <option key={p.id} value={p.id}>{p.name}{(p.workspace_type || 'condominio') === 'rentas' ? ' · Rentas' : ''}</option>)}
                 </select>
               </div>
               {/* Estado */}
@@ -2820,6 +2602,7 @@ function TabSuscripciones() {
   const [plans,             setPlans]             = useState([]);
   const [loading,           setLoading]           = useState(true);
   const [statusFilter,      setStatusFilter]      = useState('');
+  const [wsFilter,          setWsFilter]          = useState('');
   const [expandedId,        setExpandedId]        = useState(null);
   const [showNewModal,      setShowNewModal]      = useState(false);
   const [runningBillingCheck, setRunningBillingCheck] = useState(false);
@@ -2845,7 +2628,7 @@ function TabSuscripciones() {
   const load = useCallback(() => {
     setLoading(true);
     Promise.all([
-      tenantSubscriptionsAPI.list({ status: statusFilter || undefined }),
+      tenantSubscriptionsAPI.list({ status: statusFilter || undefined, workspace_type: wsFilter || undefined }),
       subscriptionPlansAPI.list({ active_only: 1 }),
     ])
       .then(([rSubs, rPlans]) => {
@@ -2854,7 +2637,7 @@ function TabSuscripciones() {
       })
       .catch(() => toast.error('Error al cargar suscripciones'))
       .finally(() => setLoading(false));
-  }, [statusFilter]);
+  }, [statusFilter, wsFilter]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -2872,6 +2655,12 @@ function TabSuscripciones() {
           <p className="text-sm text-slate-500 mt-0.5">Gestiona las membresías de todos los tenants</p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
+          <select value={wsFilter} onChange={e => setWsFilter(e.target.value)}
+            className="border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500">
+            <option value="">Todos los espacios</option>
+            <option value="condominio">Condominios</option>
+            <option value="rentas">Rentas</option>
+          </select>
           <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
             className="border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500">
             <option value="">Todos los estados</option>
@@ -2972,6 +2761,11 @@ function TabSuscripciones() {
                     >
                       <td className="px-4 py-3">
                         <p className="font-semibold text-slate-800">{sub.tenant_name}</p>
+                        <p className={`text-xs font-semibold mt-0.5 ${
+                          (sub.tenant_workspace_type || 'condominio') === 'rentas' ? 'text-blue-600' : 'text-teal-700'
+                        }`}>
+                          {(sub.tenant_workspace_type || 'condominio') === 'rentas' ? 'Rentas' : 'Condominio'}
+                        </p>
                       </td>
                       <td className="px-4 py-3 text-slate-600">{sub.plan_name || '—'}</td>
                       <td className="px-4 py-3">

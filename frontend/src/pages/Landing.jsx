@@ -3,11 +3,9 @@ import { Link } from 'react-router-dom';
 import { HomlyBrand, HomlyBrandDark, HomlyIsotipo } from '../utils/helpers';
 
 /* ─── Brand shorthands for Landing ─── */
-/* Light bg (nav on scroll, footer light areas) */
 const LogoFull = ({ iconSize = 38, nameHeight = 26 }) => (
   <HomlyBrand iconSize={iconSize} nameHeight={nameHeight} />
 );
-/* Dark bg (hero, dark sections, footer) */
 const LogoFullDark = ({ iconSize = 38, fontSize = 26 }) => (
   <HomlyBrandDark iconSize={iconSize} fontSize={fontSize} />
 );
@@ -82,6 +80,28 @@ const IconNewspaper = () => (
     <path d="M18 14h-8M15 18h-5M10 6h8v4h-8z"/>
   </svg>
 );
+const IconKey = () => (
+  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#E85D43" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>
+  </svg>
+);
+const IconHome = () => (
+  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#E85D43" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+    <polyline points="9 22 9 12 15 12 15 22"/>
+  </svg>
+);
+const IconSwitch = () => (
+  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#E85D43" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/>
+    <polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+  </svg>
+);
+const IconMail = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="2" y="4" width="20" height="16" rx="2"/><path d="M22 7l-10 7L2 7"/>
+  </svg>
+);
 const IconStar = ({ color = '#E85D43', size = 14 }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill={color} stroke={color} strokeWidth="1" strokeLinecap="round" strokeLinejoin="round">
     <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
@@ -98,6 +118,35 @@ const IconArrow = () => (
   </svg>
 );
 
+const CONDO_FEATURES = [
+  { icon: <IconChart />, title: 'Dashboard financiero', desc: 'Cobranza, ingresos, egresos y saldo del condominio, en un vistazo.' },
+  { icon: <IconReceipt />, title: 'Cobranza mensual', desc: 'Registra cuotas, genera recibos con folio y ve quién ya pagó.' },
+  { icon: <IconShoppingBag />, title: 'Gastos y caja chica', desc: 'Controla egresos con comprobantes y categorías claras.' },
+  { icon: <IconCalendar />, title: 'Reservas de áreas', desc: 'Salón, alberca o gimnasio, con calendario y reglas por área.' },
+  { icon: <IconFileText />, title: 'Estado de cuenta', desc: 'Cada unidad ve su saldo, adeudos y comprobantes en PDF.' },
+  { icon: <IconTrendingDown />, title: 'Plan de pagos', desc: 'Acuerdos a plazos para adeudos, aceptados por el residente.' },
+  { icon: <IconLock />, title: 'Cierre de período', desc: 'Cierra el mes con aprobación. Lo cerrado ya no se altera.' },
+  { icon: <IconNewspaper />, title: 'Comunicación', desc: 'Avisos, blog interno y notificaciones para la comunidad.' },
+  { icon: <IconUsers />, title: 'Roles y permisos', desc: 'Admin, tesorero, contador, auditor, vigilante y vecino.' },
+];
+
+const RENTAS_FEATURES = [
+  { icon: <IconHome />, title: 'Catálogo de propiedades', desc: 'Casas, departamentos u oficinas: alta, estado y ocupación.' },
+  { icon: <IconFileText />, title: 'Contratos y partes', desc: 'Inquilinos, propietarios y contratos con fechas de vigencia.' },
+  { icon: <IconReceipt />, title: 'Cobranza de rentas', desc: 'Cargos del mes, pagos parciales y recibos de la inmobiliaria.' },
+  { icon: <IconCalendar />, title: 'Calendario de vigencias', desc: 'Vencimientos, renovaciones y ocupaciones en un solo calendario.' },
+  { icon: <IconChart />, title: 'Dashboard inmobiliario', desc: 'Rentas cobradas, pendientes y propiedades activas.' },
+  { icon: <IconUsers />, title: 'Equipo de la inmobiliaria', desc: 'Admin, tesorero y contador, con acceso solo a rentas.' },
+];
+
+const NAV_LINKS = [
+  { href: '#servicios', label: 'Servicios' },
+  { href: '#beneficios', label: 'Beneficios' },
+  { href: '#como-funciona', label: 'Cómo funciona' },
+  { href: '#preguntas', label: 'Preguntas' },
+  { href: '#contacto', label: 'Contacto' },
+];
+
 /* ═══════════════════════════════════════
    LANDING PAGE
    ═══════════════════════════════════════ */
@@ -105,12 +154,15 @@ export default function Landing() {
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [openFaq, setOpenFaq] = useState(null);
+  const [featureTab, setFeatureTab] = useState('condominio');
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20);
     window.addEventListener('scroll', onScroll);
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
+
+  const features = featureTab === 'rentas' ? RENTAS_FEATURES : CONDO_FEATURES;
 
   return (
     <div style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", background: '#FDFBF7', color: '#1A1612', overflowX: 'hidden' }}>
@@ -129,12 +181,10 @@ export default function Landing() {
             : <LogoFullDark iconSize={36} fontSize={22} />
           }
 
-          {/* Desktop nav */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 36 }} className="hidden-mobile">
-            <a href="#beneficios" style={navLinkStyle}>Beneficios</a>
-            <a href="#como-funciona" style={navLinkStyle}>Cómo funciona</a>
-            <a href="#preguntas" style={navLinkStyle}>Preguntas</a>
-            <a href="#contacto" style={navLinkStyle}>Contacto</a>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 28 }} className="hidden-mobile">
+            {NAV_LINKS.map(l => (
+              <a key={l.href} href={l.href} style={navLinkStyle}>{l.label}</a>
+            ))}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }} className="hidden-mobile">
             <Link to="/login" style={btnOutlineStyle}>Iniciar sesión</Link>
@@ -143,16 +193,14 @@ export default function Landing() {
             </Link>
           </div>
 
-          {/* Login button visible en mobile sin abrir menú */}
           <Link to="/login" style={{ ...btnOutlineStyle, fontSize: 13, padding: '8px 16px' }} className="show-mobile">
             Iniciar sesión
           </Link>
 
-          {/* Mobile menu btn */}
           <button
             onClick={() => setMobileOpen(v => !v)}
             className="show-mobile"
-            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 8, color: scrolled ? '#124A36' : '#fff' }}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 8, color: '#124A36' }}
           >
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
               {mobileOpen
@@ -163,13 +211,11 @@ export default function Landing() {
           </button>
         </div>
 
-        {/* Mobile dropdown */}
         {mobileOpen && (
           <div style={{ background: '#FDFBF7', borderTop: '1px solid #E8DFD1', padding: '20px 20px 28px', display: 'flex', flexDirection: 'column', gap: 20 }}>
-            <a href="#beneficios" onClick={() => setMobileOpen(false)} style={{ ...navLinkStyle, fontSize: 16 }}>Beneficios</a>
-            <a href="#como-funciona" onClick={() => setMobileOpen(false)} style={{ ...navLinkStyle, fontSize: 16 }}>Cómo funciona</a>
-            <a href="#preguntas" onClick={() => setMobileOpen(false)} style={{ ...navLinkStyle, fontSize: 16 }}>Preguntas</a>
-            <a href="#contacto" onClick={() => setMobileOpen(false)} style={{ ...navLinkStyle, fontSize: 16 }}>Contacto</a>
+            {NAV_LINKS.map(l => (
+              <a key={l.href} href={l.href} onClick={() => setMobileOpen(false)} style={{ ...navLinkStyle, fontSize: 16 }}>{l.label}</a>
+            ))}
             <Link to="/login" style={{ ...btnOutlineStyle, justifyContent: 'center' }} onClick={() => setMobileOpen(false)}>
               Iniciar sesión
             </Link>
@@ -185,38 +231,40 @@ export default function Landing() {
         <div className="landing-hero">
         <div className="landing-hero-grid">
 
-          {/* Left — copy */}
           <div>
-            <div style={tagStyle}>✦ Gestión de condominios</div>
+            <div style={tagStyle}>✦ Condominios y rentas · Un solo administrador</div>
             <h1 style={{
-              fontSize: 'clamp(36px, 5vw, 60px)',
+              fontSize: 'clamp(34px, 5vw, 56px)',
               fontWeight: 800,
-              lineHeight: 1.1,
+              lineHeight: 1.12,
               color: '#124A36',
               margin: '24px 0 20px',
               letterSpacing: '-1.5px',
             }}>
-              La administración<br />
-              que tu hogar<br />
-              <span style={{ color: '#E85D43' }}>se merece.</span>
+              Administra condominios<br />
+              y rentas<br />
+              <span style={{ color: '#E85D43' }}>desde una sola cuenta.</span>
             </h1>
-            <p style={{ fontSize: 18, color: '#5C5347', lineHeight: 1.7, maxWidth: 460, marginBottom: 36 }}>
-              Homly centraliza cobros, finanzas y comunicación de tu condominio en un solo lugar.
-              Transparente, simple y pensado para la comunidad.
+            <p style={{ fontSize: 18, color: '#5C5347', lineHeight: 1.7, maxWidth: 500, marginBottom: 36 }}>
+              Homly tiene dos servicios independientes: administración de condominios
+              y gestión de rentas inmobiliarias. Un mismo administrador puede usar ambos,
+              cambiar de espacio en un clic, y mantener las cuentas completamente separadas.
             </p>
-            <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 20 }}>
               <Link to="/registro" style={btnCoralLargeStyle}>
-                Comenzar ahora <IconArrow />
+                Empezar gratis <IconArrow />
               </Link>
+              <a href="#servicios" style={{ ...btnOutlineStyle, padding: '14px 24px', fontSize: 16 }}>
+                Ver los dos servicios
+              </a>
             </div>
 
-            {/* Trust badges */}
-            <div style={{ display: 'flex', gap: 24, marginTop: 40, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: 20, marginTop: 28, flexWrap: 'wrap' }}>
               {[
-                'Cuentas claras',
-                'Sin hojas de cálculo',
-                'Roles por perfil',
-                'Comunicación efectiva',
+                'Dos espacios, un login',
+                'Cuentas y planes separados',
+                'Sin mezclar el dinero',
+                'Listo en minutos',
               ].map(t => (
                 <div key={t} style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#5C5347', fontSize: 13, fontWeight: 600 }}>
                   <IconCheck color="#1F7D5B" size={16} /> {t}
@@ -225,78 +273,58 @@ export default function Landing() {
             </div>
           </div>
 
-          {/* Right — product card mockup */}
           <div className="landing-hero-mockup" style={{ position: 'relative' }}>
-            {/* Decorative blobs */}
             <div style={{
               position: 'absolute', top: -40, right: -40, width: 280, height: 280,
               borderRadius: '50%', background: 'radial-gradient(circle, rgba(232,93,67,0.10) 0%, transparent 70%)',
               zIndex: 0, pointerEvents: 'none',
             }} />
-            <div style={{
-              position: 'absolute', bottom: -20, left: -20, width: 200, height: 200,
-              borderRadius: '50%', background: 'radial-gradient(circle, rgba(18,74,54,0.08) 0%, transparent 70%)',
-              zIndex: 0, pointerEvents: 'none',
-            }} />
 
-            {/* Main card */}
-            <div style={{ ...cardStyle, position: 'relative', zIndex: 1 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+            <div style={{ ...cardStyle, position: 'relative', zIndex: 1, marginBottom: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
                 <div>
+                  <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#1F7D5B', marginBottom: 4 }}>Condominio</div>
                   <div style={{ fontWeight: 700, color: '#1A1612', fontSize: 15 }}>Residencial Los Olivos</div>
-                  <div style={{ fontSize: 12, color: '#9E9588', marginTop: 2 }}>48 unidades · Marzo 2025</div>
+                  <div style={{ fontSize: 12, color: '#9E9588', marginTop: 2 }}>48 unidades · cobranza del mes</div>
                 </div>
-                <div style={{ background: '#EFFAF6', borderRadius: 10, padding: '6px 12px', fontSize: 12, fontWeight: 700, color: '#1F7D5B' }}>
-                  Activo
-                </div>
+                <div style={{ background: '#EFFAF6', borderRadius: 10, padding: '6px 12px', fontSize: 12, fontWeight: 700, color: '#1F7D5B' }}>Activo</div>
               </div>
-
-              {/* Stats row */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 20 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
                 <StatCard value="92%" label="Cobranza" bg="#EFFAF6" color="#175F45" />
                 <StatCard value="$148K" label="Recaudado" bg="#FFF5F2" color="#D04E37" />
                 <StatCard value="4" label="Pendientes" bg="#FFFBEB" color="#B45309" />
               </div>
+            </div>
 
-              {/* Payment list */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {[
-                  { unit: 'C-001 · Casa Rodríguez', status: 'pagado' },
-                  { unit: 'C-002 · Casa López', status: 'pagado' },
-                  { unit: 'C-003 · Casa García', status: 'pendiente' },
-                  { unit: 'C-004 · Casa Martínez', status: 'pagado' },
-                ].map((r, i) => (
-                  <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 12px', background: '#FAF7F2', borderRadius: 10 }}>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: '#443D33' }}>{r.unit}</span>
-                    <span style={{
-                      fontSize: 11, fontWeight: 700, borderRadius: 20, padding: '3px 10px',
-                      background: r.status === 'pagado' ? '#EFFAF6' : '#FFF5F2',
-                      color: r.status === 'pagado' ? '#175F45' : '#D04E37',
-                    }}>
-                      {r.status === 'pagado' ? '✓ Pagado' : '○ Pendiente'}
-                    </span>
-                  </div>
-                ))}
+            <div style={{ ...cardStyle, position: 'relative', zIndex: 1, border: '1.5px solid #BFDBFE' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#1D4ED8', marginBottom: 4 }}>Rentas</div>
+                  <div style={{ fontWeight: 700, color: '#1A1612', fontSize: 15 }}>Homly Inmobiliaria</div>
+                  <div style={{ fontSize: 12, color: '#9E9588', marginTop: 2 }}>12 propiedades · rentas del mes</div>
+                </div>
+                <div style={{ background: '#EFF6FF', borderRadius: 10, padding: '6px 12px', fontSize: 12, fontWeight: 700, color: '#1D4ED8' }}>Activo</div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+                <StatCard value="10/12" label="Ocupadas" bg="#EFF6FF" color="#1D4ED8" />
+                <StatCard value="$86K" label="Rentas" bg="#FFF5F2" color="#D04E37" />
+                <StatCard value="2" label="Por vencer" bg="#FFFBEB" color="#B45309" />
               </div>
             </div>
 
-            {/* Floating mini card — notification */}
             <div style={{
-              position: 'absolute', bottom: -20, left: -24, zIndex: 2,
-              background: '#fff', borderRadius: 14, padding: '12px 16px',
+              position: 'absolute', bottom: -18, left: -12, zIndex: 2,
+              background: '#fff', borderRadius: 14, padding: '10px 14px',
               boxShadow: '0 8px 32px rgba(26,22,18,0.12)',
               border: '1px solid #F3EDE4',
               display: 'flex', alignItems: 'center', gap: 10,
-              maxWidth: 220,
             }}>
-              <div style={{ width: 36, height: 36, borderRadius: 10, background: '#EFFAF6', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1F7D5B" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="20 6 9 17 4 12"/>
-                </svg>
+              <div style={{ width: 32, height: 32, borderRadius: 10, background: '#FFF5F2', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <IconSwitch />
               </div>
               <div>
-                <div style={{ fontSize: 12, fontWeight: 700, color: '#1A1612' }}>Pago registrado</div>
-                <div style={{ fontSize: 11, color: '#9E9588' }}>C-004 · $2,400</div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: '#1A1612' }}>Cambia de espacio</div>
+                <div style={{ fontSize: 11, color: '#9E9588' }}>Condominio ↔ Rentas</div>
               </div>
             </div>
           </div>
@@ -304,373 +332,381 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* ── STATS BAR ── */}
+      {/* ── STATS ── */}
       <section className="landing-stats-bar">
         <div className="landing-stats-grid">
           {[
-            { num: '+500', label: 'Unidades gestionadas' },
-            { num: '98%', label: 'Satisfacción de usuarios' },
-            { num: '+12', label: 'Condominios activos' },
-            { num: '2 países', label: 'Presencia regional' },
+            { num: '2 servicios', label: 'Condominios y rentas' },
+            { num: '1 cuenta', label: 'Para administrar ambos' },
+            { num: 'Planes aparte', label: 'Membresía por espacio' },
+            { num: '2 países', label: 'México y Colombia' },
           ].map((s, i) => (
             <div key={i}>
-              <div style={{ fontSize: 36, fontWeight: 800, color: '#E85D43', letterSpacing: '-1px', lineHeight: 1 }}>{s.num}</div>
+              <div style={{ fontSize: 28, fontWeight: 800, color: '#E85D43', letterSpacing: '-0.5px', lineHeight: 1.15 }}>{s.num}</div>
               <div style={{ fontSize: 13, color: 'rgba(253,251,247,0.7)', marginTop: 6, fontWeight: 500 }}>{s.label}</div>
             </div>
           ))}
         </div>
       </section>
 
-      {/* ── FEATURES ── */}
-      <section id="beneficios" className="landing-section" style={{ paddingBottom: 80 }}>
+      {/* ── TWO SERVICES ── */}
+      <section id="servicios" className="landing-section">
         <div className="landing-section-inner">
           <div style={{ textAlign: 'center', marginBottom: 48 }}>
-            <div style={tagStyle}>Funcionalidades</div>
+            <div style={tagStyle}>Qué ofrece Homly</div>
             <h2 style={{ fontSize: 'clamp(28px, 4vw, 44px)', fontWeight: 800, color: '#124A36', marginTop: 16, letterSpacing: '-1px' }}>
-              Todo lo que necesitas,<br />nada que no necesitas
+              Dos servicios. Independientes.<br />Pueden convivir juntos.
             </h2>
-            <p style={{ color: '#7A7166', fontSize: 17, marginTop: 16, maxWidth: 520, margin: '16px auto 0' }}>
-              Diseñado para simplificar la vida de administradores, tesoreros y residentes.
-              Cada módulo está pensado para el día a día de un condominio real.
+            <p style={{ color: '#7A7166', fontSize: 17, marginTop: 16, maxWidth: 640, margin: '16px auto 0', lineHeight: 1.7 }}>
+              No es un solo sistema mezclado. Cada servicio es un espacio de trabajo propio,
+              con su propio equipo, su propia cobranza y su propia membresía.
+              Si administras un condominio y también rentas inmuebles, entras una vez y cambias de espacio.
             </p>
           </div>
-        </div>
 
-        {/* ─ Horizontal scroll row ─ */}
-        <div style={{
-          display: 'flex',
-          overflowX: 'auto',
-          gap: 18,
-          padding: '8px 48px 28px',
-          scrollSnapType: 'x mandatory',
-          WebkitOverflowScrolling: 'touch',
-          scrollbarWidth: 'thin',
-          scrollbarColor: '#E8DFD1 transparent',
-          cursor: 'default',
-        }}>
-          {[
-            {
-              icon: <IconChart />,
-              title: 'Dashboard Financiero',
-              desc: 'Panel en tiempo real con KPIs de cobranza, ingresos del período, egresos, saldo disponible y evolución mensual.',
-              highlight: true,
-              badge: 'Principal',
-            },
-            {
-              icon: <IconReceipt />,
-              title: 'Cobranza Mensual',
-              desc: 'Registra pagos de mantenimiento, genera recibos PDF con folio, aplica cargos extra y mantén el historial de cada unidad.',
-            },
-            {
-              icon: <IconShoppingBag />,
-              title: 'Gastos y Caja Chica',
-              desc: 'Controla gastos ordinarios y caja chica por categorías. Adjunta comprobantes y lleva el libro contable al día.',
-            },
-            {
-              icon: <IconCalendar />,
-              title: 'Reservas de Áreas Comunes',
-              desc: 'Calendario interactivo para salón de eventos, alberca, gimnasio y más. Con control de disponibilidad y reglas por área.',
-            },
-            {
-              icon: <IconFileText />,
-              title: 'Estado de Cuenta',
-              desc: 'Estado de cuenta detallado por unidad con exportación a PDF. Movimientos, saldo acumulado, adeudos y comprobantes descargables.',
-            },
-            {
-              icon: <IconTrendingDown />,
-              title: 'Plan de Pagos',
-              desc: 'Gestiona adeudos en cuotas personalizadas. Define frecuencia, plazos e intereses. El residente acepta el plan y los pagos se sincronizan automáticamente.',
-              badge: 'Nuevo',
-            },
-            {
-              icon: <IconLock />,
-              title: 'Cierre de Período',
-              desc: 'Cierra períodos contables con flujo de aprobación multiusuario. Una vez cerrado, no se permiten más registros para ese mes.',
-            },
-            {
-              icon: <IconBell />,
-              title: 'Notificaciones y Avisos',
-              desc: 'Centraliza la comunicación: avisos generales, recordatorios de cobranza y alertas del sistema directamente en la plataforma.',
-            },
-            {
-              icon: <IconNewspaper />,
-              title: 'Comunicación',
-              desc: 'Publica artículos y comunicados para tu comunidad. Categorías, portadas, reacciones y envío por correo. Los residentes reciben todo en un solo lugar.',
-              badge: 'Nuevo',
-            },
-            {
-              icon: <IconUsers />,
-              title: 'Roles y Permisos',
-              desc: 'Admin, tesorero, contador, auditor, vigilante y vecino — cada perfil con acceso exacto a los módulos que necesita.',
-            },
-            {
-              icon: <IconShield />,
-              title: 'Control de Acceso',
-              desc: 'Permisos configurables por módulo y por rol. Define qué puede ver y qué puede editar cada persona de tu equipo.',
-            },
-            {
-              icon: <IconBuilding />,
-              title: 'Gestión de Unidades',
-              desc: 'Administra propietarios, inquilinos, cuotas individuales y exenciones. Historial completo por departamento o casa.',
-            },
-            {
-              icon: <HomlyIsotipo size={28} />,
-              title: 'Multi-condominio',
-              desc: 'Administra múltiples condominios desde una sola cuenta. Ideal para administradoras profesionales con portafolio de inmuebles.',
-            },
-          ].map((f, i) => (
-            <div
-              key={i}
-              style={{
-                ...cardStyle,
-                minWidth: 260,
-                maxWidth: 260,
-                flexShrink: 0,
-                scrollSnapAlign: 'start',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 0,
-                border: f.highlight ? '1.5px solid #E85D43' : '1px solid #E8DFD1',
-                background: f.highlight ? '#FFF5F2' : '#fff',
-                transition: 'transform 0.2s ease, box-shadow 0.2s ease',
-                position: 'relative',
-              }}
-              onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-4px)'; e.currentTarget.style.boxShadow = '0 12px 40px rgba(26,22,18,0.12)'; }}
-              onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(26,22,18,0.06)'; }}
-            >
-              {f.badge && (
-                <div style={{
-                  position: 'absolute', top: 14, right: 14,
-                  fontSize: 10, fontWeight: 800, letterSpacing: '0.5px',
-                  background: f.highlight ? '#E85D43' : '#EFFAF6',
-                  color: f.highlight ? '#fff' : '#175F45',
-                  padding: '3px 8px', borderRadius: 999, textTransform: 'uppercase',
-                }}>{f.badge}</div>
-              )}
-              <div style={{ width: 48, height: 48, borderRadius: 13, background: f.highlight ? '#FFE4DC' : '#FFF5F2', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 18 }}>
-                {f.icon}
-              </div>
-              <h3 style={{ fontSize: 15, fontWeight: 700, color: '#1A1612', marginBottom: 10, marginTop: 0 }}>{f.title}</h3>
-              <p style={{ fontSize: 13, color: '#7A7166', lineHeight: 1.65, margin: 0 }}>{f.desc}</p>
+          <div className="landing-services-grid">
+            <ServiceCard
+              badge="Servicio 1"
+              badgeColor="#175F45"
+              badgeBg="#EFFAF6"
+              title="Administración de condominios"
+              lead="Para mesas directivas, comités y administradoras de propiedad horizontal."
+              points={[
+                'Cobranza de cuotas y recibos con folio',
+                'Gastos, caja chica y cierre de período',
+                'Estado de cuenta por unidad',
+                'Reservas, avisos y roles de la comunidad',
+                'Varios condominios en la misma cuenta',
+              ]}
+            />
+            <ServiceCard
+              badge="Servicio 2"
+              badgeColor="#1D4ED8"
+              badgeBg="#EFF6FF"
+              title="Gestión de rentas"
+              lead="Para inmobiliarias y quien renta casas, departamentos u oficinas."
+              points={[
+                'Catálogo de propiedades e inquilinos',
+                'Contratos con fechas de vigencia',
+                'Cobranza de rentas y recibos',
+                'Calendario de vencimientos',
+                'Equipo propio, sin mezclar con el condominio',
+              ]}
+            />
+          </div>
+
+          <div style={{
+            marginTop: 28, background: '#FFF5F2', border: '1.5px solid #FFE4DC',
+            borderRadius: 20, padding: '22px 28px',
+            display: 'flex', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap',
+          }}>
+            <div style={{ width: 48, height: 48, borderRadius: 14, background: '#FFE4DC', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <IconSwitch />
             </div>
-          ))}
-        </div>
-
-        {/* Scroll hint */}
-        <div style={{ textAlign: 'center', marginTop: 8 }}>
-          <span style={{ fontSize: 12, color: '#C5BAB0', fontWeight: 500, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-            Desliza para ver todas las funciones
-          </span>
+            <div style={{ flex: 1, minWidth: 240 }}>
+              <h3 style={{ margin: '0 0 6px', fontSize: 18, fontWeight: 800, color: '#124A36' }}>
+                Un administrador, los dos servicios
+              </h3>
+              <p style={{ margin: 0, fontSize: 15, color: '#5C5347', lineHeight: 1.7 }}>
+                Con una sola cuenta entras a Homly. Desde ahí abres el condominio o la inmobiliaria.
+                El dinero, los usuarios y los planes no se mezclan: cada espacio tiene su kardex de membresía
+                y su propia cobranza. Empiezas con uno y, cuando lo necesites, activas el otro.
+              </p>
+            </div>
+          </div>
         </div>
       </section>
 
-      {/* ── HOW IT WORKS ── */}
-      <section id="como-funciona" style={{ background: '#F3EDE4' }} className="landing-section">
+      {/* ── WHO ── */}
+      <section className="landing-section" style={{ background: '#F3EDE4', paddingTop: 80, paddingBottom: 80 }}>
         <div className="landing-section-inner">
-          <div style={{ textAlign: 'center', marginBottom: 48 }}>
-            <div style={tagStyle}>Proceso</div>
-            <h2 style={{ fontSize: 'clamp(28px, 4vw, 44px)', fontWeight: 800, color: '#124A36', marginTop: 16, letterSpacing: '-1px' }}>
-              Empieza en minutos
+          <div style={{ textAlign: 'center', marginBottom: 40 }}>
+            <div style={tagStyle}>¿Para quién es?</div>
+            <h2 style={{ fontSize: 'clamp(26px, 4vw, 40px)', fontWeight: 800, color: '#124A36', marginTop: 16, letterSpacing: '-1px' }}>
+              Si administras inmuebles, Homly te ahorra el caos
             </h2>
           </div>
-
-          <div className="landing-steps-grid">
+          <div className="landing-who-grid">
             {[
-              { step: '01', title: 'Crea tu condominio', desc: 'Configura el perfil de tu condominio: nombre, unidades, cuota de mantenimiento y moneda.' },
-              { step: '02', title: 'Agrega a tu equipo', desc: 'Invita a tu tesorero, contador o residentes. Cada rol tiene acceso exacto a lo que necesita.' },
-              { step: '03', title: 'Registra y cobra', desc: 'Captura pagos, genera recibos y lleva las cuentas al día. Todo en un solo lugar.' },
-            ].map((s, i) => (
-              <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                <div style={{ fontSize: 52, fontWeight: 800, color: '#E8DFD1', letterSpacing: '-2px', lineHeight: 1 }}>{s.step}</div>
-                <div style={{ width: 40, height: 3, background: '#E85D43', borderRadius: 2 }} />
-                <h3 style={{ fontSize: 20, fontWeight: 700, color: '#124A36' }}>{s.title}</h3>
-                <p style={{ fontSize: 15, color: '#7A7166', lineHeight: 1.65 }}>{s.desc}</p>
+              { title: 'Mesa directiva o comité', desc: 'Quieren cuentas claras, cobranza al día y que los vecinos vean su estado de cuenta sin WhatsApp eterno.' },
+              { title: 'Administradora profesional', desc: 'Llevan varios condominios. En Homly cada uno vive aparte, y se entra al que toca en un clic.' },
+              { title: 'Inmobiliaria o gestor de rentas', desc: 'Necesitan propiedades, contratos y cobro de renta sin usar hojas de cálculo ni mezclarlo con un condominio.' },
+              { title: 'Quien hace las dos cosas', desc: 'Administra el condominio y también renta inmuebles. Un login, dos espacios, dos membresías. Así de simple.' },
+            ].map((w) => (
+              <div key={w.title} style={{ ...cardStyle, padding: 22 }}>
+                <h3 style={{ fontSize: 16, fontWeight: 800, color: '#124A36', margin: '0 0 10px' }}>{w.title}</h3>
+                <p style={{ fontSize: 14, color: '#5C5347', lineHeight: 1.65, margin: 0 }}>{w.desc}</p>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* ── TESTIMONIALS CAROUSEL ── */}
-      <section className="landing-section" style={{ overflow: 'hidden' }}>
+      {/* ── BENEFITS ── */}
+      <section id="beneficios" className="landing-section">
+        <div className="landing-section-inner">
+          <div style={{ textAlign: 'center', marginBottom: 48 }}>
+            <div style={tagStyle}>Ventajas</div>
+            <h2 style={{ fontSize: 'clamp(28px, 4vw, 44px)', fontWeight: 800, color: '#124A36', marginTop: 16, letterSpacing: '-1px' }}>
+              Por qué es más fácil vender y operar con Homly
+            </h2>
+            <p style={{ color: '#7A7166', fontSize: 17, marginTop: 16, maxWidth: 560, margin: '16px auto 0' }}>
+              Menos Excel, menos mensajes sueltos, más claridad para cobrar y para reportar.
+            </p>
+          </div>
+          <div className="landing-adv-grid">
+            {[
+              { icon: <IconSwitch />, title: 'Un acceso para todo', desc: 'El administrador entra una vez. Cambia entre condominios y rentas sin otra contraseña ni otro sistema.' },
+              { icon: <IconShield />, title: 'Cuentas que no se mezclan', desc: 'La cuota del condominio no se junta con la renta del inquilino. Cada espacio tiene su dinero, sus recibos y su historial.' },
+              { icon: <IconReceipt />, title: 'Cobrar es el centro', desc: 'Recibo de cobro del mes, registro de pago y recibo de pago. Igual de claro en condominios y en rentas.' },
+              { icon: <IconUsers />, title: 'Cada quien ve lo suyo', desc: 'El vecino ve su unidad. El inquilino no entra al condominio. El tesorero solo toca finanzas.' },
+              { icon: <HomlyIsotipo size={28} />, title: 'Crece sin empezar de cero', desc: 'Hoy un condominio. Mañana una inmobiliaria. La cuenta ya está; solo se abre el segundo espacio.' },
+              { icon: <IconLock />, title: 'Orden que se puede auditar', desc: 'Cierres, folios, evidencias y permisos. Sirve para el comité, el contador y quien llega después.' },
+            ].map((b) => (
+              <div key={b.title} style={{ ...cardStyle, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div style={{ width: 48, height: 48, borderRadius: 13, background: '#FFF5F2', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {b.icon}
+                </div>
+                <h3 style={{ fontSize: 16, fontWeight: 800, color: '#1A1612', margin: 0 }}>{b.title}</h3>
+                <p style={{ fontSize: 14, color: '#7A7166', lineHeight: 1.65, margin: 0 }}>{b.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── MODULES ── */}
+      <section className="landing-section" style={{ background: '#F3EDE4', paddingTop: 80 }}>
+        <div className="landing-section-inner" style={{ marginBottom: 8 }}>
+          <div style={{ textAlign: 'center', marginBottom: 32 }}>
+            <div style={tagStyle}>Cómo trabaja cada servicio</div>
+            <h2 style={{ fontSize: 'clamp(28px, 4vw, 44px)', fontWeight: 800, color: '#124A36', marginTop: 16, letterSpacing: '-1px' }}>
+              Módulos claros, sin relleno
+            </h2>
+            <p style={{ color: '#7A7166', fontSize: 16, marginTop: 14, maxWidth: 520, margin: '14px auto 0' }}>
+              Elige un servicio y ve lo que incluye. No se copian módulos: cada espacio tiene lo que necesita.
+            </p>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginBottom: 8 }}>
+            {[
+              { id: 'condominio', label: 'Condominios' },
+              { id: 'rentas', label: 'Rentas' },
+            ].map(tab => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setFeatureTab(tab.id)}
+                style={{
+                  padding: '10px 22px', borderRadius: 999, cursor: 'pointer', fontWeight: 700, fontSize: 14,
+                  border: featureTab === tab.id ? 'none' : '1.5px solid #D4C8B5',
+                  background: featureTab === tab.id ? '#124A36' : '#fff',
+                  color: featureTab === tab.id ? '#fff' : '#443D33',
+                }}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div style={{
+          display: 'flex', overflowX: 'auto', gap: 18, padding: '8px 48px 28px',
+          scrollSnapType: 'x mandatory', WebkitOverflowScrolling: 'touch',
+          scrollbarWidth: 'thin', scrollbarColor: '#E8DFD1 transparent',
+        }}>
+          {features.map((f) => (
+            <div
+              key={f.title}
+              style={{
+                ...cardStyle, minWidth: 250, maxWidth: 250, flexShrink: 0, scrollSnapAlign: 'start',
+              }}
+            >
+              <div style={{ width: 48, height: 48, borderRadius: 13, background: '#FFF5F2', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
+                {f.icon}
+              </div>
+              <h3 style={{ fontSize: 15, fontWeight: 700, color: '#1A1612', margin: '0 0 10px' }}>{f.title}</h3>
+              <p style={{ fontSize: 13, color: '#7A7166', lineHeight: 1.65, margin: 0 }}>{f.desc}</p>
+            </div>
+          ))}
+        </div>
+        <div style={{ textAlign: 'center', marginTop: 4 }}>
+          <span style={{ fontSize: 12, color: '#C5BAB0', fontWeight: 500 }}>Desliza para ver los módulos</span>
+        </div>
+      </section>
+
+      {/* ── HOW IT WORKS ── */}
+      <section id="como-funciona" className="landing-section">
+        <div className="landing-section-inner">
+          <div style={{ textAlign: 'center', marginBottom: 48 }}>
+            <div style={tagStyle}>Cómo funciona</div>
+            <h2 style={{ fontSize: 'clamp(28px, 4vw, 44px)', fontWeight: 800, color: '#124A36', marginTop: 16, letterSpacing: '-1px' }}>
+              Empiezas con uno. El otro se suma cuando quieras.
+            </h2>
+          </div>
+
+          <div className="landing-steps-grid">
+            {[
+              { step: '01', title: 'Pide tu acceso', desc: 'Llenas el formulario. Un asesor te contacta. No pedimos tarjeta para empezar la prueba.' },
+              { step: '02', title: 'Abre tu primer espacio', desc: 'Condominio o rentas: eliges el que necesitas hoy. Configuras unidades o propiedades y tu equipo.' },
+              { step: '03', title: 'Cobra el mes', desc: 'Generas el recibo de cobro, registras el pago y emites el recibo de pago. La comunidad o el inquilino quedan al día.' },
+              { step: '04', title: 'Activa el segundo servicio', desc: 'Si también administras rentas —o un condominio extra—, se abre otro espacio en la misma cuenta, con su propio plan.' },
+            ].map((s) => (
+              <div key={s.step} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <div style={{ fontSize: 48, fontWeight: 800, color: '#E8DFD1', letterSpacing: '-2px', lineHeight: 1 }}>{s.step}</div>
+                <div style={{ width: 40, height: 3, background: '#E85D43', borderRadius: 2 }} />
+                <h3 style={{ fontSize: 18, fontWeight: 700, color: '#124A36', margin: 0 }}>{s.title}</h3>
+                <p style={{ fontSize: 15, color: '#7A7166', lineHeight: 1.65, margin: 0 }}>{s.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── TESTIMONIALS ── */}
+      <section className="landing-section" style={{ overflow: 'hidden', background: '#F3EDE4' }}>
         <div className="landing-section-inner" style={{ paddingBottom: 0 }}>
           <div style={{ textAlign: 'center', marginBottom: 40 }}>
-            <div style={tagStyle}>Testimonios</div>
+            <div style={tagStyle}>Quienes ya lo usan</div>
             <h2 style={{ fontSize: 'clamp(26px, 4vw, 40px)', fontWeight: 800, color: '#124A36', marginTop: 16, letterSpacing: '-1px' }}>
-              Lo que dicen nuestros usuarios
+              Condominios, rentas y quienes llevan ambos
             </h2>
           </div>
         </div>
 
-        {/* Horizontal scroll track */}
         <div style={{
-          display: 'flex',
-          overflowX: 'auto',
-          gap: 20,
-          padding: '4px 48px 32px',
-          scrollSnapType: 'x mandatory',
-          WebkitOverflowScrolling: 'touch',
+          display: 'flex', overflowX: 'auto', gap: 20, padding: '4px 48px 32px',
+          scrollSnapType: 'x mandatory', WebkitOverflowScrolling: 'touch',
           scrollbarWidth: 'none',
-          msOverflowStyle: 'none',
         }}>
           {[
             {
-              quote: 'Antes perdíamos horas en hojas de Excel. Ahora el condominio se administra prácticamente solo. Recomiendo Homly al 100%.',
+              quote: 'Antes perdíamos horas en Excel. Ahora el condominio se administra con cuentas claras y los vecinos ven su estado de cuenta solos.',
               name: 'María Fernanda G.',
               role: 'Presidenta de Mesa Directiva',
-              condo: 'Residencial Los Pinos · CDMX',
+              place: 'Condominio · CDMX',
             },
             {
-              quote: 'La cobranza era un caos total. Hoy tenemos visibilidad completa de quién debe y quién ya pagó, con solo un clic.',
+              quote: 'La cobranza era un caos. Hoy vemos quién debe y quién ya pagó, con recibo. Eso nos cambió el mes a mes.',
               name: 'Roberto Salas',
               role: 'Tesorero',
-              condo: 'Privada Jardines · Monterrey',
+              place: 'Condominio · Monterrey',
             },
             {
-              quote: 'Llevábamos años buscando una plataforma que funcionara bien en Colombia. Homly se adaptó perfecto a nuestra operación. El módulo de cobranza y los reportes PDF son exactamente lo que necesitábamos.',
+              quote: 'Rento 11 departamentos. En Homly tengo contratos, vigencias y cobro de renta sin mezclarlo con el condominio que también administro.',
+              name: 'Elena Ruiz',
+              role: 'Administradora e inmobiliaria',
+              place: 'Ambos servicios · Guadalajara',
+            },
+            {
+              quote: 'Buscábamos una plataforma que sirviera en Colombia. Homly se adaptó: cobranza, reportes PDF y acceso para copropietarios.',
               name: 'Catalina Ospina',
               role: 'Administradora de Propiedad Horizontal',
-              condo: 'Unidad Residencial El Cañaveral · Cali',
+              place: 'Condominio · Cali',
             },
             {
-              quote: 'La transparencia que da Homly a los copropietarios es invaluable. Todos pueden ver el estado de cuenta y la cartera del conjunto en tiempo real. Le recomiendo Homly a cualquier administrador en Colombia.',
-              name: 'Santiago Ríos',
-              role: 'Presidente de Consejo de Administración',
-              condo: 'Unidad Residencial Los Cedros · Medellín',
-            },
-            {
-              quote: 'Administro 4 condominios y con Homly los tengo todos en una sola plataforma. Me ahorra horas cada semana.',
+              quote: 'Administro 4 condominios y ahora también las rentas de un edificio. Una cuenta, varios espacios. Me ahorra el doble de sistemas.',
               name: 'Lucía Vargas',
               role: 'Directora · LV Administraciones',
-              condo: 'Portafolio multi-condominio',
+              place: 'Portafolio mixto',
             },
             {
-              quote: 'El control de gastos y caja chica es muy fácil de usar. Subir comprobantes y ver el resumen por categoría es justo lo que necesitábamos.',
-              name: 'Andrés Campos',
-              role: 'Secretario de Comité',
-              condo: 'Fraccionamiento Las Palmas · Mérida',
+              quote: 'El calendario de contratos nos avisa qué renta vence. Dejamos de perseguir inquilinos a ciegas.',
+              name: 'Diego Paredes',
+              role: 'Gestor de rentas',
+              place: 'Rentas · Querétaro',
             },
-          ].map((t, i) => (
-            <div key={i} style={{
-              ...cardStyle,
-              minWidth: 320,
-              maxWidth: 340,
-              flexShrink: 0,
-              scrollSnapAlign: 'start',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 16,
+          ].map((t) => (
+            <div key={t.name} style={{
+              ...cardStyle, minWidth: 320, maxWidth: 340, flexShrink: 0, scrollSnapAlign: 'start',
+              display: 'flex', flexDirection: 'column', gap: 16,
             }}>
-              {/* Stars */}
               <div style={{ display: 'flex', gap: 3 }}>
                 {[...Array(5)].map((_, s) => <IconStar key={s} />)}
               </div>
-              {/* Quote */}
               <p style={{ fontSize: 14, color: '#443D33', lineHeight: 1.7, fontStyle: 'italic', margin: 0 }}>
-                "{t.quote}"
+                “{t.quote}”
               </p>
-              {/* Author */}
               <div style={{ marginTop: 'auto', paddingTop: 12, borderTop: '1px solid #F3EDE4' }}>
                 <div style={{ fontSize: 14, fontWeight: 700, color: '#1A1612' }}>{t.name}</div>
                 <div style={{ fontSize: 12, color: '#9E9588', marginTop: 2 }}>{t.role}</div>
-                <div style={{ fontSize: 12, color: '#C5BAB0', marginTop: 1 }}>{t.condo}</div>
+                <div style={{ fontSize: 12, color: '#C5BAB0', marginTop: 1 }}>{t.place}</div>
               </div>
             </div>
           ))}
         </div>
-        <style>{`.landing-testimonials-scroll::-webkit-scrollbar { display: none; }`}</style>
       </section>
 
       {/* ── FAQ ── */}
-      <section id="preguntas" className="landing-section" style={{ background: '#F3EDE4' }}>
+      <section id="preguntas" className="landing-section">
         <div className="landing-section-inner">
-
           <div style={{ textAlign: 'center', marginBottom: 52 }}>
             <div style={tagStyle}>Preguntas frecuentes</div>
             <h2 style={{ fontSize: 'clamp(28px, 4vw, 44px)', fontWeight: 800, color: '#124A36', marginTop: 16, letterSpacing: '-1px' }}>
-              Todo lo que quieres saber
+              Lo que suelen preguntar antes de empezar
             </h2>
-            <p style={{ color: '#7A7166', fontSize: 16, marginTop: 14, maxWidth: 480, margin: '14px auto 0' }}>
-              Resolvemos las dudas más comunes antes de que empieces.
-            </p>
           </div>
 
-          {/* Two-column layout on desktop */}
           <div style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(440px, 1fr))',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 440px), 1fr))',
             gap: '0 40px',
             alignItems: 'start',
           }}>
             {[
               {
-                q: '¿Qué es Homly y para qué tipo de condominio sirve?',
-                a: 'Homly es una plataforma de gestión administrativa para condominios residenciales: conjuntos habitacionales, fraccionamientos, edificios de departamentos o privadas. Funciona para condominios de cualquier tamaño, desde 8 unidades hasta los que tienen cientos.',
+                q: '¿Homly es solo para condominios?',
+                a: 'No. Homly tiene dos servicios: administración de condominios y gestión de rentas inmobiliarias. Puedes contratar uno o los dos. No estás obligado a usar ambos.',
               },
               {
-                q: '¿Necesito conocimientos técnicos o contables para usarlo?',
-                a: 'No. Homly está diseñado para administradores, tesoreros y residentes sin formación técnica. La interfaz es visual e intuitiva — si sabes usar WhatsApp o Excel, sabrás usar Homly sin necesidad de capacitación.',
+                q: '¿Un mismo administrador puede usar condominios y rentas?',
+                a: 'Sí. Esa es una de las ventajas. Entras con un usuario, ves tus espacios y cambias entre un condominio y la inmobiliaria. Cada espacio tiene su propio equipo, su propia cobranza y su propia membresía.',
               },
               {
-                q: '¿Los residentes también tienen acceso?',
-                a: 'Sí. Cada residente puede tener su propia cuenta con acceso a su estado de cuenta, historial de pagos, reservas de áreas comunes y notificaciones del condominio. Todo sin necesidad de contactar al administrador para cada consulta.',
+                q: '¿Se mezclan el dinero del condominio y el de las rentas?',
+                a: 'No. Son espacios de trabajo independientes. Las cuotas de mantenimiento no se mezclan con las rentas de inquilinos. Los recibos, reportes y planes de membresía van por separado.',
               },
               {
-                q: '¿Cómo se registran los pagos de mantenimiento?',
-                a: 'El administrador o tesorero captura los pagos cuando los recibe. Puedes registrarlos uno a uno o de manera masiva. Al guardar un pago se genera automáticamente un recibo PDF con folio para entregarlo al residente.',
+                q: '¿Puedo empezar solo con rentas, sin un condominio?',
+                a: 'Sí. Si eres inmobiliaria o rentas departamentos por tu cuenta, abres un espacio de rentas. El de condominios lo puedes agregar después, o nunca.',
               },
               {
-                q: '¿Puedo administrar más de un condominio?',
-                a: 'Sí. Desde una sola cuenta puedes gestionar múltiples condominios de forma independiente, cada uno con sus propias unidades, cuotas, usuarios y reportes. Ideal para administradoras profesionales con portafolio de inmuebles.',
+                q: '¿Los vecinos ven las rentas de la inmobiliaria?',
+                a: 'No. El residente del condominio solo ve su unidad, su estado de cuenta y lo de su comunidad. Quien entra al espacio de rentas ve propiedades y contratos. Los permisos no se cruzan.',
               },
               {
-                q: '¿Qué pasa si un residente tiene adeudos acumulados?',
-                a: 'Puedes crear un Plan de Pagos para ese residente: defines cuotas, frecuencia y si aplica intereses. El residente recibe el plan por correo, lo acepta desde su cuenta y los pagos del plan se integran automáticamente a la cobranza mensual.',
+                q: '¿Cómo se cobran las membresías si tengo los dos servicios?',
+                a: 'Cada espacio tiene su plan. El plan de condominios se cobra por unidades; el de rentas, por propiedades. En Mi Membresía ves el recibo de cobro del mes, registras el pago y emites el recibo de pago, en cada espacio por separado.',
               },
               {
-                q: '¿La plataforma funciona en celular?',
-                a: 'Sí. Homly está adaptada para funcionar correctamente en smartphones y tabletas desde el navegador. Administradores pueden registrar pagos y residentes pueden consultar su cuenta desde cualquier dispositivo, sin instalar nada.',
+                q: '¿Necesito saber de sistemas o de contabilidad?',
+                a: 'No. Está pensado para mesas directivas, tesoreros e inmobiliarias del día a día. Si usas WhatsApp o una hoja de cálculo, puedes usar Homly.',
               },
               {
-                q: '¿Mis datos y los del condominio están seguros?',
-                a: 'Los datos se almacenan en servidores seguros con acceso controlado por rol. Ningún usuario puede ver información que no le corresponde. Los períodos cerrados son inmutables: nadie puede modificar registros históricos una vez aprobados.',
+                q: '¿Los residentes o inquilinos también entran?',
+                a: 'En condominios, sí: cada vecino puede ver su estado de cuenta, pagos y reservas. En rentas, el equipo de la inmobiliaria opera el espacio; el cobro y los recibos salen desde ahí.',
               },
               {
-                q: '¿Puedo exportar o descargar la información del condominio?',
-                a: 'Sí. Los estados de cuenta, recibos de pago, reportes de gastos y resúmenes financieros se pueden exportar a PDF en cualquier momento. Siempre tendrás acceso a tu información sin depender de la plataforma para presentarla.',
+                q: '¿Puedo llevar varios condominios y varias inmobiliarias?',
+                a: 'Sí. Una cuenta puede tener varios espacios de condominio y varios de rentas. Ideal para administradoras que crecen su portafolio.',
               },
               {
-                q: '¿Qué planes de membresía existen y cómo funcionan?',
-                a: 'Homly ofrece varios planes según el tamaño y las necesidades de tu condominio. Todos incluyen un período de prueba gratuita para que explores la plataforma sin límites. Una vez concluido el período de prueba, el administrador de Homly te asignará el plan que mejor se adapte a tu condominio y definirá las condiciones de facturación.',
+                q: '¿Funciona en el celular?',
+                a: 'Sí, desde el navegador del teléfono o la tablet. No hay que instalar una app para cobrar, consultar o cambiar de espacio.',
               },
               {
-                q: '¿Cómo activo mi membresía después del período de prueba?',
-                a: 'Al completar tu registro en Homly, un asesor revisará tu solicitud y te contactará para confirmar el plan adecuado para tu condominio. Una vez aprobado, recibirás un correo de confirmación y tu cuenta quedará activada con los módulos incluidos en tu plan. No necesitas ingresar tarjeta de crédito para empezar.',
+                q: '¿Cómo empiezo y cuánto cuesta?',
+                a: 'Llenas el registro. Hay periodo de prueba sin tarjeta. Un asesor te asigna el plan según el tamaño (unidades o propiedades) y el servicio que vas a usar. Si más adelante activas el otro servicio, se cotiza su plan aparte.',
               },
               {
-                q: '¿Puedo cambiar de plan si mis necesidades crecen?',
-                a: 'Sí. Puedes solicitar un upgrade de plan en cualquier momento contactando a soporte. Si tu condominio crece en unidades o requieres módulos adicionales, el equipo de Homly ajustará tu suscripción y actualizará los módulos disponibles de forma inmediata.',
-              },
-              {
-                q: '¿Qué sucede si mi membresía vence o se cancela?',
-                a: 'Si la suscripción expira o se cancela, el acceso al sistema se suspende automáticamente. Los datos de tu condominio se conservan de forma segura. Para reactivar el acceso basta con contactar a soporte y regularizar la membresía; todo quedará tal y como lo dejaste.',
-              },
-              {
-                q: '¿Los módulos disponibles dependen del plan contratado?',
-                a: 'Sí. Cada plan define qué módulos están habilitados para tu condominio (cobranza, reservas, gastos, estado de cuenta, plan de pagos, etc.). Si necesitas un módulo que no está incluido en tu plan actual, puedes solicitar un upgrade y el equipo de Homly lo activará en tu cuenta.',
+                q: '¿Qué pasa si dejo de pagar o quiero pausar?',
+                a: 'El acceso de ese espacio se suspende. Los datos se conservan. Al regularizar la membresía, vuelves exactamente donde lo dejaste. El otro servicio, si está al corriente, sigue funcionando.',
               },
             ].map((item, i) => {
               const isOpen = openFaq === i;
               return (
-                <div
-                  key={i}
-                  style={{
-                    borderBottom: '1px solid #DDD4C7',
-                    overflow: 'hidden',
-                  }}
-                >
+                <div key={item.q} style={{ borderBottom: '1px solid #DDD4C7' }}>
                   <button
+                    type="button"
                     onClick={() => setOpenFaq(isOpen ? null : i)}
                     style={{
                       width: '100%', background: 'none', border: 'none', cursor: 'pointer',
@@ -682,19 +718,14 @@ export default function Landing() {
                       fontSize: 15, fontWeight: 700,
                       color: isOpen ? '#E85D43' : '#1A1612',
                       lineHeight: 1.45, flex: 1,
-                      transition: 'color 0.2s',
                     }}>
                       {item.q}
                     </span>
-                    {/* +/- icon */}
                     <span style={{
-                      flexShrink: 0, width: 26, height: 26,
-                      borderRadius: '50%',
+                      flexShrink: 0, width: 26, height: 26, borderRadius: '50%',
                       background: isOpen ? '#E85D43' : '#fff',
                       border: `1.5px solid ${isOpen ? '#E85D43' : '#D4C8B5'}`,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      transition: 'all 0.2s',
-                      marginTop: 2,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: 2,
                     }}>
                       <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
                         {isOpen
@@ -707,17 +738,8 @@ export default function Landing() {
                       </svg>
                     </span>
                   </button>
-
-                  {/* Answer */}
-                  <div style={{
-                    maxHeight: isOpen ? 300 : 0,
-                    overflow: 'hidden',
-                    transition: 'max-height 0.3s ease',
-                  }}>
-                    <p style={{
-                      margin: 0, padding: '0 32px 20px 4px',
-                      fontSize: 14, color: '#5C5347', lineHeight: 1.75,
-                    }}>
+                  <div style={{ maxHeight: isOpen ? 420 : 0, overflow: 'hidden', transition: 'max-height 0.3s ease' }}>
+                    <p style={{ margin: 0, padding: '0 32px 20px 4px', fontSize: 14, color: '#5C5347', lineHeight: 1.75 }}>
                       {item.a}
                     </p>
                   </div>
@@ -725,44 +747,55 @@ export default function Landing() {
               );
             })}
           </div>
-
-
         </div>
       </section>
 
-      {/* ── CTA FINAL ── */}
+      {/* ── CONTACT ── */}
       <section id="contacto" className="landing-section" style={{ background: '#124A36' }}>
-        <div style={{ maxWidth: 700, margin: '0 auto', textAlign: 'center', paddingTop: 24 }}>
-          <h2 style={{
-            fontSize: 'clamp(28px, 4vw, 48px)',
-            fontWeight: 800,
-            color: '#FDFBF7',
-            letterSpacing: '-1px',
-            margin: '0 0 16px',
-            lineHeight: 1.15,
-          }}>
-            ¿Listo para transformar<br />tu condominio?
-          </h2>
-          <p style={{ color: 'rgba(253,251,247,0.65)', fontSize: 17, marginBottom: 40, lineHeight: 1.65 }}>
-            Únete a los condominios que ya administran con claridad y confianza.
-          </p>
-          <Link to="/registro" style={{
-            display: 'inline-flex', alignItems: 'center', gap: 10,
-            background: '#E85D43', color: '#fff',
-            padding: '16px 36px', borderRadius: 999,
-            fontWeight: 700, fontSize: 17,
-            textDecoration: 'none',
-            boxShadow: '0 8px 32px rgba(232,93,67,0.35)',
-            transition: 'transform 0.2s ease, box-shadow 0.2s ease',
-          }}
-            onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 12px 40px rgba(232,93,67,0.45)'; }}
-            onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 8px 32px rgba(232,93,67,0.35)'; }}
-          >
-            Empezar ahora, es gratis <IconArrow />
-          </Link>
+        <div className="landing-section-inner">
+          <div style={{ textAlign: 'center', maxWidth: 720, margin: '0 auto 40px' }}>
+            <h2 style={{
+              fontSize: 'clamp(28px, 4vw, 44px)', fontWeight: 800, color: '#FDFBF7',
+              letterSpacing: '-1px', margin: '0 0 16px', lineHeight: 1.15,
+            }}>
+              ¿Listo para ordenar condominios,<br />rentas, o ambos?
+            </h2>
+            <p style={{ color: 'rgba(253,251,247,0.7)', fontSize: 17, margin: 0, lineHeight: 1.65 }}>
+              Cuéntanos qué administras. Te armamos el espacio correcto —o los dos—
+              y te acompañamos en la prueba.
+            </p>
+          </div>
 
-          <div style={{ marginTop: 32, display: 'flex', gap: 24, justifyContent: 'center', flexWrap: 'wrap' }}>
-            {['Sin tarjeta de crédito', 'Soporte incluido', 'Datos seguros', 'Sin plazos forzosos'].map(t => (
+          <div className="landing-contact-grid">
+            <div style={{ background: 'rgba(253,251,247,0.08)', border: '1px solid rgba(253,251,247,0.12)', borderRadius: 20, padding: 28 }}>
+              <div style={{ color: '#FDFBF7', fontWeight: 800, fontSize: 16, marginBottom: 8 }}>Escríbenos</div>
+              <p style={{ color: 'rgba(253,251,247,0.65)', fontSize: 14, lineHeight: 1.6, margin: '0 0 16px' }}>
+                Dudas de planes, de los dos servicios o de cómo migrar lo que hoy llevas en Excel.
+              </p>
+              <a href="mailto:soporte@homly.mx" style={{
+                display: 'inline-flex', alignItems: 'center', gap: 8,
+                color: '#fff', fontWeight: 700, fontSize: 15, textDecoration: 'none',
+              }}>
+                <IconMail /> soporte@homly.mx
+              </a>
+            </div>
+            <div style={{ background: 'rgba(253,251,247,0.08)', border: '1px solid rgba(253,251,247,0.12)', borderRadius: 20, padding: 28 }}>
+              <div style={{ color: '#FDFBF7', fontWeight: 800, fontSize: 16, marginBottom: 8 }}>Prueba sin tarjeta</div>
+              <p style={{ color: 'rgba(253,251,247,0.65)', fontSize: 14, lineHeight: 1.6, margin: '0 0 16px' }}>
+                Registro en minutos. Un asesor te confirma el plan de condominio, el de rentas, o los dos.
+              </p>
+              <Link to="/registro" style={{
+                display: 'inline-flex', alignItems: 'center', gap: 8,
+                background: '#E85D43', color: '#fff', padding: '12px 22px', borderRadius: 999,
+                fontWeight: 700, fontSize: 15, textDecoration: 'none',
+              }}>
+                Empezar ahora, es gratis <IconArrow />
+              </Link>
+            </div>
+          </div>
+
+          <div style={{ marginTop: 36, display: 'flex', gap: 24, justifyContent: 'center', flexWrap: 'wrap' }}>
+            {['Sin tarjeta de crédito', 'Soporte incluido', 'Datos seguros', 'Planes por servicio'].map(t => (
               <div key={t} style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'rgba(253,251,247,0.6)', fontSize: 13, fontWeight: 600 }}>
                 <IconCheck color="#3BB990" size={15} /> {t}
               </div>
@@ -772,25 +805,35 @@ export default function Landing() {
       </section>
 
       {/* ── FOOTER ── */}
-      <footer style={{ background: '#0E3829', padding: '32px 20px' }}>
+      <footer style={{ background: '#0E3829', padding: '36px 20px 28px' }}>
         <div className="landing-footer-inner">
-          <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap', justifyContent: 'center' }}>
-            {['Beneficios', 'Cómo funciona', 'Preguntas', 'Iniciar sesión'].map((l, i) => (
-              <a key={i} href={i === 3 ? '/login' : `#${['beneficios', 'como-funciona', 'preguntas'][i]}`}
-                style={{ fontSize: 13, color: 'rgba(253,251,247,0.5)', textDecoration: 'none', fontWeight: 500, transition: 'color 0.2s' }}
+          <LogoFullDark iconSize={32} fontSize={20} />
+          <p style={{ fontSize: 13, color: 'rgba(253,251,247,0.45)', maxWidth: 420, margin: '4px 0 8px', lineHeight: 1.55 }}>
+            Administración de condominios y gestión de rentas. Un administrador, dos servicios, cuentas claras.
+          </p>
+          <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', justifyContent: 'center' }}>
+            {[
+              { label: 'Servicios', href: '#servicios' },
+              { label: 'Beneficios', href: '#beneficios' },
+              { label: 'Cómo funciona', href: '#como-funciona' },
+              { label: 'Preguntas', href: '#preguntas' },
+              { label: 'Contacto', href: '#contacto' },
+              { label: 'Iniciar sesión', href: '/login' },
+            ].map((l) => (
+              <a key={l.href} href={l.href}
+                style={{ fontSize: 13, color: 'rgba(253,251,247,0.5)', textDecoration: 'none', fontWeight: 500 }}
                 onMouseEnter={e => e.currentTarget.style.color = 'rgba(253,251,247,0.9)'}
                 onMouseLeave={e => e.currentTarget.style.color = 'rgba(253,251,247,0.5)'}
-              >{l}</a>
+              >{l.label}</a>
             ))}
           </div>
           <div style={{ width: '100%', height: 1, background: 'rgba(253,251,247,0.08)' }} />
           <div style={{ fontSize: 12, color: 'rgba(253,251,247,0.35)', fontWeight: 500 }}>
-            © {new Date().getFullYear()} Homly
+            © {new Date().getFullYear()} Homly · soporte@homly.mx
           </div>
         </div>
       </footer>
 
-      {/* ── Responsive styles ── */}
       <style>{`
         @media (max-width: 768px) {
           .hidden-mobile { display: none !important; }
@@ -805,7 +848,28 @@ export default function Landing() {
   );
 }
 
-/* ─── Sub-components ─── */
+function ServiceCard({ badge, badgeColor, badgeBg, title, lead, points }) {
+  return (
+    <div style={{ ...cardStyle, padding: 28, display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <span style={{
+        alignSelf: 'flex-start', fontSize: 11, fontWeight: 800, letterSpacing: '0.06em',
+        textTransform: 'uppercase', color: badgeColor, background: badgeBg,
+        padding: '4px 10px', borderRadius: 999,
+      }}>{badge}</span>
+      <h3 style={{ fontSize: 22, fontWeight: 800, color: '#124A36', margin: 0, letterSpacing: '-0.4px' }}>{title}</h3>
+      <p style={{ fontSize: 15, color: '#5C5347', lineHeight: 1.6, margin: 0 }}>{lead}</p>
+      <ul style={{ margin: '8px 0 0', padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {points.map(p => (
+          <li key={p} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 14, color: '#443D33', fontWeight: 600, lineHeight: 1.45 }}>
+            <span style={{ marginTop: 2, flexShrink: 0 }}><IconCheck color="#1F7D5B" size={16} /></span>
+            {p}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function StatCard({ value, label, bg, color }) {
   return (
     <div style={{ background: bg, borderRadius: 12, padding: '14px 10px', textAlign: 'center' }}>
@@ -815,7 +879,6 @@ function StatCard({ value, label, bg, color }) {
   );
 }
 
-/* ─── Style constants ─── */
 const cardStyle = {
   background: '#fff',
   borderRadius: 20,
@@ -873,7 +936,6 @@ const btnCoralStyle = {
   fontSize: 14,
   textDecoration: 'none',
   boxShadow: '0 4px 16px rgba(232,93,67,0.25)',
-  transition: 'transform 0.2s ease, box-shadow 0.2s ease',
 };
 
 const btnCoralLargeStyle = {
@@ -888,5 +950,4 @@ const btnCoralLargeStyle = {
   fontSize: 16,
   textDecoration: 'none',
   boxShadow: '0 6px 24px rgba(232,93,67,0.30)',
-  transition: 'transform 0.2s ease, box-shadow 0.2s ease',
 };
