@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
 import { notificationsAPI } from '../api/client';
-import { ROLE_BASE_MODULES } from '../constants/modulePermissions';
+import { ROLE_BASE_MODULES, RENTAL_ROLE_BASE_MODULES } from '../constants/modulePermissions';
 import { Bell, CheckCheck, Calendar, Filter, Lock } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useNotificacionesData } from '../hooks/useNotificacionesData';
@@ -26,6 +26,23 @@ const NOTIF_MODULE_MAP = {
   plan_rejected:         'plan_pagos',
   plan_cancelled:        'plan_pagos',
   plan_installment_paid: 'plan_pagos',
+  rental_property_created:   'rentas_propiedades',
+  rental_property_status:    'rentas_propiedades',
+  rental_contract_created:   'rentas_contratos',
+  rental_contract_activated: 'rentas_contratos',
+  rental_contract_finished:  'rentas_contratos',
+  rental_contract_expiring:  'rentas_calendario',
+  rental_contract_expired:   'rentas_calendario',
+  rental_charge_generated:   'rentas_cobranza',
+  rental_payment_registered: 'rentas_cobranza',
+  rental_payment_deleted:    'rentas_cobranza',
+  rental_lead_created:       'rentas_crm',
+  rental_lead_moved:         'rentas_crm',
+  rental_lead_converted:     'rentas_crm',
+  rental_lead_lost:          'rentas_crm',
+  rental_airbnb_imported:    'rentas_propiedades',
+  rental_airbnb_synced:      'rentas_propiedades',
+  rental_airbnb_error:       'rentas_propiedades',
 };
 
 const TYPE_CFG = {
@@ -47,7 +64,23 @@ const TYPE_CFG = {
   // Períodos
   period_closed:         { icon: '🔒', label: 'Período cerrado',       color: 'var(--amber-700)',  bg: 'var(--amber-50)'  },
   period_reopened:       { icon: '🔓', label: 'Período reabierto',     color: 'var(--teal-600)',   bg: 'var(--teal-50)'   },
-  // General
+  rental_property_created:   { icon: '🏠', label: 'Propiedad registrada', color: 'var(--teal-700)',  bg: 'var(--teal-50)'  },
+  rental_property_status:    { icon: '🏷️', label: 'Estado de propiedad',  color: 'var(--blue-600)',  bg: 'var(--blue-50)'  },
+  rental_contract_created:   { icon: '📄', label: 'Contrato creado',      color: 'var(--blue-600)',  bg: 'var(--blue-50)'  },
+  rental_contract_activated: { icon: '✅', label: 'Contrato activado',    color: 'var(--teal-700)',  bg: 'var(--teal-50)'  },
+  rental_contract_finished:  { icon: '📁', label: 'Contrato cerrado',     color: 'var(--amber-700)', bg: 'var(--amber-50)' },
+  rental_contract_expiring:  { icon: '⏳', label: 'Contrato por vencer',  color: 'var(--amber-700)', bg: 'var(--amber-50)' },
+  rental_contract_expired:   { icon: '⚠️', label: 'Contrato vencido',     color: 'var(--coral-600)', bg: 'var(--coral-50)' },
+  rental_charge_generated:   { icon: '📑', label: 'Cargos del período',   color: 'var(--teal-700)',  bg: 'var(--teal-50)'  },
+  rental_payment_registered: { icon: '💳', label: 'Pago de renta',        color: 'var(--teal-700)',  bg: 'var(--teal-50)'  },
+  rental_payment_deleted:    { icon: '🗑️', label: 'Pago eliminado',       color: 'var(--coral-600)', bg: 'var(--coral-50)' },
+  rental_lead_created:       { icon: '🎯', label: 'Nuevo lead',           color: 'var(--blue-600)',  bg: 'var(--blue-50)'  },
+  rental_lead_moved:         { icon: '📌', label: 'Lead actualizado',     color: '#6366f1',          bg: '#eef2ff'         },
+  rental_lead_converted:     { icon: '🤝', label: 'Lead convertido',      color: 'var(--teal-700)',  bg: 'var(--teal-50)'  },
+  rental_lead_lost:          { icon: '↩️', label: 'Lead perdido',         color: 'var(--amber-700)', bg: 'var(--amber-50)' },
+  rental_airbnb_imported:    { icon: '🔗', label: 'Airbnb importado',     color: 'var(--blue-700)',  bg: 'var(--blue-50)'  },
+  rental_airbnb_synced:      { icon: '🔄', label: 'Airbnb sincronizado',  color: 'var(--blue-700)',  bg: 'var(--blue-50)'  },
+  rental_airbnb_error:       { icon: '⚠️', label: 'Error de Airbnb',      color: 'var(--coral-600)', bg: 'var(--coral-50)' },
   general:               { icon: 'ℹ️', label: 'General',               color: 'var(--amber-600)',  bg: 'var(--amber-50)'  },
 };
 
@@ -62,7 +95,7 @@ function timeAgo(dateStr) {
 }
 
 export default function Notificaciones() {
-  const { tenantId, role, profileId } = useAuth();
+  const { tenantId, role, profileId, workspaceType } = useAuth();
   const navigate = useNavigate();
 
   const queryClient = useQueryClient();
@@ -98,7 +131,7 @@ export default function Notificaciones() {
     }
     if (!permsEntry) return true;
     if (Array.isArray(permsEntry)) {
-      return permsEntry.includes(moduleKey) || !!(ROLE_BASE_MODULES[role]?.includes(moduleKey));
+      return permsEntry.includes(moduleKey) || !!(ROLE_BASE_MODULES[role]?.includes(moduleKey) || RENTAL_ROLE_BASE_MODULES[role]?.includes(moduleKey));
     }
     const level = permsEntry[moduleKey];
     return level === undefined || level !== 'hidden';
@@ -128,6 +161,11 @@ export default function Notificaciones() {
       navigate(role === 'vecino' ? '/app/estado-cuenta' : '/app/cobranza');
     }
     else if (['period_closed','period_reopened'].includes(n.notif_type)) navigate('/app/cobranza');
+    else if ((n.notif_type || '').startsWith('rental_lead')) navigate('/app/rentas/crm');
+    else if (['rental_contract_expiring','rental_contract_expired'].includes(n.notif_type)) navigate('/app/rentas/calendario');
+    else if ((n.notif_type || '').startsWith('rental_contract')) navigate('/app/rentas/contratos');
+    else if ((n.notif_type || '').startsWith('rental_charge') || (n.notif_type || '').startsWith('rental_payment')) navigate('/app/rentas/cobranza');
+    else if ((n.notif_type || '').startsWith('rental_')) navigate('/app/rentas/propiedades');
   };
 
   // Apply filters
@@ -139,7 +177,28 @@ export default function Notificaciones() {
 
   const unreadCount = notifs.filter(n => !n.is_read).length;
 
-  const typeOptions = [
+  const isRentas = workspaceType === 'rentas';
+  const typeOptions = isRentas ? [
+    { value: 'all',                      label: 'Todos los tipos' },
+    { value: 'rental_property_created',  label: '🏠 Propiedad registrada' },
+    { value: 'rental_property_status',   label: '🏷️ Estado de propiedad' },
+    { value: 'rental_contract_created',  label: '📄 Contrato creado' },
+    { value: 'rental_contract_activated',label: '✅ Contrato activado' },
+    { value: 'rental_contract_finished', label: '📁 Contrato cerrado' },
+    { value: 'rental_contract_expiring', label: '⏳ Contrato por vencer' },
+    { value: 'rental_contract_expired',  label: '⚠️ Contrato vencido' },
+    { value: 'rental_charge_generated',  label: '📑 Cargos del período' },
+    { value: 'rental_payment_registered',label: '💳 Pago de renta' },
+    { value: 'rental_payment_deleted',   label: '🗑️ Pago eliminado' },
+    { value: 'rental_lead_created',      label: '🎯 Nuevo lead' },
+    { value: 'rental_lead_moved',        label: '📌 Lead actualizado' },
+    { value: 'rental_lead_converted',    label: '🤝 Lead convertido' },
+    { value: 'rental_lead_lost',         label: '↩️ Lead perdido' },
+    { value: 'rental_airbnb_imported',   label: '🔗 Airbnb importado' },
+    { value: 'rental_airbnb_synced',     label: '🔄 Airbnb sincronizado' },
+    { value: 'rental_airbnb_error',      label: '⚠️ Error de Airbnb' },
+    { value: 'general',                  label: 'ℹ️ General' },
+  ] : [
     { value: 'all',                  label: 'Todos los tipos' },
     { value: 'reservation_new',      label: '📅 Nueva reserva' },
     { value: 'reservation_approved', label: '✅ Reserva aprobada' },
@@ -221,7 +280,7 @@ export default function Notificaciones() {
               {filter === 'unread' ? 'No tienes notificaciones sin leer' : 'Sin notificaciones'}
             </div>
             <div style={{ fontSize: 12, color: 'var(--ink-300)' }}>
-              Las notificaciones de pagos, reservas y avisos del condominio aparecerán aquí
+              Las notificaciones de {isRentas ? 'contratos, cobranza, CRM y Airbnb' : 'pagos, reservas y avisos del condominio'} aparecerán aquí
             </div>
           </div>
         </div>

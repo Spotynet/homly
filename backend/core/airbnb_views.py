@@ -14,6 +14,7 @@ from .models import AirbnbConnection, AirbnbListing, RentalProperty, Tenant
 from .permissions import IsAdminTesOrContador
 from .rental_serializers import AirbnbConnectionSerializer, AirbnbListingSerializer
 from .rental_views import _RentalTenantMixin, _require_rentas
+from .rental_notifications import on_airbnb_imported, on_airbnb_sync_results
 
 
 class AirbnbConnectionViewSet(_RentalTenantMixin, viewsets.ModelViewSet):
@@ -33,6 +34,7 @@ class AirbnbConnectionViewSet(_RentalTenantMixin, viewsets.ModelViewSet):
         results = []
         for listing in conn.listings.filter(sync_enabled=True):
             results.append({'id': str(listing.id), **sync_listing_ical(listing)})
+        on_airbnb_sync_results(conn.tenant, results, label=conn.label)
         return Response({'connection': str(conn.id), 'results': results})
 
     @action(detail=True, methods=['post'], url_path='import-listings')
@@ -113,6 +115,7 @@ class AirbnbConnectionViewSet(_RentalTenantMixin, viewsets.ModelViewSet):
             payload['sync'] = sync_info
             (created if was_created else updated).append(payload)
 
+        on_airbnb_imported(tenant, len(created), len(updated), len(errors))
         return Response({
             'created': created,
             'updated': updated,
@@ -130,6 +133,11 @@ class AirbnbListingViewSet(_RentalTenantMixin, viewsets.ModelViewSet):
     def sync(self, request, tenant_id=None, pk=None):
         listing = self.get_object()
         result = sync_listing_ical(listing)
+        on_airbnb_sync_results(
+            listing.tenant,
+            [{'id': str(listing.id), **result}],
+            label=listing.listing_name or listing.airbnb_listing_id,
+        )
         data = AirbnbListingSerializer(listing).data
         data['sync'] = result
         return Response(data)

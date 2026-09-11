@@ -158,6 +158,7 @@ const RENTAL_NAV_ITEMS = {
       { path: '/app/rentas/crm',          icon: Target,    label: 'CRM'           },
       { path: '/app/rentas/contratos',    icon: FileText,  label: 'Contratos'     },
       { path: '/app/rentas/calendario',   icon: Calendar,  label: 'Vigencias'     },
+      { path: '/app/notificaciones',      icon: Bell,      label: 'Notificaciones' },
     ]},
     { section: 'finanzas', label: 'Finanzas', items: [
       { path: '/app/rentas/cobranza',  icon: Receipt,       label: 'Cobranza' },
@@ -175,6 +176,7 @@ const RENTAL_NAV_ITEMS = {
       { path: '/app/rentas/crm',          icon: Target,    label: 'CRM'         },
       { path: '/app/rentas/contratos',    icon: FileText,  label: 'Contratos'   },
       { path: '/app/rentas/calendario',   icon: Calendar,  label: 'Vigencias'   },
+      { path: '/app/notificaciones',      icon: Bell,      label: 'Notificaciones' },
     ]},
     { section: 'finanzas', label: 'Finanzas', items: [
       { path: '/app/rentas/cobranza',  icon: Receipt,       label: 'Cobranza' },
@@ -188,6 +190,7 @@ const RENTAL_NAV_ITEMS = {
       { path: '/app/rentas/crm',          icon: Target,    label: 'CRM'         },
       { path: '/app/rentas/contratos',    icon: FileText,  label: 'Contratos'   },
       { path: '/app/rentas/calendario',   icon: Calendar,  label: 'Vigencias'   },
+      { path: '/app/notificaciones',      icon: Bell,      label: 'Notificaciones' },
     ]},
     { section: 'finanzas', label: 'Finanzas', items: [
       { path: '/app/rentas/cobranza',  icon: Receipt,       label: 'Cobranza' },
@@ -201,6 +204,7 @@ const RENTAL_NAV_ITEMS = {
       { path: '/app/rentas/crm',          icon: Target,    label: 'CRM'         },
       { path: '/app/rentas/contratos',    icon: FileText,  label: 'Contratos'   },
       { path: '/app/rentas/calendario',   icon: Calendar,  label: 'Vigencias'   },
+      { path: '/app/notificaciones',      icon: Bell,      label: 'Notificaciones' },
     ]},
     { section: 'finanzas', label: 'Finanzas', items: [
       { path: '/app/rentas/cobranza',  icon: Receipt,       label: 'Cobranza' },
@@ -472,6 +476,23 @@ const NOTIF_MODULE_MAP = {
   plan_rejected:         'plan_pagos',
   plan_cancelled:        'plan_pagos',
   plan_installment_paid: 'plan_pagos',
+  rental_property_created:   'rentas_propiedades',
+  rental_property_status:    'rentas_propiedades',
+  rental_contract_created:   'rentas_contratos',
+  rental_contract_activated: 'rentas_contratos',
+  rental_contract_finished:  'rentas_contratos',
+  rental_contract_expiring:  'rentas_calendario',
+  rental_contract_expired:   'rentas_calendario',
+  rental_charge_generated:   'rentas_cobranza',
+  rental_payment_registered: 'rentas_cobranza',
+  rental_payment_deleted:    'rentas_cobranza',
+  rental_lead_created:       'rentas_crm',
+  rental_lead_moved:         'rentas_crm',
+  rental_lead_converted:     'rentas_crm',
+  rental_lead_lost:          'rentas_crm',
+  rental_airbnb_imported:    'rentas_propiedades',
+  rental_airbnb_synced:      'rentas_propiedades',
+  rental_airbnb_error:       'rentas_propiedades',
 };
 
 // ── Notification Bell + Dropdown ────────────────────────────────────────────
@@ -566,6 +587,11 @@ function NotificationBell({ tenantId, role, tenantModulePerms, activeProfile }) 
       navigate(role === 'vecino' ? '/app/estado-cuenta' : '/app/cobranza');
     }
     else if (['period_closed','period_reopened'].includes(n.notif_type)) navigate('/app/cobranza');
+    else if ((n.notif_type || '').startsWith('rental_lead')) navigate('/app/rentas/crm');
+    else if (['rental_contract_expiring','rental_contract_expired'].includes(n.notif_type)) navigate('/app/rentas/calendario');
+    else if ((n.notif_type || '').startsWith('rental_contract')) navigate('/app/rentas/contratos');
+    else if ((n.notif_type || '').startsWith('rental_charge') || (n.notif_type || '').startsWith('rental_payment')) navigate('/app/rentas/cobranza');
+    else if ((n.notif_type || '').startsWith('rental_')) navigate('/app/rentas/propiedades');
   };
 
   const TYPE_ICON = {
@@ -587,6 +613,23 @@ function NotificationBell({ tenantId, role, tenantModulePerms, activeProfile }) 
     // Períodos
     period_closed:         '🔒',
     period_reopened:       '🔓',
+    rental_property_created:   '🏠',
+    rental_property_status:    '🏷️',
+    rental_contract_created:   '📄',
+    rental_contract_activated: '✅',
+    rental_contract_finished:  '📁',
+    rental_contract_expiring:  '⏳',
+    rental_contract_expired:   '⚠️',
+    rental_charge_generated:   '📑',
+    rental_payment_registered: '💳',
+    rental_payment_deleted:    '🗑️',
+    rental_lead_created:       '🎯',
+    rental_lead_moved:         '📌',
+    rental_lead_converted:     '🤝',
+    rental_lead_lost:          '↩️',
+    rental_airbnb_imported:    '🔗',
+    rental_airbnb_synced:      '🔄',
+    rental_airbnb_error:       '⚠️',
     // General
     general:               'ℹ️',
   };

@@ -101,8 +101,9 @@ const RENTAS_MODULES = [
   { key: 'rentas_contratos',    label: 'Contratos',     desc: 'Contratos y partes' },
   { key: 'rentas_cobranza',     label: 'Cobranza',      desc: 'Cargos y pagos de rentas' },
   { key: 'rentas_rentroll',     label: 'Rent Roll',     desc: 'Ocupación, renta in-place y vacancia' },
-  { key: 'rentas_calendario',   label: 'Calendario',    desc: 'Vencimientos y ocupación' },
-  { key: 'rentas_config',       label: 'Configuración', desc: 'Ajustes del espacio de rentas' },
+  { key: 'rentas_calendario',   label: 'Calendario',      desc: 'Vencimientos y ocupación' },
+  { key: 'notificaciones',      label: 'Notificaciones',  desc: 'Avisos por correo y en la app' },
+  { key: 'rentas_config',       label: 'Configuración',   desc: 'Ajustes del espacio de rentas' },
 ];
 
 const ALL_PLAN_MODULES = [...SYSTEM_MODULES, ...RENTAS_MODULES];

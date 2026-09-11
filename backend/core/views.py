@@ -88,6 +88,24 @@ _NOTIF_MODULE_MAP = {
     'plan_accepted':         'plan_pagos',
     'plan_rejected':         'plan_pagos',
     'plan_cancelled':        'plan_pagos',
+    # Homly Rentas
+    'rental_property_created':    'rentas_propiedades',
+    'rental_property_status':     'rentas_propiedades',
+    'rental_contract_created':    'rentas_contratos',
+    'rental_contract_activated':  'rentas_contratos',
+    'rental_contract_finished':   'rentas_contratos',
+    'rental_contract_expiring':   'rentas_calendario',
+    'rental_contract_expired':    'rentas_calendario',
+    'rental_charge_generated':    'rentas_cobranza',
+    'rental_payment_registered':  'rentas_cobranza',
+    'rental_payment_deleted':     'rentas_cobranza',
+    'rental_lead_created':        'rentas_crm',
+    'rental_lead_moved':          'rentas_crm',
+    'rental_lead_converted':      'rentas_crm',
+    'rental_lead_lost':           'rentas_crm',
+    'rental_airbnb_imported':     'rentas_propiedades',
+    'rental_airbnb_synced':       'rentas_propiedades',
+    'rental_airbnb_error':        'rentas_propiedades',
 }
 
 
@@ -145,6 +163,7 @@ def _notify_roles(tenant_id, roles, notif_type, title, message='', **extra_field
         Notification.objects.bulk_create(notifs)
     if recipients:
         tenant_name = tenant.name
+        workspace_label = 'Inmobiliaria' if getattr(tenant, 'workspace_type', '') == 'rentas' else 'Condominio'
         def _send_all():
             for email, user_name in recipients:
                 send_notification_email(
@@ -154,6 +173,7 @@ def _notify_roles(tenant_id, roles, notif_type, title, message='', **extra_field
                     title=title,
                     message=message,
                     tenant_name=tenant_name,
+                    workspace_label=workspace_label,
                 )
         threading.Thread(target=_send_all, daemon=True).start()
 

@@ -85,7 +85,7 @@ function RoleRoute({ module: moduleKey, workspace, children }) {
   // Superadmin has unrestricted access
   if (isSuperAdmin) return children;
 
-  const allowedModules = workspace === 'rentas'
+  const allowedModules = (workspace === 'rentas' || (!workspace && workspaceType === 'rentas'))
     ? (RENTAL_ROLE_BASE_MODULES[role] || [])
     : (ROLE_BASE_MODULES[role] || []);
   if (!allowedModules.includes(moduleKey)) {
@@ -154,7 +154,7 @@ function AppRoutes() {
         <Route path="users"         element={<RoleRoute module="config" workspace="condominio"><Users /></RoleRoute>} />
         <Route path="my-unit"       element={<RoleRoute module="my_unit" workspace="condominio"><MyUnit /></RoleRoute>} />
         <Route path="reservas"      element={<RoleRoute module="reservas" workspace="condominio"><Reservas /></RoleRoute>} />
-        <Route path="notificaciones" element={<RoleRoute module="notificaciones" workspace="condominio"><Notificaciones /></RoleRoute>} />
+        <Route path="notificaciones" element={<RoleRoute module="notificaciones"><Notificaciones /></RoleRoute>} />
         <Route path="cierre-periodo" element={<RoleRoute module="cierre_periodo" workspace="condominio"><CierrePeriodo /></RoleRoute>} />
         <Route path="planeacion"    element={<RoleRoute module="planeacion" workspace="condominio"><Planeacion /></RoleRoute>} />
         <Route path="plan-pagos"    element={<RoleRoute module="plan_pagos" workspace="condominio"><PlanPagos /></RoleRoute>} />

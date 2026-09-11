@@ -230,6 +230,14 @@ class Tenant(models.Model):
         help_text='Period closure approval flow: enabled flag and ordered list of approver steps.',
     )
 
+    # Planeación: flujo de aprobación de presupuestos y proyectos.
+    # {"enabled": bool, "steps": [{"order": int, "user_id": str, "user_name": str, "label": str}]}
+    planning_flow = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text='Flujo de aprobación de presupuesto y proyectos: enabled y pasos ordenados.',
+    )
+
     # Active / inactive flag — managed by TenantSubscription.sync_tenant_active().
     # When False, users of this tenant cannot log in (access is blocked).
     is_active = models.BooleanField(
@@ -1074,6 +1082,24 @@ class Notification(models.Model):
         ('plan_accepted',         'Plan de Pagos Aceptado'),
         ('plan_rejected',         'Plan de Pagos Rechazado'),
         ('plan_cancelled',        'Plan de Pagos Cancelado'),
+        # Homly Rentas
+        ('rental_property_created',    'Propiedad registrada'),
+        ('rental_property_status',     'Estado de propiedad'),
+        ('rental_contract_created',    'Contrato creado'),
+        ('rental_contract_activated',  'Contrato activado'),
+        ('rental_contract_finished',   'Contrato cerrado'),
+        ('rental_contract_expiring',   'Contrato por vencer'),
+        ('rental_contract_expired',    'Contrato vencido'),
+        ('rental_charge_generated',    'Cargos del período'),
+        ('rental_payment_registered',  'Pago de renta'),
+        ('rental_payment_deleted',     'Pago de renta eliminado'),
+        ('rental_lead_created',        'Nuevo lead'),
+        ('rental_lead_moved',          'Lead actualizado'),
+        ('rental_lead_converted',      'Lead convertido'),
+        ('rental_lead_lost',           'Lead perdido'),
+        ('rental_airbnb_imported',     'Airbnb importado'),
+        ('rental_airbnb_synced',       'Airbnb sincronizado'),
+        ('rental_airbnb_error',        'Error de Airbnb'),
         # General
         ('general',               'Información General'),
     ]
@@ -2477,9 +2503,10 @@ class RentalLeadActivity(models.Model):
 # ═══════════════════════════════════════════════════════════
 
 class CondoBudget(models.Model):
-    """Presupuesto anual del condominio, alineado al calendario fiscal Homly."""
+    """Presupuesto anual del condominio. Varios escenarios (borradores) por año; uno aprobado final."""
     STATUS_CHOICES = [
         ('borrador', 'Borrador'),
+        ('en_aprobacion', 'En aprobación'),
         ('aprobado', 'Aprobado'),
         ('archivado', 'Archivado'),
     ]
@@ -2490,6 +2517,23 @@ class CondoBudget(models.Model):
     name = models.CharField(max_length=200, blank=True, default='')
     notes = models.TextField(blank=True, default='')
     status = models.CharField(max_length=16, choices=STATUS_CHOICES, default='borrador', db_index=True)
+    seed_units = models.PositiveIntegerField(
+        default=0,
+        help_text='Unidades usadas para el sugerido (no puede superar las unidades activas del tenant).',
+    )
+    seed_fee = models.DecimalField(
+        max_digits=14, decimal_places=2, default=0,
+        validators=[MinValueValidator(0)],
+        help_text='Cuota de mantenimiento usada para armar el sugerido.',
+    )
+    cashflow_rules = models.JSONField(
+        default=list, blank=True,
+        help_text='Descuentos/incentivos de cobranza: [{id,name,pct,takeup_pct,apply_to}]',
+    )
+    approval_steps = models.JSONField(
+        default=list, blank=True,
+        help_text='Pasos del flujo de aprobación en curso.',
+    )
     created_by = models.ForeignKey(
         User, on_delete=models.SET_NULL, null=True, blank=True,
         related_name='condo_budgets_created',
@@ -2505,14 +2549,13 @@ class CondoBudget(models.Model):
     class Meta:
         db_table = 'condo_budgets'
         ordering = ['-year', '-created_at']
-        unique_together = ['tenant', 'year']
         indexes = [
             models.Index(fields=['tenant', 'year']),
             models.Index(fields=['tenant', 'status']),
         ]
 
     def __str__(self):
-        return f'Presupuesto {self.year} — {self.tenant.name}'
+        return f'Presupuesto {self.year} — {self.name or self.tenant.name}'
 
 
 class CondoBudgetLine(models.Model):
@@ -2562,6 +2605,7 @@ class CondoProject(models.Model):
     """Obra, mejora o proyecto extraordinario del condominio."""
     STATUS_CHOICES = [
         ('idea', 'Idea'),
+        ('en_aprobacion', 'En aprobación'),
         ('aprobado', 'Aprobado'),
         ('en_curso', 'En curso'),
         ('pausado', 'Pausado'),
@@ -2594,6 +2638,10 @@ class CondoProject(models.Model):
     end_period = models.CharField(max_length=7, blank=True, default='', help_text='YYYY-MM')
     responsible_name = models.CharField(max_length=200, blank=True, default='')
     notes = models.TextField(blank=True, default='')
+    approval_steps = models.JSONField(
+        default=list, blank=True,
+        help_text='Pasos del flujo de aprobación en curso.',
+    )
     created_by = models.ForeignKey(
         User, on_delete=models.SET_NULL, null=True, blank=True,
         related_name='condo_projects_created',

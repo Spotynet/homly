@@ -905,6 +905,21 @@ tr:hover td { background: rgba(59,185,144,0.02); }
   body.printing-rentroll .rentroll-print-layout table { break-inside: auto; width: 100% !important; }
   body.printing-rentroll .rentroll-print-layout tr { break-inside: avoid; page-break-inside: avoid; }
   body.printing-rentroll .rentroll-print-layout thead { display: table-header-group; }
+
+  /* ── Planeación / presupuesto (body.printing-planeacion) ─── */
+  body.printing-planeacion * { visibility: hidden !important; }
+  body.printing-planeacion .planeacion-print-layout,
+  body.printing-planeacion .planeacion-print-layout * { visibility: visible !important; }
+  body.printing-planeacion .planeacion-print-layout {
+    display: block !important;
+    position: absolute !important; top: 0; left: 0;
+    width: 100% !important; padding: 10mm 12mm !important;
+    background: white !important;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  body.printing-planeacion .planeacion-print-layout table { break-inside: auto; width: 100% !important; }
+  body.printing-planeacion .planeacion-print-layout tr { break-inside: avoid; page-break-inside: avoid; }
+  body.printing-planeacion .planeacion-print-layout thead { display: table-header-group; }
 }
 
 /* Layouts ejecutivos: solo visibles al imprimir, nunca en pantalla */
@@ -914,6 +929,7 @@ tr:hover td { background: rgba(59,185,144,0.02); }
 .adeudos-print-layout  { display: none; }
 .general-print-layout  { display: none; }
 .rentroll-print-layout { display: none; }
+.planeacion-print-layout { display: none; }
 .print-only { display: none; }
 
 /* ─── Planeación ─── */
@@ -970,6 +986,11 @@ tr:hover td { background: rgba(59,185,144,0.02); }
   box-shadow: var(--shadow-xs);
 }
 .proj-card:hover { border-color: var(--teal-200); }
+.plan-flow-steps { margin: 0; padding-left: 18px; }
+.plan-flow-step { font-size: 12px; margin: 4px 0; color: var(--ink-600); }
+.plan-flow-step.is-approved { color: var(--teal-700); }
+.plan-flow-step.is-rejected { color: var(--coral-600); }
+.plan-flow-step.is-pending { color: var(--ink-500); }
 
 /* ─── Status ─── */
 .status-indicator { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex-shrink: 0; }

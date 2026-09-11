@@ -1288,6 +1288,24 @@ NOTIF_META: dict[str, tuple[str, str, str]] = {
     'period_closed':         ('🔒', 'Período Cerrado',        '#8B5CF6'),  # purple
     'period_reopened':       ('🔓', 'Período Reabierto',      '#F59E0B'),  # amber
     'general':               ('🔔', 'Notificación',          '#F76F57'),  # homly orange
+    # Homly Rentas
+    'rental_property_created':    ('🏠', 'Propiedad registrada',     '#1E594F'),
+    'rental_property_status':     ('🏷️', 'Estado de propiedad',      '#3B82F6'),
+    'rental_contract_created':    ('📄', 'Contrato creado',          '#3B82F6'),
+    'rental_contract_activated':  ('✅', 'Contrato activado',        '#10B981'),
+    'rental_contract_finished':   ('📁', 'Contrato cerrado',         '#F59E0B'),
+    'rental_contract_expiring':   ('⏳', 'Contrato por vencer',      '#F59E0B'),
+    'rental_contract_expired':    ('⚠️', 'Contrato vencido',         '#EF4444'),
+    'rental_charge_generated':    ('📑', 'Cargos del período',       '#1E594F'),
+    'rental_payment_registered':  ('💳', 'Pago de renta',            '#10B981'),
+    'rental_payment_deleted':     ('🗑️', 'Pago de renta eliminado',  '#EF4444'),
+    'rental_lead_created':        ('🎯', 'Nuevo lead',               '#3B82F6'),
+    'rental_lead_moved':          ('📌', 'Lead actualizado',         '#8B5CF6'),
+    'rental_lead_converted':      ('🤝', 'Lead convertido',          '#10B981'),
+    'rental_lead_lost':           ('↩️', 'Lead perdido',             '#F59E0B'),
+    'rental_airbnb_imported':     ('🔗', 'Airbnb importado',         '#1D4ED8'),
+    'rental_airbnb_synced':       ('🔄', 'Airbnb sincronizado',      '#1D4ED8'),
+    'rental_airbnb_error':        ('⚠️', 'Error de Airbnb',          '#EF4444'),
 }
 
 
@@ -1298,30 +1316,54 @@ def _build_notification_html(
     message: str,
     tenant_name: str,
     app_url: str,
+    workspace_label: str = 'Condominio',
+    details: list | None = None,
 ) -> str:
     """Branded HTML for a notification alert email."""
+    from html import escape as _esc
     c = COLORS
     logo_img = f'<img src="cid:{LOGO_CID}" alt="Homly" width="160" style="display:block;height:auto;max-width:160px;" />'
     emoji, type_label, accent = NOTIF_META.get(notif_type, NOTIF_META['general'])
     # Lighten accent for background (use a fixed soft tint — inline CSS can't do alpha easily)
-    accent_light = '#F0F9FF' if accent == '#3B82F6' else \
-                   '#F0FDF4' if accent == '#10B981' else \
+    accent_light = '#F0F9FF' if accent in ('#3B82F6', '#1D4ED8') else \
+                   '#F0FDF4' if accent in ('#10B981', '#1E594F') else \
                    '#FEF2F2' if accent == '#EF4444' else \
                    '#FFFBEB' if accent == '#F59E0B' else \
                    '#F5F3FF' if accent == '#8B5CF6' else \
                    '#FFF7ED'
 
     # Escape message line breaks to <br>
-    message_html = message.replace('\n', '<br>')
+    message_html = _esc(message or '').replace('\n', '<br>')
+    title_html = _esc(title or '')
+    type_label_html = _esc(type_label)
+    tenant_html = _esc(tenant_name or '')
+    workspace_html = _esc(workspace_label or 'Espacio')
 
-    first_name = user_name.split()[0] if user_name else 'Usuario'
+    details_html = ''
+    if details:
+        rows = []
+        for label, value in details:
+            rows.append(
+                '<tr>'
+                f'<td style="padding:6px 0;font-size:12px;color:{c["ink_600"]};">{_esc(str(label))}</td>'
+                f'<td style="padding:6px 0;font-size:13px;font-weight:700;color:{c["ink_800"]};text-align:right;">'
+                f'{_esc(str(value))}</td>'
+                '</tr>'
+            )
+        details_html = (
+            f'<table width="100%" cellpadding="0" cellspacing="0" role="presentation" '
+            f'style="margin:14px 0 4px;border-top:1px solid #E8DFD1;padding-top:8px;">'
+            f'{"".join(rows)}</table>'
+        )
+
+    first_name = _esc((user_name or 'Usuario').split()[0] or 'Usuario')
 
     return f"""<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{type_label} — {tenant_name}</title>
+  <title>{type_label_html} — {tenant_html}</title>
 </head>
 <body style="margin:0;padding:0;font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background-color:{c['cream_outer']};">
   <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background-color:{c['cream_outer']};padding:40px 20px;">
@@ -1345,8 +1387,8 @@ def _build_notification_html(
                 style="background:{accent};border-radius:12px;padding:16px 20px;">
                 <tr>
                   <td>
-                    <p style="margin:0;font-size:11px;font-weight:700;color:rgba(255,255,255,0.8);text-transform:uppercase;letter-spacing:0.08em;">{type_label}</p>
-                    <p style="margin:4px 0 0;font-size:18px;font-weight:800;color:#FFFFFF;line-height:1.3;">{emoji} {title}</p>
+                    <p style="margin:0;font-size:11px;font-weight:700;color:rgba(255,255,255,0.8);text-transform:uppercase;letter-spacing:0.08em;">{type_label_html}</p>
+                    <p style="margin:4px 0 0;font-size:18px;font-weight:800;color:#FFFFFF;line-height:1.3;">{emoji} {title_html}</p>
                   </td>
                 </tr>
               </table>
@@ -1365,6 +1407,7 @@ def _build_notification_html(
                 <tr>
                   <td>
                     <p style="margin:0;font-size:13px;color:{c['ink_800']};line-height:1.6;">{message_html}</p>
+                    {details_html}
                   </td>
                 </tr>
               </table>
@@ -1372,7 +1415,7 @@ def _build_notification_html(
                 Ingresa a <strong style="color:{c['green']};">Homly</strong> para ver los detalles completos y tomar acción si es necesario.
               </p>
               <p style="margin:0;font-size:12px;color:{c['ink_600']};">
-                Condominio: <strong>{tenant_name}</strong>
+                {workspace_html}: <strong>{tenant_html}</strong>
               </p>
 
               <!-- CTA -->
@@ -1417,17 +1460,21 @@ def send_notification_email(
     title: str,
     message: str,
     tenant_name: str = '',
+    workspace_label: str = 'Condominio',
+    details: list | None = None,
 ) -> bool:
     """
     Send a notification alert email to a single user.
 
     Args:
-        email:       Recipient email address.
-        user_name:   Display name used in the greeting.
-        notif_type:  One of the keys in NOTIF_META (e.g. 'payment_registered').
-        title:       Short notification title (same as the in-app notification title).
-        message:     Body of the notification (same as the in-app message).
-        tenant_name: Condominium / tenant display name shown in the email.
+        email:            Recipient email address.
+        user_name:        Display name used in the greeting.
+        notif_type:       One of the keys in NOTIF_META (e.g. 'payment_registered').
+        title:            Short notification title (same as the in-app notification title).
+        message:          Body of the notification (same as the in-app message).
+        tenant_name:      Condominium / inmobiliaria display name shown in the email.
+        workspace_label:  'Condominio' or 'Inmobiliaria'.
+        details:          Optional list of (label, value) rows rendered as a table.
 
     Returns True on success, False if the send failed.
     """
@@ -1437,14 +1484,23 @@ def send_notification_email(
     if tenant_name:
         subject = f'[{tenant_name}] {subject}'
 
+    detail_plain = ''
+    if details:
+        detail_plain = '\n' + '\n'.join(f'{k}: {v}' for k, v in details) + '\n'
+
+    label = workspace_label or 'Espacio'
     plain = (
         f'Hola {user_name},\n\n'
-        f'{message}\n\n'
+        f'{message}\n'
+        f'{detail_plain}\n'
         f'Ingresa a Homly para ver los detalles: {app_url}\n\n'
-        f'Condominio: {tenant_name}\n'
+        f'{label}: {tenant_name}\n'
         f'© Homly — La administración que tu hogar se merece'
     )
-    html = _build_notification_html(user_name, notif_type, title, message, tenant_name, app_url)
+    html = _build_notification_html(
+        user_name, notif_type, title, message, tenant_name, app_url,
+        workspace_label=label, details=details,
+    )
     return _send_branded_email(subject=subject, plain=plain, html=html, to_emails=[email])
 
 

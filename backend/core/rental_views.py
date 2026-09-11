@@ -16,6 +16,11 @@ from .models import (
     RentalContract, RentalCharge, RentalPayment,
 )
 from .permissions import IsTenantMember, IsAdminTesOrContador, IsFinancialManager
+from .rental_notifications import (
+    on_charges_generated, on_contract_activated, on_contract_created,
+    on_contract_finished, on_payment_deleted, on_payment_registered,
+    on_property_created, on_property_status_changed, refresh_contract_and_notify,
+)
 from .rental_serializers import (
     RentalPropertySerializer, RentalPartySerializer, RentalChargeConceptSerializer,
     RentalContractSerializer, RentalChargeSerializer, RentalPaymentSerializer,
@@ -117,6 +122,16 @@ class RentalPropertyViewSet(_RentalTenantMixin, viewsets.ModelViewSet):
             qs = qs.filter(source=source)
         return qs
 
+    def perform_create(self, serializer):
+        tenant = self.get_tenant()
+        prop = serializer.save(tenant=tenant)
+        on_property_created(prop)
+
+    def perform_update(self, serializer):
+        old_status = self.get_object().status
+        prop = serializer.save()
+        on_property_status_changed(prop, old_status)
+
 
 class RentalPartyViewSet(_RentalTenantMixin, viewsets.ModelViewSet):
     queryset = RentalParty.objects.all()
@@ -151,7 +166,7 @@ class RentalContractViewSet(_RentalTenantMixin, viewsets.ModelViewSet):
     def get_queryset(self):
         qs = super().get_queryset()
         for c in qs:
-            c.refresh_lifecycle_status()
+            refresh_contract_and_notify(c)
         st = self.request.query_params.get('status')
         q = (self.request.query_params.get('search') or '').strip()
         if st:
@@ -169,11 +184,17 @@ class RentalContractViewSet(_RentalTenantMixin, viewsets.ModelViewSet):
         tenant = self.get_tenant()
         contract = serializer.save(tenant=tenant)
         _sync_property_occupancy(contract.property)
+        on_contract_created(contract)
 
     def perform_update(self, serializer):
+        prev = self.get_object().status
         contract = serializer.save()
-        contract.refresh_lifecycle_status()
+        refresh_contract_and_notify(contract)
         _sync_property_occupancy(contract.property)
+        if prev in ('borrador',) and contract.status not in ('borrador', 'cancelado'):
+            on_contract_activated(contract)
+        elif prev != contract.status and contract.status in ('finalizado', 'cancelado', 'renovado'):
+            on_contract_finished(contract, contract.status)
 
     @action(detail=True, methods=['post'], url_path='activate')
     def activate(self, request, tenant_id=None, pk=None):
@@ -182,8 +203,9 @@ class RentalContractViewSet(_RentalTenantMixin, viewsets.ModelViewSet):
             return Response({'detail': 'El contrato está cancelado.'}, status=400)
         contract.status = 'activo'
         contract.save(update_fields=['status', 'updated_at'])
-        contract.refresh_lifecycle_status()
+        refresh_contract_and_notify(contract)
         _sync_property_occupancy(contract.property)
+        on_contract_activated(contract)
         return Response(RentalContractSerializer(contract).data)
 
     @action(detail=True, methods=['post'], url_path='finish')
@@ -195,6 +217,7 @@ class RentalContractViewSet(_RentalTenantMixin, viewsets.ModelViewSet):
         contract.status = next_status
         contract.save(update_fields=['status', 'updated_at'])
         _sync_property_occupancy(contract.property)
+        on_contract_finished(contract, next_status)
         return Response(RentalContractSerializer(contract).data)
 
 
@@ -218,6 +241,14 @@ class RentalChargeViewSet(_RentalTenantMixin, viewsets.ModelViewSet):
             qs = qs.filter(contract_id=contract_id)
         return qs
 
+    def perform_create(self, serializer):
+        tenant = self.get_tenant()
+        charge = serializer.save(tenant=tenant)
+        charge = RentalCharge.objects.select_related(
+            'contract', 'contract__property', 'contract__tenant_party',
+        ).get(pk=charge.pk)
+        on_charges_generated(tenant, charge.period, 1, {charge.contract: [charge]})
+
     @action(detail=False, methods=['post'], url_path='generate-period')
     def generate_period(self, request, tenant_id=None):
         """Genera cargos recurrentes (renta + conceptos) del período para contratos vigentes."""
@@ -231,10 +262,11 @@ class RentalChargeViewSet(_RentalTenantMixin, viewsets.ModelViewSet):
             return Response({'detail': 'Período inválido (YYYY-MM).'}, status=400)
 
         created = 0
+        charges_by_contract = {}
         contracts = RentalContract.objects.filter(
             tenant=tenant,
             status__in=('activo', 'por_vencer', 'vencido'),
-        ).select_related('property')
+        ).select_related('property', 'tenant_party')
         rent_concept = RentalChargeConcept.objects.filter(tenant=tenant, is_rent=True).first()
         extras = list(RentalChargeConcept.objects.filter(
             tenant=tenant, enabled=True, is_recurring=True, is_rent=False,
@@ -247,12 +279,13 @@ class RentalChargeViewSet(_RentalTenantMixin, viewsets.ModelViewSet):
                 continue
             pay_day = min(max(int(contract.payment_day or 1), 1), last_day)
             due = date(year, month, pay_day)
+            new_rows = []
 
             rent_exists = RentalCharge.objects.filter(
                 contract=contract, period=period,
             ).filter(Q(concept=rent_concept) if rent_concept else Q(description__istartswith='Renta'))
             if not rent_exists.exists():
-                RentalCharge.objects.create(
+                ch = RentalCharge.objects.create(
                     tenant=tenant, contract=contract, concept=rent_concept,
                     period=period,
                     description=f'Renta {period}',
@@ -260,13 +293,14 @@ class RentalChargeViewSet(_RentalTenantMixin, viewsets.ModelViewSet):
                     due_date=due,
                 )
                 created += 1
+                new_rows.append(ch)
 
             for concept in extras:
                 if concept.default_amount <= 0:
                     continue
                 if RentalCharge.objects.filter(contract=contract, period=period, concept=concept).exists():
                     continue
-                RentalCharge.objects.create(
+                ch = RentalCharge.objects.create(
                     tenant=tenant, contract=contract, concept=concept,
                     period=period,
                     description=f'{concept.name} {period}',
@@ -274,7 +308,12 @@ class RentalChargeViewSet(_RentalTenantMixin, viewsets.ModelViewSet):
                     due_date=due,
                 )
                 created += 1
+                new_rows.append(ch)
 
+            if new_rows:
+                charges_by_contract[contract] = new_rows
+
+        on_charges_generated(tenant, period, created, charges_by_contract)
         return Response({'created': created, 'period': period})
 
 
@@ -298,10 +337,18 @@ class RentalPaymentViewSet(_RentalTenantMixin, viewsets.ModelViewSet):
         payment = serializer.save(tenant=tenant)
         if payment.charge_id:
             payment.charge.sync_status()
+        payment = RentalPayment.objects.select_related(
+            'contract', 'contract__property', 'contract__tenant_party', 'charge',
+        ).get(pk=payment.pk)
+        on_payment_registered(payment)
 
     def perform_destroy(self, instance):
-        charge = instance.charge
-        instance.delete()
+        payment = RentalPayment.objects.select_related(
+            'contract', 'contract__property', 'contract__tenant_party', 'charge',
+        ).get(pk=instance.pk)
+        charge = payment.charge
+        on_payment_deleted(payment)
+        payment.delete()
         if charge:
             charge.sync_status()
 
@@ -319,7 +366,7 @@ class RentalDashboardView(APIView):
         props = RentalProperty.objects.filter(tenant=tenant, is_active=True)
         contracts = list(RentalContract.objects.filter(tenant=tenant).select_related('property', 'tenant_party'))
         for c in contracts:
-            c.refresh_lifecycle_status(today)
+            refresh_contract_and_notify(c)
 
         active = [c for c in contracts if c.status in ('activo', 'por_vencer')]
         expiring = [c for c in contracts if c.status == 'por_vencer']
@@ -404,7 +451,7 @@ class RentalCalendarView(APIView):
             status='cancelado'
         ).select_related('property', 'tenant_party')
         for c in qs:
-            c.refresh_lifecycle_status(today)
+            refresh_contract_and_notify(c)
             if c.end_date < since and c.start_date < since:
                 continue
             rows.append({

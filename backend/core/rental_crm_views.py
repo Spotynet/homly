@@ -15,6 +15,7 @@ from .rental_serializers import (
     RentalLeadSerializer, RentalLeadActivitySerializer, RentalContractSerializer,
 )
 from .rental_views import _RentalTenantMixin, _sync_property_occupancy
+from .rental_notifications import on_lead_converted, on_lead_created, on_lead_moved
 
 
 OPEN_STAGES = ('nuevo', 'contactado', 'visita', 'propuesta', 'negociacion')
@@ -77,10 +78,12 @@ class RentalLeadViewSet(_RentalTenantMixin, viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         user = self.request.user if getattr(self.request.user, 'is_authenticated', False) else None
-        serializer.save(tenant=self.get_tenant(), created_by=user)
+        lead = serializer.save(tenant=self.get_tenant(), created_by=user)
+        on_lead_created(lead)
 
     def update(self, request, *args, **kwargs):
         lead = self.get_object()
+        old_stage = lead.stage
         if lead.contract_id and request.data.get('stage') and request.data.get('stage') != lead.stage:
             return Response(
                 {'detail': 'Este lead ya tiene contrato. El pipeline queda cerrado.'},
@@ -91,7 +94,10 @@ class RentalLeadViewSet(_RentalTenantMixin, viewsets.ModelViewSet):
                 {'detail': 'Para marcarlo ganado convierte el lead a cliente y crea el contrato.'},
                 status=400,
             )
-        return super().update(request, *args, **kwargs)
+        response = super().update(request, *args, **kwargs)
+        lead.refresh_from_db()
+        on_lead_moved(lead, old_stage)
+        return response
 
     @action(detail=False, methods=['get'], url_path='pipeline')
     def pipeline(self, request, tenant_id=None):
@@ -117,12 +123,14 @@ class RentalLeadViewSet(_RentalTenantMixin, viewsets.ModelViewSet):
             )
         if stage not in MOVE_STAGES:
             return Response({'detail': 'Etapa no válida.'}, status=400)
+        old_stage = lead.stage
         lead.stage = stage
         if stage == 'perdido':
             lead.lost_reason = (request.data.get('lost_reason') or lead.lost_reason or '')[:300]
         elif stage != 'perdido':
             lead.lost_reason = ''
         lead.save(update_fields=['stage', 'lost_reason', 'updated_at'])
+        on_lead_moved(lead, old_stage)
         return Response(RentalLeadSerializer(lead).data)
 
     @action(detail=True, methods=['get', 'post'], url_path='activities')
@@ -268,6 +276,7 @@ class RentalLeadViewSet(_RentalTenantMixin, viewsets.ModelViewSet):
                      f'{" activado" if activate else " en borrador"}.',
             )
 
+        on_lead_converted(lead, contract, activate)
         return Response({
             'lead': RentalLeadSerializer(lead).data,
             'party_id': str(party.id),
