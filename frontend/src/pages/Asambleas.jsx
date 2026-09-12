@@ -5,15 +5,21 @@ import toast from 'react-hot-toast';
 import {
   Plus, Vote, X, Pencil, Trash2, Send, Check, Users, FileText,
   Landmark, Download, Upload, Printer, Scale, Gavel,
-  Link2, ChevronUp, ChevronDown, CircleHelp,
+  Link2, ChevronUp, ChevronDown, CircleHelp, Eye,
 } from 'lucide-react';
 
 const TABS = [
   ['convocatorias', 'Convocatorias'],
   ['reuniones', 'Reuniones'],
-  ['minutas', 'Minutas'],
+  ['minutas', 'Actas y minutas'],
   ['historial', 'Historial'],
 ];
+const TAB_HELP = {
+  convocatorias: 'Bandeja de asambleas en preparación o ya convocadas. Aquí filtras el listado; al abrir una tarjeta ves sus apartados.',
+  reuniones: 'Bandeja de asambleas listas para sesionar o ya en curso (asistencia y votaciones).',
+  minutas: 'Bandeja de asambleas con minuta o acta en redacción, y las ya cerradas pendientes de consultar.',
+  historial: 'Bandeja de asambleas cerradas o canceladas, para consulta del expediente.',
+};
 
 const STATUS = {
   borrador: { label: 'Borrador', color: 'var(--ink-500)', bg: 'var(--sand-50)' },
@@ -71,7 +77,8 @@ const FILE_KINDS = {
   convocatoria: 'Convocatoria',
   poder: 'Carta poder',
   lista: 'Lista de asistencia',
-  minuta: 'Minuta / acta',
+  minuta: 'Minuta de trabajo',
+  acta: 'Acta de asamblea',
   evidencia: 'Evidencia de notificación',
   otro: 'Otro',
 };
@@ -505,30 +512,63 @@ function AgendaHelpModal({ rules, onClose }) {
   );
 }
 
-async function downloadAssemblyDoc(tenantId, assembly, kind) {
-  const label = kind === 'minuta' ? 'Acta' : 'Convocatoria';
-  try {
-    const res = await asambleasAPI.printDoc(tenantId, assembly.id, kind);
-    const blob = new Blob([res.data], { type: 'application/pdf' });
-    if (blob.size < 80) {
-      const text = await blob.text();
-      let msg = `No se pudo generar la ${label.toLowerCase()}.`;
-      try { msg = JSON.parse(text).detail || msg; } catch { /* blob no JSON */ }
-      throw new Error(msg);
-    }
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    const safe = (s) => (s || '').trim().replace(/[/\\:*?"<>|]/g, '').replace(/\s+/g, '_');
-    a.download = `${label}_${safe(assembly.title) || assembly.year}.pdf`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-    toast.success(`${label} lista para imprimir o protocolizar`);
-  } catch (e) {
-    toast.error(e.message || errMsg(e, `No se pudo generar la ${label.toLowerCase()}`));
+const DOC_TITLES = {
+  convocatoria: 'Convocatoria',
+  minuta: 'Minuta de trabajo',
+  acta: 'Acta de asamblea',
+};
+
+async function fetchAssemblyDoc(tenantId, assembly, kind) {
+  const label = DOC_TITLES[kind] || kind;
+  const res = await asambleasAPI.printDoc(tenantId, assembly.id, kind);
+  const blob = new Blob([res.data], { type: 'application/pdf' });
+  if (blob.size < 80) {
+    const text = await blob.text();
+    let msg = `No se pudo generar la ${label.toLowerCase()}.`;
+    try { msg = JSON.parse(text).detail || msg; } catch { /* blob no JSON */ }
+    throw new Error(msg);
   }
+  const safe = (s) => (s || '').trim().replace(/[/\\:*?"<>|]/g, '').replace(/\s+/g, '_');
+  return {
+    url: URL.createObjectURL(blob),
+    blob,
+    filename: `${label}_${safe(assembly.title) || assembly.year}.pdf`,
+    title: label,
+    kind,
+  };
+}
+
+function downloadBlob(url, filename) {
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename || 'documento.pdf';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+function DocPreviewModal({ preview, onClose }) {
+  useEffect(() => () => { if (preview?.url) URL.revokeObjectURL(preview.url); }, [preview?.url]);
+  if (!preview) return null;
+  return (
+    <div className="modal-bg open" onClick={e => { e.stopPropagation(); onClose(); }}>
+      <div className="modal asm-preview-modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-head">
+          <h3>{preview.title}</h3>
+          <button className="modal-close" onClick={onClose}><X size={16} /></button>
+        </div>
+        <div className="asm-preview-frame">
+          <iframe src={preview.url} title={preview.title} />
+        </div>
+        <div className="modal-foot">
+          <button className="btn btn-outline" onClick={() => downloadBlob(preview.url, preview.filename)}>
+            <Download size={14} /> Descargar PDF
+          </button>
+          <button className="btn btn-primary" onClick={onClose}>Cerrar</button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function Asambleas() {
@@ -607,11 +647,12 @@ export default function Asambleas() {
         </div>
       )}
 
-      <div className="tabs" style={{ marginBottom: 14 }}>
+      <div className="tabs" style={{ marginBottom: 8 }}>
         {TABS.map(([k, l]) => (
           <button key={k} className={`tab ${tab === k ? 'active' : ''}`} onClick={() => setTab(k)}>{l}</button>
         ))}
       </div>
+      <p className="asm-tab-help">{TAB_HELP[tab]}</p>
 
       {loading ? (
         <div style={{ padding: 40, textAlign: 'center', color: 'var(--ink-400)' }}>Cargando asambleas…</div>
@@ -621,13 +662,13 @@ export default function Asambleas() {
           <h3 style={{ margin: '0 0 8px' }}>
             {tab === 'convocatorias' && 'Sin convocatorias'}
             {tab === 'reuniones' && 'No hay reuniones pendientes'}
-            {tab === 'minutas' && 'Sin minutas en curso'}
+            {tab === 'minutas' && 'Sin actas ni minutas en curso'}
             {tab === 'historial' && 'Aún no hay historial'}
           </h3>
           <p style={{ color: 'var(--ink-400)', fontSize: 13, maxWidth: 480, margin: '0 auto' }}>
             {tab === 'convocatorias' && 'Crea una asamblea, arma el orden del día a mano o con presupuestos y proyectos de Planeación, y emite la convocatoria con el plazo legal.'}
             {tab === 'reuniones' && 'Cuando una convocatoria esté vigente, aquí tomas asistencia, validas quórum e instalas la mesa de debates.'}
-            {tab === 'minutas' && 'Redacta el acta, registra votaciones, fírmala y, si aplica, protocolízala ante notario.'}
+            {tab === 'minutas' && 'Redacta la minuta de la sesión, prepara el acta formal, fírmala y, si aplica, protocolízala ante notario.'}
             {tab === 'historial' && 'Las asambleas cerradas o canceladas quedan archivadas con su convocatoria, lista y acuerdos.'}
           </p>
         </div>
@@ -725,10 +766,31 @@ function AssemblyForm({ ctx, canWrite, onClose, onSaved, initial }) {
     if (!form.title.trim()) return toast.error('Indica el nombre de la asamblea');
     try {
       const payload = {
-        ...form,
-        first_call_at: form.first_call_at || null,
+        title: form.title.trim(),
+        kind: form.kind,
+        year: Number(form.year) || new Date().getFullYear(),
+        location: form.location || '',
+        first_call_at: (() => {
+          if (!form.first_call_at) return null;
+          const d = new Date(form.first_call_at);
+          return Number.isNaN(d.getTime()) ? null : d.toISOString();
+        })(),
+        issued_by_name: form.issued_by_name || '',
         notice_days: Number(form.notice_days) || rules.notice_days_ordinary || 10,
-        agenda: form.agenda.filter(i => i.title?.trim()),
+        notes: form.notes || '',
+        delivery_methods: form.delivery_methods || [],
+        agenda: form.agenda.filter(i => i.title?.trim()).map((item, idx) => ({
+          id: item.id || undefined,
+          sort_order: idx,
+          title: item.title.trim(),
+          description: item.description || '',
+          vote_type: item.vote_type || 'simple',
+          source_kind: item.source_kind || 'manual',
+          source_id: item.source_id || null,
+          source_label: item.source_label || '',
+          source_meta: item.source_meta && typeof item.source_meta === 'object' ? item.source_meta : {},
+          apply_on_approve: !!item.apply_on_approve,
+        })),
       };
       if (initial?.id) {
         await asambleasAPI.update(tenantId, initial.id, payload);
@@ -836,22 +898,39 @@ function AssemblyForm({ ctx, canWrite, onClose, onSaved, initial }) {
 }
 
 function AssemblyDetail({ tenantId, assembly, ctx, canWrite, tabHint, onClose, onRefresh }) {
-  const [inner, setInner] = useState(tabHint === 'historial' ? 'minuta' : tabHint === 'minutas' ? 'minuta' : tabHint === 'reuniones' ? 'reunion' : 'convocatoria');
+  const [inner, setInner] = useState(
+    tabHint === 'historial' ? 'acta'
+      : tabHint === 'minutas' ? 'minuta'
+        : tabHint === 'reuniones' ? 'reunion'
+          : 'convocatoria'
+  );
   const [editing, setEditing] = useState(false);
   const [mesa, setMesa] = useState({ president_name: assembly.president_name || '', secretary_name: assembly.secretary_name || '' });
   const [minute, setMinute] = useState(assembly.minute_body || '');
+  const [acta, setActa] = useState(assembly.acta_body || '');
   const [notary, setNotary] = useState({ notary_name: assembly.notary_name || '', notary_folio: assembly.notary_folio || '' });
   const [fileKind, setFileKind] = useState('evidencia');
   const [votes, setVotes] = useState({});
+  const [preview, setPreview] = useState(null);
   const q = assembly.quorum || {};
   const rules = assembly.legal_snapshot || ctx?.rules || {};
   const locked = ['cerrada', 'cancelada'].includes(assembly.status);
+  const canEditCall = canWrite && ['borrador', 'convocada'].includes(assembly.status);
 
   useEffect(() => {
     setMesa({ president_name: assembly.president_name || '', secretary_name: assembly.secretary_name || '' });
     setMinute(assembly.minute_body || '');
+    setActa(assembly.acta_body || '');
     setNotary({ notary_name: assembly.notary_name || '', notary_folio: assembly.notary_folio || '' });
   }, [assembly.id, assembly.updated_at]);
+
+  const openDoc = async (kind) => {
+    try {
+      setPreview(await fetchAssemblyDoc(tenantId, assembly, kind));
+    } catch (e) {
+      toast.error(e.message || errMsg(e, 'No se pudo abrir el documento'));
+    }
+  };
 
   if (editing) {
     return (
@@ -887,8 +966,11 @@ function AssemblyDetail({ tenantId, assembly, ctx, canWrite, tabHint, onClose, o
             {assembly.call_number >= 2 && <span className="proj-chip">2ª convocatoria</span>}
             <span className="proj-chip">{fmtWhen(assembly.first_call_at)}</span>
           </div>
+          <p className="asm-tab-help" style={{ marginTop: 0 }}>
+            Apartados de esta asamblea: la convocatoria, la sesión, la minuta de trabajo, el acta formal y el expediente.
+          </p>
           <div className="tabs" style={{ marginBottom: 14 }}>
-            {[['convocatoria', 'Convocatoria'], ['reunion', 'Reunión'], ['minuta', 'Minuta'], ['archivos', 'Archivos']].map(([k, l]) => (
+            {[['convocatoria', 'Convocatoria'], ['reunion', 'Reunión'], ['minuta', 'Minuta'], ['acta', 'Acta'], ['archivos', 'Expediente']].map(([k, l]) => (
               <button key={k} className={`tab ${inner === k ? 'active' : ''}`} onClick={() => setInner(k)}>{l}</button>
             ))}
           </div>
@@ -915,12 +997,12 @@ function AssemblyDetail({ tenantId, assembly, ctx, canWrite, tabHint, onClose, o
                 ))}
               </ol>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 14 }}>
-                <button className="btn btn-outline" onClick={() => downloadAssemblyDoc(tenantId, assembly, 'convocatoria')}><Printer size={14} /> Imprimir convocatoria</button>
+                <button className="btn btn-outline" onClick={() => openDoc('convocatoria')}><Eye size={14} /> Ver convocatoria</button>
+                {canEditCall && (
+                  <button className="btn btn-outline" onClick={() => setEditing(true)}><Pencil size={14} /> Editar convocatoria</button>
+                )}
                 {canWrite && assembly.status === 'borrador' && (
-                  <>
-                    <button className="btn btn-outline" onClick={() => setEditing(true)}><Pencil size={14} /> Editar</button>
-                    <button className="btn btn-primary" onClick={publish}><Send size={14} /> Emitir convocatoria</button>
-                  </>
+                  <button className="btn btn-primary" onClick={publish}><Send size={14} /> Emitir convocatoria</button>
                 )}
                 {canWrite && assembly.status === 'borrador' && (
                   <button className="btn btn-outline" onClick={async () => {
@@ -1084,34 +1166,78 @@ function AssemblyDetail({ tenantId, assembly, ctx, canWrite, tabHint, onClose, o
 
           {inner === 'minuta' && (
             <>
+              <p className="asm-agenda-hint">
+                La minuta es el registro de trabajo de la sesión: notas del secretario, incidencias y votaciones.
+                No sustituye el acta formal.
+              </p>
               <textarea
                 className="field-input"
                 rows={10}
                 value={minute}
-                disabled={!canWrite || (locked && assembly.minute_status !== 'borrador')}
+                disabled={!canWrite || locked}
                 onChange={e => setMinute(e.target.value)}
-                placeholder="Redacta el acta: asistencia, quórum, acuerdos y firmas…"
+                placeholder="Notas de la sesión: incidencias, intervenciones, votaciones y pendientes…"
+              />
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+                {canWrite && !locked && (
+                  <button className="btn btn-primary" onClick={async () => {
+                    await asambleasAPI.saveMinute(tenantId, assembly.id, { minute_body: minute });
+                    toast.success('Minuta guardada');
+                    onRefresh();
+                  }}>Guardar minuta</button>
+                )}
+                <button className="btn btn-outline" onClick={() => openDoc('minuta')}><Eye size={14} /> Ver minuta</button>
+              </div>
+            </>
+          )}
+
+          {inner === 'acta' && (
+            <>
+              <p className="asm-agenda-hint">
+                El acta es el documento formal de la asamblea: acuerdos, firmas y, si procede, protocolización ante notario.
+              </p>
+              <textarea
+                className="field-input"
+                rows={10}
+                value={acta}
+                disabled={!canWrite || (locked && assembly.minute_status !== 'borrador')}
+                onChange={e => setActa(e.target.value)}
+                placeholder="Redacta el acta formal: comparecencia, quórum, acuerdos y cláusulas de cierre…"
               />
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, margin: '10px 0' }}>
                 <input className="field-input" placeholder="Notario (si se protocoliza)" disabled={!canWrite} value={notary.notary_name} onChange={e => setNotary(n => ({ ...n, notary_name: e.target.value }))} />
                 <input className="field-input" placeholder="Folio / escritura" disabled={!canWrite} value={notary.notary_folio} onChange={e => setNotary(n => ({ ...n, notary_folio: e.target.value }))} />
               </div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {canWrite && !locked && (
+                  <button className="btn btn-outline" onClick={() => {
+                    const lines = [
+                      `Acta de la asamblea ${KIND[assembly.kind] || ''} «${assembly.title}».`,
+                      '',
+                      'Con base en la minuta de trabajo y las votaciones registradas, se hacen constar los siguientes acuerdos:',
+                      '',
+                      ...(assembly.agenda || []).map((item, i) => `${i + 1}. ${item.title} — ${RESULT[item.result] || item.result} (${VOTE[item.vote_type]}).`),
+                      ...(minute.trim() ? ['', 'Notas tomadas en la sesión:', '', minute.trim()] : []),
+                    ];
+                    setActa(lines.join('\n'));
+                    toast.success('Borrador de acta generado desde la minuta y las votaciones');
+                  }}>Generar borrador desde la minuta</button>
+                )}
                 {canWrite && assembly.status === 'en_curso' && (
                   <>
                     <button className="btn btn-outline" onClick={async () => {
-                      await asambleasAPI.saveMinute(tenantId, assembly.id, { minute_body: minute, ...notary });
-                      toast.success('Minuta guardada');
+                      await asambleasAPI.saveMinute(tenantId, assembly.id, { acta_body: acta, minute_body: minute, ...notary });
+                      toast.success('Acta guardada');
                       onRefresh();
                     }}>Guardar acta</button>
                     <button className="btn btn-outline" onClick={async () => {
-                      await asambleasAPI.saveMinute(tenantId, assembly.id, { minute_body: minute, ...notary });
+                      await asambleasAPI.saveMinute(tenantId, assembly.id, { acta_body: acta, minute_body: minute, ...notary });
                       await asambleasAPI.signMinute(tenantId, assembly.id);
                       toast.success('Acta firmada');
                       onRefresh();
                     }}><Check size={14} /> Firmar acta</button>
                     <button className="btn btn-primary" onClick={async () => {
-                      await asambleasAPI.saveMinute(tenantId, assembly.id, { minute_body: minute, ...notary });
+                      await asambleasAPI.saveMinute(tenantId, assembly.id, { acta_body: acta, minute_body: minute, ...notary });
                       await asambleasAPI.close(tenantId, assembly.id);
                       toast.success('Asamblea cerrada');
                       onRefresh();
@@ -1125,7 +1251,7 @@ function AssemblyDetail({ tenantId, assembly, ctx, canWrite, tabHint, onClose, o
                     onRefresh();
                   }}>Marcar protocolizada</button>
                 )}
-                <button className="btn btn-outline" onClick={() => downloadAssemblyDoc(tenantId, assembly, 'minuta')}><Printer size={14} /> Imprimir minuta</button>
+                <button className="btn btn-outline" onClick={() => openDoc('acta')}><Eye size={14} /> Ver acta</button>
               </div>
               <p style={{ fontSize: 12, color: 'var(--ink-400)', marginTop: 10 }}>
                 Presidente: {assembly.president_name || '—'} · Secretario: {assembly.secretary_name || '—'} ·
@@ -1188,6 +1314,7 @@ function AssemblyDetail({ tenantId, assembly, ctx, canWrite, tabHint, onClose, o
           <button className="btn btn-outline" onClick={onClose}>Cerrar</button>
         </div>
       </div>
+      {preview && <DocPreviewModal preview={preview} onClose={() => setPreview(null)} />}
     </div>
   );
 }

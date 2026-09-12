@@ -2845,7 +2845,14 @@ class CondoAssembly(models.Model):
     president_name = models.CharField(max_length=200, blank=True, default='')
     secretary_name = models.CharField(max_length=200, blank=True, default='')
     legal_snapshot = models.JSONField(default=dict, blank=True)
-    minute_body = models.TextField(blank=True, default='')
+    minute_body = models.TextField(
+        blank=True, default='',
+        help_text='Minuta de trabajo: notas del secretario durante la sesión.',
+    )
+    acta_body = models.TextField(
+        blank=True, default='',
+        help_text='Acta formal de la asamblea, para firma y protocolización.',
+    )
     minute_status = models.CharField(max_length=16, choices=MINUTE_STATUS_CHOICES, default='borrador')
     minute_signed_at = models.DateTimeField(null=True, blank=True)
     protocolized = models.BooleanField(default=False)

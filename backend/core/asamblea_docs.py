@@ -95,7 +95,13 @@ def generate_assembly_pdf(assembly, kind='convocatoria', generated_by='') -> byt
     logo = _logo_reader(tenant)
     homly_logo = _homly_logo_reader()
     is_minute = kind == 'minuta'
-    doc_title = 'ACTA DE ASAMBLEA' if is_minute else 'CONVOCATORIA A ASAMBLEA'
+    is_acta = kind == 'acta'
+    if is_acta:
+        doc_title = 'ACTA DE ASAMBLEA'
+    elif is_minute:
+        doc_title = 'MINUTA DE TRABAJO'
+    else:
+        doc_title = 'CONVOCATORIA A ASAMBLEA'
     kind_es = KIND_LABEL.get(assembly.kind, assembly.kind)
     page_w, page_h = A4
     margin_h = 1.9 * cm
@@ -253,9 +259,12 @@ def generate_assembly_pdf(assembly, kind='convocatoria', generated_by='') -> byt
     ))
     story.append(HRFlowable(width='100%', thickness=0.4, color=_hex(RULE), spaceAfter=12))
 
-    if is_minute:
-        story.extend(_minute_story(assembly, rules, tenant_name, st_body, st_h, st_meta_l, st_meta_v,
-                                   st_item, st_item_sub, st_small, st_sign, st_th, st_td, page_w, margin_h))
+    if is_acta or is_minute:
+        story.extend(_minute_story(
+            assembly, rules, tenant_name, st_body, st_h, st_meta_l, st_meta_v,
+            st_item, st_item_sub, st_small, st_sign, st_th, st_td, page_w, margin_h,
+            mode='acta' if is_acta else 'minuta',
+        ))
     else:
         story.extend(_notice_story(assembly, rules, tenant_name, st_body, st_h, st_meta_l, st_meta_v,
                                    st_item, st_item_sub, st_small, page_w, margin_h))
@@ -372,7 +381,7 @@ def _notice_story(assembly, rules, tenant_name, st_body, st_h, st_l, st_v, st_it
 
 
 def _minute_story(assembly, rules, tenant_name, st_body, st_h, st_l, st_v, st_item, st_item_sub,
-                  st_small, st_sign, st_th, st_td, page_w, margin_h):
+                  st_small, st_sign, st_th, st_td, page_w, margin_h, mode='acta'):
     from reportlab.lib.units import cm
     from reportlab.platypus import Paragraph, Table, TableStyle
 
@@ -400,6 +409,7 @@ def _minute_story(assembly, rules, tenant_name, st_body, st_h, st_l, st_v, st_it
         ('Quórum', 'Sí se reunió' if q.get('met') else 'Registrado en el sistema'),
         ('Estatus del acta', (assembly.minute_status or 'borrador').replace('_', ' ').title()),
         ('Notario', f'{assembly.notary_name} · {assembly.notary_folio}' if assembly.protocolized else ''),
+        ('Naturaleza', 'Minuta de trabajo (notas de la sesión)' if mode == 'minuta' else 'Acta formal de la asamblea'),
     ], st_l, st_v, page_w, margin_h))
 
     present = [
@@ -438,8 +448,20 @@ def _minute_story(assembly, rules, tenant_name, st_body, st_h, st_l, st_v, st_it
         story.append(Spacer_(10))
 
     story.extend(_agenda_block(assembly, st_h, st_item, st_item_sub, with_votes=True))
-    story.append(Paragraph('Acuerdos y constancias', st_h))
-    body = (assembly.minute_body or '').strip()
+    if mode == 'minuta':
+        story.append(Paragraph('Notas de la sesión (minuta)', st_h))
+        body = (assembly.minute_body or '').strip()
+        empty = (
+            'La minuta de trabajo aún no ha sido capturada. Este documento refleja '
+            'asistencia y votaciones registradas en el sistema.'
+        )
+    else:
+        story.append(Paragraph('Acuerdos y constancias del acta', st_h))
+        body = (assembly.acta_body or assembly.minute_body or '').strip()
+        empty = (
+            'El acta formal aún no ha sido redactada. Este documento refleja '
+            'únicamente los datos de instalación, asistencia y votaciones capturados.'
+        )
     if body:
         for para in body.split('\n'):
             if para.strip():
@@ -447,13 +469,9 @@ def _minute_story(assembly, rules, tenant_name, st_body, st_h, st_l, st_v, st_it
             else:
                 story.append(Spacer_(4))
     else:
-        story.append(Paragraph(
-            'El acta aún no ha sido redactada en el sistema. Este documento refleja '
-            'únicamente los datos de instalación, asistencia y votaciones capturados.',
-            st_body,
-        ))
+        story.append(Paragraph(empty, st_body))
 
-    story.append(Paragraph('Firmas', st_h))
+    story.append(Paragraph('Firmas' if mode == 'acta' else 'Rúbrica de quien elaboró la minuta', st_h))
     w = page_w - 2 * margin_h
     signs = Table(
         [[
@@ -472,10 +490,18 @@ def _minute_story(assembly, rules, tenant_name, st_body, st_h, st_l, st_v, st_it
     ]))
     story.append(signs)
     law = rules.get('law') or ''
-    story.append(Paragraph(
-        (f'Fundamento: {_esc(law)}. ' if law else '')
-        + 'Documento generado por Homly para su revisión, firma y, en su caso, protocolización ante notario. '
-          'No sustituye por sí mismo el instrumento notarial.',
-        st_small,
-    ))
+    if mode == 'minuta':
+        story.append(Paragraph(
+            (f'Fundamento: {_esc(law)}. ' if law else '')
+            + 'Esta minuta es el registro de trabajo de la sesión. El documento formal para firma '
+              'y protocolización es el acta de asamblea.',
+            st_small,
+        ))
+    else:
+        story.append(Paragraph(
+            (f'Fundamento: {_esc(law)}. ' if law else '')
+            + 'Documento generado por Homly para su revisión, firma y, en su caso, protocolización ante notario. '
+              'No sustituye por sí mismo el instrumento notarial.',
+            st_small,
+        ))
     return story

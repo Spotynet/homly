@@ -421,7 +421,7 @@ class CondoAssemblySerializer(serializers.ModelSerializer):
             'first_call_at', 'second_call_at', 'call_number',
             'notice_issued_at', 'notice_days', 'delivery_methods',
             'issued_by_name', 'president_name', 'secretary_name',
-            'legal_snapshot', 'minute_body', 'minute_status',
+            'legal_snapshot', 'minute_body', 'acta_body', 'minute_status',
             'minute_signed_at', 'protocolized', 'notary_name', 'notary_folio',
             'installed_at', 'closed_at', 'notes',
             'created_by_name', 'created_at', 'updated_at',
@@ -538,6 +538,21 @@ class CondoAssemblyViewSet(viewsets.ModelViewSet):
         fresh = self.get_queryset().filter(pk=assembly.pk).first() or assembly
         return CondoAssemblySerializer(fresh, context=self.get_serializer_context()).data
 
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        assembly = CondoAssembly.objects.filter(pk=serializer.instance.pk).first() or serializer.instance
+        return Response(self._full(assembly), status=status.HTTP_201_CREATED)
+
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+        return Response(self._full(serializer.instance))
+
     def perform_create(self, serializer):
         tenant = Tenant.objects.get(id=self.kwargs['tenant_id'])
         _require_condominio(tenant)
@@ -591,8 +606,8 @@ class CondoAssemblyViewSet(viewsets.ModelViewSet):
         _audit(self.request, 'delete', f'Asamblea eliminada: {desc}', tid, 'CondoAssembly', oid, desc)
 
     def _replace_agenda(self, assembly, items):
-        assembly.agenda.all().delete()
         tenant = assembly.tenant
+        keep_ids = []
         for i, raw in enumerate(items):
             if not isinstance(raw, dict):
                 continue
@@ -601,6 +616,8 @@ class CondoAssemblyViewSet(viewsets.ModelViewSet):
             source_id = raw.get('source_id') or None
             obj = resolve_source_item(tenant, kind, source_id) if kind != 'manual' else None
             label, meta = snapshot_source(kind, obj) if obj else (raw.get('source_label') or '', raw.get('source_meta') or {})
+            if not isinstance(meta, dict):
+                meta = {}
             if not title:
                 title = label
             if not title:
@@ -609,18 +626,30 @@ class CondoAssemblyViewSet(viewsets.ModelViewSet):
             apply_flag = bool(raw.get('apply_on_approve'))
             if kind in ('presupuesto', 'proyecto') and 'apply_on_approve' not in raw:
                 apply_flag = True
-            CondoAssemblyAgendaItem.objects.create(
-                assembly=assembly,
-                sort_order=raw.get('sort_order', i),
-                title=title[:240],
-                description=(raw.get('description') or '')[:4000],
-                vote_type=vote,
-                source_kind=kind,
-                source_id=obj.id if obj else None,
-                source_label=label[:240],
-                source_meta=meta if isinstance(meta, dict) else {},
-                apply_on_approve=apply_flag,
-            )
+            fields = {
+                'sort_order': raw.get('sort_order', i),
+                'title': title[:240],
+                'description': (raw.get('description') or '')[:4000],
+                'vote_type': vote,
+                'source_kind': kind,
+                'source_id': obj.id if obj else None,
+                'source_label': (label or '')[:240],
+                'source_meta': meta,
+                'apply_on_approve': apply_flag,
+            }
+            existing = None
+            raw_id = raw.get('id')
+            if raw_id:
+                existing = assembly.agenda.filter(id=raw_id).first()
+            if existing:
+                for key, val in fields.items():
+                    setattr(existing, key, val)
+                existing.save()
+                keep_ids.append(existing.id)
+            else:
+                created = CondoAssemblyAgendaItem.objects.create(assembly=assembly, **fields)
+                keep_ids.append(created.id)
+        assembly.agenda.exclude(id__in=keep_ids).delete()
 
     @action(detail=True, methods=['post'], url_path='publish-notice')
     def publish_notice(self, request, tenant_id, pk=None):
@@ -838,7 +867,7 @@ class CondoAssemblyViewSet(viewsets.ModelViewSet):
     def print_doc(self, request, tenant_id, pk=None):
         assembly = self.get_object()
         kind = (request.query_params.get('kind') or 'convocatoria').strip()
-        if kind not in ('convocatoria', 'minuta'):
+        if kind not in ('convocatoria', 'minuta', 'acta'):
             return Response({'detail': 'Tipo de documento inválido.'}, status=400)
         user = request_user(request)
         generated_by = (
@@ -855,7 +884,7 @@ class CondoAssemblyViewSet(viewsets.ModelViewSet):
             return Response({'detail': 'No se pudo generar el documento.'}, status=500)
         if not pdf_bytes:
             return Response({'detail': 'No se pudo generar el PDF en el servidor.'}, status=500)
-        label = 'Acta' if kind == 'minuta' else 'Convocatoria'
+        label = {'acta': 'Acta', 'minuta': 'Minuta'}.get(kind, 'Convocatoria')
         filename = f'{label}_{_safe_filename(assembly.title or str(assembly.year))}.pdf'
         response = HttpResponse(pdf_bytes, content_type='application/pdf')
         response['Content-Disposition'] = f'attachment; filename="{filename}"'
@@ -866,12 +895,15 @@ class CondoAssemblyViewSet(viewsets.ModelViewSet):
         assembly = self.get_object()
         if assembly.status in ('cancelada',):
             return Response({'detail': 'No se puede minutar una asamblea cancelada.'}, status=400)
-        assembly.minute_body = request.data.get('minute_body', assembly.minute_body) or ''
+        if 'minute_body' in request.data:
+            assembly.minute_body = request.data.get('minute_body') or ''
+        if 'acta_body' in request.data:
+            assembly.acta_body = request.data.get('acta_body') or ''
         if request.data.get('notary_name') is not None:
             assembly.notary_name = (request.data.get('notary_name') or '')[:200]
         if request.data.get('notary_folio') is not None:
             assembly.notary_folio = (request.data.get('notary_folio') or '')[:80]
-        assembly.save(update_fields=['minute_body', 'notary_name', 'notary_folio', 'updated_at'])
+        assembly.save(update_fields=['minute_body', 'acta_body', 'notary_name', 'notary_folio', 'updated_at'])
         return Response(self._full(assembly))
 
     @action(detail=True, methods=['post'], url_path='sign-minute')
@@ -879,8 +911,8 @@ class CondoAssemblyViewSet(viewsets.ModelViewSet):
         assembly = self.get_object()
         if assembly.status not in ('en_curso', 'cerrada'):
             return Response({'detail': 'La minuta se firma al concluir la reunión.'}, status=400)
-        if not (assembly.minute_body or '').strip():
-            return Response({'detail': 'Redacta el acta antes de firmarla.'}, status=400)
+        if not (assembly.acta_body or assembly.minute_body or '').strip():
+            return Response({'detail': 'Redacta el acta formal antes de firmarla.'}, status=400)
         if not assembly.president_name or not assembly.secretary_name:
             return Response({'detail': 'Indica presidente y secretario de debates.'}, status=400)
         assembly.minute_status = 'firmada'
