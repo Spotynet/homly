@@ -19,7 +19,7 @@ import {
   // Tesorero
   Receipt, DollarSign, Wallet, TrendingDown, FileText, Send,
   // Contador
-  ShoppingBag, BookOpen, Lock, ClipboardCheck,
+  ShoppingBag, BookOpen, Lock, ClipboardCheck, Vote,
   // Residente
   Home, Calendar, Bell,
   // Comunes
@@ -152,6 +152,42 @@ const adminChapters = [
         subtitle: 'Quién firma antes de cerrar',
         body:
           'Activa el flujo de aprobación si quieres que el tesorero y/o presidente firmen antes de cerrar un mes contable. Si lo dejas inactivo, el admin puede cerrar directamente.',
+      },
+    ],
+  },
+  {
+    id: 'admin-asambleas',
+    kind: 'modal',
+    icon: Vote,
+    color: '#0d9488',
+    bg: '#ccfbf1',
+    title: 'Asambleas del condominio',
+    subtitle: 'Convocatoria, quórum, votación y acta',
+    length: '4 pasos',
+    steps: [
+      {
+        icon: Vote, color: '#0d9488', bg: '#ccfbf1',
+        title: 'Convocatoria con plazo legal',
+        subtitle: 'Según el estado del tenant',
+        body:
+          'En Asambleas crea una ordinaria o extraordinaria. Homly aplica los días de anticipación y el quórum de la entidad configurada en el condominio. Completa lugar, orden del día y emite la convocatoria; se notifica a la comunidad.',
+        route: '/app/asambleas',
+      },
+      {
+        icon: Users, color: '#0d9488', bg: '#ccfbf1',
+        title: 'Reunión y quórum',
+        subtitle: 'Primera y segunda convocatoria',
+        body:
+          'Pasa lista, registra cartas poder e instala la mesa solo si hay quórum. Si no se reúne, abre la segunda convocatoria con el receso que marca la normativa.',
+        route: '/app/asambleas',
+      },
+      {
+        icon: FileText, color: '#0d9488', bg: '#ccfbf1',
+        title: 'Minuta y protocolización',
+        subtitle: 'Acuerdos y firmas',
+        body:
+          'Registra votaciones (simple, calificada o unanimidad), redacta el acta, fírmala con presidente y secretario y, si el acuerdo lo requiere, márcala como protocolizada ante notario.',
+        route: '/app/asambleas',
       },
     ],
   },

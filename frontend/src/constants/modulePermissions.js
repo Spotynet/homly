@@ -11,12 +11,12 @@
  * array format (which acted as an explicit allowlist).
  */
 export const ROLE_BASE_MODULES = {
-  admin:     ['dashboard', 'reservas', 'cobranza', 'gastos', 'caja_chica', 'estado_cuenta', 'plan_pagos', 'cierre_periodo', 'planeacion', 'notificaciones', 'onboarding', 'mi_membresia', 'config', 'blog'],
-  tesorero:  ['dashboard', 'reservas', 'cobranza', 'gastos', 'caja_chica', 'estado_cuenta', 'plan_pagos', 'cierre_periodo', 'planeacion', 'notificaciones', 'onboarding', 'blog'],
-  contador:  ['dashboard', 'reservas', 'cobranza', 'gastos', 'caja_chica', 'estado_cuenta', 'plan_pagos', 'cierre_periodo', 'planeacion', 'notificaciones', 'onboarding', 'blog'],
-  auditor:   ['dashboard', 'cobranza', 'reservas', 'gastos', 'caja_chica', 'estado_cuenta', 'plan_pagos', 'cierre_periodo', 'planeacion', 'notificaciones', 'onboarding', 'blog'],
+  admin:     ['dashboard', 'reservas', 'cobranza', 'gastos', 'caja_chica', 'estado_cuenta', 'plan_pagos', 'cierre_periodo', 'planeacion', 'asambleas', 'notificaciones', 'onboarding', 'mi_membresia', 'config', 'blog'],
+  tesorero:  ['dashboard', 'reservas', 'cobranza', 'gastos', 'caja_chica', 'estado_cuenta', 'plan_pagos', 'cierre_periodo', 'planeacion', 'asambleas', 'notificaciones', 'onboarding', 'blog'],
+  contador:  ['dashboard', 'reservas', 'cobranza', 'gastos', 'caja_chica', 'estado_cuenta', 'plan_pagos', 'cierre_periodo', 'planeacion', 'asambleas', 'notificaciones', 'onboarding', 'blog'],
+  auditor:   ['dashboard', 'cobranza', 'reservas', 'gastos', 'caja_chica', 'estado_cuenta', 'plan_pagos', 'cierre_periodo', 'planeacion', 'asambleas', 'notificaciones', 'onboarding', 'blog'],
   vigilante: ['dashboard', 'reservas', 'notificaciones', 'blog'],
-  vecino:    ['my_unit', 'reservas', 'estado_cuenta', 'plan_pagos', 'notificaciones', 'onboarding', 'blog', 'enviar_pago'],
+  vecino:    ['my_unit', 'reservas', 'estado_cuenta', 'plan_pagos', 'notificaciones', 'onboarding', 'blog', 'enviar_pago', 'asambleas'],
 };
 
 /** Módulos del espacio de rentas (inmobiliaria). Independiente del condominio. */

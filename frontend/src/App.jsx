@@ -43,6 +43,7 @@ import MiMembresia from './pages/MiMembresia';
 import Blog from './pages/Blog';
 import EnviarPago from './pages/EnviarPago';
 import Planeacion from './pages/Planeacion';
+import Asambleas from './pages/Asambleas';
 
 const LOADER = (
   <div className="flex items-center justify-center h-screen bg-white">
@@ -157,6 +158,7 @@ function AppRoutes() {
         <Route path="notificaciones" element={<RoleRoute module="notificaciones"><Notificaciones /></RoleRoute>} />
         <Route path="cierre-periodo" element={<RoleRoute module="cierre_periodo" workspace="condominio"><CierrePeriodo /></RoleRoute>} />
         <Route path="planeacion"    element={<RoleRoute module="planeacion" workspace="condominio"><Planeacion /></RoleRoute>} />
+        <Route path="asambleas"     element={<RoleRoute module="asambleas" workspace="condominio"><Asambleas /></RoleRoute>} />
         <Route path="plan-pagos"    element={<RoleRoute module="plan_pagos" workspace="condominio"><PlanPagos /></RoleRoute>} />
         <Route path="onboarding"    element={<RoleRoute module="onboarding" workspace="condominio"><Onboarding /></RoleRoute>} />
         <Route path="mi-membresia"  element={<RoleRoute module="mi_membresia"><MiMembresia /></RoleRoute>} />

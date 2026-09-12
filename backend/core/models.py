@@ -1100,6 +1100,10 @@ class Notification(models.Model):
         ('rental_airbnb_imported',     'Airbnb importado'),
         ('rental_airbnb_synced',       'Airbnb sincronizado'),
         ('rental_airbnb_error',        'Error de Airbnb'),
+        # Asambleas
+        ('assembly_notice',       'Convocatoria de asamblea'),
+        ('assembly_started',      'Asamblea en curso'),
+        ('assembly_minute',       'Minuta de asamblea'),
         # General
         ('general',               'Información General'),
     ]
@@ -2795,6 +2799,203 @@ class CondoProjectFile(models.Model):
 
     class Meta:
         db_table = 'condo_project_files'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return self.original_name or str(self.id)
+
+
+# ═══════════════════════════════════════════════════════════
+#  ASAMBLEAS DEL CONDOMINIO
+# ═══════════════════════════════════════════════════════════
+
+class CondoAssembly(models.Model):
+    """Proceso completo de una asamblea: convocatoria, reunión, minuta e historial."""
+    KIND_CHOICES = [
+        ('ordinaria', 'Ordinaria'),
+        ('extraordinaria', 'Extraordinaria'),
+    ]
+    STATUS_CHOICES = [
+        ('borrador', 'Borrador'),
+        ('convocada', 'Convocada'),
+        ('en_curso', 'En curso'),
+        ('cerrada', 'Cerrada'),
+        ('cancelada', 'Cancelada'),
+    ]
+    MINUTE_STATUS_CHOICES = [
+        ('borrador', 'Borrador'),
+        ('firmada', 'Firmada'),
+        ('protocolizada', 'Protocolizada'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='condo_assemblies')
+    title = models.CharField(max_length=240)
+    kind = models.CharField(max_length=16, choices=KIND_CHOICES, default='ordinaria', db_index=True)
+    year = models.PositiveSmallIntegerField(db_index=True)
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default='borrador', db_index=True)
+    location = models.CharField(max_length=300, blank=True, default='')
+    first_call_at = models.DateTimeField(null=True, blank=True)
+    second_call_at = models.DateTimeField(null=True, blank=True)
+    call_number = models.PositiveSmallIntegerField(default=1)
+    notice_issued_at = models.DateTimeField(null=True, blank=True)
+    notice_days = models.PositiveSmallIntegerField(default=10)
+    delivery_methods = models.JSONField(default=list, blank=True)
+    issued_by_name = models.CharField(max_length=200, blank=True, default='')
+    president_name = models.CharField(max_length=200, blank=True, default='')
+    secretary_name = models.CharField(max_length=200, blank=True, default='')
+    legal_snapshot = models.JSONField(default=dict, blank=True)
+    minute_body = models.TextField(blank=True, default='')
+    minute_status = models.CharField(max_length=16, choices=MINUTE_STATUS_CHOICES, default='borrador')
+    minute_signed_at = models.DateTimeField(null=True, blank=True)
+    protocolized = models.BooleanField(default=False)
+    notary_name = models.CharField(max_length=200, blank=True, default='')
+    notary_folio = models.CharField(max_length=80, blank=True, default='')
+    installed_at = models.DateTimeField(null=True, blank=True)
+    closed_at = models.DateTimeField(null=True, blank=True)
+    notes = models.TextField(blank=True, default='')
+    created_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='condo_assemblies_created',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'condo_assemblies'
+        ordering = ['-first_call_at', '-created_at']
+        indexes = [
+            models.Index(fields=['tenant', 'status']),
+            models.Index(fields=['tenant', 'year']),
+        ]
+
+    def __str__(self):
+        return self.title
+
+
+class CondoAssemblyAgendaItem(models.Model):
+    VOTE_CHOICES = [
+        ('informativo', 'Informativo'),
+        ('simple', 'Mayoría simple'),
+        ('calificada', 'Mayoría calificada'),
+        ('unanimidad', 'Unanimidad'),
+    ]
+    RESULT_CHOICES = [
+        ('pendiente', 'Pendiente'),
+        ('aprobado', 'Aprobado'),
+        ('rechazado', 'Rechazado'),
+        ('diferido', 'Diferido'),
+    ]
+    SOURCE_CHOICES = [
+        ('manual', 'Manual'),
+        ('presupuesto', 'Presupuesto (Planeación)'),
+        ('proyecto', 'Proyecto (Planeación)'),
+        ('cierre', 'Cierre de período'),
+        ('cuota', 'Cuota / cargo extra'),
+        ('organizacion', 'Comité / cargo'),
+    ]
+    APPLY_CHOICES = [
+        ('pendiente', 'Pendiente'),
+        ('aplicado', 'Aplicado en el módulo'),
+        ('omitido', 'Solo constancia'),
+        ('error', 'No se pudo aplicar'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    assembly = models.ForeignKey(CondoAssembly, on_delete=models.CASCADE, related_name='agenda')
+    sort_order = models.PositiveSmallIntegerField(default=0)
+    title = models.CharField(max_length=240)
+    description = models.TextField(blank=True, default='')
+    vote_type = models.CharField(max_length=16, choices=VOTE_CHOICES, default='simple')
+    result = models.CharField(max_length=16, choices=RESULT_CHOICES, default='pendiente')
+    votes_for = models.PositiveIntegerField(default=0)
+    votes_against = models.PositiveIntegerField(default=0)
+    votes_abstain = models.PositiveIntegerField(default=0)
+    notes = models.CharField(max_length=400, blank=True, default='')
+    source_kind = models.CharField(max_length=16, choices=SOURCE_CHOICES, default='manual')
+    source_id = models.UUIDField(null=True, blank=True)
+    source_label = models.CharField(max_length=240, blank=True, default='')
+    source_meta = models.JSONField(default=dict, blank=True)
+    apply_on_approve = models.BooleanField(
+        default=False,
+        help_text='Si el punto se aprueba en asamblea, actualizar el módulo origen (presupuesto/proyecto).',
+    )
+    applied_status = models.CharField(max_length=16, choices=APPLY_CHOICES, default='pendiente')
+    applied_at = models.DateTimeField(null=True, blank=True)
+    applied_notes = models.CharField(max_length=400, blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'condo_assembly_agenda'
+        ordering = ['sort_order', 'created_at']
+
+    def __str__(self):
+        return self.title
+
+
+class CondoAssemblyAttendee(models.Model):
+    CAPACITY_CHOICES = [
+        ('propietario', 'Propietario'),
+        ('representante', 'Representante / carta poder'),
+        ('invitado', 'Invitado'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    assembly = models.ForeignKey(CondoAssembly, on_delete=models.CASCADE, related_name='attendees')
+    unit = models.ForeignKey(
+        Unit, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='assembly_attendances',
+    )
+    attendee_name = models.CharField(max_length=240, blank=True, default='')
+    capacity = models.CharField(max_length=16, choices=CAPACITY_CHOICES, default='propietario')
+    proxy_name = models.CharField(max_length=200, blank=True, default='')
+    present = models.BooleanField(default=False)
+    vote_weight = models.DecimalField(max_digits=8, decimal_places=4, default=1)
+    signed_in_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'condo_assembly_attendees'
+        ordering = ['unit__unit_id_code', 'attendee_name']
+        indexes = [
+            models.Index(fields=['assembly', 'present']),
+        ]
+
+    def __str__(self):
+        return self.attendee_name or str(self.id)
+
+
+def condo_assembly_file_path(instance, filename):
+    ext = ''
+    if filename and '.' in filename:
+        ext = '.' + filename.rsplit('.', 1)[-1].lower()[:8]
+    return f'condo_assembly_files/{instance.assembly_id}/{uuid.uuid4().hex}{ext}'
+
+
+class CondoAssemblyFile(models.Model):
+    KIND_CHOICES = [
+        ('convocatoria', 'Convocatoria'),
+        ('poder', 'Carta poder'),
+        ('lista', 'Lista de asistencia'),
+        ('minuta', 'Minuta / acta'),
+        ('evidencia', 'Evidencia de notificación'),
+        ('otro', 'Otro'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    assembly = models.ForeignKey(CondoAssembly, on_delete=models.CASCADE, related_name='files')
+    kind = models.CharField(max_length=16, choices=KIND_CHOICES, default='otro')
+    original_name = models.CharField(max_length=240, blank=True, default='')
+    notes = models.CharField(max_length=400, blank=True, default='')
+    file = models.FileField(upload_to=condo_assembly_file_path)
+    uploaded_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='condo_assembly_files_uploaded',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'condo_assembly_files'
         ordering = ['-created_at']
 
     def __str__(self):

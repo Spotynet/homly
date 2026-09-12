@@ -11,7 +11,7 @@ import {
   Home, Globe, FileText, ShoppingBag, Receipt, Settings,
   Users, Building, Shield, LogOut, Menu, X, Calendar,
   ChevronDown, Check, Building2, Bell, CheckCheck, Activity, Lock, TrendingDown,
-  Sparkles, CreditCard, DollarSign, Target, Newspaper, Send, HelpCircle, ClipboardList, ClipboardCheck,
+  Sparkles, CreditCard, DollarSign, Target, Newspaper, Send, HelpCircle, ClipboardList, ClipboardCheck, Vote,
 } from 'lucide-react';
 
 const NAV_ITEMS = {
@@ -27,6 +27,7 @@ const NAV_ITEMS = {
       { path: '/app/dashboard',      icon: Home,      label: 'Dashboard'      },
       { path: '/app/reservas',       icon: Calendar,  label: 'Reservas'       },
       { path: '/app/blog',           icon: Newspaper, label: 'Comunicación'   },
+      { path: '/app/asambleas',      icon: Vote,      label: 'Asambleas'      },
       { path: '/app/notificaciones', icon: Bell,      label: 'Notificaciones' },
       { path: '/app/onboarding',     icon: Sparkles,  label: 'Guías de uso'   },
     ]},
@@ -50,6 +51,7 @@ const NAV_ITEMS = {
       { path: '/app/dashboard',      icon: Home,      label: 'Dashboard'      },
       { path: '/app/reservas',       icon: Calendar,  label: 'Reservas'       },
       { path: '/app/blog',           icon: Newspaper, label: 'Comunicación'   },
+      { path: '/app/asambleas',      icon: Vote,      label: 'Asambleas'      },
       { path: '/app/notificaciones', icon: Bell,      label: 'Notificaciones' },
       { path: '/app/onboarding',     icon: Sparkles,  label: 'Guías de uso'   },
     ]},
@@ -73,6 +75,7 @@ const NAV_ITEMS = {
       { path: '/app/dashboard',      icon: Home,      label: 'Dashboard'      },
       { path: '/app/reservas',       icon: Calendar,  label: 'Reservas'       },
       { path: '/app/blog',           icon: Newspaper, label: 'Comunicación'   },
+      { path: '/app/asambleas',      icon: Vote,      label: 'Asambleas'      },
       { path: '/app/notificaciones', icon: Bell,      label: 'Notificaciones' },
       { path: '/app/onboarding',     icon: Sparkles,  label: 'Guías de uso'   },
     ]},
@@ -92,6 +95,7 @@ const NAV_ITEMS = {
       { path: '/app/dashboard',      icon: Home,      label: 'Dashboard'      },
       { path: '/app/reservas',       icon: Calendar,  label: 'Reservas'       },
       { path: '/app/blog',           icon: Newspaper, label: 'Comunicación'   },
+      { path: '/app/asambleas',      icon: Vote,      label: 'Asambleas'      },
       { path: '/app/notificaciones', icon: Bell,      label: 'Notificaciones' },
       { path: '/app/onboarding',     icon: Sparkles,  label: 'Guías de uso'   },
     ]},
@@ -111,6 +115,7 @@ const NAV_ITEMS = {
       { path: '/app/dashboard',      icon: Home,      label: 'Dashboard'      },
       { path: '/app/reservas',       icon: Calendar,  label: 'Reservas'       },
       { path: '/app/blog',           icon: Newspaper, label: 'Comunicación'   },
+      { path: '/app/asambleas',      icon: Vote,      label: 'Asambleas'      },
       { path: '/app/notificaciones', icon: Bell,      label: 'Notificaciones' },
       { path: '/app/onboarding',     icon: Sparkles,  label: 'Guías de uso'   },
     ]},
@@ -130,6 +135,7 @@ const NAV_ITEMS = {
       { path: '/app/dashboard',      icon: Home,      label: 'Dashboard'      },
       { path: '/app/reservas',       icon: Calendar,  label: 'Reservas'       },
       { path: '/app/blog',           icon: Newspaper, label: 'Comunicación'   },
+      { path: '/app/asambleas',      icon: Vote,      label: 'Asambleas'      },
       { path: '/app/notificaciones', icon: Bell,      label: 'Notificaciones' },
     ]},
   ],
@@ -139,6 +145,7 @@ const NAV_ITEMS = {
       { path: '/app/my-unit',        icon: Home,      label: 'Mi Unidad'      },
       { path: '/app/reservas',       icon: Calendar,  label: 'Reservas'       },
       { path: '/app/blog',           icon: Newspaper, label: 'Comunicación'   },
+      { path: '/app/asambleas',      icon: Vote,      label: 'Asambleas'      },
       { path: '/app/notificaciones', icon: Bell,      label: 'Notificaciones' },
       { path: '/app/onboarding',     icon: Sparkles,  label: 'Guías de uso'   },
     ]},
@@ -224,6 +231,7 @@ const PATH_TO_MODULE = {
   '/app/plan-pagos':      'plan_pagos',
   '/app/cierre-periodo':  'cierre_periodo',
   '/app/planeacion':      'planeacion',
+  '/app/asambleas':       'asambleas',
   '/app/notificaciones':  'notificaciones',
   '/app/config':          'config',
   '/app/my-unit':         'my_unit',
@@ -253,6 +261,7 @@ const PAGE_TITLES = {
   'plan-pagos': 'Plan de Pagos',
   'cierre-periodo': 'Cierre de Período',
   planeacion: 'Planeación',
+  asambleas: 'Asambleas',
   config: 'Configuración',
   units: 'Unidades',
   users: 'Usuarios',
@@ -493,6 +502,9 @@ const NOTIF_MODULE_MAP = {
   rental_airbnb_imported:    'rentas_propiedades',
   rental_airbnb_synced:      'rentas_propiedades',
   rental_airbnb_error:       'rentas_propiedades',
+  assembly_notice:           'asambleas',
+  assembly_started:          'asambleas',
+  assembly_minute:           'asambleas',
 };
 
 // ── Notification Bell + Dropdown ────────────────────────────────────────────
@@ -592,6 +604,7 @@ function NotificationBell({ tenantId, role, tenantModulePerms, activeProfile }) 
     else if ((n.notif_type || '').startsWith('rental_contract')) navigate('/app/rentas/contratos');
     else if ((n.notif_type || '').startsWith('rental_charge') || (n.notif_type || '').startsWith('rental_payment')) navigate('/app/rentas/cobranza');
     else if ((n.notif_type || '').startsWith('rental_')) navigate('/app/rentas/propiedades');
+    else if ((n.notif_type || '').startsWith('assembly_')) navigate('/app/asambleas');
   };
 
   const TYPE_ICON = {
@@ -611,6 +624,9 @@ function NotificationBell({ tenantId, role, tenantModulePerms, activeProfile }) 
     plan_cancelled:        '🚫',
     plan_installment_paid: '✅',
     // Períodos
+    assembly_notice:       '📣',
+    assembly_started:      '🗳️',
+    assembly_minute:       '📝',
     period_closed:         '🔒',
     period_reopened:       '🔓',
     rental_property_created:   '🏠',

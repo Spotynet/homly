@@ -1306,6 +1306,9 @@ NOTIF_META: dict[str, tuple[str, str, str]] = {
     'rental_airbnb_imported':     ('🔗', 'Airbnb importado',         '#1D4ED8'),
     'rental_airbnb_synced':       ('🔄', 'Airbnb sincronizado',      '#1D4ED8'),
     'rental_airbnb_error':        ('⚠️', 'Error de Airbnb',          '#EF4444'),
+    'assembly_notice':            ('📣', 'Convocatoria',             '#1E594F'),
+    'assembly_started':           ('🗳️', 'Asamblea en curso',        '#3B82F6'),
+    'assembly_minute':            ('📝', 'Minuta de asamblea',       '#8B5CF6'),
 }
 
 

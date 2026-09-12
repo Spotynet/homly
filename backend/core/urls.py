@@ -9,6 +9,7 @@ from . import airbnb_views
 from . import rental_crm_views
 from . import rental_rentroll
 from . import planeacion
+from . import asambleas
 
 router = DefaultRouter()
 router.register(r'tenants', views.TenantViewSet, basename='tenants')
@@ -61,6 +62,7 @@ tenant_router.register(r'airbnb-listings', airbnb_views.AirbnbListingViewSet, ba
 tenant_router.register(r'rental-leads', rental_crm_views.RentalLeadViewSet, basename='rental-leads')
 tenant_router.register(r'condo-budgets', planeacion.CondoBudgetViewSet, basename='condo-budgets')
 tenant_router.register(r'condo-projects', planeacion.CondoProjectViewSet, basename='condo-projects')
+tenant_router.register(r'condo-assemblies', asambleas.CondoAssemblyViewSet, basename='condo-assemblies')
 
 urlpatterns = [
     # Auth
@@ -117,6 +119,8 @@ urlpatterns = [
          rental_rentroll.RentalRentRollView.as_view(), name='rental-rentroll'),
     path('tenants/<uuid:tenant_id>/planeacion-context/',
          planeacion.PlaneacionContextView.as_view(), name='planeacion-context'),
+    path('tenants/<uuid:tenant_id>/asambleas-context/',
+         asambleas.AsambleaContextView.as_view(), name='asambleas-context'),
 
     # CRM Dashboard (aggregate stats)
     path('crm/dashboard/', views.CRMDashboardView.as_view(), name='crm-dashboard'),

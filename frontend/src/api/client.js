@@ -357,6 +357,31 @@ export const bankAPI = {
 };
 
 // ─── Assembly ───────────────────────────────────
+export const asambleasAPI = {
+  context:       (tenantId) => api.get(`/tenants/${tenantId}/asambleas-context/`),
+  list:          (tenantId, params) => api.get(`/tenants/${tenantId}/condo-assemblies/`, { params }),
+  get:           (tenantId, id) => api.get(`/tenants/${tenantId}/condo-assemblies/${id}/`),
+  create:        (tenantId, data) => api.post(`/tenants/${tenantId}/condo-assemblies/`, data),
+  update:        (tenantId, id, data) => api.patch(`/tenants/${tenantId}/condo-assemblies/${id}/`, data),
+  delete:        (tenantId, id) => api.delete(`/tenants/${tenantId}/condo-assemblies/${id}/`),
+  publish:       (tenantId, id) => api.post(`/tenants/${tenantId}/condo-assemblies/${id}/publish-notice/`),
+  seedAttendees: (tenantId, id) => api.post(`/tenants/${tenantId}/condo-assemblies/${id}/seed-attendees/`),
+  addAttendee:   (tenantId, id, data) => api.post(`/tenants/${tenantId}/condo-assemblies/${id}/attendees/`, data),
+  patchAttendee: (tenantId, id, attendeeId, data) => api.patch(`/tenants/${tenantId}/condo-assemblies/${id}/attendees/${attendeeId}/`, data),
+  deleteAttendee:(tenantId, id, attendeeId) => api.delete(`/tenants/${tenantId}/condo-assemblies/${id}/attendees/${attendeeId}/`),
+  secondCall:    (tenantId, id) => api.post(`/tenants/${tenantId}/condo-assemblies/${id}/second-call/`),
+  install:       (tenantId, id, data) => api.post(`/tenants/${tenantId}/condo-assemblies/${id}/install/`, data || {}),
+  vote:          (tenantId, id, itemId, data) => api.post(`/tenants/${tenantId}/condo-assemblies/${id}/agenda/${itemId}/vote/`, data),
+  applyItem:     (tenantId, id, itemId) => api.post(`/tenants/${tenantId}/condo-assemblies/${id}/agenda/${itemId}/apply/`),
+  saveMinute:    (tenantId, id, data) => api.post(`/tenants/${tenantId}/condo-assemblies/${id}/save-minute/`, data),
+  signMinute:    (tenantId, id) => api.post(`/tenants/${tenantId}/condo-assemblies/${id}/sign-minute/`),
+  protocolize:   (tenantId, id, data) => api.post(`/tenants/${tenantId}/condo-assemblies/${id}/protocolize/`, data || {}),
+  close:         (tenantId, id) => api.post(`/tenants/${tenantId}/condo-assemblies/${id}/close/`),
+  cancel:        (tenantId, id, data) => api.post(`/tenants/${tenantId}/condo-assemblies/${id}/cancel/`, data || {}),
+  uploadFile:    (tenantId, id, formData) => api.post(`/tenants/${tenantId}/condo-assemblies/${id}/files/`, formData),
+  deleteFile:    (tenantId, id, fileId) => api.delete(`/tenants/${tenantId}/condo-assemblies/${id}/files/${fileId}/`),
+};
+
 export const assemblyAPI = {
   positions: (tenantId) => api.get(`/tenants/${tenantId}/assembly-positions/`),
   createPosition: (tenantId, data) => api.post(`/tenants/${tenantId}/assembly-positions/`, data),

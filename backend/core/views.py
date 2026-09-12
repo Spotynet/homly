@@ -106,6 +106,9 @@ _NOTIF_MODULE_MAP = {
     'rental_airbnb_imported':     'rentas_propiedades',
     'rental_airbnb_synced':       'rentas_propiedades',
     'rental_airbnb_error':        'rentas_propiedades',
+    'assembly_notice':            'asambleas',
+    'assembly_started':           'asambleas',
+    'assembly_minute':            'asambleas',
 }
 
 
