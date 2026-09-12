@@ -1025,6 +1025,19 @@ tr:hover td { background: rgba(59,185,144,0.02); }
   border: 0;
   background: #fff;
 }
+.asm-meet-point { padding: 12px; margin-bottom: 10px; }
+.asm-meet-point-head { margin-bottom: 8px; }
+.asm-minuta-compile {
+  margin: 0 0 10px;
+  padding: 12px;
+  background: var(--sand-50);
+  border: 1px solid var(--sand-100);
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  color: var(--ink-600);
+}
 .asm-combo { display: grid; gap: 6px; }
 .asm-agenda-head {
   display: flex;

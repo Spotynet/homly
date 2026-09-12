@@ -328,6 +328,8 @@ def _agenda_block(assembly, st_h, st_item, st_item_sub, with_votes=False):
         ]
         if item.description:
             block.append(Paragraph(_esc(item.description), st_item_sub))
+        if with_votes and item.notes:
+            block.append(Paragraph(_esc(f'Notas de minuta: {item.notes}'), st_item_sub))
         if with_votes and item.applied_notes:
             block.append(Paragraph(_esc(item.applied_notes), st_item_sub))
         parts.append(KeepTogether(block + [Spacer_(4)]))

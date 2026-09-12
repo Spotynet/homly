@@ -474,7 +474,6 @@ function SuggestField({ value, onChange, disabled, placeholder, options, pickLab
 }
 
 function AgendaHelpModal({ rules, onClose }) {
-  const qSimple = rules?.simple_majority_pct || 50;
   const qQual = rules?.qualified_majority_pct || 75;
   return (
     <div className="modal-bg open" onClick={onClose}>
@@ -488,10 +487,10 @@ function AgendaHelpModal({ rules, onClose }) {
           <p>Es el asunto que se leerá en la convocatoria y en el acta. Puedes redactarlo a mano o dejar el texto que Homly propone al elegir un presupuesto, proyecto u otro registro.</p>
           <h4>Tipo de votación</h4>
           <ul>
-            <li><strong>Informativo.</strong> Se da cuenta a la asamblea; no decide un acuerdo. Útil para informes o lectura de estados.</li>
-            <li><strong>Mayoría simple.</strong> Se aprueba si hay más votos a favor que en contra (umbral de referencia {qSimple}%).</li>
-            <li><strong>Mayoría calificada.</strong> Requiere un porcentaje alto de votos a favor (referencia {qQual}%, según la normativa de {rules?.jurisdiction || 'tu entidad'}). Úsala para presupuesto, obras mayores o reformas.</li>
-            <li><strong>Unanimidad.</strong> Solo se aprueba si nadie vota en contra y hay al menos un voto a favor.</li>
+            <li><strong>Informativo.</strong> Se da cuenta a la asamblea; no hay votación.</li>
+            <li><strong>Mayoría simple.</strong> Se aprueba con el 50% + 1 de los <em>presentes</em> (si hay 10, se necesitan 6 votos a favor). No confundir con el quórum para instalar la reunión.</li>
+            <li><strong>Mayoría calificada.</strong> Se aprueba con el {qQual}% de los <em>presentes</em> (presupuesto, obras mayores, reformas). Ese {qQual}% no es el quórum de instalación.</li>
+            <li><strong>Unanimidad.</strong> Todos los presentes deben votar a favor y nadie en contra.</li>
           </ul>
           <h4>Punto manual o desde Homly</h4>
           <p><strong>Punto manual</strong> es texto libre: queda solo en la convocatoria y el acta.</p>
@@ -897,6 +896,139 @@ function AssemblyForm({ ctx, canWrite, onClose, onSaved, initial }) {
   );
 }
 
+function presentVoters(assembly) {
+  return (assembly.attendees || []).filter(a => a.present && a.capacity !== 'invitado');
+}
+
+function voteNeed(item, q) {
+  const n = q?.vote?.present ?? q?.present ?? 0;
+  if (item.vote_type === 'informativo') return { need: 0, label: 'Sin votación — punto informativo' };
+  if (item.vote_type === 'unanimidad') return { need: n, label: `Unanimidad: ${n} a favor y 0 en contra` };
+  if (item.vote_type === 'calificada') {
+    const need = q?.vote?.qualified_need ?? 0;
+    return { need, label: `${q?.qualified_majority_pct || 75}% de los presentes (${need} votos a favor)` };
+  }
+  const need = q?.vote?.simple_need ?? (n ? Math.floor(n / 2) + 1 : 0);
+  return { need, label: `50% + 1 de los presentes (${need} votos a favor)` };
+}
+
+function compileMinuta(assembly) {
+  return (assembly.agenda || []).map((item, i) => {
+    const voteLine = item.vote_type === 'informativo'
+      ? 'Punto informativo (sin votación).'
+      : `Votos: a favor ${item.votes_for || 0}, en contra ${item.votes_against || 0}, abstenciones ${item.votes_abstain || 0}.`;
+    return [
+      `${i + 1}. ${item.title}`,
+      `   ${VOTE[item.vote_type]} · ${RESULT[item.result] || item.result}`,
+      `   ${voteLine}`,
+      item.notes ? `   Notas: ${item.notes}` : '',
+    ].filter(Boolean).join('\n');
+  }).join('\n\n');
+}
+
+function VoteModal({ assembly, item, q, canWrite, onClose, onSave }) {
+  const voters = presentVoters(assembly);
+  const prev = {};
+  (item.vote_detail || []).forEach(b => { prev[b.attendee_id] = b.choice; });
+  const [choices, setChoices] = useState(() => {
+    const init = {};
+    voters.forEach(a => { init[a.id] = prev[a.id] || ''; });
+    return init;
+  });
+  const tally = voters.reduce((acc, a) => {
+    const c = choices[a.id];
+    if (c === 'for') acc.for += 1;
+    else if (c === 'against') acc.against += 1;
+    else if (c === 'abstain') acc.abstain += 1;
+    return acc;
+  }, { for: 0, against: 0, abstain: 0 });
+  const need = voteNeed(item, q);
+  const pending = voters.filter(a => !choices[a.id]).length;
+  const wouldPass = item.vote_type === 'unanimidad'
+    ? tally.against === 0 && tally.for >= need.need && pending === 0
+    : tally.for >= need.need && need.need > 0;
+  const setAll = (choice) => {
+    const next = {};
+    voters.forEach(a => { next[a.id] = choice; });
+    setChoices(next);
+  };
+
+  return (
+    <div className="modal-bg open" onClick={e => { e.stopPropagation(); onClose(); }}>
+      <div className="modal xl" onClick={e => e.stopPropagation()}>
+        <div className="modal-head">
+          <h3>Votación · {item.title}</h3>
+          <button className="modal-close" onClick={onClose}><X size={16} /></button>
+        </div>
+        <div className="modal-body">
+          <p className="asm-agenda-hint">
+            {VOTE[item.vote_type]} · {need.label}. Se vota con los {voters.length} asistentes marcados como presentes.
+          </p>
+          {voters.length === 0 ? (
+            <p>No hay presentes. Toma asistencia antes de votar.</p>
+          ) : (
+            <>
+              <div className="asm-rules-grid" style={{ marginBottom: 10 }}>
+                <div><span style={{ fontSize: 11, color: 'var(--ink-400)' }}>A favor</span><strong>{tally.for}</strong></div>
+                <div><span style={{ fontSize: 11, color: 'var(--ink-400)' }}>En contra</span><strong>{tally.against}</strong></div>
+                <div><span style={{ fontSize: 11, color: 'var(--ink-400)' }}>Abstenciones</span><strong>{tally.abstain}</strong></div>
+                <div><span style={{ fontSize: 11, color: 'var(--ink-400)' }}>Sin votar</span><strong>{pending}</strong></div>
+                <div><span style={{ fontSize: 11, color: 'var(--ink-400)' }}>Se necesitan</span><strong>{need.need}</strong></div>
+                <div><span style={{ fontSize: 11, color: 'var(--ink-400)' }}>Pronóstico</span><strong>{wouldPass ? 'Se aprueba' : 'No se aprueba'}</strong></div>
+              </div>
+              {canWrite && (
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+                  <button type="button" className="btn btn-outline btn-sm" onClick={() => setAll('for')}>Todos a favor</button>
+                  <button type="button" className="btn btn-outline btn-sm" onClick={() => setAll('against')}>Todos en contra</button>
+                  <button type="button" className="btn btn-outline btn-sm" onClick={() => setAll('abstain')}>Todos abstención</button>
+                </div>
+              )}
+              <div className="table-wrap">
+                <table>
+                  <thead><tr><th>Unidad</th><th>Asistente</th><th>A favor</th><th>En contra</th><th>Abstención</th></tr></thead>
+                  <tbody>
+                    {voters.map(a => (
+                      <tr key={a.id}>
+                        <td>{a.unit_code || '—'}</td>
+                        <td>{a.attendee_name}{a.proxy_name ? ` (repr. ${a.proxy_name})` : ''}</td>
+                        {['for', 'against', 'abstain'].map(c => (
+                          <td key={c} style={{ textAlign: 'center' }}>
+                            <input
+                              type="radio"
+                              name={`vote-${item.id}-${a.id}`}
+                              checked={choices[a.id] === c}
+                              disabled={!canWrite}
+                              onChange={() => setChoices(s => ({ ...s, [a.id]: c }))}
+                            />
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </div>
+        <div className="modal-foot">
+          <button className="btn btn-outline" onClick={onClose}>Cancelar</button>
+          {canWrite && (
+            <button className="btn btn-primary" disabled={!voters.length} onClick={() => onSave({
+              ballots: voters.filter(a => choices[a.id]).map(a => ({ attendee_id: a.id, choice: choices[a.id] })),
+              votes_for: tally.for,
+              votes_against: tally.against,
+              votes_abstain: tally.abstain,
+              notes: item.notes || '',
+            })}>
+              <Check size={14} /> Registrar votación
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AssemblyDetail({ tenantId, assembly, ctx, canWrite, tabHint, onClose, onRefresh }) {
   const [inner, setInner] = useState(
     tabHint === 'historial' ? 'acta'
@@ -910,8 +1042,9 @@ function AssemblyDetail({ tenantId, assembly, ctx, canWrite, tabHint, onClose, o
   const [acta, setActa] = useState(assembly.acta_body || '');
   const [notary, setNotary] = useState({ notary_name: assembly.notary_name || '', notary_folio: assembly.notary_folio || '' });
   const [fileKind, setFileKind] = useState('evidencia');
-  const [votes, setVotes] = useState({});
   const [preview, setPreview] = useState(null);
+  const [votingItem, setVotingItem] = useState(null);
+  const [pointNotes, setPointNotes] = useState({});
   const q = assembly.quorum || {};
   const rules = assembly.legal_snapshot || ctx?.rules || {};
   const locked = ['cerrada', 'cancelada'].includes(assembly.status);
@@ -922,6 +1055,9 @@ function AssemblyDetail({ tenantId, assembly, ctx, canWrite, tabHint, onClose, o
     setMinute(assembly.minute_body || '');
     setActa(assembly.acta_body || '');
     setNotary({ notary_name: assembly.notary_name || '', notary_folio: assembly.notary_folio || '' });
+    const notes = {};
+    (assembly.agenda || []).forEach(i => { notes[i.id] = i.notes || ''; });
+    setPointNotes(notes);
   }, [assembly.id, assembly.updated_at]);
 
   const openDoc = async (kind) => {
@@ -1028,11 +1164,19 @@ function AssemblyDetail({ tenantId, assembly, ctx, canWrite, tabHint, onClose, o
 
           {inner === 'reunion' && (
             <>
+              <p className="asm-agenda-hint">
+                El <strong>quórum de instalación</strong> decide si se puede iniciar la reunión:
+                {` ${q.install_first_pct || 75}% en 1ª convocatoria y ${q.install_second_pct || 51}% en 2ª.`}
+                {' '}Las votaciones usan otra regla: <strong>50% + 1 de los presentes</strong> (mayoría simple)
+                o el <strong>{q.qualified_majority_pct || 75}% de los presentes</strong> (mayoría calificada).
+              </p>
               <div className="asm-rules-grid">
                 <div><span style={{ fontSize: 11, color: 'var(--ink-400)' }}>Asistencia</span><strong>{q.present || 0}/{q.total || 0}</strong></div>
-                <div><span style={{ fontSize: 11, color: 'var(--ink-400)' }}>Quórum actual</span><strong>{q.present_pct || 0}%</strong></div>
-                <div><span style={{ fontSize: 11, color: 'var(--ink-400)' }}>Requerido</span><strong>{q.required_pct || 0}%</strong></div>
-                <div><span style={{ fontSize: 11, color: 'var(--ink-400)' }}>Estado</span><strong>{q.met ? 'Hay quórum' : 'Sin quórum'}</strong></div>
+                <div><span style={{ fontSize: 11, color: 'var(--ink-400)' }}>Quórum de instalación</span><strong>{q.present_pct || 0}%</strong></div>
+                <div><span style={{ fontSize: 11, color: 'var(--ink-400)' }}>Requerido ({q.call_label || '1ª convocatoria'})</span><strong>{q.required_pct || 0}%</strong></div>
+                <div><span style={{ fontSize: 11, color: 'var(--ink-400)' }}>Puede iniciar</span><strong>{q.met ? 'Sí, hay quórum' : 'Aún no'}</strong></div>
+                <div><span style={{ fontSize: 11, color: 'var(--ink-400)' }}>Simple (50%+1)</span><strong>{q.vote?.simple_need || 0} votos</strong></div>
+                <div><span style={{ fontSize: 11, color: 'var(--ink-400)' }}>Calificada</span><strong>{q.vote?.qualified_need || 0} votos</strong></div>
               </div>
               <div className="asm-quorum-bar" style={{ marginBottom: 12 }}>
                 <div style={{ width: `${Math.min(100, q.present_pct || 0)}%`, height: '100%', background: q.met ? 'var(--teal-500)' : 'var(--amber-400)' }} />
@@ -1098,26 +1242,30 @@ function AssemblyDetail({ tenantId, assembly, ctx, canWrite, tabHint, onClose, o
 
               {assembly.status === 'en_curso' && (
                 <>
-                  <h4 style={{ fontSize: 14, margin: '16px 0 8px' }}>Votaciones</h4>
-                  {(assembly.agenda || []).map(item => {
-                    const v = votes[item.id] || { votes_for: item.votes_for, votes_against: item.votes_against, votes_abstain: item.votes_abstain };
+                  <h4 style={{ fontSize: 14, margin: '16px 0 8px' }}>Desarrollo del orden del día</h4>
+                  <p className="asm-agenda-hint">
+                    Desahoga cada punto de la convocatoria: anota la minuta y, si el punto lo requiere, abre la votación con la lista de presentes.
+                  </p>
+                  {(assembly.agenda || []).map((item, idx) => {
+                    const need = voteNeed(item, q);
+                    const notes = pointNotes[item.id] ?? item.notes ?? '';
                     return (
-                      <div key={item.id} className="card" style={{ padding: 12, marginBottom: 8 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                      <div key={item.id} className="card asm-meet-point">
+                        <div className="asm-meet-point-head">
                           <div>
+                            <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--teal-600)' }}>Punto {idx + 1}</div>
                             <strong>{item.title}</strong>
-                            <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>{VOTE[item.vote_type]} · {RESULT[item.result]}</div>
+                            <div style={{ fontSize: 12, color: 'var(--ink-400)', marginTop: 4 }}>
+                              {VOTE[item.vote_type]} · {RESULT[item.result]}
+                              {item.vote_type !== 'informativo' ? ` · ${need.label}` : ''}
+                            </div>
                             <div style={{ marginTop: 6, display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
                               <SourceChip kind={item.source_kind} label={item.source_label} />
                               {item.apply_on_approve && <span className="asm-agenda-note">Actualiza el módulo al votar</span>}
                             </div>
-                            {item.source_meta && (item.source_meta.year || item.source_meta.budget_amount || item.source_meta.period) && (
-                              <div style={{ fontSize: 12, color: 'var(--ink-400)', marginTop: 4 }}>
-                                {item.source_meta.year ? `Año ${item.source_meta.year}` : ''}
-                                {item.source_meta.expense ? ` · Gastos ${money(item.source_meta.expense)}` : ''}
-                                {item.source_meta.budget_amount ? ` · ${money(item.source_meta.budget_amount)}` : ''}
-                                {item.source_meta.period ? ` · ${item.source_meta.period}` : ''}
-                                {item.source_meta.status ? ` · ${BUDGET_ST[item.source_meta.status] || PROJECT_ST[item.source_meta.status] || item.source_meta.status}` : ''}
+                            {item.vote_type !== 'informativo' && item.result !== 'pendiente' && (
+                              <div style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: 4 }}>
+                                A favor {item.votes_for || 0} · En contra {item.votes_against || 0} · Abstenciones {item.votes_abstain || 0}
                               </div>
                             )}
                             {item.applied_notes && (
@@ -1127,23 +1275,32 @@ function AssemblyDetail({ tenantId, assembly, ctx, canWrite, tabHint, onClose, o
                             )}
                           </div>
                         </div>
-                        {canWrite && (
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: 8, marginTop: 8 }}>
-                            <input className="field-input" type="number" min="0" placeholder="A favor" value={v.votes_for} onChange={e => setVotes(s => ({ ...s, [item.id]: { ...v, votes_for: e.target.value } }))} />
-                            <input className="field-input" type="number" min="0" placeholder="En contra" value={v.votes_against} onChange={e => setVotes(s => ({ ...s, [item.id]: { ...v, votes_against: e.target.value } }))} />
-                            <input className="field-input" type="number" min="0" placeholder="Abstenciones" value={v.votes_abstain} onChange={e => setVotes(s => ({ ...s, [item.id]: { ...v, votes_abstain: e.target.value } }))} />
-                            <button className="btn btn-primary" onClick={async () => {
-                              await asambleasAPI.vote(tenantId, assembly.id, item.id, v);
-                              toast.success('Votación registrada');
+                        <textarea
+                          className="field-input"
+                          rows={3}
+                          value={notes}
+                          disabled={!canWrite || locked}
+                          placeholder="Notas de minuta de este punto…"
+                          onChange={e => setPointNotes(s => ({ ...s, [item.id]: e.target.value }))}
+                        />
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
+                          {canWrite && !locked && (
+                            <button className="btn btn-outline btn-sm" onClick={async () => {
+                              await asambleasAPI.saveItemNotes(tenantId, assembly.id, item.id, {
+                                notes,
+                                mark_done: item.vote_type === 'informativo',
+                              });
+                              toast.success(item.vote_type === 'informativo' ? 'Punto informativo desahogado' : 'Notas guardadas');
                               onRefresh();
-                            }}><Check size={14} /></button>
-                          </div>
-                        )}
-                        {canWrite && item.apply_on_approve && ['aprobado', 'rechazado'].includes(item.result) && ['pendiente', 'error'].includes(item.applied_status) && (
-                          <button
-                            className="btn btn-outline btn-sm"
-                            style={{ marginTop: 8 }}
-                            onClick={async () => {
+                            }}>Guardar notas</button>
+                          )}
+                          {item.vote_type !== 'informativo' && canWrite && !locked && (
+                            <button className="btn btn-primary btn-sm" onClick={() => setVotingItem(item)}>
+                              <Vote size={12} /> {item.result === 'pendiente' ? 'Abrir votación' : 'Revisar votación'}
+                            </button>
+                          )}
+                          {canWrite && item.apply_on_approve && ['aprobado', 'rechazado'].includes(item.result) && ['pendiente', 'error'].includes(item.applied_status) && (
+                            <button className="btn btn-outline btn-sm" onClick={async () => {
                               try {
                                 await asambleasAPI.applyItem(tenantId, assembly.id, item.id);
                                 toast.success('Acuerdo aplicado al módulo');
@@ -1151,15 +1308,35 @@ function AssemblyDetail({ tenantId, assembly, ctx, canWrite, tabHint, onClose, o
                               } catch (e) {
                                 toast.error(errMsg(e, 'No se pudo aplicar el acuerdo'));
                               }
-                            }}
-                          >
-                            Aplicar al módulo
-                          </button>
-                        )}
+                            }}>Aplicar al módulo</button>
+                          )}
+                        </div>
                       </div>
                     );
                   })}
                 </>
+              )}
+              {votingItem && (
+                <VoteModal
+                  assembly={assembly}
+                  item={votingItem}
+                  q={q}
+                  canWrite={canWrite && !locked}
+                  onClose={() => setVotingItem(null)}
+                  onSave={async (payload) => {
+                    try {
+                      await asambleasAPI.vote(tenantId, assembly.id, votingItem.id, {
+                        ...payload,
+                        notes: pointNotes[votingItem.id] ?? votingItem.notes ?? '',
+                      });
+                      toast.success('Votación registrada en minuta y acta');
+                      setVotingItem(null);
+                      onRefresh();
+                    } catch (e) {
+                      toast.error(errMsg(e, 'No se pudo registrar la votación'));
+                    }
+                  }}
+                />
               )}
             </>
           )}
@@ -1167,16 +1344,19 @@ function AssemblyDetail({ tenantId, assembly, ctx, canWrite, tabHint, onClose, o
           {inner === 'minuta' && (
             <>
               <p className="asm-agenda-hint">
-                La minuta es el registro de trabajo de la sesión: notas del secretario, incidencias y votaciones.
-                No sustituye el acta formal.
+                La minuta se arma con las notas y votaciones de cada punto del orden del día.
+                Aquí puedes añadir notas generales de la sesión. No sustituye el acta formal.
               </p>
+              {(assembly.agenda || []).some(i => i.notes || i.result !== 'pendiente') && (
+                <pre className="asm-minuta-compile">{compileMinuta(assembly)}</pre>
+              )}
               <textarea
                 className="field-input"
-                rows={10}
+                rows={8}
                 value={minute}
                 disabled={!canWrite || locked}
                 onChange={e => setMinute(e.target.value)}
-                placeholder="Notas de la sesión: incidencias, intervenciones, votaciones y pendientes…"
+                placeholder="Notas generales de la sesión (además de las de cada punto)…"
               />
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
                 {canWrite && !locked && (
@@ -1211,13 +1391,14 @@ function AssemblyDetail({ tenantId, assembly, ctx, canWrite, tabHint, onClose, o
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 {canWrite && !locked && (
                   <button className="btn btn-outline" onClick={() => {
+                    const compiled = compileMinuta(assembly);
                     const lines = [
                       `Acta de la asamblea ${KIND[assembly.kind] || ''} «${assembly.title}».`,
                       '',
                       'Con base en la minuta de trabajo y las votaciones registradas, se hacen constar los siguientes acuerdos:',
                       '',
-                      ...(assembly.agenda || []).map((item, i) => `${i + 1}. ${item.title} — ${RESULT[item.result] || item.result} (${VOTE[item.vote_type]}).`),
-                      ...(minute.trim() ? ['', 'Notas tomadas en la sesión:', '', minute.trim()] : []),
+                      compiled || (assembly.agenda || []).map((item, i) => `${i + 1}. ${item.title} — ${RESULT[item.result] || item.result} (${VOTE[item.vote_type]}).`).join('\n'),
+                      ...(minute.trim() ? ['', 'Notas generales de la sesión:', '', minute.trim()] : []),
                     ];
                     setActa(lines.join('\n'));
                     toast.success('Borrador de acta generado desde la minuta y las votaciones');

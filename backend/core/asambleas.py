@@ -1,6 +1,7 @@
 """Asambleas del condominio: convocatorias, reuniones, minutas e historial."""
 from __future__ import annotations
 
+import math
 import os
 from datetime import date, timedelta
 
@@ -91,6 +92,50 @@ def default_notice_days(rules, kind):
     return int(rules.get('notice_days_ordinary') or 10)
 
 
+def vote_thresholds(present, rules):
+    """Mayorías de votación sobre los presentes (no es el quórum de instalación)."""
+    n = int(present or 0)
+    qual_pct = _f((rules or {}).get('qualified_majority_pct') or 75)
+    simple_need = (n // 2) + 1 if n else 0
+    qual_need = int(math.ceil(n * qual_pct / 100.0)) if n else 0
+    return {
+        'present': n,
+        'simple_need': simple_need,
+        'simple_label': '50% + 1 de los presentes',
+        'qualified_pct': qual_pct,
+        'qualified_need': qual_need,
+        'qualified_label': f'{int(qual_pct) if qual_pct == int(qual_pct) else qual_pct}% de los presentes',
+        'unanimity_need': n,
+    }
+
+
+def resolve_vote_result(vote_type, votes_for, votes_against, votes_abstain, present, rules):
+    th = vote_thresholds(present, rules)
+    vf, va, vb = int(votes_for or 0), int(votes_against or 0), int(votes_abstain or 0)
+    if vote_type == 'informativo':
+        return 'aprobado', th, 'Punto informativo: se da cuenta a la asamblea, sin votación.'
+    if vote_type == 'unanimidad':
+        ok = present > 0 and va == 0 and vf >= th['unanimity_need']
+        return (
+            'aprobado' if ok else 'rechazado',
+            th,
+            f'Se requieren {th["unanimity_need"]} votos a favor y ninguno en contra.',
+        )
+    if vote_type == 'calificada':
+        ok = present > 0 and vf >= th['qualified_need']
+        return (
+            'aprobado' if ok else 'rechazado',
+            th,
+            f'Se requieren {th["qualified_need"]} votos a favor ({th["qualified_label"]}).',
+        )
+    ok = present > 0 and vf >= th['simple_need']
+    return (
+        'aprobado' if ok else 'rechazado',
+        th,
+        f'Se requieren {th["simple_need"]} votos a favor ({th["simple_label"]}).',
+    )
+
+
 def quorum_snapshot(assembly):
     qs = assembly.attendees.exclude(capacity='invitado')
     total = qs.count()
@@ -100,10 +145,10 @@ def quorum_snapshot(assembly):
     present_w = _f(present_qs.aggregate(s=Sum('vote_weight'))['s'])
     pct = round((present_w / total_w) * 100, 2) if total_w else 0
     rules = assembly.legal_snapshot or {}
-    required = _f(
-        rules.get('second_quorum_pct') if assembly.call_number >= 2
-        else rules.get('first_quorum_pct')
-    )
+    first_need = _f(rules.get('first_quorum_pct') or 75)
+    second_need = _f(rules.get('second_quorum_pct') or 51)
+    required = second_need if assembly.call_number >= 2 else first_need
+    th = vote_thresholds(present, rules)
     return {
         'total': total,
         'present': present,
@@ -111,8 +156,14 @@ def quorum_snapshot(assembly):
         'present_weight': round(present_w, 4),
         'present_pct': pct,
         'required_pct': required,
-        'met': pct + 0.0001 >= required if assembly.call_number < 2 or required else True,
+        'met': pct + 0.0001 >= required if required else True,
         'call_number': assembly.call_number,
+        'call_label': '2ª convocatoria' if assembly.call_number >= 2 else '1ª convocatoria',
+        'install_first_pct': first_need,
+        'install_second_pct': second_need,
+        'vote': th,
+        'simple_majority_pct': _f(rules.get('simple_majority_pct') or 50),
+        'qualified_majority_pct': th['qualified_pct'],
     }
 
 
@@ -359,10 +410,11 @@ class CondoAssemblyAgendaSerializer(serializers.ModelSerializer):
         fields = (
             'id', 'sort_order', 'title', 'description', 'vote_type',
             'result', 'votes_for', 'votes_against', 'votes_abstain', 'notes',
+            'vote_detail',
             'source_kind', 'source_id', 'source_label', 'source_meta',
             'apply_on_approve', 'applied_status', 'applied_at', 'applied_notes',
         )
-        read_only_fields = ('id', 'applied_status', 'applied_at', 'applied_notes')
+        read_only_fields = ('id', 'applied_status', 'applied_at', 'applied_notes', 'vote_detail')
 
 
 class CondoAssemblyAttendeeSerializer(serializers.ModelSerializer):
@@ -813,27 +865,47 @@ class CondoAssemblyViewSet(viewsets.ModelViewSet):
         item = assembly.agenda.filter(id=item_id).first()
         if not item:
             return Response({'detail': 'Punto no encontrado.'}, status=404)
-        item.votes_for = max(0, int(request.data.get('votes_for') or 0))
-        item.votes_against = max(0, int(request.data.get('votes_against') or 0))
-        item.votes_abstain = max(0, int(request.data.get('votes_abstain') or 0))
+        present_atts = list(assembly.attendees.exclude(capacity='invitado').filter(present=True))
+        present = len(present_atts)
+        ballots = request.data.get('ballots')
+        if isinstance(ballots, list) and ballots:
+            allowed = {str(a.id): a for a in present_atts}
+            detail, vf, va, vb = [], 0, 0, 0
+            for raw in ballots:
+                if not isinstance(raw, dict):
+                    continue
+                att = allowed.get(str(raw.get('attendee_id') or ''))
+                choice = raw.get('choice')
+                if not att or choice not in ('for', 'against', 'abstain'):
+                    continue
+                if choice == 'for':
+                    vf += 1
+                elif choice == 'against':
+                    va += 1
+                else:
+                    vb += 1
+                detail.append({
+                    'attendee_id': str(att.id),
+                    'unit_code': att.unit.unit_id_code if att.unit_id else '',
+                    'name': att.attendee_name or '',
+                    'choice': choice,
+                })
+            item.votes_for, item.votes_against, item.votes_abstain = vf, va, vb
+            item.vote_detail = detail
+        else:
+            item.votes_for = max(0, int(request.data.get('votes_for') or 0))
+            item.votes_against = max(0, int(request.data.get('votes_against') or 0))
+            item.votes_abstain = max(0, int(request.data.get('votes_abstain') or 0))
         result = request.data.get('result')
         if result in dict(CondoAssemblyAgendaItem.RESULT_CHOICES):
             item.result = result
         else:
-            total = item.votes_for + item.votes_against
-            rules = assembly.legal_snapshot or {}
-            if item.vote_type == 'informativo':
-                item.result = 'aprobado'
-            elif item.vote_type == 'unanimidad':
-                item.result = 'aprobado' if item.votes_against == 0 and item.votes_for > 0 else 'rechazado'
-            elif item.vote_type == 'calificada':
-                need = _f(rules.get('qualified_majority_pct') or 75)
-                pct = (item.votes_for / total * 100) if total else 0
-                item.result = 'aprobado' if pct >= need else 'rechazado'
-            else:
-                item.result = 'aprobado' if item.votes_for > item.votes_against else 'rechazado'
+            item.result, _th, _why = resolve_vote_result(
+                item.vote_type, item.votes_for, item.votes_against, item.votes_abstain,
+                present, assembly.legal_snapshot or {},
+            )
         if request.data.get('notes') is not None:
-            item.notes = (request.data.get('notes') or '')[:400]
+            item.notes = request.data.get('notes') or ''
         item.save()
         linked = item.source_kind not in ('manual', '') and item.source_id
         if item.result in ('aprobado', 'rechazado') and linked and can_write_assemblies(request.user, tenant_id):
@@ -842,6 +914,22 @@ class CondoAssemblyViewSet(viewsets.ModelViewSet):
             item.applied_status = 'pendiente'
             item.applied_notes = 'El acuerdo quedó en el acta. Un administrador o tesorero debe confirmar la aplicación en el módulo.'
             item.save(update_fields=['applied_status', 'applied_notes'])
+        return Response(self._full(assembly))
+
+    @action(detail=True, methods=['post'], url_path='agenda/(?P<item_id>[^/.]+)/notes')
+    def save_item_notes(self, request, tenant_id, pk=None, item_id=None):
+        assembly = self.get_object()
+        if assembly.status in LOCKED_STATUSES:
+            return Response({'detail': 'Esta asamblea ya no admite notas.'}, status=400)
+        item = assembly.agenda.filter(id=item_id).first()
+        if not item:
+            return Response({'detail': 'Punto no encontrado.'}, status=404)
+        item.notes = request.data.get('notes') or ''
+        fields = ['notes']
+        if item.vote_type == 'informativo' and request.data.get('mark_done'):
+            item.result = 'aprobado'
+            fields.append('result')
+        item.save(update_fields=fields)
         return Response(self._full(assembly))
 
     @action(detail=True, methods=['post'], url_path='agenda/(?P<item_id>[^/.]+)/apply')
