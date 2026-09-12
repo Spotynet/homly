@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useAuth } from '../context/AuthContext';
 import { asambleasAPI, api } from '../api/client';
 import toast from 'react-hot-toast';
@@ -546,27 +547,36 @@ function downloadBlob(url, filename) {
   a.remove();
 }
 
+function pdfPreviewSrc(url) {
+  const base = (url || '').split('#')[0];
+  return `${base}#toolbar=1&navpanes=0&scrollbar=1&view=FitH&pagemode=none&zoom=page-width`;
+}
+
 function DocPreviewModal({ preview, onClose }) {
   useEffect(() => () => { if (preview?.url) URL.revokeObjectURL(preview.url); }, [preview?.url]);
   if (!preview) return null;
-  return (
-    <div className="modal-bg open" onClick={e => { e.stopPropagation(); onClose(); }}>
-      <div className="modal asm-preview-modal" onClick={e => e.stopPropagation()}>
-        <div className="modal-head">
+  return createPortal(
+    <div className="asm-preview-overlay" onClick={e => { e.stopPropagation(); onClose(); }}>
+      <div className="asm-preview-modal" onClick={e => e.stopPropagation()}>
+        <div className="asm-preview-head">
           <h3>{preview.title}</h3>
-          <button className="modal-close" onClick={onClose}><X size={16} /></button>
+          <div className="asm-preview-actions">
+            <button className="btn btn-outline btn-sm" onClick={() => downloadBlob(preview.url, preview.filename)}>
+              <Download size={14} /> Descargar
+            </button>
+            <button className="modal-close" onClick={onClose}><X size={16} /></button>
+          </div>
         </div>
         <div className="asm-preview-frame">
-          <iframe src={preview.url} title={preview.title} />
-        </div>
-        <div className="modal-foot">
-          <button className="btn btn-outline" onClick={() => downloadBlob(preview.url, preview.filename)}>
-            <Download size={14} /> Descargar PDF
-          </button>
-          <button className="btn btn-primary" onClick={onClose}>Cerrar</button>
+          <iframe
+            src={pdfPreviewSrc(preview.url)}
+            title={preview.title}
+            allow="fullscreen"
+          />
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
