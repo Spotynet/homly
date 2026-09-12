@@ -5,7 +5,7 @@ import toast from 'react-hot-toast';
 import {
   Plus, Vote, X, Pencil, Trash2, Send, Check, Users, FileText,
   Landmark, Download, Upload, Printer, Scale, Gavel,
-  Link2, ChevronUp, ChevronDown,
+  Link2, ChevronUp, ChevronDown, CircleHelp,
 } from 'lucide-react';
 
 const TABS = [
@@ -212,9 +212,10 @@ function catalogToItem(kind, row) {
   return null;
 }
 
-function AgendaBuilder({ agenda, catalog, canWrite, onChange }) {
+function AgendaBuilder({ agenda, catalog, canWrite, onChange, rules }) {
   const [picker, setPicker] = useState(false);
   const [section, setSection] = useState('presupuesto');
+  const [help, setHelp] = useState(false);
   const cat = catalog || {};
   const update = (i, patch) => onChange(agenda.map((item, j) => (j === i ? { ...item, ...patch } : item)));
   const remove = i => onChange(agenda.filter((_, j) => j !== i));
@@ -243,7 +244,12 @@ function AgendaBuilder({ agenda, catalog, canWrite, onChange }) {
 
   return (
     <div>
-      <div className="field-label" style={{ marginBottom: 8 }}>Orden del día</div>
+      <div className="asm-agenda-head">
+        <div className="field-label" style={{ margin: 0 }}>Orden del día</div>
+        <button type="button" className="asm-info-btn" onClick={() => setHelp(true)} title="Qué significa cada opción">
+          <CircleHelp size={16} />
+        </button>
+      </div>
       <p className="asm-agenda-hint">
         Redacta puntos a mano o agrégalos desde Planeación (presupuestos y proyectos), Cierres, Cuotas u Organización.
         La asamblea autoriza; un administrador o tesorero confirma que se actualice el módulo.
@@ -429,21 +435,100 @@ function AgendaBuilder({ agenda, catalog, canWrite, onChange }) {
           </div>
         </div>
       )}
+      {help && <AgendaHelpModal rules={rules} onClose={() => setHelp(false)} />}
     </div>
   );
 }
 
-function printAssembly(kind) {
-  document.body.classList.add('printing-asamblea');
-  document.body.dataset.asmPrint = kind;
-  const done = () => {
-    document.body.classList.remove('printing-asamblea');
-    delete document.body.dataset.asmPrint;
-    window.removeEventListener('afterprint', done);
-  };
-  window.addEventListener('afterprint', done);
-  window.print();
-  setTimeout(done, 1500);
+function SuggestField({ value, onChange, disabled, placeholder, options, pickLabel }) {
+  return (
+    <div className="asm-combo">
+      <input
+        className="field-input"
+        value={value}
+        disabled={disabled}
+        onChange={e => onChange(e.target.value)}
+        placeholder={placeholder}
+      />
+      {!disabled && (options || []).length > 0 && (
+        <select
+          className="field-select"
+          value=""
+          onChange={e => { if (e.target.value) onChange(e.target.value); }}
+        >
+          <option value="">{pickLabel}</option>
+          {options.map(o => (
+            <option key={o.id || o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
+      )}
+    </div>
+  );
+}
+
+function AgendaHelpModal({ rules, onClose }) {
+  const qSimple = rules?.simple_majority_pct || 50;
+  const qQual = rules?.qualified_majority_pct || 75;
+  return (
+    <div className="modal-bg open" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-head">
+          <h3>Cómo armar el orden del día</h3>
+          <button className="modal-close" onClick={onClose}><X size={16} /></button>
+        </div>
+        <div className="modal-body asm-help">
+          <h4>Título del punto</h4>
+          <p>Es el asunto que se leerá en la convocatoria y en el acta. Puedes redactarlo a mano o dejar el texto que Homly propone al elegir un presupuesto, proyecto u otro registro.</p>
+          <h4>Tipo de votación</h4>
+          <ul>
+            <li><strong>Informativo.</strong> Se da cuenta a la asamblea; no decide un acuerdo. Útil para informes o lectura de estados.</li>
+            <li><strong>Mayoría simple.</strong> Se aprueba si hay más votos a favor que en contra (umbral de referencia {qSimple}%).</li>
+            <li><strong>Mayoría calificada.</strong> Requiere un porcentaje alto de votos a favor (referencia {qQual}%, según la normativa de {rules?.jurisdiction || 'tu entidad'}). Úsala para presupuesto, obras mayores o reformas.</li>
+            <li><strong>Unanimidad.</strong> Solo se aprueba si nadie vota en contra y hay al menos un voto a favor.</li>
+          </ul>
+          <h4>Punto manual o desde Homly</h4>
+          <p><strong>Punto manual</strong> es texto libre: queda solo en la convocatoria y el acta.</p>
+          <p><strong>Agregar de Homly</strong> toma un registro ya creado en otro módulo:</p>
+          <ul>
+            <li><strong>Presupuesto / Proyecto</strong> (Planeación). Si marcas “Aplicar al módulo”, al votar un administrador o tesorero actualiza el estatus en Planeación.</li>
+            <li><strong>Cierre, cuota u organización.</strong> Se incluyen para ratificarlos en acta; no se reescriben automáticamente en su módulo.</li>
+          </ul>
+          <h4>Aplicar al módulo</h4>
+          <p>La asamblea autoriza. Un administrador o tesorero confirma que el acuerdo se refleje en Planeación. Un auditor puede ver el resultado, pero no aplica el cambio.</p>
+          <p className="asm-help-note">Estas mayorías son una guía operativa. Prevalecen el reglamento interno y la ley aplicable.</p>
+        </div>
+        <div className="modal-foot">
+          <button className="btn btn-primary" onClick={onClose}>Entendido</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+async function downloadAssemblyDoc(tenantId, assembly, kind) {
+  const label = kind === 'minuta' ? 'Acta' : 'Convocatoria';
+  try {
+    const res = await asambleasAPI.printDoc(tenantId, assembly.id, kind);
+    const blob = new Blob([res.data], { type: 'application/pdf' });
+    if (blob.size < 80) {
+      const text = await blob.text();
+      let msg = `No se pudo generar la ${label.toLowerCase()}.`;
+      try { msg = JSON.parse(text).detail || msg; } catch { /* blob no JSON */ }
+      throw new Error(msg);
+    }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const safe = (s) => (s || '').trim().replace(/[/\\:*?"<>|]/g, '').replace(/\s+/g, '_');
+    a.download = `${label}_${safe(assembly.title) || assembly.year}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    toast.success(`${label} lista para imprimir o protocolizar`);
+  } catch (e) {
+    toast.error(e.message || errMsg(e, `No se pudo generar la ${label.toLowerCase()}`));
+  }
 }
 
 export default function Asambleas() {
@@ -701,16 +786,42 @@ function AssemblyForm({ ctx, canWrite, onClose, onSaved, initial }) {
             </div>
             <div className="field">
               <div className="field-label">Lugar</div>
-              <input className="field-input" value={form.location} disabled={!canWrite} onChange={e => set('location', e.target.value)} placeholder="Salón de usos múltiples / Zoom" />
+              <SuggestField
+                value={form.location}
+                disabled={!canWrite}
+                placeholder="Escribe el lugar o elige un área común"
+                pickLabel="Elegir área común…"
+                options={(ctx?.common_areas || []).map(a => ({ id: a.id, value: a.name, label: a.name }))}
+                onChange={v => set('location', v)}
+              />
             </div>
           </div>
           <div className="field">
             <div className="field-label">Quién convoca</div>
-            <input className="field-input" value={form.issued_by_name} disabled={!canWrite} onChange={e => set('issued_by_name', e.target.value)} placeholder="Administrador / comité / porcentaje de condóminos" />
+            <SuggestField
+              value={form.issued_by_name}
+              disabled={!canWrite}
+              placeholder="Escribe el nombre o elige un cargo / comité"
+              pickLabel="Elegir de la organización…"
+              options={[
+                ...(ctx?.catalog?.positions || []).map(p => ({
+                  id: `pos-${p.id}`,
+                  value: [p.title, p.holder_name].filter(Boolean).join(' — '),
+                  label: [p.title, p.holder_name, p.committee].filter(Boolean).join(' · '),
+                })),
+                ...(ctx?.catalog?.committees || []).map(c => ({
+                  id: `com-${c.id}`,
+                  value: `Comité ${c.name}`,
+                  label: c.members ? `Comité · ${c.name} (${c.members})` : `Comité · ${c.name}`,
+                })),
+              ]}
+              onChange={v => set('issued_by_name', v)}
+            />
           </div>
           <AgendaBuilder
             agenda={form.agenda}
             catalog={ctx?.catalog}
+            rules={rules}
             canWrite={canWrite}
             onChange={next => set('agenda', next)}
           />
@@ -804,7 +915,7 @@ function AssemblyDetail({ tenantId, assembly, ctx, canWrite, tabHint, onClose, o
                 ))}
               </ol>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 14 }}>
-                <button className="btn btn-outline" onClick={() => printAssembly('convocatoria')}><Printer size={14} /> Imprimir convocatoria</button>
+                <button className="btn btn-outline" onClick={() => downloadAssemblyDoc(tenantId, assembly, 'convocatoria')}><Printer size={14} /> Imprimir convocatoria</button>
                 {canWrite && assembly.status === 'borrador' && (
                   <>
                     <button className="btn btn-outline" onClick={() => setEditing(true)}><Pencil size={14} /> Editar</button>
@@ -1014,7 +1125,7 @@ function AssemblyDetail({ tenantId, assembly, ctx, canWrite, tabHint, onClose, o
                     onRefresh();
                   }}>Marcar protocolizada</button>
                 )}
-                <button className="btn btn-outline" onClick={() => printAssembly('minuta')}><Printer size={14} /> Imprimir minuta</button>
+                <button className="btn btn-outline" onClick={() => downloadAssemblyDoc(tenantId, assembly, 'minuta')}><Printer size={14} /> Imprimir minuta</button>
               </div>
               <p style={{ fontSize: 12, color: 'var(--ink-400)', marginTop: 10 }}>
                 Presidente: {assembly.president_name || '—'} · Secretario: {assembly.secretary_name || '—'} ·
@@ -1072,47 +1183,11 @@ function AssemblyDetail({ tenantId, assembly, ctx, canWrite, tabHint, onClose, o
             </>
           )}
 
-          <AssemblyPrintBlock assembly={assembly} ctx={ctx} />
         </div>
         <div className="modal-foot">
           <button className="btn btn-outline" onClick={onClose}>Cerrar</button>
         </div>
       </div>
-    </div>
-  );
-}
-
-function AssemblyPrintBlock({ assembly, ctx }) {
-  const rules = assembly.legal_snapshot || ctx?.rules || {};
-  return (
-    <div className="asm-print" style={{ padding: 24, fontFamily: 'Georgia, serif', color: '#1c1917' }}>
-      <div style={{ textAlign: 'center', marginBottom: 16 }}>
-        <div style={{ fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase' }}>{ctx?.name || 'Condominio'}</div>
-        <h2 style={{ margin: '6px 0' }}>{assembly.title}</h2>
-        <div>{KIND[assembly.kind]} · {rules.jurisdiction}</div>
-      </div>
-      <p><strong>Convocatoria:</strong> {fmtWhen(assembly.first_call_at)} — {assembly.location}</p>
-      <p><strong>2ª convocatoria:</strong> {fmtWhen(assembly.second_call_at)}</p>
-      <p><strong>Quien convoca:</strong> {assembly.issued_by_name || 'Administración'}</p>
-      <h3>Orden del día</h3>
-      <ol>
-        {(assembly.agenda || []).map(i => (
-          <li key={i.id}>
-            {i.title} ({VOTE[i.vote_type]})
-            {i.source_kind && i.source_kind !== 'manual' ? ` — ${SOURCE[i.source_kind]}: ${i.source_label || ''}` : ''}
-            {i.result !== 'pendiente' ? ` — ${RESULT[i.result]}` : ''}
-            {i.applied_notes ? ` — ${i.applied_notes}` : ''}
-          </li>
-        ))}
-      </ol>
-      {assembly.minute_body && (
-        <>
-          <h3>Acta</h3>
-          <div style={{ whiteSpace: 'pre-wrap' }}>{assembly.minute_body}</div>
-          <p>Presidente: {assembly.president_name || '______________'} · Secretario: {assembly.secretary_name || '______________'}</p>
-        </>
-      )}
-      <p style={{ fontSize: 11, marginTop: 24, color: '#78716c' }}>{rules.law}. {rules.disclaimer}</p>
     </div>
   );
 }

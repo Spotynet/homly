@@ -1004,6 +1004,31 @@ tr:hover td { background: rgba(59,185,144,0.02); }
 .asm-row-top { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
 .asm-quorum-bar { height: 6px; background: var(--sand-100); border-radius: 99px; overflow: hidden; margin-top: 8px; }
 .asm-print { display: none; }
+.asm-combo { display: grid; gap: 6px; }
+.asm-agenda-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.asm-info-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 99px;
+  background: var(--sand-100);
+  color: var(--teal-700);
+  cursor: pointer;
+}
+.asm-info-btn:hover { background: var(--teal-50); }
+.asm-help h4 { margin: 14px 0 6px; font-size: 13px; color: var(--ink-700); }
+.asm-help h4:first-child { margin-top: 0; }
+.asm-help p, .asm-help li { font-size: 13px; color: var(--ink-600); line-height: 1.5; }
+.asm-help ul { margin: 0 0 8px; padding-left: 18px; }
+.asm-help-note { font-size: 12px; color: var(--ink-400); margin-top: 12px; }
 .asm-agenda-hint {
   margin: 0 0 10px;
   font-size: 12px;

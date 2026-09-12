@@ -5,6 +5,7 @@ import os
 from datetime import date, timedelta
 
 from django.db.models import Sum
+from django.http import HttpResponse
 from django.utils import timezone
 from rest_framework import serializers, status, viewsets
 from rest_framework.decorators import action
@@ -141,6 +142,35 @@ def notify_assembly(tenant, notif_type, title, message):
         ['admin', 'tesorero', 'contador', 'auditor', 'vecino'],
         notif_type, title, message,
     )
+
+
+def tenant_common_areas(tenant):
+    """Áreas comunes activas de la configuración del condominio."""
+    raw = tenant.common_areas or []
+    if isinstance(raw, str):
+        raw = [part.strip() for part in raw.split(',') if part.strip()]
+    out = []
+    seen = set()
+    for item in raw:
+        if isinstance(item, str) and item.strip():
+            name = item.strip()
+            ident = name
+            if ident in seen:
+                continue
+            seen.add(ident)
+            out.append({'id': ident, 'name': name})
+            continue
+        if not isinstance(item, dict):
+            continue
+        name = (item.get('name') or '').strip()
+        if not name or item.get('active') is False:
+            continue
+        ident = str(item.get('id') or name)
+        if ident in seen:
+            continue
+        seen.add(ident)
+        out.append({'id': ident, 'name': name})
+    return out
 
 
 def assembly_link_catalog(tenant):
@@ -462,6 +492,7 @@ class AsambleaContextView(APIView):
             'counts': counts,
             'can_write': can_write_assemblies(request.user, tenant_id),
             'catalog': assembly_link_catalog(tenant),
+            'common_areas': tenant_common_areas(tenant),
         })
 
 
@@ -470,7 +501,7 @@ class CondoAssemblyViewSet(viewsets.ModelViewSet):
     pagination_class = None
 
     def get_permissions(self):
-        if self.action in ('list', 'retrieve', 'files') and self.request.method == 'GET':
+        if self.action in ('list', 'retrieve', 'files', 'print_doc') and self.request.method == 'GET':
             return [IsTenantMember()]
         return super().get_permissions()
 
@@ -802,6 +833,33 @@ class CondoAssemblyViewSet(viewsets.ModelViewSet):
             tenant_id, 'CondoAssemblyAgendaItem', item.id, item.title,
         )
         return Response(self._full(assembly))
+
+    @action(detail=True, methods=['get'], url_path='print-doc')
+    def print_doc(self, request, tenant_id, pk=None):
+        assembly = self.get_object()
+        kind = (request.query_params.get('kind') or 'convocatoria').strip()
+        if kind not in ('convocatoria', 'minuta'):
+            return Response({'detail': 'Tipo de documento inválido.'}, status=400)
+        user = request_user(request)
+        generated_by = (
+            (getattr(user, 'name', None) or '').strip()
+            or (getattr(user, 'email', None) or '').strip()
+            or '—'
+        )
+        from .asamblea_docs import _safe_filename, generate_assembly_pdf
+        try:
+            pdf_bytes = generate_assembly_pdf(assembly, kind, generated_by=generated_by)
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception('Error generando PDF de asamblea %s', assembly.id)
+            return Response({'detail': 'No se pudo generar el documento.'}, status=500)
+        if not pdf_bytes:
+            return Response({'detail': 'No se pudo generar el PDF en el servidor.'}, status=500)
+        label = 'Acta' if kind == 'minuta' else 'Convocatoria'
+        filename = f'{label}_{_safe_filename(assembly.title or str(assembly.year))}.pdf'
+        response = HttpResponse(pdf_bytes, content_type='application/pdf')
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        return response
 
     @action(detail=True, methods=['post'], url_path='save-minute')
     def save_minute(self, request, tenant_id, pk=None):

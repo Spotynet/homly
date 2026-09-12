@@ -373,6 +373,7 @@ export const asambleasAPI = {
   install:       (tenantId, id, data) => api.post(`/tenants/${tenantId}/condo-assemblies/${id}/install/`, data || {}),
   vote:          (tenantId, id, itemId, data) => api.post(`/tenants/${tenantId}/condo-assemblies/${id}/agenda/${itemId}/vote/`, data),
   applyItem:     (tenantId, id, itemId) => api.post(`/tenants/${tenantId}/condo-assemblies/${id}/agenda/${itemId}/apply/`),
+  printDoc:      (tenantId, id, kind) => api.get(`/tenants/${tenantId}/condo-assemblies/${id}/print-doc/`, { params: { kind }, responseType: 'blob' }),
   saveMinute:    (tenantId, id, data) => api.post(`/tenants/${tenantId}/condo-assemblies/${id}/save-minute/`, data),
   signMinute:    (tenantId, id) => api.post(`/tenants/${tenantId}/condo-assemblies/${id}/sign-minute/`),
   protocolize:   (tenantId, id, data) => api.post(`/tenants/${tenantId}/condo-assemblies/${id}/protocolize/`, data || {}),
