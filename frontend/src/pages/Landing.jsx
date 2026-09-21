@@ -294,7 +294,7 @@ export default function Landing() {
             </div>
           </div>
 
-          <div className="landing-hero-mockup" style={{ position: 'relative' }}>
+          <div className="landing-hero-mockup">
             <div className="landing-mockup-glow" aria-hidden="true" />
             <CondoSpaceCard />
             <div className="landing-space-switch">
