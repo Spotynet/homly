@@ -842,70 +842,12 @@ function Chip({ children, color, bg }) {
   );
 }
 
-function CondoArt() {
+function SpacePhoto({ src, alt }) {
   return (
-    <svg viewBox="0 0 420 148" preserveAspectRatio="xMidYMid slice" className="landing-space-svg" aria-hidden="true">
-      <defs>
-        <linearGradient id="condoSky" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#C8EBD9" />
-          <stop offset="100%" stopColor="#EFFAF6" />
-        </linearGradient>
-      </defs>
-      <rect width="420" height="148" fill="url(#condoSky)" />
-      <circle cx="340" cy="28" r="18" fill="#F6E7A1" opacity="0.9" />
-      <rect x="28" y="48" width="78" height="100" rx="5" fill="#124A36" />
-      <rect x="118" y="28" width="96" height="120" rx="5" fill="#1F7D5B" />
-      <rect x="226" y="56" width="72" height="92" rx="5" fill="#175F45" />
-      <rect x="310" y="70" width="58" height="78" rx="5" fill="#2A9A6E" />
-      {[38, 54, 70, 86].map(y => (
-        <g key={y}>
-          <rect x="38" y={y} width="10" height="10" rx="1.5" fill="#D8F3E8" opacity="0.85" />
-          <rect x="56" y={y} width="10" height="10" rx="1.5" fill="#D8F3E8" opacity="0.55" />
-          <rect x="74" y={y} width="10" height="10" rx="1.5" fill="#D8F3E8" opacity="0.85" />
-        </g>
-      ))}
-      {[40, 58, 76, 94].map(y => (
-        <g key={`m${y}`}>
-          <rect x="132" y={y} width="12" height="12" rx="2" fill="#EFFAF6" opacity="0.9" />
-          <rect x="152" y={y} width="12" height="12" rx="2" fill="#EFFAF6" opacity="0.5" />
-          <rect x="172" y={y} width="12" height="12" rx="2" fill="#EFFAF6" opacity="0.9" />
-        </g>
-      ))}
-      <rect x="154" y="118" width="22" height="30" rx="2" fill="#0E3A2A" />
-      <ellipse cx="48" cy="142" rx="18" ry="8" fill="#0F3D2C" opacity="0.35" />
-      <ellipse cx="250" cy="142" rx="22" ry="8" fill="#0F3D2C" opacity="0.28" />
-    </svg>
-  );
-}
-
-function RentasArt() {
-  return (
-    <svg viewBox="0 0 420 148" preserveAspectRatio="xMidYMid slice" className="landing-space-svg" aria-hidden="true">
-      <defs>
-        <linearGradient id="rentasSky" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#C7D8F8" />
-          <stop offset="100%" stopColor="#EFF6FF" />
-        </linearGradient>
-      </defs>
-      <rect width="420" height="148" fill="url(#rentasSky)" />
-      <circle cx="72" cy="26" r="16" fill="#FDE68A" />
-      <path d="M36 118 L88 62 L140 118 Z" fill="#1D4ED8" />
-      <rect x="52" y="88" width="72" height="60" fill="#2563EB" />
-      <rect x="78" y="108" width="20" height="40" fill="#1E3A8A" />
-      <rect x="62" y="96" width="14" height="12" rx="1.5" fill="#DBEAFE" />
-      <rect x="100" y="96" width="14" height="12" rx="1.5" fill="#DBEAFE" opacity="0.7" />
-      <path d="M168 122 L232 48 L296 122 Z" fill="#E85D43" />
-      <rect x="188" y="90" width="88" height="58" fill="#F87171" />
-      <rect x="218" y="112" width="22" height="36" fill="#9A3412" />
-      <rect x="200" y="100" width="16" height="12" rx="1.5" fill="#FFE4DC" />
-      <rect x="248" y="100" width="16" height="12" rx="1.5" fill="#FFE4DC" opacity="0.75" />
-      <rect x="318" y="78" width="70" height="70" rx="8" fill="#1E40AF" />
-      <rect x="332" y="96" width="16" height="16" rx="2" fill="#BFDBFE" />
-      <rect x="356" y="96" width="16" height="16" rx="2" fill="#BFDBFE" opacity="0.6" />
-      <rect x="332" y="118" width="16" height="16" rx="2" fill="#BFDBFE" opacity="0.6" />
-      <rect x="356" y="118" width="16" height="16" rx="2" fill="#BFDBFE" />
-      <rect x="20" y="138" width="380" height="10" fill="#93C5FD" opacity="0.45" />
-    </svg>
+    <div className="landing-space-art">
+      <img src={src} alt={alt} className="landing-space-photo" />
+      <div className="landing-space-photo-fade" aria-hidden="true" />
+    </div>
   );
 }
 
@@ -917,7 +859,7 @@ function CondoSpaceCard() {
         <span className="landing-space-chrome-title">Homly Residencial</span>
         <span className="landing-space-badge landing-space-badge--teal">Activo</span>
       </div>
-      <div className="landing-space-art"><CondoArt /></div>
+      <SpacePhoto src="/img/landing-residencial.jpg" alt="Conjunto residencial" />
       <div className="landing-space-body">
         <div className="landing-space-kicker" style={{ color: '#1F7D5B' }}>Condominio</div>
         <div className="landing-space-meta">48 unidades · cobranza y planeación del mes</div>
@@ -949,7 +891,7 @@ function RentasSpaceCard() {
         <span className="landing-space-chrome-title">Homly Inmobiliaria</span>
         <span className="landing-space-badge landing-space-badge--blue">Activo</span>
       </div>
-      <div className="landing-space-art"><RentasArt /></div>
+      <SpacePhoto src="/img/landing-inmobiliaria.jpg" alt="Propiedad en renta" />
       <div className="landing-space-body">
         <div className="landing-space-kicker" style={{ color: '#1D4ED8' }}>Rentas</div>
         <div className="landing-space-meta">12 propiedades · rent roll al corte</div>
