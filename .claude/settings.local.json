@@ -1,0 +1,38 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ssh -i /home/ubuntu/projects/apps/homly/homly.pem -o StrictHostKeyChecking=no ubuntu@34.200.72.248 \"tail -100 ~/homly/backend/logs/homly.log 2>/dev/null || journalctl -u homly -n 100 2>/dev/null || echo 'no logs'\")",
+      "Bash(ssh *)",
+      "Bash(chmod 400 /home/ubuntu/projects/apps/homly/homly.pem)",
+      "Bash(.venv/bin/python -c \"from decouple import config; print\\(repr\\(config\\('CORS_ORIGINS', default=''\\)\\)\\)\")",
+      "Bash(curl -s -o /dev/null -D - -X OPTIONS http://localhost:3004/api/auth/token/refresh/ -H 'Origin: https://homly-dev.spotynet.com' -H 'Access-Control-Request-Method: POST' -H 'Access-Control-Request-Headers: content-type')",
+      "Bash(curl -v -X OPTIONS http://localhost:3004/api/auth/token/refresh/ -H 'Origin: https://homly-dev.spotynet.com' -H 'Access-Control-Request-Method: POST' -H 'Access-Control-Request-Headers: content-type')",
+      "Bash(.venv/bin/python manage.py check)",
+      "Bash(psql *)",
+      "Bash(grep -v \"^#\\\\|^$\")",
+      "Bash(sudo -u postgres psql -c \"\\\\du\")",
+      "Bash(sudo -u postgres psql -c \"\\\\l\")",
+      "Bash(sudo *)",
+      "Bash(.venv/bin/python manage.py migrate --run-syncdb)",
+      "Bash(.venv/bin/python manage.py migrate)",
+      "Bash(pm2 list *)",
+      "Bash(.venv/bin/python manage.py migrate --noinput)",
+      "Bash(.venv/bin/python manage.py showmigrations core)",
+      "Bash(.venv/bin/python *)",
+      "Bash(pm2 restart *)",
+      "Bash(pm2 show *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3004/api/auth/tenants-for-email/ -X POST -H \"Content-Type: application/json\" -d '{\"email\":\"test@test.com\"}')",
+      "Bash(chmod 400 /home/ubuntu/projects/pem/homly.pem)",
+      "Bash(DJANGO_SETTINGS_MODULE=homly_project.settings .venv/bin/python *)",
+      "Bash(pm2 logs *)",
+      "Bash(python3 -c ' *)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(d, indent=2\\)[:1000]\\)\")",
+      "Bash(pdftotext /tmp/carta_direct.pdf -)",
+      "Bash(pdftotext -layout /tmp/carta_check.pdf -)",
+      "Bash(.venv/bin/pip install *)",
+      "Bash(curl -s -o /dev/null -w \"HTTP:%{http_code}\" http://localhost:3004/api/auth/tenants-for-email/ -X POST -H \"Content-Type: application/json\" -d '{\"email\":\"test@test.com\"}')",
+      "Bash(awk -F: '$1>=8413')",
+      "Bash(./deploy.sh)"
+    ]
+  }
+}
