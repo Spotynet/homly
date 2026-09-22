@@ -37,7 +37,7 @@ FREQ_ES = {
     'semestral': 'Semestral',
     'anual': 'Anual',
 }
-EV_ES = {'antes': 'Antes', 'despues': 'Después', 'otro': 'Otro'}
+EV_ES = {'antes': 'Antes', 'durante': 'Durante', 'despues': 'Después', 'otro': 'Otro'}
 
 
 def _safe_filename(text, fallback='documento'):
@@ -243,19 +243,48 @@ def _meta_table(rows, st, page_w, margin_h):
 
 
 def _image_flowable(evidence, max_w, max_h):
-    from reportlab.platypus import Image, Paragraph
+    """Incrusta la foto de la evidencia leyendo bytes (local o storage remoto)."""
+    import io
+    from reportlab.platypus import Image
     from reportlab.lib.utils import ImageReader
-    name = ((evidence.original_name or '') + ' ' + (getattr(evidence.file, 'name', '') or '')).lower()
-    if not evidence.file or not any(ext in name for ext in ('.png', '.jpg', '.jpeg', '.webp', '.gif')):
+
+    if not evidence.file:
+        return None
+    name = f"{evidence.original_name or ''} {getattr(evidence.file, 'name', '') or ''}".lower()
+    if not any(ext in name for ext in ('.png', '.jpg', '.jpeg', '.webp', '.gif', '.heic', '.bmp')):
         return None
     try:
         evidence.file.open('rb')
-        reader = ImageReader(evidence.file)
+        try:
+            raw = evidence.file.read()
+        finally:
+            try:
+                evidence.file.close()
+            except Exception:
+                pass
+        if not raw:
+            return None
+        jpeg = io.BytesIO()
+        try:
+            from PIL import Image as PILImage
+            pil = PILImage.open(io.BytesIO(raw))
+            pil.load()
+            if pil.mode not in ('RGB',):
+                pil = pil.convert('RGB')
+            pil.save(jpeg, format='JPEG', quality=88)
+        except Exception:
+            jpeg = io.BytesIO(raw)
+        payload = jpeg.getvalue()
+        if not payload:
+            return None
+        reader = ImageReader(io.BytesIO(payload))
         iw, ih = reader.getSize()
         if not iw or not ih:
             return None
-        scale = min(max_w / iw, max_h / ih, 1)
-        img = Image(reader, width=iw * scale, height=ih * scale)
+        scale = min(max_w / float(iw), max_h / float(ih), 1.0)
+        stream = io.BytesIO(payload)
+        stream.name = 'evidence.jpg'
+        img = Image(stream, width=iw * scale, height=ih * scale)
         img.hAlign = 'CENTER'
         return img
     except Exception:
@@ -331,13 +360,14 @@ def generate_work_pdf(work, generated_by='') -> bytes | None:
         max_w = page_w - 2 * margin_h
         for ev in evidences:
             when = _date_es(ev.captured_at or (ev.created_at.date() if ev.created_at else None))
+            who = _esc(_user_label(ev.uploaded_by) or '—')
             block = [Paragraph(
-                f'{when} · {EV_ES.get(ev.kind, ev.kind)}'
+                f'{when} · {EV_ES.get(ev.kind, ev.kind)} · Registró {who}'
                 + (f' — {_esc(ev.notes)}' if ev.notes else '')
                 + (f' · {_esc(ev.original_name)}' if ev.original_name else ''),
                 st['mv'],
             )]
-            img = _image_flowable(ev, max_w, 7.2 * cm)
+            img = _image_flowable(ev, max_w, 9.2 * cm)
             if img:
                 block.append(Spacer(1, 6))
                 block.append(img)
@@ -447,7 +477,7 @@ def generate_history_pdf(tenant, works, generated_by='', kind_filter='', year=No
 
     story.append(Paragraph(
         'Bitácora interna de trabajos de mantenimiento. Cada ficha individual '
-        'puede imprimirse con su planeación, documentación y evidencias de antes y después.',
+        'puede imprimirse con su planeación, documentación y evidencias en orden cronológico.',
         st['small'],
     ))
 

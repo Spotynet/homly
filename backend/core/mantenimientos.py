@@ -284,6 +284,9 @@ class CondoMaintenanceWorkViewSet(viewsets.ModelViewSet):
                 captured = None
         if not captured:
             captured = date.today()
+        user = request_user(request)
+        if not getattr(user, 'is_authenticated', False) or not getattr(user, 'pk', None):
+            user = None
         obj = CondoMaintenanceEvidence.objects.create(
             work=work,
             kind=kind,
@@ -291,7 +294,7 @@ class CondoMaintenanceWorkViewSet(viewsets.ModelViewSet):
             notes=(request.data.get('notes') or '')[:400],
             captured_at=captured,
             file=uploaded,
-            uploaded_by=request_user(request),
+            uploaded_by=user,
         )
         return Response(
             MaintenanceEvidenceSerializer(obj, context={'request': request}).data,

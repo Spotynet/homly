@@ -3102,9 +3102,10 @@ class CondoMaintenanceWork(models.Model):
 
 
 class CondoMaintenanceEvidence(models.Model):
-    """Evidencia fotográfica o documental de un trabajo (antes, después u otro)."""
+    """Evidencia fotográfica o documental de un trabajo (antes, durante, después u otro)."""
     KIND_CHOICES = [
         ('antes', 'Antes'),
+        ('durante', 'Durante'),
         ('despues', 'Después'),
         ('otro', 'Otro'),
     ]

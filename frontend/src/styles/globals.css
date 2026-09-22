@@ -3303,8 +3303,17 @@ tr:hover td { background: rgba(59,185,144,0.02); }
   background: var(--sand-50);
 }
 .mnt-kind--antes { background: var(--sand-100); color: var(--ink-600); }
+.mnt-kind--durante { background: #fff7ed; color: #c2410c; }
 .mnt-kind--despues { background: var(--teal-50); color: var(--teal-700); }
 .mnt-kind--otro { background: var(--blue-50, #eff6ff); color: var(--blue-700, #1d4ed8); }
+.mnt-tl-who {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--ink-500);
+}
 .mnt-thumb {
   display: block;
   width: 100%;

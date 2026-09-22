@@ -24,7 +24,7 @@ const FREQ = {
   unica: 'Única', semanal: 'Semanal', mensual: 'Mensual',
   trimestral: 'Trimestral', semestral: 'Semestral', anual: 'Anual',
 };
-const EV_KIND = { antes: 'Antes', despues: 'Después', otro: 'Otro' };
+const EV_KIND = { antes: 'Antes', durante: 'Durante', despues: 'Después', otro: 'Otro' };
 
 const blobUrlCache = new Map();
 
@@ -752,6 +752,10 @@ function WorkDetail({ tenantId, work, ctx, canWrite, onClose, onEdit, onRefresh 
                           )}
                         </div>
                       </div>
+                      <div className="mnt-tl-who">
+                        <User size={12} />
+                        Registró {ev.uploaded_by_name || '—'}
+                      </div>
                       {ev.notes && <p className="mnt-tl-notes">{ev.notes}</p>}
                       {isImageFile(ev.original_name, ev.file_url) ? (
                         <ProtectedImage url={ev.file_url} alt={ev.notes || ev.original_name} className="mnt-thumb" />
@@ -922,6 +926,8 @@ function ReportPreview({ tenantName, work, evidences, onClose, onDownload }) {
                     <strong>{fmtDate(ev.captured_at || ev.created_at)}</strong>
                     {' · '}
                     {EV_KIND[ev.kind] || ev.kind}
+                    {' · Registró '}
+                    {ev.uploaded_by_name || '—'}
                     {ev.notes ? ` — ${ev.notes}` : ''}
                     {ev.original_name ? ` · ${ev.original_name}` : ''}
                   </figcaption>
