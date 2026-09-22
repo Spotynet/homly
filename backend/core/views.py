@@ -358,8 +358,8 @@ class CookieTokenRefreshView(APIView):
         try:
             refresh = RefreshToken(refresh_str)
             new_access = str(refresh.access_token)
-            # Rotación del refresh token
-            refresh.blacklist()
+            if hasattr(refresh, 'blacklist'):
+                refresh.blacklist()
             new_refresh = RefreshToken.for_user(
                 User.objects.get(id=refresh['user_id'])
             )

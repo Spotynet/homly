@@ -3114,6 +3114,10 @@ class CondoMaintenanceEvidence(models.Model):
     kind = models.CharField(max_length=12, choices=KIND_CHOICES, default='otro')
     original_name = models.CharField(max_length=240, blank=True, default='')
     notes = models.CharField(max_length=400, blank=True, default='')
+    captured_at = models.DateField(
+        null=True, blank=True,
+        help_text='Fecha en que se tomó o corresponde la evidencia (puede cargarse después).',
+    )
     file = models.FileField(upload_to=condo_maintenance_file_path)
     uploaded_by = models.ForeignKey(
         User, on_delete=models.SET_NULL, null=True, blank=True,
@@ -3123,7 +3127,7 @@ class CondoMaintenanceEvidence(models.Model):
 
     class Meta:
         db_table = 'condo_maintenance_evidences'
-        ordering = ['kind', 'created_at']
+        ordering = ['captured_at', 'created_at']
 
     def __str__(self):
         return self.original_name or str(self.id)

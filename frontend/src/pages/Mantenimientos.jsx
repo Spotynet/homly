@@ -4,13 +4,15 @@ import { mantenimientosAPI, api } from '../api/client';
 import ProviderSelect from '../components/providers/ProviderSelect';
 import toast from 'react-hot-toast';
 import {
-  Plus, X, Pencil, Trash2, Wrench, FileText, Download, Upload, Eye, Calendar,
+  Plus, X, Pencil, Trash2, Wrench, FileText, Download, Upload, Eye,
+  Calendar, MapPin, User, Image as ImageIcon, Check,
 } from 'lucide-react';
 
 const TABS = [
   ['preventivo', 'Preventivos'],
   ['correctivo', 'Correctivos'],
 ];
+const STATUS_FLOW = ['planeado', 'en_curso', 'realizado'];
 const STATUS = {
   planeado: { label: 'Planeado', color: 'var(--ink-500)', bg: 'var(--sand-50)' },
   en_curso: { label: 'En curso', color: 'var(--teal-700)', bg: 'var(--teal-50)' },
@@ -23,6 +25,8 @@ const FREQ = {
   trimestral: 'Trimestral', semestral: 'Semestral', anual: 'Anual',
 };
 const EV_KIND = { antes: 'Antes', despues: 'Después', otro: 'Otro' };
+
+const blobUrlCache = new Map();
 
 function errMsg(e, fallback) {
   const d = e?.response?.data?.detail;
@@ -44,10 +48,32 @@ function fmtDate(iso) {
   return `${d}/${m}/${y}`;
 }
 
+function todayISO() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 function money(n) {
   const v = Number(n);
   if (!Number.isFinite(v) || v === 0) return '';
   return v.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' });
+}
+
+function isImageFile(name, url) {
+  const s = `${name || ''} ${url || ''}`.toLowerCase();
+  return /\.(png|jpe?g|gif|webp|heic|bmp)(\?|$)/i.test(s);
+}
+
+function sortEvidences(rows) {
+  return [...(rows || [])].sort((a, b) => {
+    const da = String(a.captured_at || a.created_at || '');
+    const db = String(b.captured_at || b.created_at || '');
+    if (da !== db) return da.localeCompare(db);
+    return String(a.id || '').localeCompare(String(b.id || ''));
+  });
 }
 
 async function downloadBlob(res, filename) {
@@ -76,6 +102,46 @@ async function downloadProtected(url, name) {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(blobUrl), 1500);
+}
+
+function ProtectedImage({ url, alt, className, onClick }) {
+  const [src, setSrc] = useState('');
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    if (!url) return undefined;
+    let cancelled = false;
+    (async () => {
+      try {
+        if (blobUrlCache.has(url)) {
+          if (!cancelled) setSrc(blobUrlCache.get(url));
+          return;
+        }
+        const r = await api.get(url, { responseType: 'blob' });
+        const obj = URL.createObjectURL(r.data);
+        blobUrlCache.set(url, obj);
+        if (!cancelled) setSrc(obj);
+      } catch {
+        if (!cancelled) setFailed(true);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [url]);
+
+  if (failed) {
+    return <div className="mnt-img-fallback">No se pudo cargar la imagen</div>;
+  }
+  if (!src) {
+    return <div className="mnt-img-fallback">Cargando imagen…</div>;
+  }
+  return (
+    <img
+      src={src}
+      alt={alt || ''}
+      className={className}
+      onClick={onClick}
+    />
+  );
 }
 
 function emptyForm(kind) {
@@ -148,20 +214,20 @@ export default function Mantenimientos() {
   };
 
   const write = canWrite && (ctx?.can_write !== false);
+  const tabCounts = ctx?.by_kind?.[tab] || {};
 
   return (
     <div className="content-fade">
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
+      <div className="mnt-hero">
         <div>
-          <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', color: 'var(--teal-600)', textTransform: 'uppercase' }}>
-            Condominio
-          </div>
-          <h2 style={{ margin: '4px 0 0', fontSize: 22 }}>Mantenimientos</h2>
-          <p style={{ color: 'var(--ink-400)', fontSize: 13, marginTop: 4 }}>
-            Planea y documenta trabajos preventivos y correctivos. El historial queda con evidencias de antes y después.
+          <div className="mnt-kicker">Condominio</div>
+          <h2>Mantenimientos</h2>
+          <p>
+            Planifica el trabajo, registra evidencias con la fecha en que ocurrieron
+            y consulta el reporte en pantalla antes de descargar el PDF.
           </p>
         </div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <div className="mnt-hero-actions">
           <button className="btn btn-outline" onClick={printHistory}>
             <FileText size={14} /> Historial PDF
           </button>
@@ -173,9 +239,16 @@ export default function Mantenimientos() {
         </div>
       </div>
 
+      <ol className="mnt-howto">
+        <li><span>1</span><strong>Planear</strong><small>Área, fecha y quién lo hace</small></li>
+        <li><span>2</span><strong>Ejecutar</strong><small>Marca en curso o realizado</small></li>
+        <li><span>3</span><strong>Evidencias</strong><small>Fotos y notas con su fecha</small></li>
+        <li><span>4</span><strong>Reporte</strong><small>Revisa en pantalla y baja PDF</small></li>
+      </ol>
+
       <div className="tabs" style={{ marginBottom: 8 }}>
         {TABS.map(([k, l]) => (
-          <button key={k} className={`tab ${tab === k ? 'active' : ''}`} onClick={() => setTab(k)}>
+          <button key={k} className={`tab ${tab === k ? 'active' : ''}`} onClick={() => { setTab(k); setStatusFilter(''); }}>
             {l}
             {ctx?.counts?.[k] != null && <span style={{ marginLeft: 6, opacity: 0.65 }}>{ctx.counts[k]}</span>}
           </button>
@@ -187,46 +260,82 @@ export default function Mantenimientos() {
           : 'Correctivos: atiende fallas o daños ya ocurridos. Documenta el hallazgo, quién lo repara y las evidencias.'}
       </p>
 
-      <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
-        <select className="field-select" value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={{ maxWidth: 200 }}>
-          <option value="">Todos los estatus</option>
-          {Object.entries(STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-        </select>
+      <div className="mnt-filters">
+        <button
+          type="button"
+          className={`mnt-filter ${!statusFilter ? 'on' : ''}`}
+          onClick={() => setStatusFilter('')}
+        >
+          Todos
+          <em>{ctx?.counts?.[tab] ?? list.length}</em>
+        </button>
+        {Object.entries(STATUS).map(([k, v]) => (
+          <button
+            key={k}
+            type="button"
+            className={`mnt-filter ${statusFilter === k ? 'on' : ''}`}
+            onClick={() => setStatusFilter(statusFilter === k ? '' : k)}
+          >
+            {v.label}
+            {tabCounts[k] != null && <em>{tabCounts[k]}</em>}
+          </button>
+        ))}
       </div>
 
       {loading ? (
-        <div style={{ padding: 40, textAlign: 'center', color: 'var(--ink-400)' }}>Cargando trabajos…</div>
+        <div className="mnt-empty">Cargando trabajos…</div>
       ) : list.length === 0 ? (
-        <div className="card" style={{ padding: 36, textAlign: 'center' }}>
-          <Wrench size={28} style={{ color: 'var(--teal-600)', marginBottom: 10 }} />
-          <h3 style={{ margin: '0 0 8px' }}>
+        <div className="card mnt-empty">
+          <Wrench size={28} />
+          <h3>
             {tab === 'preventivo' ? 'Sin mantenimientos preventivos' : 'Sin mantenimientos correctivos'}
           </h3>
-          <p style={{ color: 'var(--ink-400)', fontSize: 13, maxWidth: 460, margin: '0 auto' }}>
-            Crea una planeación, elige o escribe el área, indica quién lo realiza y, al concluir, adjunta evidencias de antes y después.
+          <p>
+            {statusFilter
+              ? 'No hay trabajos con ese estatus. Prueba otro filtro o crea una planeación.'
+              : 'Crea una planeación, elige el área, indica quién lo realiza y, al concluir, adjunta evidencias con la fecha en que se tomaron.'}
           </p>
+          {write && !statusFilter && (
+            <button className="btn btn-primary" onClick={() => setEditing(emptyForm(tab))}>
+              <Plus size={14} /> Nueva planeación
+            </button>
+          )}
         </div>
       ) : (
-        <div className="asm-list">
+        <div className="mnt-list">
           {list.map(w => (
-            <button key={w.id} className="asm-row" onClick={() => openDetail(w.id)}>
-              <div className="asm-row-top">
-                <div>
-                  <div style={{ fontWeight: 700 }}>{w.title}</div>
-                  <div style={{ fontSize: 12, color: 'var(--ink-400)', marginTop: 4 }}>
-                    {w.area_name || 'Sin área'}
-                    {w.performed_by ? ` · ${w.performed_by}` : ''}
-                    {` · Prog. ${fmtDate(w.scheduled_date)}`}
-                    {w.performed_date ? ` · Realizado ${fmtDate(w.performed_date)}` : ''}
-                  </div>
+            <button key={w.id} type="button" className={`mnt-card mnt-card--${w.status}`} onClick={() => openDetail(w.id)}>
+              <div className="mnt-card-main">
+                <div className="mnt-card-title">{w.title}</div>
+                <div className="mnt-card-meta">
+                  <span><MapPin size={12} /> {w.area_name || 'Sin área'}</span>
+                  <span><Calendar size={12} /> Prog. {fmtDate(w.scheduled_date)}</span>
+                  {w.performed_date && <span><Check size={12} /> {fmtDate(w.performed_date)}</span>}
+                  {w.performed_by && <span><User size={12} /> {w.performed_by}</span>}
                 </div>
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  <Pill value={w.status} />
-                  {w.priority === 'urgente' || w.priority === 'alta' ? (
-                    <span className="proj-chip">{PRIORITY[w.priority]}</span>
-                  ) : null}
-                  {w.evidence_count > 0 && <span className="proj-chip">{w.evidence_count} evidencia(s)</span>}
+                <div className="mnt-mini-flow">
+                  {STATUS_FLOW.map((st, i) => {
+                    const idx = STATUS_FLOW.indexOf(w.status);
+                    const done = w.status !== 'cancelado' && idx >= i;
+                    const current = w.status === st;
+                    return (
+                      <span key={st} className={`mnt-mini-dot ${done ? 'done' : ''} ${current ? 'current' : ''}`}>
+                        {STATUS[st].label}
+                      </span>
+                    );
+                  })}
+                  {w.status === 'cancelado' && <span className="mnt-mini-dot cancel">Cancelado</span>}
                 </div>
+              </div>
+              <div className="mnt-card-side">
+                <Pill value={w.status} />
+                {(w.priority === 'urgente' || w.priority === 'alta') && (
+                  <span className="proj-chip">{PRIORITY[w.priority]}</span>
+                )}
+                <span className="mnt-ev-count">
+                  <ImageIcon size={12} /> {w.evidence_count || 0} evidencia{(w.evidence_count || 0) === 1 ? '' : 's'}
+                </span>
+                <span className="mnt-open-hint"><Eye size={13} /> Abrir ficha</span>
               </div>
             </button>
           ))}
@@ -330,112 +439,128 @@ function WorkForm({ ctx, canWrite, initial, onClose, onSaved }) {
     <div className="modal-bg open" onClick={onClose}>
       <div className="modal xl" onClick={e => e.stopPropagation()}>
         <div className="modal-head">
-          <h3>{initial.id ? 'Editar trabajo' : 'Nueva planeación'}</h3>
+          <div>
+            <h3>{initial.id ? 'Editar trabajo' : 'Nueva planeación'}</h3>
+            <p className="mnt-modal-sub">
+              {form.kind === 'preventivo'
+                ? 'Programa el servicio, el área y quién lo ejecuta.'
+                : 'Describe la falla, el área afectada y quién la atiende.'}
+            </p>
+          </div>
           <button className="modal-close" onClick={onClose}><X size={16} /></button>
         </div>
-        <div className="modal-body" style={{ display: 'grid', gap: 12 }}>
-          <p className="asm-agenda-hint" style={{ margin: 0 }}>
-            {form.kind === 'preventivo'
-              ? 'Programa el servicio, el área y quién lo ejecuta. Al concluir, documenta lo hecho y adjunta evidencias.'
-              : 'Describe la falla, el área afectada y quién la atiende. Las fotos de antes y después cierran el historial.'}
-          </p>
-          <div className="field">
-            <div className="field-label">Título</div>
-            <input className="field-input" value={form.title} disabled={!canWrite} onChange={e => set('title', e.target.value)} placeholder="Ej. Servicio de bombas del cisterna" />
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+        <div className="modal-body mnt-form">
+          <section className="mnt-form-section">
+            <h4>Qué se va a hacer</h4>
             <div className="field">
-              <div className="field-label">Tipo</div>
-              <select className="field-select" value={form.kind} disabled={!canWrite} onChange={e => set('kind', e.target.value)}>
-                <option value="preventivo">Preventivo</option>
-                <option value="correctivo">Correctivo</option>
-              </select>
+              <div className="field-label">Título</div>
+              <input className="field-input" value={form.title} disabled={!canWrite} onChange={e => set('title', e.target.value)} placeholder="Ej. Servicio de bombas del cisterna" />
             </div>
-            <div className="field">
-              <div className="field-label">Estatus</div>
-              <select className="field-select" value={form.status} disabled={!canWrite} onChange={e => set('status', e.target.value)}>
-                {Object.entries(STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-              </select>
-            </div>
-            <div className="field">
-              <div className="field-label">Prioridad</div>
-              <select className="field-select" value={form.priority} disabled={!canWrite} onChange={e => set('priority', e.target.value)}>
-                {Object.entries(PRIORITY).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-              </select>
-            </div>
-          </div>
-          <div className="field">
-            <div className="field-label">Área común o lugar de trabajo</div>
-            <select className="field-select" value={form.area_pick} disabled={!canWrite} onChange={e => pickArea(e.target.value)}>
-              <option value="">Elegir área común…</option>
-              {areas.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-              <option value="__other">Otra (escribir)</option>
-            </select>
-            {(form.area_pick === '__other' || !form.area_pick) && (
-              <input
-                className="field-input"
-                style={{ marginTop: 8 }}
-                value={form.area_name}
-                disabled={!canWrite}
-                placeholder="Escribe el área, zona o equipo"
-                onChange={e => set('area_name', e.target.value)}
-              />
-            )}
-          </div>
-          <div className="field">
-            <div className="field-label">Planeación del trabajo</div>
-            <textarea className="field-input" rows={3} value={form.description} disabled={!canWrite} onChange={e => set('description', e.target.value)} placeholder="Qué se va a hacer, materiales, alcance…" />
-          </div>
-          <div className="field">
-            <div className="field-label">Quién lo realiza</div>
-            <input className="field-input" value={form.performed_by} disabled={!canWrite} onChange={e => set('performed_by', e.target.value)} placeholder="Personal interno o nombre" />
-          </div>
-          <ProviderSelect
-            tenantId={tenantId}
-            moduleKey="mantenimientos"
-            providerId={form.provider}
-            name={form.vendor_name}
-            rfc=""
-            showRfc={false}
-            disabled={!canWrite}
-            onChange={({ provider, name }) => setForm(f => ({
-              ...f,
-              provider: provider || null,
-              vendor_name: name ?? f.vendor_name,
-            }))}
-          />
-          <div style={{ display: 'grid', gridTemplateColumns: form.kind === 'preventivo' ? '1fr 1fr 1fr' : '1fr 1fr', gap: 10 }}>
-            <div className="field">
-              <div className="field-label">Fecha programada</div>
-              <input className="field-input" type="date" value={form.scheduled_date || ''} disabled={!canWrite} onChange={e => set('scheduled_date', e.target.value)} />
-            </div>
-            <div className="field">
-              <div className="field-label">Fecha de realización</div>
-              <input className="field-input" type="date" value={form.performed_date || ''} disabled={!canWrite} onChange={e => set('performed_date', e.target.value)} />
-            </div>
-            {form.kind === 'preventivo' && (
+            <div className="mnt-form-grid3">
               <div className="field">
-                <div className="field-label">Periodicidad</div>
-                <select className="field-select" value={form.frequency} disabled={!canWrite} onChange={e => set('frequency', e.target.value)}>
-                  {Object.entries(FREQ).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                <div className="field-label">Tipo</div>
+                <select className="field-select" value={form.kind} disabled={!canWrite} onChange={e => set('kind', e.target.value)}>
+                  <option value="preventivo">Preventivo</option>
+                  <option value="correctivo">Correctivo</option>
                 </select>
               </div>
-            )}
-          </div>
-          {form.kind === 'preventivo' && form.frequency !== 'unica' && (
-            <div className="field">
-              <div className="field-label">Próxima fecha</div>
-              <input className="field-input" type="date" value={form.next_due_date || ''} disabled={!canWrite} onChange={e => set('next_due_date', e.target.value)} />
+              <div className="field">
+                <div className="field-label">Estatus</div>
+                <select className="field-select" value={form.status} disabled={!canWrite} onChange={e => set('status', e.target.value)}>
+                  {Object.entries(STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                </select>
+              </div>
+              <div className="field">
+                <div className="field-label">Prioridad</div>
+                <select className="field-select" value={form.priority} disabled={!canWrite} onChange={e => set('priority', e.target.value)}>
+                  {Object.entries(PRIORITY).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </select>
+              </div>
             </div>
-          )}
-          <div className="field">
-            <div className="field-label">Costo (opcional)</div>
-            <input className="field-input" type="number" min="0" step="0.01" value={form.cost} disabled={!canWrite} onChange={e => set('cost', e.target.value)} />
-          </div>
-          <div className="field">
-            <div className="field-label">Documentación de lo realizado</div>
-            <textarea className="field-input" rows={4} value={form.work_notes} disabled={!canWrite} onChange={e => set('work_notes', e.target.value)} placeholder="Qué se hizo, hallazgos, pendientes…" />
-          </div>
+            <div className="field">
+              <div className="field-label">Planeación del trabajo</div>
+              <textarea className="field-input" rows={3} value={form.description} disabled={!canWrite} onChange={e => set('description', e.target.value)} placeholder="Qué se va a hacer, materiales, alcance…" />
+            </div>
+          </section>
+
+          <section className="mnt-form-section">
+            <h4>Dónde y quién</h4>
+            <div className="field">
+              <div className="field-label">Área común o lugar de trabajo</div>
+              <select className="field-select" value={form.area_pick} disabled={!canWrite} onChange={e => pickArea(e.target.value)}>
+                <option value="">Elegir área común…</option>
+                {areas.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                <option value="__other">Otra (escribir)</option>
+              </select>
+              {(form.area_pick === '__other' || !form.area_pick) && (
+                <input
+                  className="field-input"
+                  style={{ marginTop: 8 }}
+                  value={form.area_name}
+                  disabled={!canWrite}
+                  placeholder="Escribe el área, zona o equipo"
+                  onChange={e => set('area_name', e.target.value)}
+                />
+              )}
+            </div>
+            <div className="field">
+              <div className="field-label">Quién lo realiza</div>
+              <input className="field-input" value={form.performed_by} disabled={!canWrite} onChange={e => set('performed_by', e.target.value)} placeholder="Personal interno o nombre" />
+            </div>
+            <ProviderSelect
+              tenantId={tenantId}
+              moduleKey="mantenimientos"
+              providerId={form.provider}
+              name={form.vendor_name}
+              rfc=""
+              showRfc={false}
+              disabled={!canWrite}
+              onChange={({ provider, name }) => setForm(f => ({
+                ...f,
+                provider: provider || null,
+                vendor_name: name ?? f.vendor_name,
+              }))}
+            />
+          </section>
+
+          <section className="mnt-form-section">
+            <h4>Fechas y costo</h4>
+            <div className={`mnt-form-grid${form.kind === 'preventivo' ? '3' : '2'}`}>
+              <div className="field">
+                <div className="field-label">Fecha programada</div>
+                <input className="field-input" type="date" value={form.scheduled_date || ''} disabled={!canWrite} onChange={e => set('scheduled_date', e.target.value)} />
+              </div>
+              <div className="field">
+                <div className="field-label">Fecha de realización</div>
+                <input className="field-input" type="date" value={form.performed_date || ''} disabled={!canWrite} onChange={e => set('performed_date', e.target.value)} />
+              </div>
+              {form.kind === 'preventivo' && (
+                <div className="field">
+                  <div className="field-label">Periodicidad</div>
+                  <select className="field-select" value={form.frequency} disabled={!canWrite} onChange={e => set('frequency', e.target.value)}>
+                    {Object.entries(FREQ).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                  </select>
+                </div>
+              )}
+            </div>
+            {form.kind === 'preventivo' && form.frequency !== 'unica' && (
+              <div className="field">
+                <div className="field-label">Próxima fecha</div>
+                <input className="field-input" type="date" value={form.next_due_date || ''} disabled={!canWrite} onChange={e => set('next_due_date', e.target.value)} />
+              </div>
+            )}
+            <div className="field">
+              <div className="field-label">Costo (opcional)</div>
+              <input className="field-input" type="number" min="0" step="0.01" value={form.cost} disabled={!canWrite} onChange={e => set('cost', e.target.value)} />
+            </div>
+          </section>
+
+          <section className="mnt-form-section">
+            <h4>Documentación de lo realizado</h4>
+            <div className="field">
+              <textarea className="field-input" rows={4} value={form.work_notes} disabled={!canWrite} onChange={e => set('work_notes', e.target.value)} placeholder="Qué se hizo, hallazgos, pendientes…" />
+            </div>
+          </section>
         </div>
         <div className="modal-foot">
           <button className="btn btn-outline" onClick={onClose}>Cancelar</button>
@@ -449,21 +574,17 @@ function WorkForm({ ctx, canWrite, initial, onClose, onSaved }) {
 function WorkDetail({ tenantId, work, ctx, canWrite, onClose, onEdit, onRefresh }) {
   const [evKind, setEvKind] = useState('antes');
   const [evNotes, setEvNotes] = useState('');
+  const [evDate, setEvDate] = useState(todayISO);
+  const [uploading, setUploading] = useState(false);
+  const [showReport, setShowReport] = useState(false);
   const locked = work.status === 'cancelado';
-
-  const printWork = async () => {
-    try {
-      const r = await mantenimientosAPI.printDoc(tenantId, work.id);
-      await downloadBlob(r, `Mantenimiento_${work.title}.pdf`);
-    } catch (e) {
-      toast.error(errMsg(e, 'No se pudo generar el PDF'));
-    }
-  };
+  const evidences = sortEvidences(work.evidences);
 
   const setStatus = async (status) => {
+    if (!canWrite || locked) return;
     try {
       const extra = status === 'realizado' && !work.performed_date
-        ? { performed_date: new Date().toISOString().slice(0, 10) }
+        ? { performed_date: todayISO() }
         : {};
       await mantenimientosAPI.update(tenantId, work.id, { status, ...extra });
       toast.success(STATUS[status]?.label || 'Actualizado');
@@ -473,141 +594,346 @@ function WorkDetail({ tenantId, work, ctx, canWrite, onClose, onEdit, onRefresh 
     }
   };
 
-  const before = (work.evidences || []).filter(e => e.kind === 'antes');
-  const after = (work.evidences || []).filter(e => e.kind === 'despues');
-  const other = (work.evidences || []).filter(e => e.kind === 'otro');
+  const uploadFiles = async (files) => {
+    const list = Array.from(files || []).filter(Boolean);
+    if (!list.length) return;
+    if (!evDate) {
+      toast.error('Indica la fecha de la evidencia');
+      return;
+    }
+    setUploading(true);
+    try {
+      for (const file of list) {
+        const fd = new FormData();
+        fd.append('file', file, file.name);
+        fd.append('kind', evKind);
+        fd.append('notes', evNotes);
+        fd.append('captured_at', evDate);
+        await mantenimientosAPI.uploadEvidence(tenantId, work.id, fd);
+      }
+      toast.success(list.length > 1 ? `${list.length} evidencias cargadas` : 'Evidencia cargada');
+      setEvNotes('');
+      onRefresh();
+    } catch (err) {
+      toast.error(errMsg(err, 'No se pudo subir'));
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const currentIdx = STATUS_FLOW.indexOf(work.status);
 
   return (
     <div className="modal-bg open" onClick={onClose}>
-      <div className="modal xl" onClick={e => e.stopPropagation()}>
+      <div className="modal xl mnt-detail" onClick={e => e.stopPropagation()}>
         <div className="modal-head">
-          <h3>{work.title}</h3>
+          <div>
+            <h3>{work.title}</h3>
+            <p className="mnt-modal-sub">
+              {work.kind === 'preventivo' ? 'Preventivo' : 'Correctivo'}
+              {work.area_name ? ` · ${work.area_name}` : ''}
+            </p>
+          </div>
           <button className="modal-close" onClick={onClose}><X size={16} /></button>
         </div>
-        <div className="modal-body" style={{ display: 'grid', gap: 14 }}>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <Pill value={work.status} />
-            <span className="proj-chip">{work.kind === 'preventivo' ? 'Preventivo' : 'Correctivo'}</span>
-            <span className="proj-chip">{PRIORITY[work.priority]}</span>
+        <div className="modal-body mnt-detail-body">
+          <div className="mnt-status-row">
+            <div className="mnt-stepper" role="list">
+              {STATUS_FLOW.map((st, i) => {
+                const done = work.status !== 'cancelado' && currentIdx >= i;
+                const current = work.status === st;
+                return (
+                  <button
+                    key={st}
+                    type="button"
+                    role="listitem"
+                    className={`mnt-step ${done ? 'done' : ''} ${current ? 'current' : ''}`}
+                    disabled={!canWrite || locked}
+                    onClick={() => setStatus(st)}
+                  >
+                    <span>{i + 1}</span>
+                    <strong>{STATUS[st].label}</strong>
+                    <small>
+                      {st === 'planeado' && 'Programado'}
+                      {st === 'en_curso' && 'En ejecución'}
+                      {st === 'realizado' && 'Cerrado'}
+                    </small>
+                  </button>
+                );
+              })}
+            </div>
+            {work.status === 'cancelado' && <Pill value="cancelado" />}
           </div>
-          <div className="asm-rules-grid">
-            <div><span style={{ fontSize: 11, color: 'var(--ink-400)' }}>Área</span><strong>{work.area_name || '—'}</strong></div>
-            <div><span style={{ fontSize: 11, color: 'var(--ink-400)' }}>Quién lo realiza</span><strong>{work.performed_by || '—'}</strong></div>
-            <div><span style={{ fontSize: 11, color: 'var(--ink-400)' }}>Proveedor</span><strong>{work.vendor_name || '—'}</strong></div>
-            <div><span style={{ fontSize: 11, color: 'var(--ink-400)' }}>Programado</span><strong>{fmtDate(work.scheduled_date)}</strong></div>
-            <div><span style={{ fontSize: 11, color: 'var(--ink-400)' }}>Realizado</span><strong>{fmtDate(work.performed_date)}</strong></div>
+
+          <div className="mnt-meta-grid">
+            <div><span>Área</span><strong>{work.area_name || '—'}</strong></div>
+            <div><span>Quién lo realiza</span><strong>{work.performed_by || '—'}</strong></div>
+            <div><span>Proveedor</span><strong>{work.vendor_name || '—'}</strong></div>
+            <div><span>Programado</span><strong>{fmtDate(work.scheduled_date)}</strong></div>
+            <div><span>Realizado</span><strong>{fmtDate(work.performed_date)}</strong></div>
             {work.kind === 'preventivo' && (
-              <div><span style={{ fontSize: 11, color: 'var(--ink-400)' }}>Periodicidad</span><strong>{FREQ[work.frequency] || work.frequency}</strong></div>
+              <div><span>Periodicidad</span><strong>{FREQ[work.frequency] || work.frequency}</strong></div>
             )}
             {money(work.cost) && (
-              <div><span style={{ fontSize: 11, color: 'var(--ink-400)' }}>Costo</span><strong>{money(work.cost)}</strong></div>
+              <div><span>Costo</span><strong>{money(work.cost)}</strong></div>
             )}
+            <div><span>Prioridad</span><strong>{PRIORITY[work.priority] || work.priority}</strong></div>
           </div>
+
           {work.description && (
-            <div>
-              <h4 style={{ fontSize: 13, margin: '0 0 6px' }}>Planeación</h4>
-              <p style={{ margin: 0, fontSize: 13, color: 'var(--ink-600)', whiteSpace: 'pre-wrap' }}>{work.description}</p>
-            </div>
+            <section className="mnt-notes">
+              <h4>Planeación</h4>
+              <p>{work.description}</p>
+            </section>
           )}
           {work.work_notes && (
-            <div>
-              <h4 style={{ fontSize: 13, margin: '0 0 6px' }}>Documentación</h4>
-              <p style={{ margin: 0, fontSize: 13, color: 'var(--ink-600)', whiteSpace: 'pre-wrap' }}>{work.work_notes}</p>
-            </div>
+            <section className="mnt-notes">
+              <h4>Documentación de lo realizado</h4>
+              <p>{work.work_notes}</p>
+            </section>
           )}
 
-          <EvidenceBlock title="Evidencias de antes" rows={before} canWrite={canWrite && !locked} tenantId={tenantId} workId={work.id} onRefresh={onRefresh} />
-          <EvidenceBlock title="Evidencias de después" rows={after} canWrite={canWrite && !locked} tenantId={tenantId} workId={work.id} onRefresh={onRefresh} />
-          {other.length > 0 && (
-            <EvidenceBlock title="Otros archivos" rows={other} canWrite={canWrite && !locked} tenantId={tenantId} workId={work.id} onRefresh={onRefresh} />
-          )}
+          <section className="mnt-ev-section">
+            <div className="mnt-ev-head">
+              <h4>Línea de tiempo de evidencias</h4>
+              <span>{evidences.length} archivo{evidences.length === 1 ? '' : 's'} · orden cronológico</span>
+            </div>
+            {evidences.length === 0 ? (
+              <p className="mnt-ev-empty">Aún no hay fotos ni notas. Cárgalas con la fecha en que se tomaron, aunque subas el archivo después.</p>
+            ) : (
+              <div className="mnt-timeline">
+                {evidences.map(ev => (
+                  <article key={ev.id} className="mnt-tl-item">
+                    <div className="mnt-tl-date">
+                      <Calendar size={13} />
+                      {fmtDate(ev.captured_at || ev.created_at)}
+                    </div>
+                    <div className="mnt-tl-card">
+                      <div className="mnt-tl-top">
+                        <span className={`mnt-kind mnt-kind--${ev.kind}`}>{EV_KIND[ev.kind] || ev.kind}</span>
+                        <span className="mnt-tl-name">{ev.original_name}</span>
+                        <div className="mnt-tl-actions">
+                          <button className="btn btn-outline btn-sm" type="button" onClick={() => downloadProtected(ev.file_url, ev.original_name)}>
+                            <Download size={12} />
+                          </button>
+                          {canWrite && !locked && (
+                            <button
+                              className="btn btn-outline btn-sm"
+                              type="button"
+                              onClick={async () => {
+                                if (!window.confirm('¿Eliminar esta evidencia?')) return;
+                                await mantenimientosAPI.deleteEvidence(tenantId, work.id, ev.id);
+                                onRefresh();
+                              }}
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      {ev.notes && <p className="mnt-tl-notes">{ev.notes}</p>}
+                      {isImageFile(ev.original_name, ev.file_url) ? (
+                        <ProtectedImage url={ev.file_url} alt={ev.notes || ev.original_name} className="mnt-thumb" />
+                      ) : (
+                        <div className="mnt-file-chip"><FileText size={14} /> Archivo adjunto</div>
+                      )}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
 
           {canWrite && !locked && (
-            <div className="card" style={{ padding: 12 }}>
-              <div className="field-label">Subir evidencia</div>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'end' }}>
-                <select className="field-select" value={evKind} onChange={e => setEvKind(e.target.value)}>
-                  {Object.entries(EV_KIND).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                </select>
-                <input className="field-input" placeholder="Nota (opcional)" value={evNotes} onChange={e => setEvNotes(e.target.value)} />
-                <label className="btn btn-primary" style={{ cursor: 'pointer' }}>
-                  <Upload size={14} /> Subir
-                  <input type="file" hidden accept="image/*,.pdf" onChange={async e => {
-                    const file = e.target.files?.[0];
-                    e.target.value = '';
-                    if (!file) return;
-                    const fd = new FormData();
-                    fd.append('file', file, file.name);
-                    fd.append('kind', evKind);
-                    fd.append('notes', evNotes);
-                    try {
-                      await mantenimientosAPI.uploadEvidence(tenantId, work.id, fd);
-                      toast.success('Evidencia cargada');
-                      setEvNotes('');
-                      onRefresh();
-                    } catch (err) {
-                      toast.error(errMsg(err, 'No se pudo subir'));
-                    }
-                  }} />
-                </label>
+            <section className="mnt-upload">
+              <h4>Cargar evidencia</h4>
+              <p>Si las fotos se toman un día y se suben después, elige la fecha real de la evidencia.</p>
+              <div className="mnt-upload-grid">
+                <div className="field">
+                  <div className="field-label">Fecha de la evidencia</div>
+                  <input className="field-input" type="date" value={evDate} max={todayISO()} onChange={e => setEvDate(e.target.value)} />
+                </div>
+                <div className="field">
+                  <div className="field-label">Momento</div>
+                  <select className="field-select" value={evKind} onChange={e => setEvKind(e.target.value)}>
+                    {Object.entries(EV_KIND).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                  </select>
+                </div>
+                <div className="field mnt-upload-notes">
+                  <div className="field-label">Nota (opcional)</div>
+                  <input className="field-input" placeholder="Qué se ve o qué se hizo" value={evNotes} onChange={e => setEvNotes(e.target.value)} />
+                </div>
               </div>
-            </div>
+              <label className={`btn btn-primary ${uploading ? 'disabled' : ''}`} style={{ cursor: uploading ? 'wait' : 'pointer', alignSelf: 'flex-start' }}>
+                <Upload size={14} /> {uploading ? 'Subiendo…' : 'Elegir archivos'}
+                <input
+                  type="file"
+                  hidden
+                  multiple
+                  accept="image/*,.pdf"
+                  disabled={uploading}
+                  onChange={async e => {
+                    const files = e.target.files;
+                    e.target.value = '';
+                    await uploadFiles(files);
+                  }}
+                />
+              </label>
+            </section>
           )}
         </div>
-        <div className="modal-foot" style={{ flexWrap: 'wrap' }}>
-          <button className="btn btn-outline" onClick={printWork}><Eye size={14} /> Ver PDF</button>
-          {canWrite && work.status === 'planeado' && (
-            <button className="btn btn-outline" onClick={() => setStatus('en_curso')}>Marcar en curso</button>
-          )}
-          {canWrite && ['planeado', 'en_curso'].includes(work.status) && (
-            <button className="btn btn-primary" onClick={() => setStatus('realizado')}>Marcar realizado</button>
-          )}
+        <div className="modal-foot mnt-detail-foot">
+          <div className="mnt-foot-main">
+            <button className="btn btn-primary" onClick={() => setShowReport(true)}>
+              <Eye size={14} /> Ver reporte
+            </button>
+            {canWrite && !locked && (
+              <button className="btn btn-outline" onClick={onEdit}><Pencil size={14} /> Editar</button>
+            )}
+            <button className="btn btn-outline" onClick={onClose}>Cerrar</button>
+          </div>
           {canWrite && !locked && (
-            <button className="btn btn-outline" onClick={onEdit}><Pencil size={14} /> Editar</button>
+            <div className="mnt-foot-danger">
+              {work.status !== 'cancelado' && (
+                <button className="btn btn-outline" onClick={() => setStatus('cancelado')}>Cancelar trabajo</button>
+              )}
+              {work.status === 'planeado' && (
+                <button className="btn btn-outline" onClick={async () => {
+                  if (!window.confirm('¿Eliminar esta planeación?')) return;
+                  await mantenimientosAPI.delete(tenantId, work.id);
+                  toast.success('Eliminado');
+                  onClose();
+                }}><Trash2 size={14} /> Eliminar</button>
+              )}
+            </div>
           )}
-          {canWrite && !locked && (
-            <button className="btn btn-outline" onClick={() => setStatus('cancelado')}>Cancelar trabajo</button>
-          )}
-          {canWrite && work.status === 'planeado' && (
-            <button className="btn btn-outline" onClick={async () => {
-              if (!window.confirm('¿Eliminar esta planeación?')) return;
-              await mantenimientosAPI.delete(tenantId, work.id);
-              toast.success('Eliminado');
-              onClose();
-            }}><Trash2 size={14} /> Eliminar</button>
-          )}
-          <button className="btn btn-outline" onClick={onClose}>Cerrar</button>
         </div>
       </div>
+
+      {showReport && (
+        <ReportPreview
+          tenantName={ctx?.razon_social || ctx?.name || ''}
+          work={work}
+          evidences={evidences}
+          onClose={() => setShowReport(false)}
+          onDownload={async () => {
+            try {
+              const r = await mantenimientosAPI.printDoc(tenantId, work.id);
+              await downloadBlob(r, `Mantenimiento_${work.title}.pdf`);
+            } catch (e) {
+              toast.error(errMsg(e, 'No se pudo generar el PDF'));
+            }
+          }}
+        />
+      )}
     </div>
   );
 }
 
-function EvidenceBlock({ title, rows, canWrite, tenantId, workId, onRefresh }) {
-  if (!rows.length && !canWrite) return null;
+function ReportPreview({ tenantName, work, evidences, onClose, onDownload }) {
+  const [lightbox, setLightbox] = useState(null);
+
   return (
-    <div>
-      <h4 style={{ fontSize: 13, margin: '0 0 8px' }}>{title}</h4>
-      {rows.length === 0 ? (
-        <p style={{ fontSize: 12, color: 'var(--ink-400)', margin: 0 }}>Aún no hay archivos en este apartado.</p>
-      ) : (
-        <div className="proj-file-list">
-          {rows.map(f => (
-            <div key={f.id} className="proj-file-row">
-              <Calendar size={14} />
-              <span className="name">{f.original_name}</span>
-              {f.notes && <span className="proj-chip">{f.notes}</span>}
-              <button className="btn btn-outline btn-sm" onClick={() => downloadProtected(f.file_url, f.original_name)}>
-                <Download size={12} />
-              </button>
-              {canWrite && (
-                <button className="btn btn-outline btn-sm" onClick={async () => {
-                  await mantenimientosAPI.deleteEvidence(tenantId, workId, f.id);
-                  onRefresh();
-                }}><Trash2 size={12} /></button>
+    <div className="modal-bg open mnt-report-overlay" onClick={e => { e.stopPropagation(); onClose(); }}>
+      <div className="modal mnt-report" onClick={e => e.stopPropagation()}>
+        <div className="modal-head">
+          <div>
+            <h3>Reporte de mantenimiento</h3>
+            <p className="mnt-modal-sub">Revisa imágenes y notas en orden cronológico. Después puedes descargar el PDF.</p>
+          </div>
+          <button className="modal-close" onClick={onClose}><X size={16} /></button>
+        </div>
+        <div className="modal-body">
+          <article className="mnt-paper">
+            <header className="mnt-paper-head">
+              <div className="mnt-paper-kicker">Historial de mantenimientos</div>
+              <div className="mnt-paper-tenant">{tenantName || 'Condominio'}</div>
+              <h2>{work.title}</h2>
+              <div className="mnt-paper-pills">
+                <span>{work.kind === 'preventivo' ? 'Preventivo' : 'Correctivo'}</span>
+                <span>{STATUS[work.status]?.label || work.status}</span>
+                {PRIORITY[work.priority] && <span>{PRIORITY[work.priority]}</span>}
+              </div>
+            </header>
+
+            <dl className="mnt-paper-meta">
+              <div><dt>Área</dt><dd>{work.area_name || '—'}</dd></div>
+              <div><dt>Quién lo realiza</dt><dd>{work.performed_by || '—'}</dd></div>
+              <div><dt>Proveedor</dt><dd>{work.vendor_name || '—'}</dd></div>
+              <div><dt>Fecha programada</dt><dd>{fmtDate(work.scheduled_date)}</dd></div>
+              <div><dt>Fecha de realización</dt><dd>{fmtDate(work.performed_date)}</dd></div>
+              {work.kind === 'preventivo' && (
+                <div><dt>Periodicidad</dt><dd>{FREQ[work.frequency] || work.frequency}</dd></div>
               )}
-            </div>
-          ))}
+              {money(work.cost) && (
+                <div><dt>Costo</dt><dd>{money(work.cost)}</dd></div>
+              )}
+            </dl>
+
+            {work.description && (
+              <section>
+                <h3>Planeación del trabajo</h3>
+                <p>{work.description}</p>
+              </section>
+            )}
+            {work.work_notes && (
+              <section>
+                <h3>Documentación de lo realizado</h3>
+                <p>{work.work_notes}</p>
+              </section>
+            )}
+
+            <section>
+              <h3>Evidencias en orden cronológico</h3>
+              {evidences.length === 0 ? (
+                <p className="mnt-paper-muted">Este trabajo aún no tiene evidencias cargadas.</p>
+              ) : evidences.map(ev => (
+                <figure key={ev.id} className="mnt-paper-ev">
+                  <figcaption>
+                    <strong>{fmtDate(ev.captured_at || ev.created_at)}</strong>
+                    {' · '}
+                    {EV_KIND[ev.kind] || ev.kind}
+                    {ev.notes ? ` — ${ev.notes}` : ''}
+                    {ev.original_name ? ` · ${ev.original_name}` : ''}
+                  </figcaption>
+                  {isImageFile(ev.original_name, ev.file_url) ? (
+                    <ProtectedImage
+                      url={ev.file_url}
+                      alt={ev.notes || ev.original_name}
+                      className="mnt-paper-img"
+                      onClick={() => setLightbox(ev)}
+                    />
+                  ) : (
+                    <button type="button" className="mnt-file-chip" onClick={() => downloadProtected(ev.file_url, ev.original_name)}>
+                      <FileText size={14} /> Descargar {ev.original_name || 'archivo'}
+                    </button>
+                  )}
+                </figure>
+              ))}
+            </section>
+
+            <p className="mnt-paper-foot">
+              Este documento forma parte del historial de mantenimientos del condominio.
+              Las fotografías y notas quedan como constancia interna de los trabajos.
+            </p>
+          </article>
+        </div>
+        <div className="modal-foot">
+          <button className="btn btn-outline" onClick={onClose}>Cerrar</button>
+          <button className="btn btn-primary" onClick={onDownload}>
+            <Download size={14} /> Descargar PDF
+          </button>
+        </div>
+      </div>
+
+      {lightbox && (
+        <div className="mnt-lightbox" onClick={e => { e.stopPropagation(); setLightbox(null); }}>
+          <button className="modal-close" type="button" onClick={() => setLightbox(null)}><X size={16} /></button>
+          <ProtectedImage
+            url={lightbox.file_url}
+            alt={lightbox.notes || lightbox.original_name}
+            className="mnt-lightbox-img"
+          />
         </div>
       )}
     </div>

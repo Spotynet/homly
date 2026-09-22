@@ -325,13 +325,14 @@ def generate_work_pdf(work, generated_by='') -> bytes | None:
             if para.strip():
                 story.append(Paragraph(_esc(para.strip()), st['body']))
 
-    evidences = list(work.evidences.all())
+    evidences = list(work.evidences.all().order_by('captured_at', 'created_at', 'id'))
     if evidences:
-        story.append(Paragraph('Evidencias', st['h']))
+        story.append(Paragraph('Evidencias (orden cronológico)', st['h']))
         max_w = page_w - 2 * margin_h
         for ev in evidences:
+            when = _date_es(ev.captured_at or (ev.created_at.date() if ev.created_at else None))
             block = [Paragraph(
-                f'{EV_ES.get(ev.kind, ev.kind)}'
+                f'{when} · {EV_ES.get(ev.kind, ev.kind)}'
                 + (f' — {_esc(ev.notes)}' if ev.notes else '')
                 + (f' · {_esc(ev.original_name)}' if ev.original_name else ''),
                 st['mv'],

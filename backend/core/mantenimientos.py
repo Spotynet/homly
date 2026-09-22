@@ -4,7 +4,7 @@ from __future__ import annotations
 import os
 from datetime import date
 
-from django.db.models import Q
+from django.db.models import Count, Prefetch, Q
 from django.http import HttpResponse
 from rest_framework import serializers, status, viewsets
 from rest_framework.decorators import action
@@ -65,7 +65,7 @@ class MaintenanceEvidenceSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = CondoMaintenanceEvidence
-        fields = ('id', 'kind', 'original_name', 'notes', 'file_url', 'uploaded_by_name', 'created_at')
+        fields = ('id', 'kind', 'original_name', 'notes', 'file_url', 'uploaded_by_name', 'captured_at', 'created_at')
         read_only_fields = ('id', 'created_at')
 
     def get_file_url(self, obj):
@@ -136,10 +136,20 @@ class MaintenanceContextView(APIView):
             'en_curso': qs.filter(status='en_curso').count(),
             'realizado': qs.filter(status='realizado').count(),
         }
+        by_kind = {
+            'preventivo': {'planeado': 0, 'en_curso': 0, 'realizado': 0, 'cancelado': 0},
+            'correctivo': {'planeado': 0, 'en_curso': 0, 'realizado': 0, 'cancelado': 0},
+        }
+        for row in qs.values('kind', 'status').annotate(n=Count('id')):
+            kind = row.get('kind')
+            st = row.get('status')
+            if kind in by_kind and st in by_kind[kind]:
+                by_kind[kind][st] = row['n']
         return Response({
             'common_areas': tenant_common_areas(tenant),
             'can_write': can_write(request.user, tenant_id),
             'counts': counts,
+            'by_kind': by_kind,
             'name': tenant.name,
             'razon_social': tenant.razon_social or '',
         })
@@ -155,9 +165,14 @@ class CondoMaintenanceWorkViewSet(viewsets.ModelViewSet):
         return super().get_permissions()
 
     def get_queryset(self):
+        ev_qs = CondoMaintenanceEvidence.objects.select_related('uploaded_by').order_by(
+            'captured_at', 'created_at', 'id',
+        )
         qs = CondoMaintenanceWork.objects.filter(
             tenant_id=self.kwargs['tenant_id']
-        ).select_related('created_by').prefetch_related('evidences__uploaded_by')
+        ).select_related('created_by').prefetch_related(
+            Prefetch('evidences', queryset=ev_qs),
+        )
         kind = self.request.query_params.get('kind')
         if kind in dict(CondoMaintenanceWork.KIND_CHOICES):
             qs = qs.filter(kind=kind)
@@ -260,11 +275,21 @@ class CondoMaintenanceWorkViewSet(viewsets.ModelViewSet):
         kind = (request.data.get('kind') or 'otro').strip()
         if kind not in dict(CondoMaintenanceEvidence.KIND_CHOICES):
             kind = 'otro'
+        captured_raw = (request.data.get('captured_at') or '').strip()
+        captured = None
+        if captured_raw:
+            try:
+                captured = date.fromisoformat(captured_raw[:10])
+            except ValueError:
+                captured = None
+        if not captured:
+            captured = date.today()
         obj = CondoMaintenanceEvidence.objects.create(
             work=work,
             kind=kind,
             original_name=name[:240],
             notes=(request.data.get('notes') or '')[:400],
+            captured_at=captured,
             file=uploaded,
             uploaded_by=request_user(request),
         )
