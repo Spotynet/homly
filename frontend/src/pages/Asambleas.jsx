@@ -10,16 +10,16 @@ import {
 } from 'lucide-react';
 
 const TABS = [
-  ['convocatorias', 'Convocatorias'],
-  ['reuniones', 'Reuniones'],
-  ['minutas', 'Actas y minutas'],
+  ['convocatorias', '1. Convocatoria'],
+  ['desarrollo', '2. Desarrollo'],
+  ['conclusiones', '3. Conclusiones'],
   ['historial', 'Historial'],
 ];
 const TAB_HELP = {
-  convocatorias: 'Bandeja de asambleas en preparación o ya convocadas. Aquí filtras el listado; al abrir una tarjeta ves sus apartados.',
-  reuniones: 'Bandeja de asambleas listas para sesionar o ya en curso (asistencia y votaciones).',
-  minutas: 'Bandeja de asambleas con minuta o acta en redacción, y las ya cerradas pendientes de consultar.',
-  historial: 'Bandeja de asambleas cerradas o canceladas, para consulta del expediente.',
+  convocatorias: 'Paso 1. Prepara la asamblea: fecha, lugar, orden del día y decide qué puntos se votan. Luego emite la convocatoria.',
+  desarrollo: 'Paso 2. El día de la reunión: toma asistencia, instala con quórum y desahoga cada punto. Solo se votan los que marcaste para votación.',
+  conclusiones: 'Paso 3. Cierra la asamblea: la minuta es el registro interno de trabajo; el acta es el documento formal para firma y protocolización.',
+  historial: 'Consulta asambleas ya cerradas o canceladas, con su convocatoria, minuta, acta y expediente.',
 };
 
 const STATUS = {
@@ -86,10 +86,14 @@ const FILE_KINDS = {
 
 const TAB_STATUSES = {
   convocatorias: ['borrador', 'convocada'],
-  reuniones: ['convocada', 'en_curso'],
-  minutas: ['en_curso', 'cerrada'],
+  desarrollo: ['convocada', 'en_curso'],
+  conclusiones: ['en_curso', 'cerrada'],
   historial: ['cerrada', 'cancelada'],
 };
+
+function needsVote(item) {
+  return item?.vote_type && item.vote_type !== 'informativo';
+}
 
 function errMsg(e, fallback) {
   const d = e?.response?.data?.detail;
@@ -220,6 +224,51 @@ function catalogToItem(kind, row) {
   return null;
 }
 
+function MeetingSourcePicker({ catalog, agenda, onAdd }) {
+  const [open, setOpen] = useState(false);
+  const [section, setSection] = useState('presupuesto');
+  const cat = catalog || {};
+  const rows = section === 'proyecto' ? (cat.projects || []) : (cat.budgets || []);
+  return (
+    <div className="asm-meet-add">
+      <button type="button" className="btn btn-outline btn-sm" onClick={() => setOpen(o => !o)}>
+        <Plus size={12} /> Incluir presupuesto o proyecto
+      </button>
+      {open && (
+        <div className="asm-catalog" style={{ marginTop: 8 }}>
+          <div className="asm-catalog-tabs">
+            {[['presupuesto', 'Presupuestos'], ['proyecto', 'Proyectos']].map(([k, l]) => (
+              <button key={k} type="button" className={`asm-catalog-tab${section === k ? ' on' : ''}`} onClick={() => setSection(k)}>{l}</button>
+            ))}
+          </div>
+          <div className="asm-catalog-body">
+            {rows.length === 0 ? (
+              <p>No hay {section === 'proyecto' ? 'proyectos' : 'presupuestos'} disponibles en Planeación.</p>
+            ) : rows.map(row => {
+              const added = alreadyLinked(agenda, section, row.id);
+              return (
+                <div key={row.id} className="asm-catalog-row">
+                  <div>
+                    <strong>{row.name}</strong>
+                    <div>
+                      {section === 'presupuesto'
+                        ? `${row.year} · ${BUDGET_ST[row.status] || row.status}`
+                        : `${PROJECT_ST[row.status] || row.status}${row.budget_amount ? ` · ${money(row.budget_amount)}` : ''}`}
+                    </div>
+                  </div>
+                  <button type="button" className="btn btn-outline btn-sm" disabled={added} onClick={() => onAdd(section, row)}>
+                    {added ? 'Ya está' : 'Incluir y votar'}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AgendaBuilder({ agenda, catalog, canWrite, onChange, rules }) {
   const [picker, setPicker] = useState(false);
   const [section, setSection] = useState('presupuesto');
@@ -235,7 +284,7 @@ function AgendaBuilder({ agenda, catalog, canWrite, onChange, rules }) {
     onChange(next);
   };
   const addManual = () => onChange([...agenda, {
-    title: '', description: '', vote_type: 'simple', source_kind: 'manual', apply_on_approve: false,
+    title: '', description: '', vote_type: 'informativo', source_kind: 'manual', apply_on_approve: false,
   }]);
   const addFrom = (kind, row) => {
     if (alreadyLinked(agenda, kind, row.id)) return;
@@ -259,8 +308,8 @@ function AgendaBuilder({ agenda, catalog, canWrite, onChange, rules }) {
         </button>
       </div>
       <p className="asm-agenda-hint">
-        Redacta puntos a mano o agrégalos desde Planeación (presupuestos y proyectos), Cierres, Cuotas u Organización.
-        La asamblea autoriza; un administrador o tesorero confirma que se actualice el módulo.
+        Cada punto de la convocatoria puede ser solo informativo o llevarse a votación.
+        Los presupuestos y proyectos se pueden votar para que, si se aprueban, se actualicen en Planeación.
       </p>
       {agenda.map((item, i) => (
         <div key={item.id || `${item.source_kind || 'manual'}-${item.source_id || i}-${i}`} className="asm-agenda-item">
@@ -272,14 +321,6 @@ function AgendaBuilder({ agenda, catalog, canWrite, onChange, rules }) {
               placeholder={`Punto ${i + 1}`}
               onChange={e => update(i, { title: e.target.value })}
             />
-            <select
-              className="field-select"
-              value={item.vote_type}
-              disabled={!canWrite}
-              onChange={e => update(i, { vote_type: e.target.value })}
-            >
-              {Object.entries(VOTE).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-            </select>
             {canWrite && (
               <div className="asm-agenda-actions">
                 <button type="button" className="btn btn-outline" disabled={i === 0} onClick={() => move(i, -1)}><ChevronUp size={14} /></button>
@@ -289,6 +330,29 @@ function AgendaBuilder({ agenda, catalog, canWrite, onChange, rules }) {
             )}
           </div>
           <div className="asm-agenda-meta">
+            <label className="asm-apply-toggle">
+              <input
+                type="checkbox"
+                disabled={!canWrite}
+                checked={needsVote(item)}
+                onChange={e => update(i, { vote_type: e.target.checked ? (item.vote_type === 'informativo' ? 'simple' : item.vote_type) : 'informativo' })}
+              />
+              Llevar a votación
+            </label>
+            {needsVote(item) ? (
+              <select
+                className="field-select"
+                value={item.vote_type}
+                disabled={!canWrite}
+                onChange={e => update(i, { vote_type: e.target.value })}
+              >
+                <option value="simple">Mayoría simple</option>
+                <option value="calificada">Mayoría calificada</option>
+                <option value="unanimidad">Unanimidad</option>
+              </select>
+            ) : (
+              <span className="asm-agenda-note">Solo se da lectura. Queda constancia, sin votación.</span>
+            )}
             <SourceChip kind={item.source_kind} label={item.source_label} />
             {(item.source_kind === 'presupuesto' || item.source_kind === 'proyecto') && canWrite && (
               <label className="asm-apply-toggle">
@@ -486,7 +550,8 @@ function AgendaHelpModal({ rules, onClose }) {
         <div className="modal-body asm-help">
           <h4>Título del punto</h4>
           <p>Es el asunto que se leerá en la convocatoria y en el acta. Puedes redactarlo a mano o dejar el texto que Homly propone al elegir un presupuesto, proyecto u otro registro.</p>
-          <h4>Tipo de votación</h4>
+          <h4>¿Se lleva a votación?</h4>
+          <p>Marca <strong>Llevar a votación</strong> solo en los puntos que la asamblea debe aprobar o rechazar. Los demás se leen y quedan como informativos, sin boleta.</p>
           <ul>
             <li><strong>Informativo.</strong> Se da cuenta a la asamblea; no hay votación.</li>
             <li><strong>Mayoría simple.</strong> Se aprueba con el 50% + 1 de los <em>presentes</em> (si hay 10, se necesitan 6 votos a favor). No confundir con el quórum para instalar la reunión.</li>
@@ -494,12 +559,15 @@ function AgendaHelpModal({ rules, onClose }) {
             <li><strong>Unanimidad.</strong> Todos los presentes deben votar a favor y nadie en contra.</li>
           </ul>
           <h4>Punto manual o desde Homly</h4>
-          <p><strong>Punto manual</strong> es texto libre: queda solo en la convocatoria y el acta.</p>
+          <p><strong>Punto manual</strong> es texto libre: queda en la convocatoria, la minuta y, si se vota, en el acta.</p>
           <p><strong>Agregar de Homly</strong> toma un registro ya creado en otro módulo:</p>
           <ul>
             <li><strong>Presupuesto / Proyecto</strong> (Planeación). Si marcas “Aplicar al módulo”, al votar un administrador o tesorero actualiza el estatus en Planeación.</li>
-            <li><strong>Cierre, cuota u organización.</strong> Se incluyen para ratificarlos en acta; no se reescriben automáticamente en su módulo.</li>
+            <li><strong>Cierre, cuota u organización.</strong> Se incluyen para constancia; no se reescriben automáticamente en su módulo.</li>
           </ul>
+          <h4>Minuta y acta</h4>
+          <p><strong>Minuta de trabajo:</strong> notas internas de la sesión. No se protocoliza.</p>
+          <p><strong>Acta de asamblea:</strong> documento formal para firma y, si aplica, protocolización ante notario.</p>
           <h4>Aplicar al módulo</h4>
           <p>La asamblea autoriza. Un administrador o tesorero confirma que el acuerdo se refleje en Planeación. Un auditor puede ver el resultado, pero no aplica el cambio.</p>
           <p className="asm-help-note">Estas mayorías son una guía operativa. Prevalecen el reglamento interno y la ley aplicable.</p>
@@ -627,7 +695,9 @@ export default function Asambleas() {
           </div>
           <h2 style={{ margin: '4px 0 0', fontSize: 22 }}>Asambleas</h2>
           <p style={{ color: 'var(--ink-400)', fontSize: 13, marginTop: 4 }}>
-            Convocatorias, quórum, votaciones y actas según la normativa de {rules.jurisdiction || 'tu condominio'}.
+            Tres pasos claros: convocatoria, desarrollo de la sesión y conclusiones.
+            La minuta es el registro interno; el acta es el documento que se firma y, si aplica, se protocoliza.
+            Normativa de {rules.jurisdiction || 'tu condominio'}.
           </p>
         </div>
         {canWrite && (
@@ -656,10 +726,23 @@ export default function Asambleas() {
         </div>
       )}
 
-      <div className="tabs" style={{ marginBottom: 8 }}>
-        {TABS.map(([k, l]) => (
-          <button key={k} className={`tab ${tab === k ? 'active' : ''}`} onClick={() => setTab(k)}>{l}</button>
+      <div className="asm-flow">
+        {TABS.filter(([k]) => k !== 'historial').map(([k, l], i) => (
+          <button key={k} type="button" className={`asm-flow-step ${tab === k ? 'on' : ''}`} onClick={() => setTab(k)}>
+            <span>{i + 1}</span>
+            <div>
+              <strong>{l.replace(/^\d+\.\s*/, '')}</strong>
+              <small>{
+                k === 'convocatorias' ? 'Prepara el orden del día y decide qué se vota'
+                  : k === 'desarrollo' ? 'Asistencia, quórum y desahogo'
+                    : 'Minuta interna y acta para protocolizar'
+              }</small>
+            </div>
+          </button>
         ))}
+        <button type="button" className={`asm-flow-hist ${tab === 'historial' ? 'on' : ''}`} onClick={() => setTab('historial')}>
+          Historial
+        </button>
       </div>
       <p className="asm-tab-help">{TAB_HELP[tab]}</p>
 
@@ -670,15 +753,15 @@ export default function Asambleas() {
           <Vote size={28} style={{ color: 'var(--teal-600)', marginBottom: 10 }} />
           <h3 style={{ margin: '0 0 8px' }}>
             {tab === 'convocatorias' && 'Sin convocatorias'}
-            {tab === 'reuniones' && 'No hay reuniones pendientes'}
-            {tab === 'minutas' && 'Sin actas ni minutas en curso'}
+            {tab === 'desarrollo' && 'No hay asambleas en desarrollo'}
+            {tab === 'conclusiones' && 'Sin asambleas por cerrar'}
             {tab === 'historial' && 'Aún no hay historial'}
           </h3>
           <p style={{ color: 'var(--ink-400)', fontSize: 13, maxWidth: 480, margin: '0 auto' }}>
-            {tab === 'convocatorias' && 'Crea una asamblea, arma el orden del día a mano o con presupuestos y proyectos de Planeación, y emite la convocatoria con el plazo legal.'}
-            {tab === 'reuniones' && 'Cuando una convocatoria esté vigente, aquí tomas asistencia, validas quórum e instalas la mesa de debates.'}
-            {tab === 'minutas' && 'Redacta la minuta de la sesión, prepara el acta formal, fírmala y, si aplica, protocolízala ante notario.'}
-            {tab === 'historial' && 'Las asambleas cerradas o canceladas quedan archivadas con su convocatoria, lista y acuerdos.'}
+            {tab === 'convocatorias' && 'Crea una asamblea, arma el orden del día, marca qué puntos se votan y emite la convocatoria con el plazo legal.'}
+            {tab === 'desarrollo' && 'El día de la reunión tomas asistencia, validas quórum, instalas la mesa y desahogas cada punto. Solo se votan los que marcaste.'}
+            {tab === 'conclusiones' && 'Redacta la minuta de trabajo (interna) y el acta formal. Solo el acta se firma y, si aplica, se protocoliza ante notario.'}
+            {tab === 'historial' && 'Las asambleas cerradas o canceladas quedan archivadas con su convocatoria, minuta, acta y expediente.'}
           </p>
         </div>
       ) : (
@@ -823,6 +906,9 @@ function AssemblyForm({ ctx, canWrite, onClose, onSaved, initial }) {
           <button className="modal-close" onClick={onClose}><X size={16} /></button>
         </div>
         <div className="modal-body" style={{ display: 'grid', gap: 12 }}>
+          <p className="asm-agenda-hint" style={{ marginBottom: 0 }}>
+            Paso 1 de 3. Define fecha, lugar y orden del día. Marca <strong>Llevar a votación</strong> solo en los puntos que la asamblea deba aprobar o rechazar.
+          </p>
           <div className="field">
             <div className="field-label">Nombre</div>
             <input className="field-input" value={form.title} disabled={!canWrite} onChange={e => set('title', e.target.value)} />
@@ -922,18 +1008,86 @@ function voteNeed(item, q) {
   return { need, label: `50% + 1 de los presentes (${need} votos a favor)` };
 }
 
+const BALLOT = { for: 'a favor', against: 'en contra', abstain: 'abstención' };
+
+function compileActaFormal(assembly, ctx) {
+  const q = assembly.quorum || {};
+  const tenant = ctx?.razon_social || ctx?.name || 'el condominio';
+  const when = fmtWhen(assembly.installed_at || assembly.first_call_at);
+  const lines = [
+    `ACTA DE ASAMBLEA ${(KIND[assembly.kind] || '').toUpperCase()}`,
+    '',
+    `En ${assembly.location || 'el domicilio del condominio'}, el ${when}, se reunieron los condóminos de ${tenant} para celebrar la asamblea ${KIND[assembly.kind] || ''} denominada «${assembly.title}».`,
+    '',
+    `Comparecieron ${q.present || 0} de ${q.total || 0} unidades con derecho a voto (${q.present_pct || 0}%). El quórum de instalación requerido era del ${q.required_pct || 0}%. ${q.met ? 'Se declaró legalmente instalada la asamblea.' : 'Quedó constancia de la asistencia registrada.'}`,
+    '',
+    `Presidió ${assembly.president_name || '____________________'} y actuó como secretario ${assembly.secretary_name || '____________________'}.`,
+    '',
+    'ORDEN DEL DÍA Y ACUERDOS',
+    '',
+  ];
+  const roman = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
+  (assembly.agenda || []).forEach((item, i) => {
+    const n = roman[i] || `${i + 1}.`;
+    lines.push(`${n}. ${item.title}`);
+    if (item.source_kind && item.source_kind !== 'manual' && item.source_label) {
+      lines.push(`Origen: ${SOURCE[item.source_kind]} — ${item.source_label}.`);
+    }
+    if (!needsVote(item)) {
+      lines.push(`Punto de información. La asamblea se dio por enterada.${item.notes ? ` ${item.notes}` : ''}`);
+    } else {
+      lines.push(
+        `Se sometió a votación por ${(VOTE[item.vote_type] || item.vote_type).toLowerCase()}. `
+        + `Resultado: ${RESULT[item.result] || item.result}. `
+        + `A favor ${item.votes_for || 0}, en contra ${item.votes_against || 0}, abstenciones ${item.votes_abstain || 0}.`
+      );
+    }
+    lines.push('');
+  });
+  lines.push('No habiendo más asuntos que tratar, se da por concluida la asamblea y se firma la presente acta para constancia y, en su caso, protocolización ante notario público.');
+  lines.push('');
+  lines.push('Este documento es el acta formal. La minuta de trabajo es un registro interno y no se protocoliza.');
+  return lines.join('\n');
+}
+
 function compileMinuta(assembly) {
-  return (assembly.agenda || []).map((item, i) => {
+  const header = `Minuta de trabajo · ${assembly.title}\nDocumento interno de la sesión. No sustituye el acta ni se protocoliza.\n\n`;
+  const body = (assembly.agenda || []).map((item, i) => {
+    const origin = item.source_kind && item.source_kind !== 'manual'
+      ? `Origen: ${SOURCE[item.source_kind] || item.source_kind}${item.source_label ? ` — ${item.source_label}` : ''}`
+      : '';
     const voteLine = item.vote_type === 'informativo'
       ? 'Punto informativo (sin votación).'
       : `Votos: a favor ${item.votes_for || 0}, en contra ${item.votes_against || 0}, abstenciones ${item.votes_abstain || 0}.`;
+    const ballots = (item.vote_detail || []).map(b => {
+      const who = [b.unit_code, b.name].filter(Boolean).join(' ');
+      return `   · ${who || 'Asistente'}: ${BALLOT[b.choice] || b.choice}`;
+    });
     return [
       `${i + 1}. ${item.title}`,
+      origin ? `   ${origin}` : '',
       `   ${VOTE[item.vote_type]} · ${RESULT[item.result] || item.result}`,
       `   ${voteLine}`,
+      ...ballots,
       item.notes ? `   Notas: ${item.notes}` : '',
+      item.applied_notes ? `   ${item.applied_notes}` : '',
     ].filter(Boolean).join('\n');
   }).join('\n\n');
+  return header + body;
+}
+
+function VoteDetailList({ item }) {
+  const rows = item.vote_detail || [];
+  if (!rows.length) return null;
+  return (
+    <div className="asm-vote-detail">
+      {rows.map((b, i) => (
+        <span key={b.attendee_id || i}>
+          {[b.unit_code, b.name].filter(Boolean).join(' ') || 'Asistente'}: {BALLOT[b.choice] || b.choice}
+        </span>
+      ))}
+    </div>
+  );
 }
 
 function VoteModal({ assembly, item, q, canWrite, onClose, onSave }) {
@@ -1039,12 +1193,17 @@ function VoteModal({ assembly, item, q, canWrite, onClose, onSave }) {
   );
 }
 
+const ASM_STEPS = [
+  { id: 'convocatoria', n: 1, title: 'Convocatoria', hint: 'Prepara y emite' },
+  { id: 'desarrollo', n: 2, title: 'Desarrollo', hint: 'Asistencia y puntos' },
+  { id: 'conclusiones', n: 3, title: 'Conclusiones', hint: 'Minuta, acta y cierre' },
+];
+
 function AssemblyDetail({ tenantId, assembly, ctx, canWrite, tabHint, onClose, onRefresh }) {
   const [inner, setInner] = useState(
-    tabHint === 'historial' ? 'acta'
-      : tabHint === 'minutas' ? 'minuta'
-        : tabHint === 'reuniones' ? 'reunion'
-          : 'convocatoria'
+    tabHint === 'desarrollo' || tabHint === 'reuniones' ? 'desarrollo'
+      : (tabHint === 'conclusiones' || tabHint === 'historial' || tabHint === 'minutas') ? 'conclusiones'
+        : 'convocatoria'
   );
   const [editing, setEditing] = useState(false);
   const [mesa, setMesa] = useState({ president_name: assembly.president_name || '', secretary_name: assembly.secretary_name || '' });
@@ -1113,11 +1272,23 @@ function AssemblyDetail({ tenantId, assembly, ctx, canWrite, tabHint, onClose, o
             <span className="proj-chip">{fmtWhen(assembly.first_call_at)}</span>
           </div>
           <p className="asm-tab-help" style={{ marginTop: 0 }}>
-            Apartados de esta asamblea: la convocatoria, la sesión, la minuta de trabajo, el acta formal y el expediente.
+            Sigue los tres pasos. En la convocatoria decides qué se vota; en el desarrollo se desahoga;
+            al final la minuta queda como registro interno y el acta como documento para protocolizar.
           </p>
-          <div className="tabs" style={{ marginBottom: 14 }}>
-            {[['convocatoria', 'Convocatoria'], ['reunion', 'Reunión'], ['minuta', 'Minuta'], ['acta', 'Acta'], ['archivos', 'Expediente']].map(([k, l]) => (
-              <button key={k} className={`tab ${inner === k ? 'active' : ''}`} onClick={() => setInner(k)}>{l}</button>
+          <div className="asm-steps">
+            {ASM_STEPS.map(s => (
+              <button
+                key={s.id}
+                type="button"
+                className={`asm-step ${inner === s.id ? 'on' : ''}`}
+                onClick={() => setInner(s.id)}
+              >
+                <span>{s.n}</span>
+                <div>
+                  <strong>{s.title}</strong>
+                  <small>{s.hint}</small>
+                </div>
+              </button>
             ))}
           </div>
 
@@ -1131,12 +1302,15 @@ function AssemblyDetail({ tenantId, assembly, ctx, canWrite, tabHint, onClose, o
               <ol style={{ margin: 0, paddingLeft: 18, fontSize: 13 }}>
                 {(assembly.agenda || []).map(i => (
                   <li key={i.id} style={{ marginBottom: 8 }}>
-                    <strong>{i.title}</strong> · {VOTE[i.vote_type]}
+                    <strong>{i.title}</strong>
+                    <span className={`asm-vote-flag ${needsVote(i) ? 'vote' : 'info'}`}>
+                      {needsVote(i) ? `A votación · ${VOTE[i.vote_type]}` : 'Informativo · sin votación'}
+                    </span>
                     {i.result !== 'pendiente' && ` · ${RESULT[i.result]}`}
                     {i.source_kind && i.source_kind !== 'manual' && (
                       <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>
                         {SOURCE[i.source_kind]}: {i.source_label || i.title}
-                        {i.apply_on_approve ? ' · Al votar se actualizará el módulo (admin/tesorero)' : ' · Solo constancia en acta'}
+                        {i.apply_on_approve ? ' · Al votar se actualizará el módulo (admin/tesorero)' : ' · Solo constancia'}
                       </div>
                     )}
                   </li>
@@ -1172,7 +1346,7 @@ function AssemblyDetail({ tenantId, assembly, ctx, canWrite, tabHint, onClose, o
             </>
           )}
 
-          {inner === 'reunion' && (
+          {inner === 'desarrollo' && (
             <>
               <p className="asm-agenda-hint">
                 El <strong>quórum de instalación</strong> decide si se puede iniciar la reunión:
@@ -1254,8 +1428,27 @@ function AssemblyDetail({ tenantId, assembly, ctx, canWrite, tabHint, onClose, o
                 <>
                   <h4 style={{ fontSize: 14, margin: '16px 0 8px' }}>Desarrollo del orden del día</h4>
                   <p className="asm-agenda-hint">
-                    Desahoga cada punto de la convocatoria: anota la minuta y, si el punto lo requiere, abre la votación con la lista de presentes.
+                    Desahoga cada punto: anota la minuta de trabajo y, si el punto se lleva a votación, abre la boleta con los presentes.
+                    El resultado queda en la minuta. El acta formal se redacta al final, en Conclusiones.
                   </p>
+                  {canWrite && !locked && (
+                    <MeetingSourcePicker
+                      catalog={ctx?.catalog}
+                      agenda={assembly.agenda}
+                      onAdd={async (kind, row) => {
+                        try {
+                          await asambleasAPI.addFromPlaneacion(tenantId, assembly.id, {
+                            source_kind: kind,
+                            source_id: row.id,
+                          });
+                          toast.success(kind === 'proyecto' ? 'Proyecto incluido en la asamblea' : 'Presupuesto incluido en la asamblea');
+                          onRefresh();
+                        } catch (e) {
+                          toast.error(errMsg(e, 'No se pudo incluir en la asamblea'));
+                        }
+                      }}
+                    />
+                  )}
                   {(assembly.agenda || []).map((item, idx) => {
                     const need = voteNeed(item, q);
                     const notes = pointNotes[item.id] ?? item.notes ?? '';
@@ -1266,10 +1459,54 @@ function AssemblyDetail({ tenantId, assembly, ctx, canWrite, tabHint, onClose, o
                             <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--teal-600)' }}>Punto {idx + 1}</div>
                             <strong>{item.title}</strong>
                             <div style={{ fontSize: 12, color: 'var(--ink-400)', marginTop: 4 }}>
-                              {VOTE[item.vote_type]} · {RESULT[item.result]}
-                              {item.vote_type !== 'informativo' ? ` · ${need.label}` : ''}
+                              {needsVote(item) ? `${VOTE[item.vote_type]} · ${RESULT[item.result]} · ${need.label}` : `Informativo · ${RESULT[item.result]}`}
                             </div>
                             <div style={{ marginTop: 6, display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+                              {canWrite && !locked && (
+                                <label className="asm-apply-toggle">
+                                  <input
+                                    type="checkbox"
+                                    checked={needsVote(item)}
+                                    onChange={async e => {
+                                      const vote_type = e.target.checked
+                                        ? (item.vote_type === 'informativo' ? 'simple' : item.vote_type)
+                                        : 'informativo';
+                                      try {
+                                        await asambleasAPI.saveItemNotes(tenantId, assembly.id, item.id, {
+                                          notes,
+                                          vote_type,
+                                        });
+                                        toast.success(vote_type === 'informativo' ? 'Este punto ya no se vota' : 'Este punto se llevará a votación');
+                                        onRefresh();
+                                      } catch (err) {
+                                        toast.error(errMsg(err, 'No se pudo actualizar el punto'));
+                                      }
+                                    }}
+                                  />
+                                  Llevar a votación
+                                </label>
+                              )}
+                              {needsVote(item) && canWrite && !locked && (
+                                <select
+                                  className="field-select"
+                                  value={item.vote_type}
+                                  onChange={async e => {
+                                    try {
+                                      await asambleasAPI.saveItemNotes(tenantId, assembly.id, item.id, {
+                                        notes,
+                                        vote_type: e.target.value,
+                                      });
+                                      onRefresh();
+                                    } catch (err) {
+                                      toast.error(errMsg(err, 'No se pudo cambiar la mayoría'));
+                                    }
+                                  }}
+                                >
+                                  <option value="simple">Mayoría simple</option>
+                                  <option value="calificada">Mayoría calificada</option>
+                                  <option value="unanimidad">Unanimidad</option>
+                                </select>
+                              )}
                               <SourceChip kind={item.source_kind} label={item.source_label} />
                               {item.apply_on_approve && <span className="asm-agenda-note">Actualiza el módulo al votar</span>}
                             </div>
@@ -1278,6 +1515,7 @@ function AssemblyDetail({ tenantId, assembly, ctx, canWrite, tabHint, onClose, o
                                 A favor {item.votes_for || 0} · En contra {item.votes_against || 0} · Abstenciones {item.votes_abstain || 0}
                               </div>
                             )}
+                            <VoteDetailList item={item} />
                             {item.applied_notes && (
                               <div style={{ fontSize: 12, marginTop: 4, color: item.applied_status === 'error' ? 'var(--coral-600)' : 'var(--ink-500)' }}>
                                 {APPLY[item.applied_status] || item.applied_status}: {item.applied_notes}
@@ -1339,7 +1577,7 @@ function AssemblyDetail({ tenantId, assembly, ctx, canWrite, tabHint, onClose, o
                         ...payload,
                         notes: pointNotes[votingItem.id] ?? votingItem.notes ?? '',
                       });
-                      toast.success('Votación registrada en minuta y acta');
+                      toast.success('Votación registrada en la minuta de trabajo');
                       setVotingItem(null);
                       onRefresh();
                     } catch (e) {
@@ -1351,157 +1589,182 @@ function AssemblyDetail({ tenantId, assembly, ctx, canWrite, tabHint, onClose, o
             </>
           )}
 
-          {inner === 'minuta' && (
+          {inner === 'conclusiones' && (
             <>
               <p className="asm-agenda-hint">
-                La minuta se arma con las notas y votaciones de cada punto del orden del día.
-                Aquí puedes añadir notas generales de la sesión. No sustituye el acta formal.
+                Separan dos documentos: la <strong>minuta</strong> es el registro interno de trabajo.
+                El <strong>acta</strong> es el único texto que se firma y, si procede, se protocoliza ante notario.
               </p>
-              {(assembly.agenda || []).some(i => i.notes || i.result !== 'pendiente') && (
-                <pre className="asm-minuta-compile">{compileMinuta(assembly)}</pre>
-              )}
-              <textarea
-                className="field-input"
-                rows={8}
-                value={minute}
-                disabled={!canWrite || locked}
-                onChange={e => setMinute(e.target.value)}
-                placeholder="Notas generales de la sesión (además de las de cada punto)…"
-              />
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
-                {canWrite && !locked && (
-                  <button className="btn btn-primary" onClick={async () => {
-                    await asambleasAPI.saveMinute(tenantId, assembly.id, { minute_body: minute });
-                    toast.success('Minuta guardada');
-                    onRefresh();
-                  }}>Guardar minuta</button>
-                )}
-                <button className="btn btn-outline" onClick={() => openDoc('minuta')}><Eye size={14} /> Ver minuta</button>
-              </div>
-            </>
-          )}
-
-          {inner === 'acta' && (
-            <>
-              <p className="asm-agenda-hint">
-                El acta es el documento formal de la asamblea: acuerdos, firmas y, si procede, protocolización ante notario.
-              </p>
-              <textarea
-                className="field-input"
-                rows={10}
-                value={acta}
-                disabled={!canWrite || (locked && assembly.minute_status !== 'borrador')}
-                onChange={e => setActa(e.target.value)}
-                placeholder="Redacta el acta formal: comparecencia, quórum, acuerdos y cláusulas de cierre…"
-              />
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, margin: '10px 0' }}>
-                <input className="field-input" placeholder="Notario (si se protocoliza)" disabled={!canWrite} value={notary.notary_name} onChange={e => setNotary(n => ({ ...n, notary_name: e.target.value }))} />
-                <input className="field-input" placeholder="Folio / escritura" disabled={!canWrite} value={notary.notary_folio} onChange={e => setNotary(n => ({ ...n, notary_folio: e.target.value }))} />
-              </div>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                {canWrite && !locked && (
-                  <button className="btn btn-outline" onClick={() => {
-                    const compiled = compileMinuta(assembly);
-                    const lines = [
-                      `Acta de la asamblea ${KIND[assembly.kind] || ''} «${assembly.title}».`,
-                      '',
-                      'Con base en la minuta de trabajo y las votaciones registradas, se hacen constar los siguientes acuerdos:',
-                      '',
-                      compiled || (assembly.agenda || []).map((item, i) => `${i + 1}. ${item.title} — ${RESULT[item.result] || item.result} (${VOTE[item.vote_type]}).`).join('\n'),
-                      ...(minute.trim() ? ['', 'Notas generales de la sesión:', '', minute.trim()] : []),
-                    ];
-                    setActa(lines.join('\n'));
-                    toast.success('Borrador de acta generado desde la minuta y las votaciones');
-                  }}>Generar borrador desde la minuta</button>
-                )}
-                {canWrite && assembly.status === 'en_curso' && (
-                  <>
-                    <button className="btn btn-outline" onClick={async () => {
-                      await asambleasAPI.saveMinute(tenantId, assembly.id, { acta_body: acta, minute_body: minute, ...notary });
-                      toast.success('Acta guardada');
-                      onRefresh();
-                    }}>Guardar acta</button>
-                    <button className="btn btn-outline" onClick={async () => {
-                      await asambleasAPI.saveMinute(tenantId, assembly.id, { acta_body: acta, minute_body: minute, ...notary });
-                      await asambleasAPI.signMinute(tenantId, assembly.id);
-                      toast.success('Acta firmada');
-                      onRefresh();
-                    }}><Check size={14} /> Firmar acta</button>
-                    <button className="btn btn-primary" onClick={async () => {
-                      await asambleasAPI.saveMinute(tenantId, assembly.id, { acta_body: acta, minute_body: minute, ...notary });
-                      await asambleasAPI.close(tenantId, assembly.id);
-                      toast.success('Asamblea cerrada');
-                      onRefresh();
-                    }}><Landmark size={14} /> Cerrar asamblea</button>
-                  </>
-                )}
-                {canWrite && assembly.minute_status === 'firmada' && (
-                  <button className="btn btn-outline" onClick={async () => {
-                    await asambleasAPI.protocolize(tenantId, assembly.id, notary);
-                    toast.success('Acta protocolizada');
-                    onRefresh();
-                  }}>Marcar protocolizada</button>
-                )}
-                <button className="btn btn-outline" onClick={() => openDoc('acta')}><Eye size={14} /> Ver acta</button>
-              </div>
-              <p style={{ fontSize: 12, color: 'var(--ink-400)', marginTop: 10 }}>
-                Presidente: {assembly.president_name || '—'} · Secretario: {assembly.secretary_name || '—'} ·
-                Estatus del acta: {assembly.minute_status}
-                {assembly.protocolized ? ` · Notario ${assembly.notary_name || ''} ${assembly.notary_folio || ''}` : ''}
-              </p>
-            </>
-          )}
-
-          {inner === 'archivos' && (
-            <>
-              {(assembly.files || []).length === 0 ? (
-                <div style={{ fontSize: 13, color: 'var(--ink-400)', marginBottom: 12 }}>Sin documentos adjuntos.</div>
-              ) : (
-                <div className="proj-file-list">
-                  {assembly.files.map(f => (
-                    <div key={f.id} className="proj-file-row">
-                      <FileText size={14} />
-                      <span className="name">{f.original_name}</span>
-                      <span className="proj-chip">{FILE_KINDS[f.kind] || f.kind}</span>
-                      <button className="btn btn-outline btn-sm" onClick={() => downloadProtected(f.file_url, f.original_name)}><Download size={12} /></button>
-                      {canWrite && (
-                        <button className="btn btn-outline btn-sm" onClick={async () => {
-                          await asambleasAPI.deleteFile(tenantId, assembly.id, f.id);
-                          onRefresh();
-                        }}><Trash2 size={12} /></button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-              {canWrite && (
-                <div style={{ display: 'flex', gap: 8, alignItems: 'end' }}>
-                  <select className="field-select" value={fileKind} onChange={e => setFileKind(e.target.value)}>
-                    {Object.entries(FILE_KINDS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-                  </select>
-                  <label className="btn btn-primary" style={{ cursor: 'pointer' }}>
-                    <Upload size={14} /> Subir
-                    <input type="file" hidden onChange={async e => {
-                      const file = e.target.files?.[0];
-                      e.target.value = '';
-                      if (!file) return;
-                      const fd = new FormData();
-                      fd.append('file', file, file.name);
-                      fd.append('kind', fileKind);
-                      try {
-                        await asambleasAPI.uploadFile(tenantId, assembly.id, fd);
-                        toast.success('Archivo cargado');
+              <div className="asm-docs-grid">
+                <section className="asm-doc-card">
+                  <header>
+                    <span className="asm-doc-kicker">Registro interno</span>
+                    <h4>Minuta de trabajo</h4>
+                  </header>
+                  <p>Notas de la sesión y el desahogo de cada punto. No sustituye el acta ni se protocoliza.</p>
+                  <textarea
+                    className="field-input"
+                    rows={10}
+                    value={minute}
+                    disabled={!canWrite || locked}
+                    onChange={e => setMinute(e.target.value)}
+                    placeholder="Minuta de trabajo: notas de la sesión. Documento interno, no se protocoliza."
+                  />
+                  <div className="asm-doc-actions">
+                    {canWrite && !locked && (
+                      <button className="btn btn-outline btn-sm" onClick={() => {
+                        setMinute(compileMinuta(assembly));
+                        toast.success('Minuta armada con el desahogo de la sesión');
+                      }}>Armar desde el desahogo</button>
+                    )}
+                    {canWrite && !locked && (
+                      <button className="btn btn-primary btn-sm" onClick={async () => {
+                        await asambleasAPI.saveMinute(tenantId, assembly.id, { minute_body: minute });
+                        toast.success('Minuta de trabajo guardada');
                         onRefresh();
-                      } catch (err) { toast.error(errMsg(err, 'No se pudo subir')); }
-                    }} />
-                  </label>
+                      }}>Guardar minuta</button>
+                    )}
+                    <button className="btn btn-outline btn-sm" onClick={() => openDoc('minuta')}><Eye size={12} /> Ver minuta</button>
+                  </div>
+                </section>
+
+                <section className="asm-doc-card asm-doc-card-formal">
+                  <header>
+                    <span className="asm-doc-kicker">Documento formal</span>
+                    <h4>Acta de asamblea</h4>
+                  </header>
+                  <p>Texto para firma y protocolización. Redáctalo con lenguaje de comparecencia; no copies la minuta tal cual.</p>
+                  <textarea
+                    className="field-input"
+                    rows={10}
+                    value={acta}
+                    disabled={!canWrite || (locked && assembly.minute_status !== 'borrador')}
+                    onChange={e => setActa(e.target.value)}
+                    placeholder="Acta formal: comparecencia, quórum, acuerdos y cláusulas de cierre para protocolizar…"
+                  />
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                    <input className="field-input" placeholder="Notario (si se protocoliza)" disabled={!canWrite} value={notary.notary_name} onChange={e => setNotary(n => ({ ...n, notary_name: e.target.value }))} />
+                    <input className="field-input" placeholder="Folio / escritura" disabled={!canWrite} value={notary.notary_folio} onChange={e => setNotary(n => ({ ...n, notary_folio: e.target.value }))} />
+                  </div>
+                  <div className="asm-doc-actions">
+                    {canWrite && !locked && (
+                      <button className="btn btn-outline btn-sm" onClick={() => {
+                        setActa(compileActaFormal(assembly, ctx));
+                        toast.success('Borrador de acta formal generado');
+                      }}>Generar borrador de acta</button>
+                    )}
+                    {canWrite && ['en_curso', 'cerrada'].includes(assembly.status) && (
+                      <button className="btn btn-outline btn-sm" onClick={async () => {
+                        await asambleasAPI.saveMinute(tenantId, assembly.id, { acta_body: acta, ...notary });
+                        toast.success('Acta formal guardada');
+                        onRefresh();
+                      }}>Guardar acta</button>
+                    )}
+                    {canWrite && ['en_curso', 'cerrada'].includes(assembly.status) && assembly.minute_status === 'borrador' && (
+                      <button className="btn btn-outline btn-sm" onClick={async () => {
+                        await asambleasAPI.saveMinute(tenantId, assembly.id, { acta_body: acta, ...notary });
+                        await asambleasAPI.signMinute(tenantId, assembly.id);
+                        toast.success('Acta firmada');
+                        onRefresh();
+                      }}><Check size={12} /> Firmar acta</button>
+                    )}
+                    {canWrite && assembly.minute_status === 'firmada' && (
+                      <button className="btn btn-outline btn-sm" onClick={async () => {
+                        await asambleasAPI.protocolize(tenantId, assembly.id, notary);
+                        toast.success('Acta protocolizada');
+                        onRefresh();
+                      }}>Marcar protocolizada</button>
+                    )}
+                    <button className="btn btn-outline btn-sm" onClick={() => openDoc('acta')}><Eye size={12} /> Ver acta</button>
+                  </div>
+                  <p className="asm-agenda-note">
+                    Presidente: {assembly.president_name || '—'} · Secretario: {assembly.secretary_name || '—'} ·
+                    Estatus del acta: {assembly.minute_status}
+                    {assembly.protocolized ? ` · Notario ${assembly.notary_name || ''} ${assembly.notary_folio || ''}` : ''}
+                  </p>
+                </section>
+              </div>
+
+              {canWrite && assembly.status === 'en_curso' && (
+                <div className="asm-close-bar">
+                  <div>
+                    <strong>Cerrar la asamblea</strong>
+                    <p>Concluye la sesión. El acta se firma y protocoliza por separado; la minuta queda como expediente interno.</p>
+                  </div>
+                  <button className="btn btn-primary" onClick={async () => {
+                    await asambleasAPI.saveMinute(tenantId, assembly.id, { acta_body: acta, minute_body: minute, ...notary });
+                    await asambleasAPI.close(tenantId, assembly.id);
+                    toast.success('Asamblea cerrada');
+                    onRefresh();
+                  }}><Landmark size={14} /> Cerrar asamblea</button>
                 </div>
               )}
+
+              <section className="asm-doc-card" style={{ marginTop: 14 }}>
+                <header>
+                  <span className="asm-doc-kicker">Expediente</span>
+                  <h4>Archivos de la asamblea</h4>
+                </header>
+                <p>Convocatoria impresa, poderes, evidencia de notificación y el acta protocolizada, si ya existe.</p>
+                {(assembly.files || []).length === 0 ? (
+                  <div style={{ fontSize: 13, color: 'var(--ink-400)', marginBottom: 12 }}>Sin documentos adjuntos.</div>
+                ) : (
+                  <div className="proj-file-list">
+                    {assembly.files.map(f => (
+                      <div key={f.id} className="proj-file-row">
+                        <FileText size={14} />
+                        <span className="name">{f.original_name}</span>
+                        <span className="proj-chip">{FILE_KINDS[f.kind] || f.kind}</span>
+                        <button className="btn btn-outline btn-sm" onClick={() => downloadProtected(f.file_url, f.original_name)}><Download size={12} /></button>
+                        {canWrite && (
+                          <button className="btn btn-outline btn-sm" onClick={async () => {
+                            await asambleasAPI.deleteFile(tenantId, assembly.id, f.id);
+                            onRefresh();
+                          }}><Trash2 size={12} /></button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {canWrite && (
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'end' }}>
+                    <select className="field-select" value={fileKind} onChange={e => setFileKind(e.target.value)}>
+                      {Object.entries(FILE_KINDS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                    </select>
+                    <label className="btn btn-primary" style={{ cursor: 'pointer' }}>
+                      <Upload size={14} /> Subir
+                      <input type="file" hidden onChange={async e => {
+                        const file = e.target.files?.[0];
+                        e.target.value = '';
+                        if (!file) return;
+                        const fd = new FormData();
+                        fd.append('file', file, file.name);
+                        fd.append('kind', fileKind);
+                        try {
+                          await asambleasAPI.uploadFile(tenantId, assembly.id, fd);
+                          toast.success('Archivo cargado');
+                          onRefresh();
+                        } catch (err) { toast.error(errMsg(err, 'No se pudo subir')); }
+                      }} />
+                    </label>
+                  </div>
+                )}
+              </section>
             </>
           )}
 
         </div>
         <div className="modal-foot">
+          {inner !== 'convocatoria' && (
+            <button className="btn btn-outline" onClick={() => setInner(inner === 'conclusiones' ? 'desarrollo' : 'convocatoria')}>
+              Paso anterior
+            </button>
+          )}
+          {inner !== 'conclusiones' && (
+            <button className="btn btn-primary" onClick={() => setInner(inner === 'convocatoria' ? 'desarrollo' : 'conclusiones')}>
+              Siguiente paso
+            </button>
+          )}
           <button className="btn btn-outline" onClick={onClose}>Cerrar</button>
         </div>
       </div>

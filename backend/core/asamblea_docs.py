@@ -321,13 +321,32 @@ def _agenda_block(assembly, st_h, st_item, st_item_sub, with_votes=False):
                     f'abstenciones {item.votes_abstain})'
                 )
         if item.source_kind and item.source_kind != 'manual' and item.source_label:
-            extra += f'  ·  Origen: {item.source_label}'
+            origen = {
+                'presupuesto': 'Presupuesto de Planeación',
+                'proyecto': 'Proyecto de Planeación',
+            }.get(item.source_kind, item.source_kind)
+            extra += f'  ·  Origen: {origen} — {item.source_label}'
         block = [
             Paragraph(title, st_item),
             Paragraph(_esc(extra), st_item_sub),
         ]
         if item.description:
             block.append(Paragraph(_esc(item.description), st_item_sub))
+        if with_votes and item.vote_detail:
+            ballots = {
+                'for': 'a favor',
+                'against': 'en contra',
+                'abstain': 'abstención',
+            }
+            detail = []
+            for ballot in item.vote_detail:
+                who = ' '.join(filter(None, [
+                    (ballot.get('unit_code') or '').strip(),
+                    (ballot.get('name') or '').strip(),
+                ])) or 'Asistente'
+                detail.append(f'{who}: {ballots.get(ballot.get("choice"), ballot.get("choice") or "")}')
+            if detail:
+                block.append(Paragraph(_esc('Detalle de votación: ' + '; '.join(detail)), st_item_sub))
         if with_votes and item.notes:
             block.append(Paragraph(_esc(f'Notas de minuta: {item.notes}'), st_item_sub))
         if with_votes and item.applied_notes:
@@ -459,10 +478,11 @@ def _minute_story(assembly, rules, tenant_name, st_body, st_h, st_l, st_v, st_it
         )
     else:
         story.append(Paragraph('Acuerdos y constancias del acta', st_h))
-        body = (assembly.acta_body or assembly.minute_body or '').strip()
+        body = (assembly.acta_body or '').strip()
         empty = (
-            'El acta formal aún no ha sido redactada. Este documento refleja '
-            'únicamente los datos de instalación, asistencia y votaciones capturados.'
+            'El acta formal aún no ha sido redactada. Este documento es el que se firma '
+            'y, en su caso, se protocoliza ante notario. No se usa la minuta de trabajo '
+            'como sustituto del acta.'
         )
     if body:
         for para in body.split('\n'):

@@ -192,13 +192,56 @@ def sync_contest_status(project, save=True):
     return project
 
 
+def parse_budget_ids(data):
+    if not isinstance(data, dict):
+        return None
+    if 'budget_ids' in data:
+        raw = data.get('budget_ids')
+    elif 'budget_id' in data:
+        raw = data.get('budget_id')
+    else:
+        return None
+    if raw in (None, ''):
+        return []
+    if not isinstance(raw, (list, tuple)):
+        raw = [raw]
+    ids = []
+    seen = set()
+    for item in raw:
+        sid = str(item or '').strip()
+        if sid and sid not in seen:
+            seen.add(sid)
+            ids.append(sid)
+    return ids
+
+
+def project_budget_list(project):
+    qs = project.budgets.all()
+    if hasattr(project, '_prefetched_objects_cache') and 'budgets' in project._prefetched_objects_cache:
+        return sorted(qs, key=lambda b: (-int(b.year or 0), b.name or ''))
+    return list(qs.order_by('-year', 'name'))
+
+
+def serialize_project_budget(budget):
+    if not budget:
+        return None
+    return {
+        'id': str(budget.id),
+        'name': budget.name or f'Presupuesto {budget.year}',
+        'year': budget.year,
+        'status': budget.status,
+    }
+
+
 def maybe_resync_budget(project):
-    if not project.budget_id:
+    linked = project_budget_list(project)
+    if not linked:
         return project
-    budget = project.budget
-    if budget.status in BUDGET_LOCKED:
-        return project
-    return include_project_in_budget(project, budget)
+    for budget in linked:
+        if budget.status in BUDGET_LOCKED:
+            continue
+        include_project_in_budget(project, budget)
+    return project
 
 
 def include_project_in_budget(project, budget):
@@ -209,7 +252,7 @@ def include_project_in_budget(project, budget):
     breakdown = project_funding_breakdown(project)
     year = budget.year
     months = months_for_project_in_year(project, year)
-    CondoBudgetLine.objects.filter(project=project).delete()
+    CondoBudgetLine.objects.filter(project=project, budget=budget).delete()
     next_gasto = budget.lines.filter(kind='gasto').count()
     next_ing = budget.lines.filter(kind='ingreso').count()
     if breakdown['condo_amount'] > 0 or breakdown['residents_amount'] <= 0:
@@ -233,20 +276,51 @@ def include_project_in_budget(project, budget):
             project=project,
             sort_order=next_ing + 50,
         )
-    project.budget = budget
-    fields = ['budget', 'updated_at']
+    project.budgets.add(budget)
     if breakdown['source'] == 'winner' and breakdown['amount'] > 0:
         project.budget_amount = _d(breakdown['amount'])
-        fields.append('budget_amount')
-    project.save(update_fields=fields)
+        project.save(update_fields=['budget_amount', 'updated_at'])
     mark_budget_saved(budget)
     return project
 
 
-def unlink_project_from_budget(project):
-    CondoBudgetLine.objects.filter(project=project).delete()
-    project.budget = None
-    project.save(update_fields=['budget', 'updated_at'])
+def unlink_project_from_budget(project, budget=None):
+    if budget is None:
+        locked = [b for b in project_budget_list(project) if b.status in BUDGET_LOCKED]
+        if locked:
+            names = ', '.join((b.name or str(b.year)) for b in locked)
+            raise ValidationError({
+                'detail': f'No se puede retirar de presupuestos bloqueados: {names}.',
+            })
+        CondoBudgetLine.objects.filter(project=project).delete()
+        project.budgets.clear()
+        return project
+    if budget.status in BUDGET_LOCKED:
+        raise ValidationError({
+            'detail': 'El presupuesto ligado ya no se puede editar. No se pueden quitar las partidas.',
+        })
+    CondoBudgetLine.objects.filter(project=project, budget=budget).delete()
+    project.budgets.remove(budget)
+    mark_budget_saved(budget)
+    return project
+
+
+def sync_project_budgets(project, budget_ids, tenant_id):
+    wanted = {str(i) for i in (budget_ids or [])}
+    current = {str(b.id): b for b in project_budget_list(project)}
+    for bid, budget in current.items():
+        if bid not in wanted:
+            unlink_project_from_budget(project, budget)
+    for bid in budget_ids or []:
+        if str(bid) in current:
+            budget = current[str(bid)]
+            if budget.status not in BUDGET_LOCKED:
+                include_project_in_budget(project, budget)
+            continue
+        budget = CondoBudget.objects.filter(tenant_id=tenant_id, id=bid).first()
+        if not budget:
+            raise ValidationError({'detail': 'Presupuesto no encontrado.'})
+        include_project_in_budget(project, budget)
     return project
 
 
@@ -806,6 +880,7 @@ class CondoBudgetSerializer(serializers.ModelSerializer):
     created_by_name = serializers.SerializerMethodField()
     approved_by_name = serializers.SerializerMethodField()
     totals = serializers.SerializerMethodField()
+    linked_projects = serializers.SerializerMethodField()
     seed_fee = serializers.DecimalField(max_digits=14, decimal_places=2, required=False)
     cashflow_rules = serializers.JSONField(required=False)
 
@@ -815,7 +890,7 @@ class CondoBudgetSerializer(serializers.ModelSerializer):
             'id', 'year', 'name', 'notes', 'status',
             'seed_units', 'seed_fee', 'cashflow_rules', 'approval_steps',
             'created_by_name', 'approved_by_name', 'approved_at',
-            'created_at', 'updated_at', 'lines', 'totals',
+            'created_at', 'updated_at', 'lines', 'totals', 'linked_projects',
         )
         read_only_fields = (
             'id', 'status', 'approval_steps', 'approved_at', 'created_at', 'updated_at',
@@ -831,6 +906,31 @@ class CondoBudgetSerializer(serializers.ModelSerializer):
 
     def get_totals(self, obj):
         return compute_budget_totals(obj, self.context.get('actuals'))
+
+    def get_linked_projects(self, obj):
+        seen = {}
+        lines = obj.lines.all()
+        for line in lines:
+            if not line.project_id or line.project_id in seen:
+                continue
+            p = line.project
+            seen[p.id] = {
+                'id': str(p.id),
+                'name': p.name,
+                'status': p.status,
+                'budget_amount': _f(p.budget_amount),
+                'gasto_annual': 0,
+                'ingreso_annual': 0,
+            }
+        for line in lines:
+            if not line.project_id or line.project_id not in seen:
+                continue
+            amt = line_annual(line.monthly_amounts)
+            if line.kind == 'ingreso':
+                seen[line.project_id]['ingreso_annual'] += amt
+            else:
+                seen[line.project_id]['gasto_annual'] += amt
+        return list(seen.values())
 
     def validate_cashflow_rules(self, value):
         return normalize_cashflow_rules(value)
@@ -923,7 +1023,8 @@ class CondoProjectSerializer(serializers.ModelSerializer):
     files = serializers.SerializerMethodField()
     progress_pct = serializers.SerializerMethodField()
     funding = serializers.SerializerMethodField()
-    budget_id = serializers.UUIDField(read_only=True)
+    budgets = serializers.SerializerMethodField()
+    budget_id = serializers.SerializerMethodField()
     budget_name = serializers.SerializerMethodField()
     budget_year = serializers.SerializerMethodField()
     budget_status = serializers.SerializerMethodField()
@@ -941,7 +1042,7 @@ class CondoProjectSerializer(serializers.ModelSerializer):
             'funding_mode', 'funding_condo_pct', 'funding_residents_pct',
             'funding_units', 'funding_notes', 'funding',
             'contest_status', 'winner_quote_id', 'winner_supplier_name',
-            'budget_id', 'budget_name', 'budget_year', 'budget_status',
+            'budgets', 'budget_id', 'budget_name', 'budget_year', 'budget_status',
             'approval_steps', 'created_by_name', 'created_at', 'updated_at',
             'spent', 'progress_pct', 'quotes_count', 'files_count',
             'costs', 'quotes', 'files',
@@ -972,17 +1073,28 @@ class CondoProjectSerializer(serializers.ModelSerializer):
     def get_funding(self, obj):
         return project_funding_breakdown(obj)
 
+    def get_budgets(self, obj):
+        return [serialize_project_budget(b) for b in project_budget_list(obj)]
+
+    def get_budget_id(self, obj):
+        linked = project_budget_list(obj)
+        return linked[0].id if linked else None
+
     def get_budget_name(self, obj):
-        b = obj.budget
-        if not b:
+        linked = project_budget_list(obj)
+        if not linked:
             return ''
-        return b.name or f'Presupuesto {b.year}'
+        if len(linked) == 1:
+            return linked[0].name or f'Presupuesto {linked[0].year}'
+        return f'{len(linked)} presupuestos'
 
     def get_budget_year(self, obj):
-        return obj.budget.year if obj.budget_id else None
+        linked = project_budget_list(obj)
+        return linked[0].year if linked else None
 
     def get_budget_status(self, obj):
-        return obj.budget.status if obj.budget_id else ''
+        linked = project_budget_list(obj)
+        return linked[0].status if linked else ''
 
     def get_winner_supplier_name(self, obj):
         q = obj.winner_quote
@@ -1009,7 +1121,7 @@ class CondoProjectListSerializer(CondoProjectSerializer):
             'extra_field_id', 'extra_field_label', 'budget_amount',
             'start_period', 'end_period', 'responsible_name',
             'funding_mode', 'contest_status', 'winner_supplier_name',
-            'budget_id', 'budget_name', 'budget_year',
+            'budgets', 'budget_id', 'budget_name', 'budget_year',
             'approval_steps', 'created_at', 'spent', 'progress_pct',
             'quotes_count', 'files_count', 'funding',
         )
@@ -1453,8 +1565,9 @@ class CondoProjectViewSet(viewsets.ModelViewSet):
         qs = CondoProject.objects.filter(
             tenant_id=self.kwargs['tenant_id']
         ).select_related(
-            'extra_field', 'created_by', 'budget', 'winner_quote',
+            'extra_field', 'created_by', 'winner_quote',
         ).prefetch_related(
+            'budgets',
             'costs__extra_field',
             'quotes__files__uploaded_by',
             'files__uploaded_by',
@@ -1485,6 +1598,9 @@ class CondoProjectViewSet(viewsets.ModelViewSet):
         )
         apply_funding_to_project(project, self.request.data)
         project.save()
+        budget_ids = parse_budget_ids(self.request.data)
+        if budget_ids:
+            sync_project_budgets(project, budget_ids, tenant.id)
         _audit(
             self.request, 'create', f'Proyecto creado: {project.name}',
             tenant.id, 'CondoProject', project.id, project.name,
@@ -1511,7 +1627,11 @@ class CondoProjectViewSet(viewsets.ModelViewSet):
         instance = serializer.save(**extra_kw)
         apply_funding_to_project(instance, self.request.data)
         instance.save()
-        maybe_resync_budget(instance)
+        budget_ids = parse_budget_ids(self.request.data)
+        if budget_ids is not None:
+            sync_project_budgets(instance, budget_ids, instance.tenant_id)
+        else:
+            maybe_resync_budget(instance)
         _audit(
             self.request, 'update', f'Proyecto actualizado: {instance.name}',
             instance.tenant_id, 'CondoProject', instance.id, instance.name,
@@ -1877,19 +1997,20 @@ class CondoProjectViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='include-in-budget')
     def include_in_budget(self, request, tenant_id, pk=None):
         project = self.get_object()
-        bid = request.data.get('budget_id')
-        if not bid:
-            return Response({'detail': 'Indica el presupuesto (budget_id).'}, status=400)
-        budget = CondoBudget.objects.filter(tenant_id=tenant_id, id=bid).first()
-        if not budget:
-            return Response({'detail': 'Presupuesto no encontrado.'}, status=404)
-        if project.budget_id and str(project.budget_id) != str(budget.id):
-            unlink_project_from_budget(project)
-            project.refresh_from_db()
-        include_project_in_budget(project, budget)
+        ids = parse_budget_ids(request.data) or []
+        if not ids:
+            return Response({'detail': 'Indica el presupuesto (budget_id o budget_ids).'}, status=400)
+        included = []
+        for bid in ids:
+            budget = CondoBudget.objects.filter(tenant_id=tenant_id, id=bid).first()
+            if not budget:
+                return Response({'detail': 'Presupuesto no encontrado.'}, status=404)
+            include_project_in_budget(project, budget)
+            included.append(budget)
+        years = ', '.join(str(b.year) for b in included)
         _audit(
             request, 'update',
-            f'Proyecto {project.name} incluido en presupuesto {budget.year}',
+            f'Proyecto {project.name} incluido en presupuesto {years}',
             tenant_id, 'CondoProject', project.id, project.name,
         )
         return Response(self._full_project(project, request))
@@ -1897,17 +2018,20 @@ class CondoProjectViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='unlink-budget')
     def unlink_budget(self, request, tenant_id, pk=None):
         project = self.get_object()
-        if not project.budget_id:
-            return Response(self._full_project(project, request))
-        budget = project.budget
-        if budget and budget.status in BUDGET_LOCKED:
-            return Response(
-                {'detail': 'El presupuesto ligado ya no se puede editar. No se pueden quitar las partidas.'},
-                status=400,
-            )
-        unlink_project_from_budget(project)
+        bid = request.data.get('budget_id') if isinstance(request.data, dict) else None
+        if bid:
+            budget = CondoBudget.objects.filter(tenant_id=tenant_id, id=bid).first()
+            if not budget:
+                return Response({'detail': 'Presupuesto no encontrado.'}, status=404)
+            unlink_project_from_budget(project, budget)
+            label = budget.name or str(budget.year)
+        else:
+            if not project.budgets.exists():
+                return Response(self._full_project(project, request))
+            unlink_project_from_budget(project)
+            label = 'todos los presupuestos'
         _audit(
-            request, 'update', f'Proyecto {project.name} retirado del presupuesto',
+            request, 'update', f'Proyecto {project.name} retirado de {label}',
             tenant_id, 'CondoProject', project.id, project.name,
         )
         return Response(self._full_project(project, request))

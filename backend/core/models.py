@@ -2679,10 +2679,11 @@ class CondoProject(models.Model):
         'CondoProjectQuote', on_delete=models.SET_NULL, null=True, blank=True,
         related_name='won_projects',
     )
-    budget = models.ForeignKey(
-        CondoBudget, on_delete=models.SET_NULL, null=True, blank=True,
+    budgets = models.ManyToManyField(
+        CondoBudget,
         related_name='linked_projects',
-        help_text='Presupuesto anual donde está incluida la partida del proyecto.',
+        blank=True,
+        help_text='Presupuestos anuales donde está incluida la partida del proyecto.',
     )
     approval_steps = models.JSONField(
         default=list, blank=True,

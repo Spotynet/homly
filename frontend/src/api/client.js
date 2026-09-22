@@ -328,7 +328,7 @@ export const planeacionAPI = {
     uploadFile:     (tenantId, id, formData) => api.post(`/tenants/${tenantId}/condo-projects/${id}/files/`, formData),
     deleteFile:     (tenantId, id, fileId) => api.delete(`/tenants/${tenantId}/condo-projects/${id}/files/${fileId}/`),
     includeInBudget:(tenantId, id, data) => api.post(`/tenants/${tenantId}/condo-projects/${id}/include-in-budget/`, data),
-    unlinkBudget:   (tenantId, id) => api.post(`/tenants/${tenantId}/condo-projects/${id}/unlink-budget/`),
+    unlinkBudget:   (tenantId, id, data) => api.post(`/tenants/${tenantId}/condo-projects/${id}/unlink-budget/`, data || {}),
   },
 };
 
@@ -372,6 +372,7 @@ export const asambleasAPI = {
   secondCall:    (tenantId, id) => api.post(`/tenants/${tenantId}/condo-assemblies/${id}/second-call/`),
   install:       (tenantId, id, data) => api.post(`/tenants/${tenantId}/condo-assemblies/${id}/install/`, data || {}),
   vote:          (tenantId, id, itemId, data) => api.post(`/tenants/${tenantId}/condo-assemblies/${id}/agenda/${itemId}/vote/`, data),
+  addFromPlaneacion: (tenantId, id, data) => api.post(`/tenants/${tenantId}/condo-assemblies/${id}/add-from-planeacion/`, data),
   saveItemNotes: (tenantId, id, itemId, data) => api.post(`/tenants/${tenantId}/condo-assemblies/${id}/agenda/${itemId}/notes/`, data),
   applyItem:     (tenantId, id, itemId) => api.post(`/tenants/${tenantId}/condo-assemblies/${id}/agenda/${itemId}/apply/`),
   printDoc:      (tenantId, id, kind) => api.get(`/tenants/${tenantId}/condo-assemblies/${id}/print-doc/`, { params: { kind }, responseType: 'blob' }),

@@ -1,13 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { planeacionAPI, api } from '../api/client';
+import { planeacionAPI, asambleasAPI, api } from '../api/client';
 import { CURRENCIES, fmtCurrency, todayPeriod } from '../utils/helpers';
 import toast from 'react-hot-toast';
 import {
   Plus, Sparkles, Check, Archive, Trash2, X, Pencil, Wallet,
   FolderKanban, Building2, Users, AlertTriangle, Link2, Calendar,
   Printer, Copy, Settings2, Send, Percent, ChevronDown, SlidersHorizontal,
-  Trophy, Paperclip, Landmark, FileText, Award, Download, Upload,
+  Trophy, Paperclip, Landmark, FileText, Award, Download, Upload, Gavel,
 } from 'lucide-react';
 
 const MONTHS = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'];
@@ -45,6 +45,66 @@ const EMPTY_PROJECT = {
   funding_mode: 'condominio', funding_condo_pct: 100, funding_residents_pct: 0,
   funding_units: 0, funding_notes: '',
 };
+
+function projectBudgets(project) {
+  if (Array.isArray(project?.budgets) && project.budgets.length) return project.budgets;
+  if (project?.budget_id) {
+    return [{
+      id: project.budget_id,
+      name: project.budget_name,
+      year: project.budget_year,
+      status: project.budget_status,
+    }];
+  }
+  return [];
+}
+
+function budgetIdsOf(project) {
+  return projectBudgets(project).map(b => String(b.id));
+}
+
+function budgetLabel(b) {
+  if (!b) return '';
+  return `${b.year || ''} · ${b.name || 'Sin nombre'}`.replace(/^ · /, '');
+}
+
+function BudgetPicker({ budgets, selected, onChange, disabled }) {
+  const available = (budgets || []).filter(b => b.status !== 'archivado');
+  if (!available.length) {
+    return (
+      <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>
+        No hay presupuestos. Créalos primero en la pestaña Presupuesto.
+      </div>
+    );
+  }
+  const toggle = (id) => {
+    const sid = String(id);
+    onChange(selected.includes(sid) ? selected.filter(x => x !== sid) : [...selected, sid]);
+  };
+  return (
+    <div className="plan-budget-picker">
+      {available.map(b => {
+        const id = String(b.id);
+        const locked = ['aprobado', 'en_aprobacion'].includes(b.status);
+        const on = selected.includes(id);
+        return (
+          <label key={id} className={`plan-budget-option ${on ? 'is-on' : ''}`}>
+            <input
+              type="checkbox"
+              disabled={disabled || locked}
+              checked={on}
+              onChange={() => toggle(id)}
+            />
+            <span>
+              <strong>{b.year} · {b.name || 'Sin nombre'}</strong>
+              <em>{BUDGET_STATUS[b.status]?.label || b.status}{locked ? ' · bloqueado' : ''}</em>
+            </span>
+          </label>
+        );
+      })}
+    </div>
+  );
+}
 
 const FUNDING_MODE = {
   condominio: { label: 'Recursos del condominio' },
@@ -187,6 +247,87 @@ function Pill({ map, value }) {
       display: 'inline-flex', alignItems: 'center', padding: '2px 8px', borderRadius: 99,
       fontSize: 11, fontWeight: 700, color: m.color, background: m.bg,
     }}>{m.label}</span>
+  );
+}
+
+function IncludeInAssembly({ tenantId, sourceKind, sourceId, label }) {
+  const [open, setOpen] = useState(false);
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [picked, setPicked] = useState('');
+
+  const load = () => {
+    setLoading(true);
+    asambleasAPI.list(tenantId)
+      .then(r => {
+        const list = (r.data?.results || r.data || []).filter(a => ['borrador', 'convocada', 'en_curso'].includes(a.status));
+        setRows(list);
+        setPicked(list[0]?.id || '');
+      })
+      .catch(() => setRows([]))
+      .finally(() => setLoading(false));
+  };
+
+  const send = async () => {
+    if (!picked) {
+      toast.error('Elige una asamblea o créala en Asambleas');
+      return;
+    }
+    try {
+      await asambleasAPI.addFromPlaneacion(tenantId, picked, {
+        source_kind: sourceKind,
+        source_id: sourceId,
+      });
+      toast.success(`${label} incluido en la asamblea. Ahí se puede votar; el desahogo queda en la minuta y el acta se redacta al cierre.`);
+      setOpen(false);
+    } catch (e) {
+      toast.error(errMsg(e, 'No se pudo incluir en la asamblea'));
+    }
+  };
+
+  return (
+    <>
+      <button className="btn btn-outline" onClick={() => { setOpen(true); load(); }}>
+        <Gavel size={14} /> Incluir en asamblea
+      </button>
+      {open && (
+        <div className="modal-bg open" onClick={() => setOpen(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-head">
+              <h3>Incluir en asamblea</h3>
+              <button className="modal-close" onClick={() => setOpen(false)}><X size={16} /></button>
+            </div>
+            <div className="modal-body" style={{ display: 'grid', gap: 12 }}>
+              <p style={{ fontSize: 13, color: 'var(--ink-500)', margin: 0 }}>
+                {label} se agrega al orden del día para votarse. El desahogo queda en la minuta de trabajo; el acta formal se redacta al cierre para protocolizar.
+              </p>
+              {loading ? (
+                <div style={{ color: 'var(--ink-400)' }}>Cargando asambleas…</div>
+              ) : rows.length === 0 ? (
+                <div style={{ fontSize: 13, color: 'var(--ink-500)' }}>
+                  No hay asambleas abiertas. Crea una convocatoria en Asambleas y vuelve a intentar.
+                </div>
+              ) : (
+                <div className="field">
+                  <div className="field-label">Asamblea</div>
+                  <select className="field-select" value={picked} onChange={e => setPicked(e.target.value)}>
+                    {rows.map(a => (
+                      <option key={a.id} value={a.id}>
+                        {a.title} · {a.status === 'en_curso' ? 'En curso' : a.status === 'convocada' ? 'Convocada' : 'Borrador'}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+            <div className="modal-foot">
+              <button className="btn btn-outline" onClick={() => setOpen(false)}>Cancelar</button>
+              <button className="btn btn-primary" disabled={!picked} onClick={send}>Incluir para votación</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -588,6 +729,14 @@ function PresupuestoTab({ tenantId, year, setYear, years, ctx, isReadOnly, loadi
             })}><Printer size={14} /> Imprimir</button>
           )}
           {budget && !isReadOnly && (
+            <IncludeInAssembly
+              tenantId={tenantId}
+              sourceKind="presupuesto"
+              sourceId={budget.id}
+              label={`El presupuesto ${budget.name || budget.year}`}
+            />
+          )}
+          {budget && !isReadOnly && (
             <button className="btn btn-outline" onClick={cloneScenario}><Copy size={14} /> Duplicar</button>
           )}
           {!isReadOnly && scenarios.length > 0 && (
@@ -673,6 +822,30 @@ function PresupuestoTab({ tenantId, year, setYear, years, ctx, isReadOnly, loadi
               accent={totals.surplus >= 0 ? 'teal' : 'coral'}
             />
           </div>
+
+          {(budget.linked_projects || []).length > 0 && (
+            <div className="plan-linked-projects">
+              <div className="plan-linked-projects-head">
+                <FolderKanban size={14} />
+                <strong>Proyectos en este presupuesto</strong>
+                <span>{budget.linked_projects.length}</span>
+              </div>
+              <div className="plan-linked-projects-list">
+                {budget.linked_projects.map(p => (
+                  <div key={p.id} className="plan-linked-project">
+                    <div>
+                      <b>{p.name}</b>
+                      <em>{PROJECT_STATUS[p.status]?.label || p.status}</em>
+                    </div>
+                    <div>
+                      <span>Gasto {fmtCurrency(p.gasto_annual, currency)}</span>
+                      {p.ingreso_annual > 0 && <span>Aportes {fmtCurrency(p.ingreso_annual, currency)}</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {(totals.expense > (totals.net_income ?? totals.income)) && ctx?.units_billable > 0 && (
             <div className="plan-hint">
@@ -1160,6 +1333,13 @@ function BudgetPrintLayout({ budget, ctx, currency }) {
               <tr key={line.id} style={{ background: i % 2 === 0 ? '#fff' : '#FAFAF9' }}>
                 <td style={td({ textAlign: 'left', fontWeight: 600, color: '#1C1917' })}>
                   {line.name || 'Sin nombre'}
+                  {line.project_id && (
+                    <span style={{
+                      marginLeft: 6, fontSize: 7, fontWeight: 800, letterSpacing: '0.04em',
+                      textTransform: 'uppercase', color: '#0D6E55', background: '#E6F7F3',
+                      borderRadius: 3, padding: '1px 5px',
+                    }}>Proyecto</span>
+                  )}
                 </td>
                 {MONTHS.map(m => (
                   <td key={m} style={td({ color: Number(line.monthly_amounts?.[m]) ? '#1C1917' : '#D6D3D1' })}>
@@ -1263,6 +1443,42 @@ function BudgetPrintLayout({ budget, ctx, currency }) {
 
       {printTable('Ingresos', 'teal', ingresos, ingMonths, totals.income || 0)}
       {printTable('Egresos', 'amber', gastos, gasMonths, expense)}
+
+      {(budget.linked_projects || []).length > 0 && (
+        <div style={{ marginTop: 10, breakInside: 'avoid' }}>
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            background: '#E6F7F3', borderLeft: '4px solid #0D6E55', padding: '5px 10px',
+          }}>
+            <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.07em', textTransform: 'uppercase', color: '#0D6E55', flex: 1 }}>
+              Proyectos incluidos
+            </span>
+            <span style={{ fontSize: 9, color: '#57534e' }}>{budget.linked_projects.length} proyecto(s)</span>
+          </div>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr>
+                <th style={{ ...th, textAlign: 'left' }}>Proyecto</th>
+                <th style={th}>Estatus</th>
+                <th style={th}>Monto del proyecto</th>
+                <th style={th}>Gasto en este presupuesto</th>
+                <th style={th}>Aportes extra</th>
+              </tr>
+            </thead>
+            <tbody>
+              {budget.linked_projects.map((p, i) => (
+                <tr key={p.id} style={{ background: i % 2 === 0 ? '#fff' : '#FAFAF9' }}>
+                  <td style={td({ textAlign: 'left', fontWeight: 600 })}>{p.name}</td>
+                  <td style={td({ textAlign: 'center' })}>{PROJECT_STATUS[p.status]?.label || p.status}</td>
+                  <td style={td()}>{fmtPrintAmt(p.budget_amount, currency)}</td>
+                  <td style={td()}>{fmtPrintAmt(p.gasto_annual, currency)}</td>
+                  <td style={td()}>{fmtPrintAmt(p.ingreso_annual, currency)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {(totals.discounts || []).length > 0 && (
         <div style={{ marginTop: 10, breakInside: 'avoid' }}>
@@ -1481,7 +1697,7 @@ function ProyectosTab({ tenantId, ctx, isReadOnly, user, onCtxRefresh }) {
           <FolderKanban size={28} style={{ color: 'var(--teal-600)', marginBottom: 10 }} />
           <h3 style={{ margin: '0 0 8px' }}>Sin proyectos todavía</h3>
           <p style={{ color: 'var(--ink-400)', fontSize: 13, maxWidth: 480, margin: '0 auto 16px' }}>
-            Usa esta pestaña para obras, mejoras y extraordinarios: concurso de proveedores, archivos, plan de fondeo e inclusión en el presupuesto anual.
+            Usa esta pestaña para obras, mejoras y extraordinarios: concurso de proveedores, archivos, plan de fondeo e inclusión en uno o varios presupuestos.
           </p>
           {!isReadOnly && (
             <button className="btn btn-primary" onClick={() => setModal({ ...EMPTY_PROJECT, start_period: todayPeriod() })}>
@@ -1509,7 +1725,9 @@ function ProyectosTab({ tenantId, ctx, isReadOnly, user, onCtxRefresh }) {
                   <Pill map={CONTEST_STATUS} value={p.contest_status || 'sin_concurso'} />
                   {p.winner_supplier_name && <span className="proj-chip">Ganador: {p.winner_supplier_name}</span>}
                   <span className="proj-chip">{FUNDING_MODE[p.funding_mode]?.label || 'Fondeo'}</span>
-                  {p.budget_name && <span className="proj-chip">En {p.budget_name}</span>}
+                  {projectBudgets(p).map(b => (
+                    <span key={b.id} className="proj-chip">En {budgetLabel(b)}</span>
+                  ))}
                   {(p.quotes_count || 0) > 0 && <span className="proj-chip">{p.quotes_count} cotiz.</span>}
                 </div>
                 <div style={{ marginTop: 12, height: 6, background: 'var(--sand-100)', borderRadius: 99, overflow: 'hidden' }}>
@@ -1581,6 +1799,7 @@ function ProjectForm({ ctx, initial, isReadOnly, onClose, onSave }) {
     ...initial,
     extra_field_id: initial.extra_field_id || '',
     budget_amount: initial.budget_amount || 0,
+    budget_ids: budgetIdsOf(initial),
   });
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const flowOn = flowEnabled(ctx);
@@ -1647,8 +1866,20 @@ function ProjectForm({ ctx, initial, isReadOnly, onClose, onSave }) {
               Permite importar gastos reales de esa categoría al proyecto.
             </div>
           </div>
+          <div className="field">
+            <div className="field-label">Incluir en presupuestos</div>
+            <BudgetPicker
+              budgets={ctx?.existing_budgets}
+              selected={form.budget_ids || []}
+              disabled={isReadOnly}
+              onChange={ids => set('budget_ids', ids)}
+            />
+            <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 4 }}>
+              El proyecto se refleja como partida en cada presupuesto seleccionado (gasto del condominio y, si aplica, aportes de residentes).
+            </div>
+          </div>
           <p style={{ fontSize: 12, color: 'var(--ink-400)', margin: 0 }}>
-            Después de guardar podrás cargar cotizaciones, archivos del proyecto, el plan de fondeo y sumarlo a un presupuesto.
+            Después de guardar podrás cargar cotizaciones, archivos del proyecto y el plan de fondeo.
           </p>
         </div>
         <div className="modal-foot">
@@ -1683,7 +1914,7 @@ function ProjectDetail({ tenantId, project, ctx, isReadOnly, user, onClose, onRe
     funding_units: project.funding_units || 0,
     funding_notes: project.funding_notes || '',
   });
-  const [budgetId, setBudgetId] = useState(project.budget_id || '');
+  const [pickedBudgets, setPickedBudgets] = useState(budgetIdsOf(project));
   const over = (project.progress_pct || 0) > 100;
   const flowOn = flowEnabled(ctx);
   const quotes = project.quotes || [];
@@ -1699,8 +1930,8 @@ function ProjectDetail({ tenantId, project, ctx, isReadOnly, user, onClose, onRe
       funding_units: project.funding_units || 0,
       funding_notes: project.funding_notes || '',
     });
-    setBudgetId(project.budget_id || '');
-  }, [project.id, project.funding_mode, project.funding_condo_pct, project.funding_units, project.funding_notes, project.budget_id]);
+    setPickedBudgets(budgetIdsOf(project));
+  }, [project.id, project.funding_mode, project.funding_condo_pct, project.funding_units, project.funding_notes, project.budgets, project.budget_id]);
 
   const loadGastos = () => {
     planeacionAPI.projects.gastos(tenantId, project.id, { period })
@@ -1788,26 +2019,34 @@ function ProjectDetail({ tenantId, project, ctx, isReadOnly, user, onClose, onRe
     }
   };
 
-  const include = async (id) => {
-    if (!id) {
-      toast.error('Elige un presupuesto');
+  const linked = projectBudgets(project);
+  const linkedIds = new Set(linked.map(b => String(b.id)));
+
+  const saveBudgets = async () => {
+    const add = pickedBudgets.filter(id => !linkedIds.has(id));
+    const remove = linked.filter(b => !pickedBudgets.includes(String(b.id)));
+    if (!add.length && !remove.length) {
+      toast.success('Sin cambios en los presupuestos');
       return;
     }
     try {
-      await planeacionAPI.projects.includeInBudget(tenantId, project.id, { budget_id: id });
-      toast.success('Proyecto sumado al presupuesto');
+      for (const id of add) {
+        await planeacionAPI.projects.includeInBudget(tenantId, project.id, { budget_id: id });
+      }
+      for (const b of remove) {
+        await planeacionAPI.projects.unlinkBudget(tenantId, project.id, { budget_id: b.id });
+      }
+      toast.success('Presupuestos actualizados');
       onRefresh();
     } catch (e) {
-      toast.error(errMsg(e, 'No se pudo incluir en el presupuesto'));
+      toast.error(errMsg(e, 'No se pudo actualizar los presupuestos'));
     }
   };
 
-  const includeBudget = () => include(budgetId || project.budget_id);
-
-  const unlinkBudget = async () => {
-    if (!window.confirm('¿Quitar este proyecto del presupuesto? Se eliminarán sus partidas.')) return;
+  const unlinkOne = async (b) => {
+    if (!window.confirm(`¿Quitar este proyecto de ${budgetLabel(b)}? Se eliminarán sus partidas.`)) return;
     try {
-      await planeacionAPI.projects.unlinkBudget(tenantId, project.id);
+      await planeacionAPI.projects.unlinkBudget(tenantId, project.id, { budget_id: b.id });
       toast.success('Proyecto retirado del presupuesto');
       onRefresh();
     } catch (e) {
@@ -1852,7 +2091,9 @@ function ProjectDetail({ tenantId, project, ctx, isReadOnly, user, onClose, onRe
             <span style={{ fontSize: 12, color: PRIORITY[project.priority]?.color, fontWeight: 700 }}>{PRIORITY[project.priority]?.label}</span>
             {project.extra_field_label && <span style={{ fontSize: 12, color: 'var(--ink-400)' }}>{project.extra_field_label}</span>}
             {project.winner_supplier_name && <span className="proj-chip"><Award size={11} /> {project.winner_supplier_name}</span>}
-            {project.budget_name && <span className="proj-chip">{project.budget_name}</span>}
+            {linked.map(b => (
+              <span key={b.id} className="proj-chip">{budgetLabel(b)}</span>
+            ))}
           </div>
           {project.description && tab === 'resumen' && <p style={{ fontSize: 13, color: 'var(--ink-500)' }}>{project.description}</p>}
           <div style={{ margin: '8px 0 6px', height: 8, background: 'var(--sand-100)', borderRadius: 99, overflow: 'hidden' }}>
@@ -2058,7 +2299,7 @@ function ProjectDetail({ tenantId, project, ctx, isReadOnly, user, onClose, onRe
           {tab === 'fondeo' && (
             <>
               <p style={{ fontSize: 13, color: 'var(--ink-500)', margin: '0 0 12px' }}>
-                Define cómo se paga el proyecto. Si lo sumas a un presupuesto, la parte del condominio entra como gasto y los aportes de residentes como ingreso extraordinario.
+                Define cómo se paga el proyecto. Si lo sumas a uno o varios presupuestos, la parte del condominio entra como gasto y los aportes de residentes como ingreso extraordinario.
               </p>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <div className="field">
@@ -2099,33 +2340,32 @@ function ProjectDetail({ tenantId, project, ctx, isReadOnly, user, onClose, onRe
               </div>
               {!isReadOnly && <button className="btn btn-primary" onClick={saveFunding} style={{ marginBottom: 16 }}><Landmark size={14} /> Guardar fondeo</button>}
 
-              <h4 style={{ margin: '8px 0', fontSize: 14 }}>Incluir en presupuesto anual</h4>
+              <h4 style={{ margin: '8px 0', fontSize: 14 }}>Incluir en presupuestos</h4>
               <p style={{ fontSize: 12, color: 'var(--ink-400)', margin: '0 0 10px' }}>
-                Se crean partidas ligadas a este proyecto (no se pueden borrar desde el presupuesto). El monto se reparte entre los meses del proyecto.
+                Puedes asociarlo a varios escenarios. Se crean partidas ligadas (no se pueden borrar desde el presupuesto) y el monto se reparte entre los meses del proyecto.
               </p>
-              {project.budget_id ? (
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <span className="proj-chip">Incluido en {project.budget_name} ({project.budget_year})</span>
-                  {!isReadOnly && <button className="btn btn-outline" onClick={unlinkBudget}>Quitar del presupuesto</button>}
-                  {!isReadOnly && <button className="btn btn-outline" onClick={includeBudget}>Actualizar montos</button>}
+              {linked.length > 0 && (
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+                  {linked.map(b => (
+                    <span key={b.id} className="proj-chip" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                      Incluido en {budgetLabel(b)}
+                      {!isReadOnly && !['aprobado', 'en_aprobacion', 'archivado'].includes(b.status) && (
+                        <button type="button" className="btn btn-outline btn-sm" onClick={() => unlinkOne(b)}>Quitar</button>
+                      )}
+                    </span>
+                  ))}
                 </div>
-              ) : (
-                <div style={{ display: 'flex', gap: 8, alignItems: 'end', flexWrap: 'wrap' }}>
-                  <div className="field" style={{ margin: 0, minWidth: 260 }}>
-                    <div className="field-label">Presupuesto</div>
-                    <select className="field-select" disabled={isReadOnly} value={budgetId} onChange={e => setBudgetId(e.target.value)}>
-                      <option value="">Selecciona un escenario</option>
-                      {budgets.filter(b => !['archivado'].includes(b.status)).map(b => (
-                        <option key={b.id} value={b.id}>
-                          {b.year} · {b.name || 'Sin nombre'} · {BUDGET_STATUS[b.status]?.label || b.status}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  {!isReadOnly && (
-                    <button className="btn btn-primary" disabled={!budgetId} onClick={includeBudget}>Sumar al presupuesto</button>
-                  )}
-                </div>
+              )}
+              <BudgetPicker
+                budgets={budgets}
+                selected={pickedBudgets}
+                disabled={isReadOnly}
+                onChange={setPickedBudgets}
+              />
+              {!isReadOnly && (
+                <button className="btn btn-primary" onClick={saveBudgets} style={{ marginTop: 10 }}>
+                  Guardar presupuestos
+                </button>
               )}
               {yearHint && budgets.some(b => String(b.year) === yearHint) === false && (
                 <div style={{ fontSize: 12, color: 'var(--ink-400)', marginTop: 8 }}>
@@ -2255,6 +2495,14 @@ function ProjectDetail({ tenantId, project, ctx, isReadOnly, user, onClose, onRe
         <div className="modal-foot">
           {!isReadOnly && <button className="btn btn-outline" onClick={onDelete} style={{ marginRight: 'auto' }}><Trash2 size={14} /> Eliminar</button>}
           <button className="btn btn-outline" onClick={onClose}>Cerrar</button>
+          {!isReadOnly && (
+            <IncludeInAssembly
+              tenantId={tenantId}
+              sourceKind="proyecto"
+              sourceId={project.id}
+              label={`El proyecto ${project.name}`}
+            />
+          )}
           {!isReadOnly && <button className="btn btn-primary" onClick={onEdit}><Pencil size={14} /> Editar</button>}
         </div>
       </div>

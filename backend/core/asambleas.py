@@ -1,8 +1,9 @@
-"""Asambleas del condominio: convocatorias, reuniones, minutas e historial."""
+"""Asambleas del condominio: convocatoria, desarrollo, minuta de trabajo y acta formal."""
 from __future__ import annotations
 
 import math
 import os
+import re
 from datetime import date, timedelta
 
 from django.db.models import Sum
@@ -242,7 +243,8 @@ def assembly_link_catalog(tenant):
     projects = []
     for p in CondoProject.objects.filter(tenant=tenant).exclude(
         status__in=('cancelado', 'concluido'),
-    ).select_related('winner_quote').order_by('-created_at')[:40]:
+    ).select_related('winner_quote').prefetch_related('budgets').order_by('-created_at')[:40]:
+        linked = sorted(p.budgets.all(), key=lambda b: (-int(b.year or 0), b.name or ''))
         projects.append({
             'id': str(p.id),
             'name': p.name,
@@ -254,6 +256,7 @@ def assembly_link_catalog(tenant):
             'winner_supplier_name': p.winner_quote.supplier_name if p.winner_quote_id else '',
             'start_period': p.start_period,
             'end_period': p.end_period,
+            'budget_names': [b.name or f'Presupuesto {b.year}' for b in linked],
         })
     periods = list(
         ClosedPeriod.objects.filter(tenant=tenant).order_by('-period')[:18].values('id', 'period', 'closed_at')
@@ -341,6 +344,131 @@ def snapshot_source(kind, obj):
         title = getattr(obj, 'title', None) or getattr(obj, 'name', '')
         return title, {'holder_name': getattr(obj, 'holder_name', '') or getattr(obj, 'members', '')}
     return str(obj), {}
+
+
+VOTE_LABEL_ES = {
+    'informativo': 'Informativo',
+    'simple': 'Mayoría simple',
+    'calificada': 'Mayoría calificada',
+    'unanimidad': 'Unanimidad',
+}
+RESULT_LABEL_ES = {
+    'pendiente': 'Pendiente',
+    'aprobado': 'Aprobado',
+    'rechazado': 'Rechazado',
+    'diferido': 'Diferido',
+}
+SOURCE_LABEL_ES = {
+    'presupuesto': 'Presupuesto de Planeación',
+    'proyecto': 'Proyecto de Planeación',
+    'cierre': 'Cierre de período',
+    'cuota': 'Cuota',
+    'organizacion': 'Organización',
+}
+BALLOT_LABEL_ES = {
+    'for': 'a favor',
+    'against': 'en contra',
+    'abstain': 'abstención',
+}
+
+
+def compile_agenda_record(item, formal=False):
+    kind = SOURCE_LABEL_ES.get(item.source_kind) or ''
+    heading = 'ACUERDO' if formal else 'PUNTO'
+    lines = [f'{heading}: {item.title}']
+    if kind:
+        origin = f'Origen: {kind}'
+        if item.source_label:
+            origin += f' — {item.source_label}'
+        lines.append(origin)
+    if item.description:
+        lines.append(item.description.strip())
+    lines.append(f'Tipo de votación: {VOTE_LABEL_ES.get(item.vote_type, item.vote_type)}')
+    if item.vote_type == 'informativo':
+        lines.append('Punto informativo (sin votación).')
+    else:
+        lines.append(f'Resultado: {RESULT_LABEL_ES.get(item.result, item.result)}')
+        lines.append(
+            f'Votos: a favor {item.votes_for or 0}, en contra {item.votes_against or 0}, '
+            f'abstenciones {item.votes_abstain or 0}.'
+        )
+        detail = item.vote_detail or []
+        if detail:
+            lines.append('Detalle por unidad:')
+            for ballot in detail:
+                unit = (ballot.get('unit_code') or '—').strip()
+                name = (ballot.get('name') or '').strip()
+                who = f'{unit} {name}'.strip()
+                choice = BALLOT_LABEL_ES.get(ballot.get('choice'), ballot.get('choice') or '')
+                lines.append(f'  · {who}: {choice}')
+    if item.notes:
+        lines.append(f'Notas de minuta: {item.notes.strip()}')
+    if item.applied_notes:
+        lines.append(item.applied_notes.strip())
+    return '\n'.join(lines)
+
+
+def upsert_vote_block(text, item_id, block):
+    token = str(item_id)[:8]
+    start = f'«Registro de votación {token}»'
+    end = f'«Fin de votación {token}»'
+    chunk = f'{start}\n{block}\n{end}'
+    current = text or ''
+    pattern = re.compile(re.escape(start) + r'.*?' + re.escape(end), re.S)
+    if pattern.search(current):
+        return pattern.sub(chunk, current, count=1)
+    sep = '\n\n' if current.strip() else ''
+    return current.rstrip() + sep + chunk + '\n'
+
+
+def record_vote_in_documents(assembly, item):
+    """Escribe el desahogo en la minuta de trabajo. El acta formal se redacta aparte."""
+    minuta = compile_agenda_record(item, formal=False)
+    minute_body = assembly.minute_body or ''
+    if not minute_body.strip():
+        minute_body = (
+            f'Minuta de trabajo · {assembly.title}\n'
+            'Documento interno de la sesión. No sustituye el acta ni se protocoliza.\n\n'
+        )
+    assembly.minute_body = upsert_vote_block(minute_body, item.id, minuta)
+    assembly.save(update_fields=['minute_body', 'updated_at'])
+    return assembly
+
+
+def add_source_to_assembly(assembly, kind, source_id, extra=None):
+    extra = extra or {}
+    if kind not in ('presupuesto', 'proyecto'):
+        raise ValidationError({'detail': 'Solo se pueden incluir presupuestos o proyectos de Planeación.'})
+    if assembly.status in LOCKED_STATUSES:
+        raise ValidationError({'detail': 'Esta asamblea ya no admite puntos en el orden del día.'})
+    obj = resolve_source_item(assembly.tenant, kind, source_id)
+    if not obj:
+        raise ValidationError({'detail': 'No se encontró el presupuesto o el proyecto.'})
+    if assembly.agenda.filter(source_kind=kind, source_id=obj.id).exists():
+        raise ValidationError({'detail': 'Ese registro ya está en el orden del día de esta asamblea.'})
+    label, meta = snapshot_source(kind, obj)
+    if kind == 'presupuesto':
+        title = extra.get('title') or f'Aprobación del presupuesto: {label} ({getattr(obj, "year", "")})'
+        description = extra.get('description') or (
+            f'Escenario {obj.status}. Ingresos {meta.get("income") or "—"} · Gastos {meta.get("expense") or "—"}.'
+        )
+    else:
+        title = extra.get('title') or f'Aprobación del proyecto: {label}'
+        description = extra.get('description') or ''
+    vote = extra.get('vote_type') if extra.get('vote_type') in dict(CondoAssemblyAgendaItem.VOTE_CHOICES) else 'calificada'
+    item = CondoAssemblyAgendaItem.objects.create(
+        assembly=assembly,
+        sort_order=assembly.agenda.count(),
+        title=str(title)[:240],
+        description=str(description)[:4000],
+        vote_type=vote,
+        source_kind=kind,
+        source_id=obj.id,
+        source_label=(label or '')[:240],
+        source_meta=meta if isinstance(meta, dict) else {},
+        apply_on_approve=True,
+    )
+    return item
 
 
 def apply_linked_module(item, assembly, user, result):
@@ -703,6 +831,21 @@ class CondoAssemblyViewSet(viewsets.ModelViewSet):
                 keep_ids.append(created.id)
         assembly.agenda.exclude(id__in=keep_ids).delete()
 
+    @action(detail=True, methods=['post'], url_path='add-from-planeacion')
+    def add_from_planeacion(self, request, tenant_id, pk=None):
+        assembly = self.get_object()
+        kind = request.data.get('source_kind')
+        source_id = request.data.get('source_id')
+        if not source_id:
+            return Response({'detail': 'Indica el presupuesto o proyecto (source_id).'}, status=400)
+        item = add_source_to_assembly(assembly, kind, source_id, request.data)
+        _audit(
+            request, 'update',
+            f'{item.source_kind} «{item.source_label}» agregado a {assembly.title}',
+            tenant_id, 'CondoAssembly', assembly.id, assembly.title,
+        )
+        return Response(self._full(assembly), status=status.HTTP_201_CREATED)
+
     @action(detail=True, methods=['post'], url_path='publish-notice')
     def publish_notice(self, request, tenant_id, pk=None):
         assembly = self.get_object()
@@ -914,6 +1057,7 @@ class CondoAssemblyViewSet(viewsets.ModelViewSet):
             item.applied_status = 'pendiente'
             item.applied_notes = 'El acuerdo quedó en el acta. Un administrador o tesorero debe confirmar la aplicación en el módulo.'
             item.save(update_fields=['applied_status', 'applied_notes'])
+        record_vote_in_documents(assembly, item)
         return Response(self._full(assembly))
 
     @action(detail=True, methods=['post'], url_path='agenda/(?P<item_id>[^/.]+)/notes')
@@ -924,12 +1068,21 @@ class CondoAssemblyViewSet(viewsets.ModelViewSet):
         item = assembly.agenda.filter(id=item_id).first()
         if not item:
             return Response({'detail': 'Punto no encontrado.'}, status=404)
-        item.notes = request.data.get('notes') or ''
-        fields = ['notes']
+        if request.data.get('notes') is not None:
+            item.notes = request.data.get('notes') or ''
+        fields = ['notes'] if request.data.get('notes') is not None else []
+        vote_type = request.data.get('vote_type')
+        if vote_type in dict(CondoAssemblyAgendaItem.VOTE_CHOICES):
+            item.vote_type = vote_type
+            fields.append('vote_type')
         if item.vote_type == 'informativo' and request.data.get('mark_done'):
             item.result = 'aprobado'
             fields.append('result')
+        if not fields:
+            fields = ['notes']
         item.save(update_fields=fields)
+        if item.result != 'pendiente' or item.notes:
+            record_vote_in_documents(assembly, item)
         return Response(self._full(assembly))
 
     @action(detail=True, methods=['post'], url_path='agenda/(?P<item_id>[^/.]+)/apply')
@@ -999,15 +1152,17 @@ class CondoAssemblyViewSet(viewsets.ModelViewSet):
         assembly = self.get_object()
         if assembly.status not in ('en_curso', 'cerrada'):
             return Response({'detail': 'La minuta se firma al concluir la reunión.'}, status=400)
-        if not (assembly.acta_body or assembly.minute_body or '').strip():
-            return Response({'detail': 'Redacta el acta formal antes de firmarla.'}, status=400)
+        if not (assembly.acta_body or '').strip():
+            return Response({
+                'detail': 'Redacta el acta formal antes de firmarla. La minuta de trabajo no se protocoliza.',
+            }, status=400)
         if not assembly.president_name or not assembly.secretary_name:
             return Response({'detail': 'Indica presidente y secretario de debates.'}, status=400)
         assembly.minute_status = 'firmada'
         assembly.minute_signed_at = timezone.now()
         assembly.save(update_fields=['minute_status', 'minute_signed_at', 'updated_at'])
         _audit(
-            request, 'update', f'Minuta firmada: {assembly.title}',
+            request, 'update', f'Acta firmada: {assembly.title}',
             tenant_id, 'CondoAssembly', assembly.id, assembly.title,
         )
         return Response(self._full(assembly))
@@ -1033,7 +1188,7 @@ class CondoAssemblyViewSet(viewsets.ModelViewSet):
             return Response({'detail': 'Solo una asamblea en curso se puede cerrar.'}, status=400)
         assembly.status = 'cerrada'
         assembly.closed_at = timezone.now()
-        if (assembly.minute_body or '').strip() and assembly.president_name and assembly.secretary_name:
+        if (assembly.acta_body or '').strip() and assembly.president_name and assembly.secretary_name:
             if assembly.minute_status == 'borrador':
                 assembly.minute_status = 'firmada'
                 assembly.minute_signed_at = assembly.closed_at
@@ -1043,7 +1198,7 @@ class CondoAssemblyViewSet(viewsets.ModelViewSet):
         notify_assembly(
             assembly.tenant, 'assembly_minute',
             f'Minuta disponible: {assembly.title}',
-            'La asamblea quedó cerrada. Ya puedes consultar el acta en Homly.',
+            'La asamblea quedó cerrada. Consulta la minuta de trabajo y el acta formal en Homly.',
         )
         _audit(
             request, 'update', f'Asamblea cerrada: {assembly.title}',
