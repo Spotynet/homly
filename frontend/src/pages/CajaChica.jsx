@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
 import { cajaChicaAPI } from '../api/client';
+import ProviderSelect from '../components/providers/ProviderSelect';
 import { useCajaChicaData } from '../hooks/useCajaChicaData';
 import { queryKeys }        from '../hooks/queryKeys';
 import { todayPeriod, periodLabel, prevPeriod, nextPeriod, fmtDate, PAYMENT_TYPES, isPdfFile } from '../utils/helpers';
@@ -256,6 +257,8 @@ export default function CajaChica() {
       const payload = {
         ...form,
         period,
+        provider: form.provider || null,
+        provider_name: form.provider_name || '',
         evidence: cajaEvidence.length > 0 ? JSON.stringify(cajaEvidence) : (form.evidence || ''),
       };
       if (form.id) await cajaChicaAPI.update(tenantId, form.id, payload);
@@ -382,6 +385,7 @@ export default function CajaChica() {
                 <thead>
                   <tr style={{ background: 'var(--purple-50)' }}>
                     <th>Descripción</th>
+                    <th>Proveedor</th>
                     <th style={{ textAlign: 'right' }}>Monto</th>
                     <th>Forma de Pago</th>
                     <th>Fecha</th>
@@ -397,6 +401,7 @@ export default function CajaChica() {
                     return (
                       <tr key={c.id} style={{ borderBottom: '1px solid var(--sand-100)' }}>
                         <td style={{ fontWeight: 600, color: 'var(--purple-700, #6D28D9)', fontSize: 13 }}>{c.description}</td>
+                        <td style={{ fontSize: 12, color: 'var(--ink-500)' }}>{c.provider_name || '—'}</td>
                         <td style={{ textAlign: 'right', fontWeight: 700, fontSize: 13, color: 'var(--purple-700, #6D28D9)' }}>{fmt(c.amount)}</td>
                         <td style={{ fontSize: 11 }}>{PAYMENT_TYPES[c.payment_type]?.short || c.payment_type || '—'}</td>
                         <td style={{ fontSize: 11, color: 'var(--ink-500)' }}>{fmtDate(c.date)}</td>
@@ -459,6 +464,7 @@ export default function CajaChica() {
                     <td style={{ padding: '10px 12px', fontWeight: 800, color: 'var(--purple-800, #5B21B6)' }}>
                       TOTAL CAJA CHICA
                     </td>
+                    <td></td>
                     <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 800, color: 'var(--purple-800, #5B21B6)', fontSize: 15 }}>
                       {fmt(totalCaja)}
                     </td>
@@ -527,6 +533,19 @@ export default function CajaChica() {
                     onChange={e => setForm({ ...form, date: e.target.value })}
                   />
                 </div>
+                <ProviderSelect
+                  tenantId={tenantId}
+                  moduleKey="caja_chica"
+                  providerId={form.provider}
+                  name={form.provider_name}
+                  rfc=""
+                  showRfc={false}
+                  onChange={({ provider, name }) => setForm(f => ({
+                    ...f,
+                    provider: provider || null,
+                    provider_name: name ?? f.provider_name,
+                  }))}
+                />
               </div>
 
               {/* ── Evidencia ── */}

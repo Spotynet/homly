@@ -85,12 +85,13 @@ class MaintenanceWorkSerializer(serializers.ModelSerializer):
         model = CondoMaintenanceWork
         fields = (
             'id', 'kind', 'status', 'priority', 'title', 'description', 'work_notes',
-            'area_id', 'area_name', 'performed_by', 'vendor_name',
+            'area_id', 'area_name', 'performed_by', 'provider', 'vendor_name',
             'scheduled_date', 'performed_date', 'next_due_date', 'frequency', 'cost',
             'created_by_name', 'created_at', 'updated_at',
             'evidences', 'evidence_count',
         )
         read_only_fields = ('id', 'created_at', 'updated_at')
+        extra_kwargs = {'provider': {'allow_null': True, 'required': False}}
 
     def get_created_by_name(self, obj):
         u = obj.created_by
@@ -102,12 +103,20 @@ class MaintenanceWorkSerializer(serializers.ModelSerializer):
             return pre
         return obj.evidences.count()
 
+    def validate(self, attrs):
+        from .proveedores import apply_name_snapshot
+        provider = attrs.get('provider')
+        if provider is None and 'provider' not in attrs and self.instance:
+            provider = self.instance.provider
+        apply_name_snapshot(attrs, provider, 'vendor_name')
+        return attrs
+
 
 class MaintenanceWorkListSerializer(MaintenanceWorkSerializer):
     class Meta(MaintenanceWorkSerializer.Meta):
         fields = (
             'id', 'kind', 'status', 'priority', 'title', 'description',
-            'area_name', 'performed_by', 'vendor_name',
+            'area_name', 'performed_by', 'provider', 'vendor_name',
             'scheduled_date', 'performed_date', 'next_due_date', 'frequency', 'cost',
             'created_by_name', 'created_at', 'evidence_count',
         )

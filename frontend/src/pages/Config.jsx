@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { tenantsAPI, extraFieldsAPI, assemblyAPI, usersAPI, unitsAPI, superAdminAPI, authAPI, periodsAPI } from '../api/client';
+import ProvidersTab from '../components/config/ProvidersTab';
 import {
   CONDO_MODULE_KEYS,
   resolveModuleAccess,
@@ -747,8 +748,9 @@ export default function Config() {
     { key: 'fields',   label: 'Gastos y Cobranza' },
     { key: 'users',    label: 'Usuarios' },
     { key: 'roles',    label: 'Roles y Perfiles' },
-    { key: 'org',      label: 'Organización' },
-    { key: 'modules',  label: 'Permisos' },
+    { key: 'org',         label: 'Organización' },
+    { key: 'proveedores', label: 'Proveedores' },
+    { key: 'modules',     label: 'Permisos' },
     { key: 'flujos',   label: 'Flujos' },
   ];
 
@@ -2298,6 +2300,10 @@ export default function Config() {
         </div>
         );
       })()}
+
+      {tab === 'proveedores' && (
+        <ProvidersTab tenantId={tenantId} isAdmin={isAdmin} />
+      )}
 
       {/* ══════════════════════════ TAB: MÓDULOS ══════════════════════════════ */}
       {tab === 'modules' && (

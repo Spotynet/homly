@@ -398,6 +398,17 @@ export const mantenimientosAPI = {
   printReport:   (tenantId, params) => api.get(`/tenants/${tenantId}/condo-maintenance/print-report/`, { params, responseType: 'blob' }),
 };
 
+export const providersAPI = {
+  list:            (tenantId, params) => api.get(`/tenants/${tenantId}/condo-providers/`, { params }),
+  options:         (tenantId, params) => api.get(`/tenants/${tenantId}/condo-providers/options/`, { params }),
+  get:             (tenantId, id) => api.get(`/tenants/${tenantId}/condo-providers/${id}/`),
+  create:          (tenantId, data) => api.post(`/tenants/${tenantId}/condo-providers/`, data),
+  update:          (tenantId, id, data) => api.patch(`/tenants/${tenantId}/condo-providers/${id}/`, data),
+  delete:          (tenantId, id) => api.delete(`/tenants/${tenantId}/condo-providers/${id}/`),
+  uploadDocument:  (tenantId, id, formData) => api.post(`/tenants/${tenantId}/condo-providers/${id}/documents/`, formData),
+  deleteDocument:  (tenantId, id, docId) => api.delete(`/tenants/${tenantId}/condo-providers/${id}/documents/${docId}/`),
+};
+
 export const assemblyAPI = {
   positions: (tenantId) => api.get(`/tenants/${tenantId}/assembly-positions/`),
   createPosition: (tenantId, data) => api.post(`/tenants/${tenantId}/assembly-positions/`, data),

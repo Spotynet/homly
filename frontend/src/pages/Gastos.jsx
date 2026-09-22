@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
 import { gastosAPI } from '../api/client';
+import ProviderSelect from '../components/providers/ProviderSelect';
 import { useGastosData } from '../hooks/useGastosData';
 import { queryKeys }     from '../hooks/queryKeys';
 import { todayPeriod, periodLabel, prevPeriod, nextPeriod, fmtDate, PAYMENT_TYPES, isPdfFile } from '../utils/helpers';
@@ -513,6 +514,7 @@ export default function Gastos() {
       payment_type: form.payment_type || 'transferencia',
       doc_number: form.doc_number || form.invoice_folio || '',
       gasto_date: form.gasto_date || null,
+      provider: form.provider || null,
       provider_name: form.provider_name || '',
       provider_rfc: form.provider_rfc || '',
       provider_invoice: form.provider_invoice || '',
@@ -608,7 +610,7 @@ export default function Gastos() {
             )}
             {!isReadOnly && !isPeriodClosed && (
               <button className="btn btn-primary btn-sm" onClick={() => {
-                setForm({ amount: '', field: '', payment_type: 'transferencia', doc_number: '', gasto_date: '', provider_name: '', provider_rfc: '', provider_invoice: '', bank_reconciled: false, notes: '' });
+                setForm({ amount: '', field: '', payment_type: 'transferencia', doc_number: '', gasto_date: '', provider: null, provider_name: '', provider_rfc: '', provider_invoice: '', bank_reconciled: false, notes: '' });
                 setGastoEvidence([]);
                 setModal('gasto');
               }}>
@@ -823,18 +825,25 @@ export default function Gastos() {
 
               <div style={{ marginTop: 12, fontSize: 11, fontWeight: 700, color: 'var(--ink-500)', textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: '1px solid var(--sand-100)', paddingBottom: 6 }}>Proveedor</div>
               <div className="form-grid" style={{ marginTop: 8 }}>
-                <div className="field">
-                  <label className="field-label">Nombre</label>
-                  <input className="field-input" value={form.provider_name || ''} onChange={e => setForm(f => ({ ...f, provider_name: e.target.value }))} placeholder="Nombre del proveedor" />
-                </div>
-                <div className="field">
-                  <label className="field-label">RFC</label>
-                  <input className="field-input" style={{ fontFamily: 'monospace' }} value={form.provider_rfc || ''} onChange={e => setForm(f => ({ ...f, provider_rfc: e.target.value }))} placeholder="RFC del proveedor" />
-                </div>
-                <div className="field">
-                  <label className="field-label">No. Factura</label>
-                  <input className="field-input" value={form.provider_invoice || ''} onChange={e => setForm(f => ({ ...f, provider_invoice: e.target.value }))} placeholder="Número de factura" />
-                </div>
+                <ProviderSelect
+                  tenantId={tenantId}
+                  moduleKey="gastos"
+                  providerId={form.provider}
+                  name={form.provider_name}
+                  rfc={form.provider_rfc}
+                  onChange={({ provider, name, rfc }) => setForm(f => ({
+                    ...f,
+                    provider: provider || null,
+                    provider_name: name ?? f.provider_name,
+                    provider_rfc: rfc ?? f.provider_rfc,
+                  }))}
+                  extraAfter={
+                    <div className="field">
+                      <label className="field-label">No. Factura</label>
+                      <input className="field-input" value={form.provider_invoice || ''} onChange={e => setForm(f => ({ ...f, provider_invoice: e.target.value }))} placeholder="Número de factura" />
+                    </div>
+                  }
+                />
               </div>
 
               {/* ── Evidencia del gasto ── */}

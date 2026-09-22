@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { mantenimientosAPI, api } from '../api/client';
+import ProviderSelect from '../components/providers/ProviderSelect';
 import toast from 'react-hot-toast';
 import {
   Plus, X, Pencil, Trash2, Wrench, FileText, Download, Upload, Eye, Calendar,
@@ -88,6 +89,7 @@ function emptyForm(kind) {
     area_id: '',
     area_name: '',
     performed_by: '',
+    provider: null,
     vendor_name: '',
     scheduled_date: '',
     performed_date: '',
@@ -302,6 +304,7 @@ function WorkForm({ ctx, canWrite, initial, onClose, onSaved }) {
         area_id: form.area_pick === '__other' ? '' : (form.area_id || ''),
         area_name: form.area_name.trim(),
         performed_by: form.performed_by || '',
+        provider: form.provider || null,
         vendor_name: form.vendor_name || '',
         scheduled_date: form.scheduled_date || null,
         performed_date: form.performed_date || null,
@@ -383,16 +386,24 @@ function WorkForm({ ctx, canWrite, initial, onClose, onSaved }) {
             <div className="field-label">Planeación del trabajo</div>
             <textarea className="field-input" rows={3} value={form.description} disabled={!canWrite} onChange={e => set('description', e.target.value)} placeholder="Qué se va a hacer, materiales, alcance…" />
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            <div className="field">
-              <div className="field-label">Quién lo realiza</div>
-              <input className="field-input" value={form.performed_by} disabled={!canWrite} onChange={e => set('performed_by', e.target.value)} placeholder="Personal interno o nombre" />
-            </div>
-            <div className="field">
-              <div className="field-label">Proveedor (si aplica)</div>
-              <input className="field-input" value={form.vendor_name} disabled={!canWrite} onChange={e => set('vendor_name', e.target.value)} />
-            </div>
+          <div className="field">
+            <div className="field-label">Quién lo realiza</div>
+            <input className="field-input" value={form.performed_by} disabled={!canWrite} onChange={e => set('performed_by', e.target.value)} placeholder="Personal interno o nombre" />
           </div>
+          <ProviderSelect
+            tenantId={tenantId}
+            moduleKey="mantenimientos"
+            providerId={form.provider}
+            name={form.vendor_name}
+            rfc=""
+            showRfc={false}
+            disabled={!canWrite}
+            onChange={({ provider, name }) => setForm(f => ({
+              ...f,
+              provider: provider || null,
+              vendor_name: name ?? f.vendor_name,
+            }))}
+          />
           <div style={{ display: 'grid', gridTemplateColumns: form.kind === 'preventivo' ? '1fr 1fr 1fr' : '1fr 1fr', gap: 10 }}>
             <div className="field">
               <div className="field-label">Fecha programada</div>

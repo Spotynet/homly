@@ -1005,12 +1005,37 @@ class CondoProjectQuoteSerializer(serializers.ModelSerializer):
     class Meta:
         model = CondoProjectQuote
         fields = (
-            'id', 'supplier_name', 'supplier_rfc', 'supplier_contact',
+            'id', 'provider', 'supplier_name', 'supplier_rfc', 'supplier_contact',
             'supplier_phone', 'supplier_email', 'supplier_notes',
             'amount', 'validity_date', 'delivery_days', 'warranty_months',
             'scope', 'is_winner', 'sort_order', 'files', 'created_at', 'updated_at',
         )
         read_only_fields = ('id', 'is_winner', 'created_at', 'updated_at')
+        extra_kwargs = {'provider': {'allow_null': True, 'required': False}}
+
+    def validate(self, attrs):
+        from .proveedores import snapshot_from_provider
+        provider = attrs.get('provider')
+        if provider is None and self.instance:
+            provider = self.instance.provider
+        if not provider:
+            raise serializers.ValidationError({
+                'provider': 'Selecciona un proveedor del catálogo de Configuración. No se dan de alta desde Planeación.',
+            })
+        snap = snapshot_from_provider(provider)
+        if snap:
+            if not (attrs.get('supplier_name') or '').strip():
+                attrs['supplier_name'] = snap['name']
+            if not (attrs.get('supplier_rfc') or '').strip():
+                attrs['supplier_rfc'] = snap['rfc']
+            if not (attrs.get('supplier_contact') or '').strip():
+                attrs['supplier_contact'] = snap['contact']
+            if not (attrs.get('supplier_phone') or '').strip():
+                attrs['supplier_phone'] = snap['phone']
+            if not (attrs.get('supplier_email') or '').strip():
+                attrs['supplier_email'] = snap['email']
+        attrs['provider'] = provider
+        return attrs
 
 
 class CondoProjectSerializer(serializers.ModelSerializer):

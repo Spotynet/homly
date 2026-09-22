@@ -558,6 +558,10 @@ class GastoEntry(models.Model):
                                      default='transferencia')
     doc_number = models.CharField(max_length=100, blank=True, default='')
     gasto_date = models.DateField(null=True, blank=True)
+    provider = models.ForeignKey(
+        'CondoProvider', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='gasto_entries',
+    )
     provider_name = models.CharField(max_length=300, blank=True, default='')
     provider_rfc = models.CharField(max_length=20, blank=True, default='')
     provider_invoice = models.CharField(max_length=100, blank=True, default='')
@@ -605,6 +609,11 @@ class CajaChicaEntry(models.Model):
     description = models.CharField(max_length=500)
     date = models.DateField(null=True, blank=True)
     payment_type = models.CharField(max_length=15, choices=PAYMENT_TYPE_CHOICES, default='efectivo')
+    provider = models.ForeignKey(
+        'CondoProvider', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='caja_chica_entries',
+    )
+    provider_name = models.CharField(max_length=300, blank=True, default='')
     evidence = models.TextField(
         blank=True, default='',
         help_text='JSON array of {data, mime, name} base64-encoded evidence files for this entry.',
@@ -2747,6 +2756,10 @@ class CondoProjectQuote(models.Model):
     """Cotización de un proveedor para el concurso del proyecto."""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     project = models.ForeignKey(CondoProject, on_delete=models.CASCADE, related_name='quotes')
+    provider = models.ForeignKey(
+        'CondoProvider', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='project_quotes',
+    )
     supplier_name = models.CharField(max_length=240)
     supplier_rfc = models.CharField(max_length=20, blank=True, default='')
     supplier_contact = models.CharField(max_length=200, blank=True, default='')
@@ -3060,6 +3073,10 @@ class CondoMaintenanceWork(models.Model):
     area_id = models.CharField(max_length=80, blank=True, default='')
     area_name = models.CharField(max_length=200, blank=True, default='')
     performed_by = models.CharField(max_length=200, blank=True, default='')
+    provider = models.ForeignKey(
+        'CondoProvider', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='maintenance_works',
+    )
     vendor_name = models.CharField(max_length=200, blank=True, default='')
     scheduled_date = models.DateField(null=True, blank=True)
     performed_date = models.DateField(null=True, blank=True)
@@ -3110,4 +3127,123 @@ class CondoMaintenanceEvidence(models.Model):
 
     def __str__(self):
         return self.original_name or str(self.id)
+
+
+# ═══════════════════════════════════════════════════════════
+#  PROVEEDORES DEL CONDOMINIO
+# ═══════════════════════════════════════════════════════════
+
+PROVIDER_MODULE_KEYS = ('gastos', 'caja_chica', 'mantenimientos', 'planeacion')
+
+
+def default_provider_modules():
+    return list(PROVIDER_MODULE_KEYS)
+
+
+def condo_provider_file_path(instance, filename):
+    ext = ''
+    if filename and '.' in filename:
+        ext = '.' + filename.rsplit('.', 1)[-1].lower()[:8]
+    return f'condo_providers/{instance.provider_id}/{uuid.uuid4().hex}{ext}'
+
+
+class CondoProvider(models.Model):
+    """Catálogo de proveedores del tenant para gastos, caja chica, mantenimientos y planeación."""
+    PERSON_CHOICES = [
+        ('fisica', 'Persona física'),
+        ('moral', 'Persona moral'),
+    ]
+    STATUS_CHOICES = [
+        ('activo', 'Activo'),
+        ('inactivo', 'Inactivo'),
+        ('suspendido', 'Suspendido'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='condo_providers')
+    person_type = models.CharField(max_length=12, choices=PERSON_CHOICES, default='moral')
+    legal_name = models.CharField(max_length=300)
+    trade_name = models.CharField(max_length=300, blank=True, default='')
+    first_name = models.CharField(max_length=150, blank=True, default='')
+    last_name = models.CharField(max_length=150, blank=True, default='')
+    rfc = models.CharField(max_length=20, blank=True, default='')
+    curp = models.CharField(max_length=20, blank=True, default='')
+    tax_regime = models.CharField(max_length=200, blank=True, default='')
+    legal_rep_name = models.CharField(max_length=200, blank=True, default='')
+    contact_name = models.CharField(max_length=200, blank=True, default='')
+    email = models.EmailField(blank=True, default='')
+    phone = models.CharField(max_length=40, blank=True, default='')
+    mobile = models.CharField(max_length=40, blank=True, default='')
+    website = models.CharField(max_length=300, blank=True, default='')
+    street = models.CharField(max_length=300, blank=True, default='')
+    ext_number = models.CharField(max_length=40, blank=True, default='')
+    int_number = models.CharField(max_length=40, blank=True, default='')
+    colonia = models.CharField(max_length=200, blank=True, default='')
+    city = models.CharField(max_length=200, blank=True, default='')
+    state = models.CharField(max_length=100, blank=True, default='')
+    zip_code = models.CharField(max_length=12, blank=True, default='')
+    bank_name = models.CharField(max_length=120, blank=True, default='')
+    bank_clabe = models.CharField(max_length=20, blank=True, default='')
+    bank_account = models.CharField(max_length=30, blank=True, default='')
+    notes = models.TextField(blank=True, default='')
+    status = models.CharField(max_length=12, choices=STATUS_CHOICES, default='activo', db_index=True)
+    visible_in_modules = models.JSONField(default=default_provider_modules, blank=True)
+    created_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='condo_providers_created',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'condo_providers'
+        ordering = ['legal_name', 'trade_name']
+
+    @property
+    def display_name(self):
+        if (self.trade_name or '').strip():
+            return self.trade_name.strip()
+        if (self.legal_name or '').strip():
+            return self.legal_name.strip()
+        parts = ' '.join(p for p in (self.first_name, self.last_name) if p)
+        return parts.strip() or 'Proveedor'
+
+    def is_visible_in(self, module_key):
+        mods = self.visible_in_modules or []
+        return module_key in mods
+
+    def __str__(self):
+        return self.display_name
+
+
+class CondoProviderDocument(models.Model):
+    KIND_CHOICES = [
+        ('csf', 'Constancia de situación fiscal'),
+        ('identificacion', 'Identificación oficial'),
+        ('acta_constitutiva', 'Acta constitutiva'),
+        ('comprobante_domicilio', 'Comprobante de domicilio'),
+        ('estado_cuenta', 'Estado de cuenta'),
+        ('contrato', 'Contrato'),
+        ('otro', 'Otro'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    provider = models.ForeignKey(CondoProvider, on_delete=models.CASCADE, related_name='documents')
+    kind = models.CharField(max_length=24, choices=KIND_CHOICES, default='otro')
+    original_name = models.CharField(max_length=240, blank=True, default='')
+    notes = models.CharField(max_length=400, blank=True, default='')
+    file = models.FileField(upload_to=condo_provider_file_path)
+    uploaded_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='condo_provider_files_uploaded',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'condo_provider_documents'
+        ordering = ['kind', 'created_at']
+
+    def __str__(self):
+        return self.original_name or str(self.id)
+
 

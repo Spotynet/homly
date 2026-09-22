@@ -731,10 +731,19 @@ class GastoEntrySerializer(serializers.ModelSerializer):
     class Meta:
         model = GastoEntry
         fields = ['id', 'tenant', 'period', 'field', 'field_label', 'amount',
-                  'payment_type', 'doc_number', 'gasto_date', 'provider_name',
+                  'payment_type', 'doc_number', 'gasto_date', 'provider', 'provider_name',
                   'provider_rfc', 'provider_invoice', 'bank_reconciled', 'notes', 'evidence',
                   'created_at', 'updated_at']
         read_only_fields = ['id', 'tenant', 'created_at', 'updated_at']
+        extra_kwargs = {'provider': {'allow_null': True, 'required': False}}
+
+    def validate(self, attrs):
+        from .proveedores import apply_name_snapshot
+        provider = attrs.get('provider')
+        if provider is None and 'provider' not in attrs and self.instance:
+            provider = self.instance.provider
+        apply_name_snapshot(attrs, provider, 'provider_name', 'provider_rfc')
+        return attrs
 
 
 class GastoListSerializer(serializers.ModelSerializer):
@@ -752,7 +761,7 @@ class GastoListSerializer(serializers.ModelSerializer):
     class Meta:
         model = GastoEntry
         fields = ['id', 'tenant', 'period', 'field', 'field_label', 'amount',
-                  'payment_type', 'doc_number', 'gasto_date', 'provider_name',
+                  'payment_type', 'doc_number', 'gasto_date', 'provider', 'provider_name',
                   'provider_rfc', 'provider_invoice', 'bank_reconciled', 'notes',
                   'has_evidence', 'created_at', 'updated_at']
         read_only_fields = ['id', 'tenant', 'created_at', 'updated_at']
@@ -768,8 +777,18 @@ class CajaChicaEntrySerializer(serializers.ModelSerializer):
     class Meta:
         model = CajaChicaEntry
         fields = ['id', 'tenant', 'period', 'amount', 'description',
-                  'date', 'payment_type', 'evidence', 'evidence_list', 'created_at']
+                  'date', 'payment_type', 'provider', 'provider_name',
+                  'evidence', 'evidence_list', 'created_at']
         read_only_fields = ['id', 'tenant', 'created_at', 'evidence_list']
+        extra_kwargs = {'provider': {'allow_null': True, 'required': False}}
+
+    def validate(self, attrs):
+        from .proveedores import apply_name_snapshot
+        provider = attrs.get('provider')
+        if provider is None and 'provider' not in attrs and self.instance:
+            provider = self.instance.provider
+        apply_name_snapshot(attrs, provider, 'provider_name')
+        return attrs
 
     def get_evidence_list(self, obj):
         """Normalise evidence TextField to a list of {data, mime, name} dicts."""
@@ -791,7 +810,8 @@ class CajaChicaListSerializer(serializers.ModelSerializer):
     class Meta:
         model = CajaChicaEntry
         fields = ['id', 'tenant', 'period', 'amount', 'description',
-                  'date', 'payment_type', 'has_evidence', 'created_at']
+                  'date', 'payment_type', 'provider', 'provider_name',
+                  'has_evidence', 'created_at']
         read_only_fields = ['id', 'tenant', 'created_at']
 
 

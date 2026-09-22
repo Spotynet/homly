@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { planeacionAPI, asambleasAPI, api } from '../api/client';
+import ProviderSelect from '../components/providers/ProviderSelect';
 import { CURRENCIES, fmtCurrency, todayPeriod } from '../utils/helpers';
 import toast from 'react-hot-toast';
 import {
@@ -128,6 +129,7 @@ const FILE_KINDS = {
 };
 
 const EMPTY_QUOTE = {
+  provider: null,
   supplier_name: '', supplier_rfc: '', supplier_contact: '',
   supplier_phone: '', supplier_email: '', supplier_notes: '',
   amount: '', validity_date: '', delivery_days: '', warranty_months: '', scope: '',
@@ -1971,12 +1973,17 @@ function ProjectDetail({ tenantId, project, ctx, isReadOnly, user, onClose, onRe
   };
 
   const saveQuote = async () => {
-    if (!quote.supplier_name.trim() || !quote.amount) {
-      toast.error('Indica proveedor y monto');
+    if (!quote.provider) {
+      toast.error('Selecciona un proveedor del catálogo de Configuración');
+      return;
+    }
+    if (!quote.amount) {
+      toast.error('Indica el monto de la cotización');
       return;
     }
     const payload = {
       ...quote,
+      provider: quote.provider || null,
       amount: Number(quote.amount) || 0,
       delivery_days: quote.delivery_days === '' ? null : Number(quote.delivery_days),
       warranty_months: quote.warranty_months === '' ? null : Number(quote.warranty_months),
@@ -2169,7 +2176,7 @@ function ProjectDetail({ tenantId, project, ctx, isReadOnly, user, onClose, onRe
           {tab === 'concurso' && (
             <>
               <p style={{ fontSize: 13, color: 'var(--ink-500)', margin: '0 0 12px' }}>
-                Compara proveedores y elige al ganador. Lo habitual es un concurso de 3 cotizaciones; puedes cargar hasta 8.
+                Compara proveedores del catálogo y elige al ganador. Los proveedores se dan de alta en Configuración → Proveedores; aquí solo se seleccionan. Lo habitual es un concurso de 3 cotizaciones (hasta 8).
               </p>
               {quotes.length === 0 ? (
                 <div style={{ fontSize: 13, color: 'var(--ink-400)', marginBottom: 12 }}>Todavía no hay cotizaciones.</div>
@@ -2211,6 +2218,7 @@ function ProjectDetail({ tenantId, project, ctx, isReadOnly, user, onClose, onRe
                             <button className="btn btn-outline btn-sm" onClick={() => {
                               setEditingQuoteId(q.id);
                               setQuote({
+                                provider: q.provider || null,
                                 supplier_name: q.supplier_name || '',
                                 supplier_rfc: q.supplier_rfc || '',
                                 supplier_contact: q.supplier_contact || '',
@@ -2271,8 +2279,24 @@ function ProjectDetail({ tenantId, project, ctx, isReadOnly, user, onClose, onRe
                 <div className="card" style={{ padding: 14 }}>
                   <h4 style={{ margin: '0 0 10px', fontSize: 14 }}>{editingQuoteId ? 'Editar cotización' : 'Nueva cotización'}</h4>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-                    <div className="field"><div className="field-label">Proveedor</div><input className="field-input" value={quote.supplier_name} onChange={e => setQuote(q => ({ ...q, supplier_name: e.target.value }))} /></div>
-                    <div className="field"><div className="field-label">RFC</div><input className="field-input" value={quote.supplier_rfc} onChange={e => setQuote(q => ({ ...q, supplier_rfc: e.target.value }))} /></div>
+                    <ProviderSelect
+                      tenantId={tenantId}
+                      moduleKey="planeacion"
+                      providerId={quote.provider}
+                      name={quote.supplier_name}
+                      rfc={quote.supplier_rfc}
+                      allowOther={false}
+                      required
+                      onChange={({ provider, name, rfc, contact, phone, email }) => setQuote(q => ({
+                        ...q,
+                        provider: provider || null,
+                        supplier_name: name ?? '',
+                        supplier_rfc: rfc ?? '',
+                        supplier_contact: contact ?? q.supplier_contact,
+                        supplier_phone: phone ?? q.supplier_phone,
+                        supplier_email: email ?? q.supplier_email,
+                      }))}
+                    />
                     <div className="field"><div className="field-label">Monto ({currencySymbol(currency)})</div><input className="field-input" type="number" min="0" step="0.01" value={quote.amount} onChange={e => setQuote(q => ({ ...q, amount: e.target.value }))} /></div>
                     <div className="field"><div className="field-label">Teléfono</div><input className="field-input" value={quote.supplier_phone} onChange={e => setQuote(q => ({ ...q, supplier_phone: e.target.value }))} /></div>
                     <div className="field"><div className="field-label">Email</div><input className="field-input" value={quote.supplier_email} onChange={e => setQuote(q => ({ ...q, supplier_email: e.target.value }))} /></div>
