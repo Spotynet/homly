@@ -2606,7 +2606,14 @@ tr:hover td { background: rgba(59,185,144,0.02); }
   position: relative;
   width: 100%;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
 }
+.landing-space-slot--condo { order: 1; z-index: 3; }
+.landing-space-switch { order: 2; }
+.landing-space-slot--rentas { order: 3; z-index: 1; }
+.landing-hero-mockup.is-rentas-first .landing-space-slot--condo { order: 3; z-index: 1; }
+.landing-hero-mockup.is-rentas-first .landing-space-slot--rentas { order: 1; z-index: 3; }
 .landing-mockup-glow {
   position: absolute;
   top: -48px;
@@ -2630,6 +2637,10 @@ tr:hover td { background: rgba(59,185,144,0.02); }
 .landing-space-card--rentas {
   border-color: #BFDBFE;
   box-shadow: 0 12px 40px rgba(29,78,216,0.10);
+}
+.landing-hero-mockup:not(.is-rentas-first) .landing-space-slot--condo,
+.landing-hero-mockup.is-rentas-first .landing-space-slot--rentas {
+  z-index: 3;
 }
 .landing-space-chrome {
   display: flex;
@@ -2696,8 +2707,9 @@ tr:hover td { background: rgba(59,185,144,0.02); }
 .landing-space-kicker {
   font-size: 11px;
   font-weight: 800;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
+  line-height: 1.3;
 }
 .landing-space-meta {
   font-size: 12px;
@@ -2813,11 +2825,29 @@ tr:hover td { background: rgba(59,185,144,0.02); }
   padding: 10px 16px;
   box-shadow: 0 10px 28px rgba(26,22,18,0.12);
   min-width: 220px;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+.landing-space-switch-pill:hover {
+  border-color: #E0D4C4;
+  transform: translateY(-1px);
+  box-shadow: 0 14px 32px rgba(26,22,18,0.16);
+}
+.landing-space-switch-pill:focus-visible {
+  outline: 2px solid #E85D43;
+  outline-offset: 3px;
 }
 .landing-space-switch-pill svg {
   width: 22px;
   height: 22px;
   flex-shrink: 0;
+  transition: transform 0.64s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.landing-space-switch-pill.is-flipped svg {
+  transform: rotate(180deg);
 }
 .landing-stats-bar {
   background: #124A36;
@@ -2888,7 +2918,8 @@ tr:hover td { background: rgba(59,185,144,0.02); }
   .landing-hero { padding: 100px 20px 60px; }
   .landing-hero-grid { grid-template-columns: 1fr; gap: 36px; }
   .landing-hero-mockup {
-    display: block;
+    display: flex;
+    flex-direction: column;
     max-width: 520px;
     margin: 0 auto;
   }

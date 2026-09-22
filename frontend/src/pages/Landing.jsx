@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { HomlyBrand, HomlyBrandDark, HomlyIsotipo } from '../utils/helpers';
 
@@ -176,6 +176,49 @@ export default function Landing() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [openFaq, setOpenFaq] = useState(null);
   const [featureTab, setFeatureTab] = useState('condominio');
+  const [rentasOnTop, setRentasOnTop] = useState(false);
+  const condoCardRef = useRef(null);
+  const rentasCardRef = useRef(null);
+  const swappingRef = useRef(false);
+  const pendingFlip = useRef(null);
+
+  const swapSpaces = () => {
+    if (swappingRef.current) return;
+    const condo = condoCardRef.current;
+    const rentas = rentasCardRef.current;
+    if (!condo || !rentas) return;
+    swappingRef.current = true;
+    pendingFlip.current = {
+      condoTop: condo.getBoundingClientRect().top,
+      rentasTop: rentas.getBoundingClientRect().top,
+    };
+    setRentasOnTop((v) => !v);
+  };
+
+  useLayoutEffect(() => {
+    const flip = pendingFlip.current;
+    if (!flip) return;
+    pendingFlip.current = null;
+    const condo = condoCardRef.current;
+    const rentas = rentasCardRef.current;
+    if (!condo || !rentas) {
+      swappingRef.current = false;
+      return;
+    }
+    const ms = 640;
+    const ease = 'cubic-bezier(0.22, 1, 0.36, 1)';
+    condo.animate(
+      [{ transform: `translateY(${flip.condoTop - condo.getBoundingClientRect().top}px)` }, { transform: 'none' }],
+      { duration: ms, easing: ease },
+    );
+    const anim = rentas.animate(
+      [{ transform: `translateY(${flip.rentasTop - rentas.getBoundingClientRect().top}px)` }, { transform: 'none' }],
+      { duration: ms, easing: ease },
+    );
+    const done = () => { swappingRef.current = false; };
+    anim.onfinish = done;
+    anim.oncancel = done;
+  }, [rentasOnTop]);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20);
@@ -294,20 +337,27 @@ export default function Landing() {
             </div>
           </div>
 
-          <div className="landing-hero-mockup">
+          <div className={`landing-hero-mockup${rentasOnTop ? ' is-rentas-first' : ''}`}>
             <div className="landing-mockup-glow" aria-hidden="true" />
-            <CondoSpaceCard />
+            <CondoSpaceCard cardRef={condoCardRef} />
             <div className="landing-space-switch">
               <div className="landing-space-switch-line" aria-hidden="true" />
-              <div className="landing-space-switch-pill">
+              <button
+                type="button"
+                className={`landing-space-switch-pill${rentasOnTop ? ' is-flipped' : ''}`}
+                onClick={swapSpaces}
+                aria-label="Cambiar el orden de Homly Residencial y Homly Inmobiliaria"
+              >
                 <IconSwitch />
                 <div>
                   <div style={{ fontSize: 12, fontWeight: 800, color: '#1A1612' }}>Cambia de espacio</div>
-                  <div style={{ fontSize: 11, color: '#9E9588' }}>Condominio ↔ Rentas · un clic</div>
+                  <div style={{ fontSize: 11, color: '#9E9588' }}>
+                    {rentasOnTop ? 'Inmobiliaria arriba · Residencial abajo' : 'Residencial arriba · Inmobiliaria abajo'}
+                  </div>
                 </div>
-              </div>
+              </button>
             </div>
-            <RentasSpaceCard />
+            <RentasSpaceCard cardRef={rentasCardRef} />
           </div>
         </div>
         </div>
@@ -790,10 +840,10 @@ export default function Landing() {
       </section>
 
       {/* ── FOOTER ── */}
-      <footer style={{ background: '#0E3829', padding: '36px 20px 28px' }}>
+      <footer style={{ background: '#F4EFE6', padding: '36px 20px 28px', borderTop: '1px solid #E4D9CB' }}>
         <div className="landing-footer-inner">
-          <LogoFullDark iconSize={32} fontSize={20} />
-          <p style={{ fontSize: 13, color: 'rgba(253,251,247,0.45)', maxWidth: 420, margin: '4px 0 8px', lineHeight: 1.55 }}>
+          <LogoFull iconSize={32} nameHeight={20} />
+          <p style={{ fontSize: 13, color: '#5C5347', maxWidth: 420, margin: '4px 0 8px', lineHeight: 1.55 }}>
             Administración de condominios y gestión de rentas. Un administrador, dos servicios, cuentas claras.
           </p>
           <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', justifyContent: 'center' }}>
@@ -806,15 +856,15 @@ export default function Landing() {
               { label: 'Iniciar sesión', href: '/login' },
             ].map((l) => (
               <a key={l.href} href={l.href}
-                style={{ fontSize: 13, color: 'rgba(253,251,247,0.5)', textDecoration: 'none', fontWeight: 500 }}
-                onMouseEnter={e => e.currentTarget.style.color = 'rgba(253,251,247,0.9)'}
-                onMouseLeave={e => e.currentTarget.style.color = 'rgba(253,251,247,0.5)'}
+                style={{ fontSize: 13, color: '#3D342C', textDecoration: 'none', fontWeight: 500 }}
+                onMouseEnter={e => e.currentTarget.style.color = '#175F45'}
+                onMouseLeave={e => e.currentTarget.style.color = '#3D342C'}
               >{l.label}</a>
             ))}
           </div>
-          <div style={{ width: '100%', height: 1, background: 'rgba(253,251,247,0.08)' }} />
-          <div style={{ fontSize: 12, color: 'rgba(253,251,247,0.35)', fontWeight: 500 }}>
-            © {new Date().getFullYear()} Homly · soporte@homly.mx
+          <div style={{ width: '100%', height: 1, background: 'rgba(26,22,18,0.1)' }} />
+          <div style={{ fontSize: 12, color: '#7A7166', fontWeight: 500 }}>
+            © 2025 Homly · soporte@homly.mx
           </div>
         </div>
       </footer>
@@ -851,9 +901,9 @@ function SpacePhoto({ src, alt }) {
   );
 }
 
-function CondoSpaceCard() {
+function CondoSpaceCard({ cardRef }) {
   return (
-    <div className="landing-space-card landing-space-card--condo">
+    <div ref={cardRef} className="landing-space-card landing-space-card--condo landing-space-slot landing-space-slot--condo">
       <div className="landing-space-chrome">
         <span className="landing-space-dots" aria-hidden="true"><i /><i /><i /></span>
         <span className="landing-space-chrome-title">Homly Residencial</span>
@@ -861,7 +911,7 @@ function CondoSpaceCard() {
       </div>
       <SpacePhoto src="/img/landing-residencial.jpg" alt="Conjunto residencial" />
       <div className="landing-space-body">
-        <div className="landing-space-kicker" style={{ color: '#1F7D5B' }}>Condominio</div>
+        <div className="landing-space-kicker" style={{ color: '#1F7D5B' }}>Administración de condominio</div>
         <div className="landing-space-meta">48 unidades · cobranza y planeación del mes</div>
         <div className="landing-space-stats">
           <div><strong>92%</strong><span>Cobranza</span></div>
@@ -869,7 +919,7 @@ function CondoSpaceCard() {
           <div><strong>4</strong><span>Pendientes</span></div>
         </div>
         <div className="landing-space-bar-label">
-          <span>Planeación 2026</span>
+          <span>Planeación 2025</span>
           <span>78% ejecutado</span>
         </div>
         <div className="landing-space-bar"><i style={{ width: '78%', background: '#1F7D5B' }} /></div>
@@ -883,9 +933,9 @@ function CondoSpaceCard() {
   );
 }
 
-function RentasSpaceCard() {
+function RentasSpaceCard({ cardRef }) {
   return (
-    <div className="landing-space-card landing-space-card--rentas">
+    <div ref={cardRef} className="landing-space-card landing-space-card--rentas landing-space-slot landing-space-slot--rentas">
       <div className="landing-space-chrome">
         <span className="landing-space-dots" aria-hidden="true"><i /><i /><i /></span>
         <span className="landing-space-chrome-title">Homly Inmobiliaria</span>
@@ -893,7 +943,7 @@ function RentasSpaceCard() {
       </div>
       <SpacePhoto src="/img/landing-inmobiliaria.jpg" alt="Propiedad en renta" />
       <div className="landing-space-body">
-        <div className="landing-space-kicker" style={{ color: '#1D4ED8' }}>Rentas</div>
+        <div className="landing-space-kicker" style={{ color: '#1D4ED8' }}>Administración de rentas</div>
         <div className="landing-space-meta">12 propiedades · rent roll al corte</div>
         <div className="landing-space-bar-label">
           <span>Ocupación física</span>
