@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { mantenimientosAPI, api } from '../api/client';
 import ProviderSelect from '../components/providers/ProviderSelect';
@@ -199,8 +199,10 @@ export default function Mantenimientos() {
     try {
       const r = await mantenimientosAPI.get(tenantId, id);
       setDetail(r.data);
+      return r.data;
     } catch {
       toast.error('No se pudo abrir el trabajo');
+      return null;
     }
   };
 
@@ -365,7 +367,7 @@ export default function Mantenimientos() {
           canWrite={write}
           onClose={() => { setDetail(null); loadList(); loadCtx(); }}
           onEdit={() => { setEditing(detail); setDetail(null); }}
-          onRefresh={() => { openDetail(detail.id); loadList(); loadCtx(); }}
+          onRefresh={async () => { await openDetail(detail.id); loadList(); loadCtx(); }}
         />
       )}
     </div>
@@ -572,13 +574,24 @@ function WorkForm({ ctx, canWrite, initial, onClose, onSaved }) {
 }
 
 function WorkDetail({ tenantId, work, ctx, canWrite, onClose, onEdit, onRefresh }) {
+  const fileRef = useRef(null);
+  const timelineRef = useRef(null);
   const [evKind, setEvKind] = useState('antes');
   const [evNotes, setEvNotes] = useState('');
   const [evDate, setEvDate] = useState(todayISO);
   const [uploading, setUploading] = useState(false);
   const [showReport, setShowReport] = useState(false);
+  const [pendingEvs, setPendingEvs] = useState([]);
   const locked = work.status === 'cancelado';
-  const evidences = sortEvidences(work.evidences);
+  const serverEvs = work.evidences || [];
+  const evidences = sortEvidences([
+    ...serverEvs,
+    ...pendingEvs.filter(ev => !serverEvs.some(s => String(s.id) === String(ev.id))),
+  ]);
+
+  useEffect(() => {
+    setPendingEvs([]);
+  }, [work.id]);
 
   const setStatus = async (status) => {
     if (!canWrite || locked) return;
@@ -602,6 +615,7 @@ function WorkDetail({ tenantId, work, ctx, canWrite, onClose, onEdit, onRefresh 
       return;
     }
     setUploading(true);
+    const created = [];
     try {
       for (const file of list) {
         const fd = new FormData();
@@ -609,11 +623,18 @@ function WorkDetail({ tenantId, work, ctx, canWrite, onClose, onEdit, onRefresh 
         fd.append('kind', evKind);
         fd.append('notes', evNotes);
         fd.append('captured_at', evDate);
-        await mantenimientosAPI.uploadEvidence(tenantId, work.id, fd);
+        const r = await mantenimientosAPI.uploadEvidence(tenantId, work.id, fd);
+        if (r?.data?.id) created.push(r.data);
       }
-      toast.success(list.length > 1 ? `${list.length} evidencias cargadas` : 'Evidencia cargada');
+      if (!created.length) {
+        toast.error('No se pudo registrar la evidencia');
+        return;
+      }
+      setPendingEvs(prev => [...prev, ...created]);
+      toast.success(created.length > 1 ? `${created.length} evidencias cargadas` : 'Evidencia cargada');
       setEvNotes('');
-      onRefresh();
+      await onRefresh();
+      timelineRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     } catch (err) {
       toast.error(errMsg(err, 'No se pudo subir'));
     } finally {
@@ -693,7 +714,7 @@ function WorkDetail({ tenantId, work, ctx, canWrite, onClose, onEdit, onRefresh 
             </section>
           )}
 
-          <section className="mnt-ev-section">
+          <section className="mnt-ev-section" ref={timelineRef}>
             <div className="mnt-ev-head">
               <h4>Línea de tiempo de evidencias</h4>
               <span>{evidences.length} archivo{evidences.length === 1 ? '' : 's'} · orden cronológico</span>
@@ -764,21 +785,29 @@ function WorkDetail({ tenantId, work, ctx, canWrite, onClose, onEdit, onRefresh 
                   <input className="field-input" placeholder="Qué se ve o qué se hizo" value={evNotes} onChange={e => setEvNotes(e.target.value)} />
                 </div>
               </div>
-              <label className={`btn btn-primary ${uploading ? 'disabled' : ''}`} style={{ cursor: uploading ? 'wait' : 'pointer', alignSelf: 'flex-start' }}>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={uploading}
+                style={{ alignSelf: 'flex-start' }}
+                onClick={() => fileRef.current?.click()}
+              >
                 <Upload size={14} /> {uploading ? 'Subiendo…' : 'Elegir archivos'}
-                <input
-                  type="file"
-                  hidden
-                  multiple
-                  accept="image/*,.pdf"
-                  disabled={uploading}
-                  onChange={async e => {
-                    const files = e.target.files;
-                    e.target.value = '';
-                    await uploadFiles(files);
-                  }}
-                />
-              </label>
+              </button>
+              <input
+                ref={fileRef}
+                type="file"
+                multiple
+                accept="image/*,.pdf,.png,.jpg,.jpeg,.webp,.gif,.heic,.doc,.docx"
+                disabled={uploading}
+                style={{ display: 'none' }}
+                onChange={async e => {
+                  const files = Array.from(e.target.files || []);
+                  e.target.value = '';
+                  if (!files.length) return;
+                  await uploadFiles(files);
+                }}
+              />
             </section>
           )}
         </div>
