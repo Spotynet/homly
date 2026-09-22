@@ -386,7 +386,7 @@ export const asambleasAPI = {
 };
 
 export const mantenimientosAPI = {
-  context:       (tenantId) => api.get(`/tenants/${tenantId}/mantenimientos-context/`),
+  context:       (tenantId, params) => api.get(`/tenants/${tenantId}/mantenimientos-context/`, { params }),
   list:          (tenantId, params) => api.get(`/tenants/${tenantId}/condo-maintenance/`, { params }),
   get:           (tenantId, id) => api.get(`/tenants/${tenantId}/condo-maintenance/${id}/`),
   create:        (tenantId, data) => api.post(`/tenants/${tenantId}/condo-maintenance/`, data),
@@ -396,6 +396,7 @@ export const mantenimientosAPI = {
   deleteEvidence:(tenantId, id, fileId) => api.delete(`/tenants/${tenantId}/condo-maintenance/${id}/evidences/${fileId}/`),
   printDoc:      (tenantId, id) => api.get(`/tenants/${tenantId}/condo-maintenance/${id}/print-doc/`, { responseType: 'blob' }),
   printReport:   (tenantId, params) => api.get(`/tenants/${tenantId}/condo-maintenance/print-report/`, { params, responseType: 'blob' }),
+  gastoOptions:  (tenantId, params) => api.get(`/tenants/${tenantId}/condo-maintenance/gasto-options/`, { params }),
 };
 
 export const providersAPI = {

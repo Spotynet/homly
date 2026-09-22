@@ -223,6 +223,12 @@ def _styles():
                  leading=17, alignment=TA_CENTER),
         'kpi_l': S('kpi_l', fontName='Times-Roman', fontSize=7.5, textColor=_hex(INK_LIGHT),
                    leading=10, alignment=TA_CENTER, spaceBefore=1),
+        'an_l': S('an_l', fontName='Times-Bold', fontSize=8, textColor=_hex(INK_LIGHT),
+                  leading=11),
+        'an_v': S('an_v', fontName='Times-Bold', fontSize=10, textColor=_hex(NAVY),
+                  leading=13),
+        'an_n': S('an_n', fontName='Times-Roman', fontSize=8, textColor=_hex(INK_MED),
+                  leading=11),
         'card_k': S('card_k', fontName='Times-Bold', fontSize=8, textColor=_hex(GOLD),
                     leading=11),
         'card_t': S('card_t', fontName='Times-Bold', fontSize=11, textColor=_hex(NAVY),
@@ -339,6 +345,7 @@ def generate_work_pdf(work, generated_by='') -> bytes | None:
     ]
     story.extend(_meta_table([
         ('Tipo', KIND_ES.get(work.kind, work.kind)),
+        ('Período', _period_label(getattr(work, 'period', '') or '')),
         ('Estatus', STATUS_ES.get(work.status, work.status)),
         ('Prioridad', PRIORITY_ES.get(work.priority, work.priority)),
         ('Área o lugar', work.area_name),
@@ -349,6 +356,7 @@ def generate_work_pdf(work, generated_by='') -> bytes | None:
         ('Periodicidad', FREQ_ES.get(work.frequency, work.frequency) if work.kind == 'preventivo' else ''),
         ('Próxima fecha', _date_es(work.next_due_date) if work.next_due_date else ''),
         ('Costo', _money(work.cost)),
+        ('Gastos asociados', _gastos_summary(work)),
         ('Registró', _user_label(work.created_by)),
     ], st, page_w, margin_h))
 
@@ -362,6 +370,18 @@ def generate_work_pdf(work, generated_by='') -> bytes | None:
         for para in (work.work_notes or '').split('\n'):
             if para.strip():
                 story.append(Paragraph(_esc(para.strip()), st['body']))
+
+    linked_gastos = _work_gastos(work)
+    if linked_gastos:
+        story.append(Paragraph('Gastos asociados', st['h']))
+        for g in linked_gastos:
+            label = (getattr(g.field, 'label', None) if getattr(g, 'field_id', None) else '') or 'Gasto'
+            when = _date_es(g.gasto_date) if g.gasto_date else (g.period or '')
+            who = (g.provider_name or '').strip()
+            line = f'{label}  ·  {_money(g.amount) or "$0.00"}  ·  {when}'
+            if who:
+                line += f'  ·  {who}'
+            story.append(Paragraph(_esc(line), st['mv']))
 
     evidences = list(work.evidences.all().order_by('captured_at', 'created_at', 'id'))
     if evidences:
@@ -407,6 +427,31 @@ def _work_evidences(work):
         return list(work.evidences.all())
     except Exception:
         return []
+
+
+def _work_gastos(work):
+    try:
+        return list(work.gasto_entries.all())
+    except Exception:
+        return []
+
+
+def _gastos_total(work):
+    total = 0
+    for g in _work_gastos(work):
+        try:
+            total += float(g.amount or 0)
+        except (TypeError, ValueError):
+            pass
+    return total
+
+
+def _gastos_summary(work):
+    rows = _work_gastos(work)
+    if not rows:
+        return ''
+    total = _gastos_total(work)
+    return f'{len(rows)}  ·  {_money(total) or "$0.00"}'
 
 
 def _work_dates(work):
@@ -464,6 +509,7 @@ def _history_work_card(work, st, inner_w):
     kicker = (
         f'{KIND_ES.get(work.kind, work.kind)}  ·  '
         f'{STATUS_ES.get(work.status, work.status)}  ·  '
+        f'{_period_label(getattr(work, "period", "") or "")}  ·  '
         f'Prioridad {PRIORITY_ES.get(work.priority, work.priority)}'
     )
     freq = ''
@@ -495,6 +541,7 @@ def _history_work_card(work, st, inner_w):
         ('Inicio', _date_es(start)),
         ('Fin / realización', _date_es(end) if end else 'Pendiente'),
         ('Evidencias', ev_txt),
+        ('Gastos asociados', _gastos_summary(work) or '—'),
         ('Registró', _user_label(work.created_by) or '—'),
     ]
     if freq:
@@ -551,8 +598,147 @@ def _history_work_card(work, st, inner_w):
     return KeepTogether([wrap, Spacer(1, 8)])
 
 
+def _period_label(period):
+    months = (
+        '', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+        'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
+    )
+    try:
+        year, month = int(period[:4]), int(period[5:7])
+        return f'{months[month]} {year}'
+    except Exception:
+        return period or 'Periodo del sistema'
+
+
+def _pct(part, total):
+    if not total:
+        return '0%'
+    return f'{round((part / total) * 100)}%'
+
+
+def _analysis_cell(st, label, value, note=''):
+    from reportlab.platypus import Paragraph
+    bits = [
+        Paragraph(_esc(label), st['an_l']),
+        Paragraph(_esc(str(value if value not in (None, '') else '—')), st['an_v']),
+    ]
+    if note:
+        bits.append(Paragraph(_esc(note), st['an_n']))
+    return bits
+
+
+def _period_summary(works, generated_by, period, st, inner):
+    from reportlab.platypus import KeepTogether, Paragraph, Spacer, Table, TableStyle
+
+    counts = {
+        'planeado': 0, 'en_curso': 0, 'realizado': 0, 'cancelado': 0,
+        'preventivo': 0, 'correctivo': 0,
+    }
+    evidence_total = 0
+    cost_total = 0
+    gasto_n = 0
+    gasto_total = 0
+    with_provider = 0
+    for w in works:
+        counts[w.status] = counts.get(w.status, 0) + 1
+        counts[w.kind] = counts.get(w.kind, 0) + 1
+        evidence_total += len(_work_evidences(w))
+        if w.cost:
+            try:
+                cost_total += float(w.cost)
+            except (TypeError, ValueError):
+                pass
+        rows = _work_gastos(w)
+        gasto_n += len(rows)
+        gasto_total += _gastos_total(w)
+        if (w.vendor_name or '').strip() or getattr(w, 'provider_id', None):
+            with_provider += 1
+
+    n = len(works)
+    prev_n = counts.get('preventivo') or 0
+    corr_n = counts.get('correctivo') or 0
+    real_n = counts.get('realizado') or 0
+    curso_n = counts.get('en_curso') or 0
+    plan_n = counts.get('planeado') or 0
+    canc_n = counts.get('cancelado') or 0
+    active = max(n - canc_n, 0)
+    close_rate = _pct(real_n, active)
+    ev_avg = f'{evidence_total / n:.1f}' if n else '0'
+    period_label = _period_label(period)
+
+    items = [
+        (str(n), 'Trabajos'),
+        (str(prev_n), f'Preventivos ({_pct(prev_n, n)})'),
+        (str(corr_n), f'Correctivos ({_pct(corr_n, n)})'),
+        (_money(cost_total + gasto_total) or '$0.00', 'Costo + gastos'),
+    ]
+    analysis = [
+        [
+            _analysis_cell(st, 'Realizados', real_n, _pct(real_n, n) + ' del periodo'),
+            _analysis_cell(st, 'En curso', curso_n, _pct(curso_n, n) + ' del periodo'),
+        ],
+        [
+            _analysis_cell(st, 'Planeados', plan_n, _pct(plan_n, n) + ' del periodo'),
+            _analysis_cell(st, 'Cancelados', canc_n, _pct(canc_n, n) + ' del periodo'),
+        ],
+        [
+            _analysis_cell(st, 'Tasa de cierre', close_rate, 'Realizados sobre trabajos no cancelados'),
+            _analysis_cell(st, 'Con proveedor', with_provider, _pct(with_provider, n) + ' de los trabajos'),
+        ],
+        [
+            _analysis_cell(st, 'Evidencias', evidence_total, f'{ev_avg} por trabajo'),
+            _analysis_cell(st, 'Gastos asociados', f'{gasto_n}  ·  {_money(gasto_total) or "$0.00"}', 'Registros del módulo de Gastos'),
+        ],
+        [
+            _analysis_cell(st, 'Costo en trabajos', _money(cost_total) or '$0.00', 'Monto capturado en la ficha'),
+            _analysis_cell(st, 'Generado por', generated_by, 'Reporte unificado preventivo y correctivo'),
+        ],
+    ]
+    half = inner / 2
+    grid = Table(analysis, colWidths=[half, half])
+    grid.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), _hex(WHITE)),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 8),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+        ('TOPPADDING', (0, 0), (-1, -1), 7),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 7),
+        ('BOX', (0, 0), (-1, -1), 0.4, _hex(GOLD)),
+        ('INNERGRID', (0, 0), (-1, -1), 0.25, _hex(RULE)),
+        ('ROWBACKGROUNDS', (0, 0), (-1, -1), [_hex(SAND), _hex(WHITE)]),
+    ]))
+    wrap = Table(
+        [
+            [Paragraph('Resumen del periodo', st['h'])],
+            [Paragraph(_esc(period_label), st['title'])],
+            [Paragraph(
+                'Periodo del sistema. Incluye todos los trabajos preventivos y '
+                'correctivos registrados en este periodo, igual que Gastos y Cobranza. '
+                'Las fechas de cada trabajo aparecen en su ficha.',
+                st['an_n'],
+            )],
+            [_kpi_strip(items, st, inner)],
+            [Spacer(1, 8)],
+            [Paragraph('Análisis de indicadores', st['h'])],
+            [grid],
+        ],
+        colWidths=[inner],
+    )
+    wrap.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), _hex(WHITE)),
+        ('BOX', (0, 0), (-1, -1), 0.6, _hex(GOLD)),
+        ('LEFTPADDING', (0, 0), (-1, -1), 12),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 12),
+        ('TOPPADDING', (0, 0), (-1, 0), 10),
+        ('BOTTOMPADDING', (0, -1), (-1, -1), 12),
+        ('TOPPADDING', (0, 1), (-1, -2), 2),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+    ]))
+    return KeepTogether([wrap, Spacer(1, 12)])
+
+
 def generate_history_pdf(
-    tenant, works, generated_by='', kind_filter='', status_filter='', year=None,
+    tenant, works, generated_by='', period='', kind_filter='', status_filter='', year=None,
 ) -> bytes | None:
     try:
         from reportlab.lib.pagesizes import A4
@@ -569,40 +755,8 @@ def generate_history_pdf(
     margin_h = 1.9 * cm
     inner = page_w - 2 * margin_h
     st = _styles()
-    kind_label = KIND_ES.get(kind_filter, 'Preventivos y correctivos')
-    status_label = STATUS_ES.get(status_filter, 'Todos los estatus')
-    year_label = f'Ejercicio {year}' if year else 'Todos los periodos'
-    subtitle = f'{kind_label}  ·  {status_label}  ·  {year_label}'
-
-    starts, ends = [], []
-    counts = {'planeado': 0, 'en_curso': 0, 'realizado': 0, 'cancelado': 0, 'preventivo': 0, 'correctivo': 0}
-    evidence_total = 0
-    cost_total = 0
-    with_provider = 0
-    for w in works:
-        counts[w.status] = counts.get(w.status, 0) + 1
-        counts[w.kind] = counts.get(w.kind, 0) + 1
-        start, end = _work_dates(w)
-        if start:
-            starts.append(start)
-        if end:
-            ends.append(end)
-        evs = _work_evidences(w)
-        evidence_total += len(evs)
-        if w.cost:
-            try:
-                cost_total += float(w.cost)
-            except (TypeError, ValueError):
-                pass
-        if (w.vendor_name or '').strip() or getattr(w, 'provider_id', None):
-            with_provider += 1
-
-    period_start = min(starts) if starts else None
-    period_end = max(ends) if ends else (max(starts) if starts else None)
-    period_txt = (
-        f'{_date_es(period_start)}  —  {_date_es(period_end)}'
-        if period_start or period_end else 'Sin fechas registradas'
-    )
+    period_label = _period_label(period)
+    subtitle = f'Preventivos y correctivos  ·  {period_label}'
 
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -611,54 +765,29 @@ def generate_history_pdf(
         topMargin=3.85 * cm, bottomMargin=2.35 * cm,
         title=f'Historial de mantenimientos — {tenant.name}',
         author=generated_by,
-        subject='Historial de mantenimientos',
+        subject=f'Historial de mantenimientos {period_label}',
     )
     story = [
         Paragraph('HISTORIAL DE MANTENIMIENTOS', st['kicker']),
         Paragraph(_esc(tenant.razon_social or tenant.name or 'Condominio'), st['title']),
         Paragraph(_esc(subtitle), st['sub']),
         HRFlowable(width='100%', thickness=0.6, color=_hex(GOLD), spaceAfter=10),
-        Paragraph('Resumen del periodo', st['h']),
-        Paragraph(_esc(f'Cobertura: {period_txt}'), st['mv']),
-        Spacer(1, 8),
-        _kpi_strip([
-            (str(len(works)), 'Trabajos'),
-            (str(counts.get('realizado') or 0), 'Realizados'),
-            (str(evidence_total), 'Evidencias'),
-            (_money(cost_total) or '$0.00', 'Costo total'),
-        ], st, inner),
-        Spacer(1, 8),
-        _kpi_strip([
-            (str(counts.get('preventivo') or 0), 'Preventivos'),
-            (str(counts.get('correctivo') or 0), 'Correctivos'),
-            (str(counts.get('en_curso') or 0), 'En curso'),
-            (str(counts.get('planeado') or 0), 'Planeados'),
-        ], st, inner),
-        Spacer(1, 6),
+        _period_summary(works, generated_by, period, st, inner),
+        Paragraph('Detalle de trabajos', st['h']),
     ]
-    story.extend(_meta_table([
-        ('Fecha de inicio', _date_es(period_start)),
-        ('Fecha final', _date_es(period_end)),
-        ('Con proveedor', str(with_provider)),
-        ('Cancelados', str(counts.get('cancelado') or 0)),
-        ('Registros de evidencia', str(evidence_total)),
-        ('Generado por', generated_by),
-    ], st, page_w, margin_h))
-    story.append(Spacer(1, 12))
-    story.append(Paragraph('Detalle de trabajos', st['h']))
 
     if not works:
-        story.append(Paragraph('Aún no hay trabajos registrados en este filtro.', st['body']))
+        story.append(Paragraph('Aún no hay trabajos registrados en este periodo.', st['body']))
     else:
         story.append(Paragraph(
             'Cada bloque resume planeación, proveedor, fechas de inicio y realización, '
-            'y la cantidad de evidencias cargadas.',
+            'gastos asociados y la cantidad de evidencias cargadas.',
             st['small'],
         ))
         story.append(Spacer(1, 6))
-        # Compact index table first
         header = [
             Paragraph('#', st['th']),
+            Paragraph('Tipo', st['th']),
             Paragraph('Trabajo', st['th']),
             Paragraph('Proveedor', st['th']),
             Paragraph('Inicio', st['th']),
@@ -672,6 +801,7 @@ def generate_history_pdf(
             ev_n = len(_work_evidences(w))
             rows.append([
                 Paragraph(str(i), st['tdc']),
+                Paragraph(_esc(KIND_ES.get(w.kind, w.kind)), st['tdc']),
                 Paragraph(_esc(f'{w.title}'), st['td']),
                 Paragraph(_esc(w.vendor_name or '—'), st['td']),
                 Paragraph(_esc(start.strftime('%d/%m/%Y') if start else '—'), st['tdc']),
@@ -679,11 +809,10 @@ def generate_history_pdf(
                 Paragraph(str(ev_n), st['tdc']),
                 Paragraph(_esc(STATUS_ES.get(w.status, w.status)), st['tdc']),
             ])
-        col_w = [1.0 * cm, inner * 0.32, inner * 0.22, 2.1 * cm, 2.1 * cm, 1.2 * cm, 2.2 * cm]
-        # scale last cols if overflow
+        col_w = [0.8 * cm, 2.1 * cm, inner * 0.28, inner * 0.18, 2.0 * cm, 2.0 * cm, 1.1 * cm, 2.1 * cm]
         used = sum(col_w)
         if used > inner:
-            col_w[1] -= (used - inner)
+            col_w[2] -= (used - inner)
         tbl = Table(rows, colWidths=col_w, repeatRows=1)
         tbl.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), _hex(NAVY)),

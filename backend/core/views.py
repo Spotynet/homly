@@ -2377,7 +2377,7 @@ class GastoEntryViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         qs = GastoEntry.objects.filter(
             tenant_id=self.kwargs['tenant_id']
-        ).select_related('field')
+        ).select_related('field', 'maintenance_work')
 
         period = self.request.query_params.get('period')
         if period:

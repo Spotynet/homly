@@ -567,6 +567,11 @@ class GastoEntry(models.Model):
     provider_invoice = models.CharField(max_length=100, blank=True, default='')
     bank_reconciled = models.BooleanField(default=False)
     notes = models.TextField(blank=True, default='')
+    maintenance_work = models.ForeignKey(
+        'CondoMaintenanceWork', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='gasto_entries',
+        help_text='Trabajo de mantenimiento asociado a este gasto.',
+    )
     evidence = models.TextField(blank=True, default='', help_text='Base64 evidence (deprecado — usar evidence_file)')
     # MIGRACIÓN Base64→File: nuevo campo que reemplazará a `evidence`
     evidence_file = models.FileField(
@@ -3078,6 +3083,7 @@ class CondoMaintenanceWork(models.Model):
         related_name='maintenance_works',
     )
     vendor_name = models.CharField(max_length=200, blank=True, default='')
+    period = models.CharField(max_length=7, db_index=True, default='', help_text='Periodo del sistema YYYY-MM')
     scheduled_date = models.DateField(null=True, blank=True)
     performed_date = models.DateField(null=True, blank=True)
     next_due_date = models.DateField(null=True, blank=True)
@@ -3095,6 +3101,7 @@ class CondoMaintenanceWork(models.Model):
         ordering = ['-scheduled_date', '-created_at']
         indexes = [
             models.Index(fields=['tenant', 'kind', 'status']),
+            models.Index(fields=['tenant', 'period']),
         ]
 
     def __str__(self):

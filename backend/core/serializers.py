@@ -727,15 +727,20 @@ class AddAdditionalPaymentSerializer(serializers.Serializer):
 
 class GastoEntrySerializer(serializers.ModelSerializer):
     field_label = serializers.CharField(source='field.label', read_only=True, default='')
+    maintenance_work_title = serializers.CharField(source='maintenance_work.title', read_only=True, default='')
 
     class Meta:
         model = GastoEntry
         fields = ['id', 'tenant', 'period', 'field', 'field_label', 'amount',
                   'payment_type', 'doc_number', 'gasto_date', 'provider', 'provider_name',
                   'provider_rfc', 'provider_invoice', 'bank_reconciled', 'notes', 'evidence',
+                  'maintenance_work', 'maintenance_work_title',
                   'created_at', 'updated_at']
         read_only_fields = ['id', 'tenant', 'created_at', 'updated_at']
-        extra_kwargs = {'provider': {'allow_null': True, 'required': False}}
+        extra_kwargs = {
+            'provider': {'allow_null': True, 'required': False},
+            'maintenance_work': {'allow_null': True, 'required': False},
+        }
 
     def validate(self, attrs):
         from .proveedores import apply_name_snapshot
@@ -743,6 +748,16 @@ class GastoEntrySerializer(serializers.ModelSerializer):
         if provider is None and 'provider' not in attrs and self.instance:
             provider = self.instance.provider
         apply_name_snapshot(attrs, provider, 'provider_name', 'provider_rfc')
+        work = attrs.get('maintenance_work')
+        if work is not None:
+            request = self.context.get('request')
+            tenant_id = None
+            if request is not None:
+                tenant_id = (getattr(request, 'parser_context', None) or {}).get('kwargs', {}).get('tenant_id')
+            if tenant_id and str(work.tenant_id) != str(tenant_id):
+                raise serializers.ValidationError({
+                    'maintenance_work': 'El trabajo no pertenece a este condominio.',
+                })
         return attrs
 
 
@@ -754,6 +769,7 @@ class GastoListSerializer(serializers.ModelSerializer):
     """
     field_label = serializers.CharField(source='field.label', read_only=True, default='')
     has_evidence = serializers.SerializerMethodField()
+    maintenance_work_title = serializers.CharField(source='maintenance_work.title', read_only=True, default='')
 
     def get_has_evidence(self, obj):
         return bool(obj.evidence)
@@ -763,6 +779,7 @@ class GastoListSerializer(serializers.ModelSerializer):
         fields = ['id', 'tenant', 'period', 'field', 'field_label', 'amount',
                   'payment_type', 'doc_number', 'gasto_date', 'provider', 'provider_name',
                   'provider_rfc', 'provider_invoice', 'bank_reconciled', 'notes',
+                  'maintenance_work', 'maintenance_work_title',
                   'has_evidence', 'created_at', 'updated_at']
         read_only_fields = ['id', 'tenant', 'created_at', 'updated_at']
 

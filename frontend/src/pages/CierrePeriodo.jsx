@@ -340,7 +340,7 @@ export default function CierrePeriodo() {
   const [reopeningId, setReopeningId] = useState(null);
 
   const handleDirectReopen = async (closedId, periodStr) => {
-    if (!window.confirm(`¿Confirmas que deseas reabrir el período ${periodLabel(periodStr)}? Los registros de ingresos y gastos podrán modificarse nuevamente.`)) return;
+    if (!window.confirm(`¿Confirmas que deseas reabrir el período ${periodLabel(periodStr)}? Los registros de ingresos, gastos y mantenimientos podrán modificarse nuevamente.`)) return;
     setReopeningId(closedId);
     try {
       await periodsAPI.directReopen(tenantId, closedId);

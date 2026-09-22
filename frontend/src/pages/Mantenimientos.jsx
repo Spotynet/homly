@@ -2,10 +2,13 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { mantenimientosAPI, api } from '../api/client';
 import ProviderSelect from '../components/providers/ProviderSelect';
+import { todayPeriod, periodLabel, prevPeriod, nextPeriod } from '../utils/helpers';
+import { useClosedPeriods } from '../hooks/useClosedPeriods';
 import toast from 'react-hot-toast';
 import {
   Plus, X, Pencil, Trash2, Wrench, FileText, Download, Upload, Eye,
-  Calendar, MapPin, User, Image as ImageIcon, Check,
+  Calendar, MapPin, User, Image as ImageIcon, Check, ChevronLeft, ChevronRight,
+  ShoppingBag, Lock,
 } from 'lucide-react';
 
 const TABS = [
@@ -162,6 +165,8 @@ function emptyForm(kind) {
     next_due_date: '',
     frequency: 'unica',
     cost: '',
+    gasto_ids: [],
+    period: todayPeriod(),
   };
 }
 
@@ -175,16 +180,19 @@ export default function Mantenimientos() {
   const [statusFilter, setStatusFilter] = useState('');
   const [detail, setDetail] = useState(null);
   const [editing, setEditing] = useState(null);
+  const [period, setPeriod] = useState(todayPeriod());
+  const { isPeriodClosed } = useClosedPeriods(tenantId);
+  const periodClosed = isPeriodClosed(period);
 
   const loadCtx = () => {
     if (!tenantId) return;
-    mantenimientosAPI.context(tenantId).then(r => setCtx(r.data)).catch(() => {});
+    mantenimientosAPI.context(tenantId, { period }).then(r => setCtx(r.data)).catch(() => {});
   };
 
   const loadList = () => {
     if (!tenantId) return;
     setLoading(true);
-    const params = { kind: tab };
+    const params = { kind: tab, period };
     if (statusFilter) params.status = statusFilter;
     mantenimientosAPI.list(tenantId, params)
       .then(r => setList(Array.isArray(r.data) ? r.data : (r.data?.results || [])))
@@ -192,8 +200,8 @@ export default function Mantenimientos() {
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { loadCtx(); }, [tenantId]);
-  useEffect(() => { loadList(); }, [tenantId, tab, statusFilter]);
+  useEffect(() => { loadCtx(); }, [tenantId, period]);
+  useEffect(() => { loadList(); }, [tenantId, tab, statusFilter, period]);
 
   const openDetail = async (id) => {
     try {
@@ -208,38 +216,71 @@ export default function Mantenimientos() {
 
   const printHistory = async () => {
     try {
-      const params = { kind: tab };
-      if (statusFilter) params.status = statusFilter;
-      const r = await mantenimientosAPI.printReport(tenantId, params);
-      await downloadBlob(r, `Historial_mantenimientos_${tab}.pdf`);
+      const r = await mantenimientosAPI.printReport(tenantId, { period });
+      await downloadBlob(r, `Historial_mantenimientos_${period}.pdf`);
     } catch (e) {
       toast.error(errMsg(e, 'No se pudo generar el historial'));
     }
   };
 
-  const write = canWrite && (ctx?.can_write !== false);
+  const write = canWrite && (ctx?.can_write !== false) && !periodClosed;
   const tabCounts = ctx?.by_kind?.[tab] || {};
 
   return (
     <div className="content-fade">
-      <div className="mnt-hero">
-        <div>
-          <div className="mnt-kicker">Condominio</div>
-          <h2>Mantenimientos</h2>
-          <p>
-            Planifica el trabajo, registra evidencias con la fecha en que ocurrieron
-            y consulta el reporte en pantalla antes de descargar el PDF.
-          </p>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
+        <div className="period-nav">
+          <button
+            type="button"
+            className="period-nav-btn"
+            onClick={() => setPeriod(prevPeriod(period))}
+            disabled={!!ctx?.operation_start_date && period <= ctx.operation_start_date}
+          >
+            <ChevronLeft size={16} />
+          </button>
+          <input
+            type="month"
+            className="period-month-select"
+            style={{ fontSize: 15, fontWeight: 700 }}
+            value={period}
+            min={ctx?.operation_start_date || undefined}
+            onChange={e => e.target.value && setPeriod(e.target.value)}
+          />
+          <button type="button" className="period-nav-btn" onClick={() => setPeriod(nextPeriod(period))}>
+            <ChevronRight size={16} />
+          </button>
         </div>
-        <div className="mnt-hero-actions">
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          {periodClosed && (
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: 5,
+              padding: '4px 12px', borderRadius: 20,
+              background: 'var(--coral-50)', color: 'var(--coral-700)',
+              fontSize: 12, fontWeight: 700, border: '1px solid var(--coral-100)',
+            }}>
+              <Lock size={11} /> Período cerrado
+            </span>
+          )}
           <button className="btn btn-outline" onClick={printHistory}>
             <FileText size={14} /> Historial PDF
           </button>
           {write && (
-            <button className="btn btn-primary" onClick={() => setEditing(emptyForm(tab))}>
+            <button className="btn btn-primary" onClick={() => setEditing({ ...emptyForm(tab), period })}>
               <Plus size={14} /> Nueva planeación
             </button>
           )}
+        </div>
+      </div>
+
+      <div className="mnt-hero">
+        <div>
+          <div className="mnt-kicker">Condominio</div>
+          <h2>Mantenimientos — {periodLabel(period)}</h2>
+          <p>
+            Los trabajos de este período del sistema. Si el período está abierto
+            puedes planear, documentar y finalizar; si está cerrado no se puede
+            crear, editar ni eliminar.
+          </p>
         </div>
       </div>
 
@@ -295,12 +336,14 @@ export default function Mantenimientos() {
             {tab === 'preventivo' ? 'Sin mantenimientos preventivos' : 'Sin mantenimientos correctivos'}
           </h3>
           <p>
-            {statusFilter
-              ? 'No hay trabajos con ese estatus. Prueba otro filtro o crea una planeación.'
-              : 'Crea una planeación, elige el área, indica quién lo realiza y, al concluir, adjunta evidencias con la fecha en que se tomaron.'}
+            {periodClosed
+              ? `El período ${periodLabel(period)} está cerrado. Solo puedes consultar y descargar el historial.`
+              : statusFilter
+                ? 'No hay trabajos con ese estatus. Prueba otro filtro o crea una planeación.'
+                : 'Crea una planeación, elige el área, indica quién lo realiza y, al concluir, adjunta evidencias con la fecha en que se tomaron.'}
           </p>
           {write && !statusFilter && (
-            <button className="btn btn-primary" onClick={() => setEditing(emptyForm(tab))}>
+            <button className="btn btn-primary" onClick={() => setEditing({ ...emptyForm(tab), period })}>
               <Plus size={14} /> Nueva planeación
             </button>
           )}
@@ -350,6 +393,7 @@ export default function Mantenimientos() {
         <WorkForm
           ctx={ctx}
           canWrite={write}
+          periodClosed={periodClosed}
           initial={editing}
           onClose={() => setEditing(null)}
           onSaved={(id) => {
@@ -367,6 +411,7 @@ export default function Mantenimientos() {
           work={detail}
           ctx={ctx}
           canWrite={write}
+          periodClosed={periodClosed || isPeriodClosed(detail.period)}
           onClose={() => { setDetail(null); loadList(); loadCtx(); }}
           onEdit={() => { setEditing(detail); setDetail(null); }}
           onRefresh={async () => { await openDetail(detail.id); loadList(); loadCtx(); }}
@@ -376,9 +421,10 @@ export default function Mantenimientos() {
   );
 }
 
-function WorkForm({ ctx, canWrite, initial, onClose, onSaved }) {
+function WorkForm({ ctx, canWrite, periodClosed, initial, onClose, onSaved }) {
   const { tenantId } = useAuth();
   const areas = ctx?.common_areas || [];
+  const [gastoOptions, setGastoOptions] = useState([]);
   const [form, setForm] = useState(() => ({
     ...emptyForm(initial.kind || 'preventivo'),
     ...initial,
@@ -386,9 +432,29 @@ function WorkForm({ ctx, canWrite, initial, onClose, onSaved }) {
     performed_date: initial.performed_date || '',
     next_due_date: initial.next_due_date || '',
     cost: initial.cost ?? '',
+    period: initial.period || todayPeriod(),
     area_pick: initial.area_id || (initial.area_name && !initial.area_id ? '__other' : ''),
+    gasto_ids: (initial.gastos || []).map(g => g.id).filter(Boolean).map(String),
   }));
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  useEffect(() => {
+    if (!tenantId) return;
+    mantenimientosAPI.gastoOptions(tenantId, initial.id ? { work: initial.id } : {})
+      .then(r => setGastoOptions(Array.isArray(r.data) ? r.data : []))
+      .catch(() => setGastoOptions([]));
+  }, [tenantId, initial.id]);
+
+  const toggleGasto = (id) => {
+    const key = String(id);
+    setForm(f => {
+      const has = (f.gasto_ids || []).map(String).includes(key);
+      return {
+        ...f,
+        gasto_ids: has ? f.gasto_ids.filter(x => String(x) !== key) : [...(f.gasto_ids || []), key],
+      };
+    });
+  };
 
   const pickArea = (value) => {
     if (value === '__other') {
@@ -405,6 +471,7 @@ function WorkForm({ ctx, canWrite, initial, onClose, onSaved }) {
   };
 
   const save = async () => {
+    if (periodClosed) return toast.error('El período está cerrado y no acepta cambios');
     if (!form.title.trim()) return toast.error('Indica el título del trabajo');
     try {
       const payload = {
@@ -424,6 +491,8 @@ function WorkForm({ ctx, canWrite, initial, onClose, onSaved }) {
         next_due_date: form.next_due_date || null,
         frequency: form.kind === 'preventivo' ? (form.frequency || 'unica') : 'unica',
         cost: form.cost === '' || form.cost == null ? null : Number(form.cost),
+        period: form.period || todayPeriod(),
+        gasto_ids: (form.gasto_ids || []).map(String),
       };
       if (initial.id) {
         await mantenimientosAPI.update(tenantId, initial.id, payload);
@@ -446,6 +515,8 @@ function WorkForm({ ctx, canWrite, initial, onClose, onSaved }) {
           <div>
             <h3>{initial.id ? 'Editar trabajo' : 'Nueva planeación'}</h3>
             <p className="mnt-modal-sub">
+              {periodLabel(form.period)}
+              {' · '}
               {form.kind === 'preventivo'
                 ? 'Programa el servicio, el área y quién lo ejecuta.'
                 : 'Describe la falla, el área afectada y quién la atiende.'}
@@ -454,6 +525,9 @@ function WorkForm({ ctx, canWrite, initial, onClose, onSaved }) {
           <button className="modal-close" onClick={onClose}><X size={16} /></button>
         </div>
         <div className="modal-body mnt-form">
+          {periodClosed && (
+            <p className="mnt-ev-empty">Este período está cerrado. No se pueden guardar cambios.</p>
+          )}
           <section className="mnt-form-section">
             <h4>Qué se va a hacer</h4>
             <div className="field">
@@ -560,6 +634,42 @@ function WorkForm({ ctx, canWrite, initial, onClose, onSaved }) {
           </section>
 
           <section className="mnt-form-section">
+            <h4>Gastos asociados</h4>
+            <p className="mnt-modal-sub" style={{ margin: 0 }}>
+              Relaciona registros del módulo de Gastos con este trabajo. También puedes ligarlos desde Gastos.
+            </p>
+            {gastoOptions.length === 0 ? (
+              <p className="mnt-ev-empty">No hay gastos recientes para asociar.</p>
+            ) : (
+              <div className="mnt-gasto-pick">
+                {gastoOptions.map(g => {
+                  const checked = (form.gasto_ids || []).map(String).includes(String(g.id));
+                  const other = g.maintenance_work && String(g.maintenance_work) !== String(initial.id || '');
+                  return (
+                    <label key={g.id} className={`mnt-gasto-item ${checked ? 'on' : ''}`}>
+                      <input
+                        type="checkbox"
+                        disabled={!canWrite}
+                        checked={checked}
+                        onChange={() => toggleGasto(g.id)}
+                      />
+                      <span>
+                        <strong>{g.field_label || 'Gasto'} · {money(g.amount) || g.amount}</strong>
+                        <small>
+                          {periodLabel(g.period) || g.period}
+                          {g.gasto_date ? ` · ${fmtDate(g.gasto_date)}` : ''}
+                          {g.provider_name ? ` · ${g.provider_name}` : ''}
+                          {other && g.maintenance_work_title ? ` · Hoy ligado a: ${g.maintenance_work_title}` : ''}
+                        </small>
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+
+          <section className="mnt-form-section">
             <h4>Documentación de lo realizado</h4>
             <div className="field">
               <textarea className="field-input" rows={4} value={form.work_notes} disabled={!canWrite} onChange={e => set('work_notes', e.target.value)} placeholder="Qué se hizo, hallazgos, pendientes…" />
@@ -568,14 +678,14 @@ function WorkForm({ ctx, canWrite, initial, onClose, onSaved }) {
         </div>
         <div className="modal-foot">
           <button className="btn btn-outline" onClick={onClose}>Cancelar</button>
-          {canWrite && <button className="btn btn-primary" onClick={save}>Guardar</button>}
+          {canWrite && !periodClosed && <button className="btn btn-primary" onClick={save}>Guardar</button>}
         </div>
       </div>
     </div>
   );
 }
 
-function WorkDetail({ tenantId, work, ctx, canWrite, onClose, onEdit, onRefresh }) {
+function WorkDetail({ tenantId, work, ctx, canWrite, periodClosed, onClose, onEdit, onRefresh }) {
   const fileRef = useRef(null);
   const timelineRef = useRef(null);
   const [evKind, setEvKind] = useState('antes');
@@ -584,7 +694,7 @@ function WorkDetail({ tenantId, work, ctx, canWrite, onClose, onEdit, onRefresh 
   const [uploading, setUploading] = useState(false);
   const [showReport, setShowReport] = useState(false);
   const [pendingEvs, setPendingEvs] = useState([]);
-  const locked = work.status === 'cancelado';
+  const locked = work.status === 'cancelado' || !!periodClosed;
   const serverEvs = work.evidences || [];
   const evidences = sortEvidences([
     ...serverEvs,
@@ -654,12 +764,18 @@ function WorkDetail({ tenantId, work, ctx, canWrite, onClose, onEdit, onRefresh 
             <h3>{work.title}</h3>
             <p className="mnt-modal-sub">
               {work.kind === 'preventivo' ? 'Preventivo' : 'Correctivo'}
+              {work.period ? ` · ${periodLabel(work.period)}` : ''}
               {work.area_name ? ` · ${work.area_name}` : ''}
             </p>
           </div>
           <button className="modal-close" onClick={onClose}><X size={16} /></button>
         </div>
         <div className="modal-body mnt-detail-body">
+          {periodClosed && (
+            <div className="mnt-ev-empty" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Lock size={14} /> Este período está cerrado. Solo consulta y descarga.
+            </div>
+          )}
           <div className="mnt-status-row">
             <div className="mnt-stepper" role="list">
               {STATUS_FLOW.map((st, i) => {
@@ -689,6 +805,7 @@ function WorkDetail({ tenantId, work, ctx, canWrite, onClose, onEdit, onRefresh 
           </div>
 
           <div className="mnt-meta-grid">
+            <div><span>Período</span><strong>{work.period ? periodLabel(work.period) : '—'}</strong></div>
             <div><span>Área</span><strong>{work.area_name || '—'}</strong></div>
             <div><span>Quién lo realiza</span><strong>{work.performed_by || '—'}</strong></div>
             <div><span>Proveedor</span><strong>{work.vendor_name || '—'}</strong></div>
@@ -701,6 +818,12 @@ function WorkDetail({ tenantId, work, ctx, canWrite, onClose, onEdit, onRefresh 
               <div><span>Costo</span><strong>{money(work.cost)}</strong></div>
             )}
             <div><span>Prioridad</span><strong>{PRIORITY[work.priority] || work.priority}</strong></div>
+            {(work.gastos || []).length > 0 && (
+              <div>
+                <span>Gastos asociados</span>
+                <strong>{(work.gastos || []).length} · {money(work.gastos_total) || '$0.00'}</strong>
+              </div>
+            )}
           </div>
 
           {work.description && (
@@ -713,6 +836,25 @@ function WorkDetail({ tenantId, work, ctx, canWrite, onClose, onEdit, onRefresh 
             <section className="mnt-notes">
               <h4>Documentación de lo realizado</h4>
               <p>{work.work_notes}</p>
+            </section>
+          )}
+
+          {(work.gastos || []).length > 0 && (
+            <section className="mnt-notes">
+              <h4><ShoppingBag size={13} style={{ marginRight: 6 }} />Gastos asociados</h4>
+              <ul className="mnt-gasto-list">
+                {(work.gastos || []).map(g => (
+                  <li key={g.id}>
+                    <strong>{g.field_label || 'Gasto'}</strong>
+                    <span>{money(g.amount) || g.amount}</span>
+                    <small>
+                      {periodLabel(g.period) || g.period}
+                      {g.gasto_date ? ` · ${fmtDate(g.gasto_date)}` : ''}
+                      {g.provider_name ? ` · ${g.provider_name}` : ''}
+                    </small>
+                  </li>
+                ))}
+              </ul>
             </section>
           )}
 
@@ -892,6 +1034,7 @@ function ReportPreview({ tenantName, work, evidences, onClose, onDownload }) {
             </header>
 
             <dl className="mnt-paper-meta">
+              <div><dt>Período</dt><dd>{work.period ? periodLabel(work.period) : '—'}</dd></div>
               <div><dt>Área</dt><dd>{work.area_name || '—'}</dd></div>
               <div><dt>Quién lo realiza</dt><dd>{work.performed_by || '—'}</dd></div>
               <div><dt>Proveedor</dt><dd>{work.vendor_name || '—'}</dd></div>
@@ -902,6 +1045,12 @@ function ReportPreview({ tenantName, work, evidences, onClose, onDownload }) {
               )}
               {money(work.cost) && (
                 <div><dt>Costo</dt><dd>{money(work.cost)}</dd></div>
+              )}
+              {(work.gastos || []).length > 0 && (
+                <div>
+                  <dt>Gastos asociados</dt>
+                  <dd>{(work.gastos || []).length} · {money(work.gastos_total) || '$0.00'}</dd>
+                </div>
               )}
             </dl>
 
@@ -915,6 +1064,24 @@ function ReportPreview({ tenantName, work, evidences, onClose, onDownload }) {
               <section>
                 <h3>Documentación de lo realizado</h3>
                 <p>{work.work_notes}</p>
+              </section>
+            )}
+            {(work.gastos || []).length > 0 && (
+              <section>
+                <h3>Gastos asociados</h3>
+                <ul className="mnt-gasto-list">
+                  {(work.gastos || []).map(g => (
+                    <li key={g.id}>
+                      <strong>{g.field_label || 'Gasto'}</strong>
+                      <span>{money(g.amount) || g.amount}</span>
+                      <small>
+                        {periodLabel(g.period) || g.period}
+                        {g.gasto_date ? ` · ${fmtDate(g.gasto_date)}` : ''}
+                        {g.provider_name ? ` · ${g.provider_name}` : ''}
+                      </small>
+                    </li>
+                  ))}
+                </ul>
               </section>
             )}
 

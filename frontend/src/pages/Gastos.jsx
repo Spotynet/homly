@@ -1,7 +1,7 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
-import { gastosAPI } from '../api/client';
+import { gastosAPI, mantenimientosAPI } from '../api/client';
 import ProviderSelect from '../components/providers/ProviderSelect';
 import { useGastosData } from '../hooks/useGastosData';
 import { queryKeys }     from '../hooks/queryKeys';
@@ -138,6 +138,11 @@ function GastosTable({ rows, isReadOnly, onEdit, onDelete, onViewEvidence, showB
                 {g.field_label || '—'}
                 {showBadge && g.bank_reconciled && (
                   <span style={{ marginLeft: 6, fontSize: 10, background: 'var(--teal-50)', color: 'var(--teal-700)', padding: '1px 6px', borderRadius: 10, fontWeight: 700 }}>🏦</span>
+                )}
+                {g.maintenance_work_title && (
+                  <div style={{ fontSize: 10, color: 'var(--teal-700)', fontWeight: 600, marginTop: 3 }}>
+                    Mantenimiento: {g.maintenance_work_title}
+                  </div>
                 )}
               </td>
               <td style={{ textAlign: 'right', fontWeight: 700, fontSize: 13, color: 'var(--amber-700)' }}>{fmt(g.amount)}</td>
@@ -465,6 +470,7 @@ export default function Gastos() {
   const [gastosCollapsed, setGastosCollapsed] = useState(false);
   const [gastoEvidence, setGastoEvidence] = useState([]);
   const [viewerFiles, setViewerFiles]     = useState(null);
+  const [workOptions, setWorkOptions]     = useState([]);
   const gastoFileInputRef                 = useRef(null);
 
   // ── Datos del módulo vía React Query ────────────────────────────────────────
@@ -485,6 +491,13 @@ export default function Gastos() {
   const cur = tenant?.currency || 'MXN';
   const fmt = (n) => _fmt(n, cur);
   const fmtShort = (n) => _fmtShort(n, cur);
+
+  useEffect(() => {
+    if (modal !== 'gasto' || !tenantId) return;
+    mantenimientosAPI.list(tenantId)
+      .then(r => setWorkOptions(Array.isArray(r.data) ? r.data : (r.data?.results || [])))
+      .catch(() => setWorkOptions([]));
+  }, [modal, tenantId]);
 
   const handlePrint = () => {
     const prev = document.title;
@@ -521,6 +534,7 @@ export default function Gastos() {
       bank_reconciled: !!form.bank_reconciled,
       notes: form.notes || '',
       evidence: JSON.stringify(gastoEvidence),
+      maintenance_work: form.maintenance_work || null,
     };
     setSaving(true);
     try {
@@ -610,7 +624,7 @@ export default function Gastos() {
             )}
             {!isReadOnly && !isPeriodClosed && (
               <button className="btn btn-primary btn-sm" onClick={() => {
-                setForm({ amount: '', field: '', payment_type: 'transferencia', doc_number: '', gasto_date: '', provider: null, provider_name: '', provider_rfc: '', provider_invoice: '', bank_reconciled: false, notes: '' });
+                setForm({ amount: '', field: '', payment_type: 'transferencia', doc_number: '', gasto_date: '', provider: null, provider_name: '', provider_rfc: '', provider_invoice: '', bank_reconciled: false, notes: '', maintenance_work: null });
                 setGastoEvidence([]);
                 setModal('gasto');
               }}>
@@ -821,6 +835,27 @@ export default function Gastos() {
                   onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
                   style={{ resize: 'vertical', minHeight: 56 }}
                 />
+              </div>
+
+              <div style={{ marginTop: 12 }}>
+                <label className="field-label">Trabajo de mantenimiento</label>
+                <select
+                  className="field-select"
+                  value={form.maintenance_work || ''}
+                  onChange={e => setForm(f => ({ ...f, maintenance_work: e.target.value || null }))}
+                >
+                  <option value="">Sin trabajo asociado</option>
+                  {workOptions.map(w => (
+                    <option key={w.id} value={w.id}>
+                      {w.title} · {w.kind === 'correctivo' ? 'Correctivo' : 'Preventivo'} · {w.status}
+                    </option>
+                  ))}
+                </select>
+                {form.maintenance_work_title && !workOptions.some(w => String(w.id) === String(form.maintenance_work)) && (
+                  <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 4 }}>
+                    Actual: {form.maintenance_work_title}
+                  </div>
+                )}
               </div>
 
               <div style={{ marginTop: 12, fontSize: 11, fontWeight: 700, color: 'var(--ink-500)', textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: '1px solid var(--sand-100)', paddingBottom: 6 }}>Proveedor</div>

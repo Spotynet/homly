@@ -1,7 +1,7 @@
 /**
  * useClosedPeriods — lista de períodos cerrados del tenant.
  *
- * Compartido entre Cobranza, Gastos, CajaChica, Dashboard y CierrePeriodo.
+ * Compartido entre Cobranza, Gastos, CajaChica, Mantenimientos, Dashboard y CierrePeriodo.
  * staleTime corto (30 seg) porque el admin puede cerrar/abrir períodos
  * durante la sesión y queremos que los otros módulos lo reflejen pronto.
  *
