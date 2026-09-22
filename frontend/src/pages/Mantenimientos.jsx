@@ -208,7 +208,9 @@ export default function Mantenimientos() {
 
   const printHistory = async () => {
     try {
-      const r = await mantenimientosAPI.printReport(tenantId, { kind: tab });
+      const params = { kind: tab };
+      if (statusFilter) params.status = statusFilter;
+      const r = await mantenimientosAPI.printReport(tenantId, params);
       await downloadBlob(r, `Historial_mantenimientos_${tab}.pdf`);
     } catch (e) {
       toast.error(errMsg(e, 'No se pudo generar el historial'));

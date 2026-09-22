@@ -170,7 +170,7 @@ class CondoMaintenanceWorkViewSet(viewsets.ModelViewSet):
         )
         qs = CondoMaintenanceWork.objects.filter(
             tenant_id=self.kwargs['tenant_id']
-        ).select_related('created_by').prefetch_related(
+        ).select_related('created_by', 'provider').prefetch_related(
             Prefetch('evidences', queryset=ev_qs),
         )
         kind = self.request.query_params.get('kind')
@@ -337,6 +337,7 @@ class CondoMaintenanceWorkViewSet(viewsets.ModelViewSet):
         _require_condominio(tenant)
         works = list(self.get_queryset())
         kind = (request.query_params.get('kind') or '').strip()
+        status_filter = (request.query_params.get('status') or '').strip()
         year = request.query_params.get('year')
         from .mantenimiento_docs import generate_history_pdf
         try:
@@ -344,6 +345,7 @@ class CondoMaintenanceWorkViewSet(viewsets.ModelViewSet):
                 tenant, works,
                 generated_by=_generated_by(request),
                 kind_filter=kind,
+                status_filter=status_filter,
                 year=int(year) if year and str(year).isdigit() else None,
             )
         except Exception:
