@@ -287,31 +287,31 @@ export default function Mantenimientos() {
       <div className="mnt-howto-wrap">
         <div className="mnt-howto-kicker">Secuencia del trabajo</div>
         <ol className="mnt-howto">
-          <li>
+          <li className="mnt-howto-step">
             <span>1</span>
             <div>
               <strong>Planear</strong>
               <small>Área, fecha y quién lo hace</small>
             </div>
           </li>
-          <li className="mnt-howto-arrow" aria-hidden="true"><ChevronRight size={18} /></li>
-          <li>
+          <li className="mnt-howto-join" aria-hidden="true" />
+          <li className="mnt-howto-step">
             <span>2</span>
             <div>
               <strong>Ejecutar</strong>
               <small>Pasa a En curso mientras se trabaja</small>
             </div>
           </li>
-          <li className="mnt-howto-arrow" aria-hidden="true"><ChevronRight size={18} /></li>
-          <li>
+          <li className="mnt-howto-join" aria-hidden="true" />
+          <li className="mnt-howto-step">
             <span>3</span>
             <div>
               <strong>Evidencias</strong>
               <small>Fotos y notas antes de marcar Realizado</small>
             </div>
           </li>
-          <li className="mnt-howto-arrow" aria-hidden="true"><ChevronRight size={18} /></li>
-          <li>
+          <li className="mnt-howto-join" aria-hidden="true" />
+          <li className="mnt-howto-step">
             <span>4</span>
             <div>
               <strong>Cerrar y reportar</strong>
