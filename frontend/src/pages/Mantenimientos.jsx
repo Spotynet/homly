@@ -284,12 +284,42 @@ export default function Mantenimientos() {
         </div>
       </div>
 
-      <ol className="mnt-howto">
-        <li><span>1</span><strong>Planear</strong><small>Área, fecha y quién lo hace</small></li>
-        <li><span>2</span><strong>Ejecutar</strong><small>Marca en curso o realizado</small></li>
-        <li><span>3</span><strong>Evidencias</strong><small>Fotos y notas con su fecha</small></li>
-        <li><span>4</span><strong>Reporte</strong><small>Revisa en pantalla y baja PDF</small></li>
-      </ol>
+      <div className="mnt-howto-wrap">
+        <div className="mnt-howto-kicker">Secuencia del trabajo</div>
+        <ol className="mnt-howto">
+          <li>
+            <span>1</span>
+            <div>
+              <strong>Planear</strong>
+              <small>Área, fecha y quién lo hace</small>
+            </div>
+          </li>
+          <li className="mnt-howto-arrow" aria-hidden="true"><ChevronRight size={18} /></li>
+          <li>
+            <span>2</span>
+            <div>
+              <strong>Ejecutar</strong>
+              <small>Pasa a En curso mientras se trabaja</small>
+            </div>
+          </li>
+          <li className="mnt-howto-arrow" aria-hidden="true"><ChevronRight size={18} /></li>
+          <li>
+            <span>3</span>
+            <div>
+              <strong>Evidencias</strong>
+              <small>Fotos y notas antes de marcar Realizado</small>
+            </div>
+          </li>
+          <li className="mnt-howto-arrow" aria-hidden="true"><ChevronRight size={18} /></li>
+          <li>
+            <span>4</span>
+            <div>
+              <strong>Cerrar y reportar</strong>
+              <small>Marca Realizado y descarga el PDF</small>
+            </div>
+          </li>
+        </ol>
+      </div>
 
       <div className="tabs" style={{ marginBottom: 8 }}>
         {TABS.map(([k, l]) => (
@@ -382,7 +412,7 @@ export default function Mantenimientos() {
                 <span className="mnt-ev-count">
                   <ImageIcon size={12} /> {w.evidence_count || 0} evidencia{(w.evidence_count || 0) === 1 ? '' : 's'}
                 </span>
-                <span className="mnt-open-hint"><Eye size={13} /> Abrir ficha</span>
+                <span className="mnt-open-hint"><Eye size={13} /> {periodClosed ? 'Ver ficha' : 'Abrir ficha'}</span>
               </div>
             </button>
           ))}
@@ -410,7 +440,7 @@ export default function Mantenimientos() {
           tenantId={tenantId}
           work={detail}
           ctx={ctx}
-          canWrite={write}
+          canWrite={canWrite && (ctx?.can_write !== false)}
           periodClosed={periodClosed || isPeriodClosed(detail.period)}
           onClose={() => { setDetail(null); loadList(); loadCtx(); }}
           onEdit={() => { setEditing(detail); setDetail(null); }}
@@ -694,7 +724,10 @@ function WorkDetail({ tenantId, work, ctx, canWrite, periodClosed, onClose, onEd
   const [uploading, setUploading] = useState(false);
   const [showReport, setShowReport] = useState(false);
   const [pendingEvs, setPendingEvs] = useState([]);
-  const locked = work.status === 'cancelado' || !!periodClosed;
+  const cancelled = work.status === 'cancelado';
+  const finished = work.status === 'realizado';
+  const canMutate = canWrite && !periodClosed && !cancelled;
+  const canUpload = canMutate && !finished;
   const serverEvs = work.evidences || [];
   const evidences = sortEvidences([
     ...serverEvs,
@@ -706,7 +739,7 @@ function WorkDetail({ tenantId, work, ctx, canWrite, periodClosed, onClose, onEd
   }, [work.id]);
 
   const setStatus = async (status) => {
-    if (!canWrite || locked) return;
+    if (!canMutate) return;
     try {
       const extra = status === 'realizado' && !work.performed_date
         ? { performed_date: todayISO() }
@@ -722,6 +755,12 @@ function WorkDetail({ tenantId, work, ctx, canWrite, periodClosed, onClose, onEd
   const uploadFiles = async (files) => {
     const list = Array.from(files || []).filter(Boolean);
     if (!list.length) return;
+    if (!canUpload) {
+      toast.error(finished
+        ? 'Cambia el estatus a En curso para agregar evidencia'
+        : 'No se puede agregar evidencia');
+      return;
+    }
     if (!evDate) {
       toast.error('Indica la fecha de la evidencia');
       return;
@@ -787,7 +826,7 @@ function WorkDetail({ tenantId, work, ctx, canWrite, periodClosed, onClose, onEd
                     type="button"
                     role="listitem"
                     className={`mnt-step ${done ? 'done' : ''} ${current ? 'current' : ''}`}
-                    disabled={!canWrite || locked}
+                    disabled={!canMutate}
                     onClick={() => setStatus(st)}
                   >
                     <span>{i + 1}</span>
@@ -881,7 +920,7 @@ function WorkDetail({ tenantId, work, ctx, canWrite, periodClosed, onClose, onEd
                           <button className="btn btn-outline btn-sm" type="button" onClick={() => downloadProtected(ev.file_url, ev.original_name)}>
                             <Download size={12} />
                           </button>
-                          {canWrite && !locked && (
+                          {canUpload && (
                             <button
                               className="btn btn-outline btn-sm"
                               type="button"
@@ -913,7 +952,17 @@ function WorkDetail({ tenantId, work, ctx, canWrite, periodClosed, onClose, onEd
             )}
           </section>
 
-          {canWrite && !locked && (
+          {finished && canMutate && (
+            <section className="mnt-upload">
+              <h4>Cargar evidencia</h4>
+              <p>
+                Este trabajo ya está realizado. Para agregar más evidencia,
+                cambia el estatus a <strong>En curso</strong>.
+              </p>
+            </section>
+          )}
+
+          {canUpload && (
             <section className="mnt-upload">
               <h4>Cargar evidencia</h4>
               <p>Si las fotos se toman un día y se suben después, elige la fecha real de la evidencia.</p>
@@ -964,12 +1013,12 @@ function WorkDetail({ tenantId, work, ctx, canWrite, periodClosed, onClose, onEd
             <button className="btn btn-primary" onClick={() => setShowReport(true)}>
               <Eye size={14} /> Ver reporte
             </button>
-            {canWrite && !locked && (
+            {canMutate && (
               <button className="btn btn-outline" onClick={onEdit}><Pencil size={14} /> Editar</button>
             )}
             <button className="btn btn-outline" onClick={onClose}>Cerrar</button>
           </div>
-          {canWrite && !locked && (
+          {canMutate && (
             <div className="mnt-foot-danger">
               {work.status !== 'cancelado' && (
                 <button className="btn btn-outline" onClick={() => setStatus('cancelado')}>Cancelar trabajo</button>

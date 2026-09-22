@@ -413,6 +413,13 @@ class CondoMaintenanceWorkViewSet(viewsets.ModelViewSet):
             tenant_id,
             work.period or period_from_dates(work.scheduled_date, work.created_at),
         )
+        if work.status == 'realizado':
+            return Response(
+                {'detail': 'Este trabajo está realizado. Cámbialo a En curso para agregar evidencia.'},
+                status=400,
+            )
+        if work.status == 'cancelado':
+            return Response({'detail': 'No se puede agregar evidencia a un trabajo cancelado.'}, status=400)
         uploaded = request.FILES.get('file') or request.FILES.get('archivo')
         if not uploaded:
             return Response({'detail': 'Adjunta un archivo.'}, status=400)
@@ -460,6 +467,13 @@ class CondoMaintenanceWorkViewSet(viewsets.ModelViewSet):
             tenant_id,
             work.period or period_from_dates(work.scheduled_date, work.created_at),
         )
+        if work.status == 'realizado':
+            return Response(
+                {'detail': 'Este trabajo está realizado. Cámbialo a En curso para modificar evidencias.'},
+                status=400,
+            )
+        if work.status == 'cancelado':
+            return Response({'detail': 'No se puede modificar evidencia de un trabajo cancelado.'}, status=400)
         obj = work.evidences.filter(id=file_id).first()
         if not obj:
             return Response({'detail': 'Evidencia no encontrada.'}, status=404)

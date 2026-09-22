@@ -666,6 +666,9 @@ def _period_summary(works, generated_by, period, st, inner):
     ev_avg = f'{evidence_total / n:.1f}' if n else '0'
     period_label = _period_label(period)
 
+    pad = 8
+    content = max(inner - (2 * pad), 1)
+    col = content / 2
     items = [
         (str(n), 'Trabajos'),
         (str(prev_n), f'Preventivos ({_pct(prev_n, n)})'),
@@ -682,27 +685,26 @@ def _period_summary(works, generated_by, period, st, inner):
             _analysis_cell(st, 'Cancelados', canc_n, _pct(canc_n, n) + ' del periodo'),
         ],
         [
-            _analysis_cell(st, 'Tasa de cierre', close_rate, 'Realizados sobre trabajos no cancelados'),
+            _analysis_cell(st, 'Tasa de cierre', close_rate, 'Sobre trabajos no cancelados'),
             _analysis_cell(st, 'Con proveedor', with_provider, _pct(with_provider, n) + ' de los trabajos'),
         ],
         [
             _analysis_cell(st, 'Evidencias', evidence_total, f'{ev_avg} por trabajo'),
-            _analysis_cell(st, 'Gastos asociados', f'{gasto_n}  ·  {_money(gasto_total) or "$0.00"}', 'Registros del módulo de Gastos'),
+            _analysis_cell(st, 'Gastos asociados', f'{gasto_n}  ·  {_money(gasto_total) or "$0.00"}', 'Módulo de Gastos'),
         ],
         [
             _analysis_cell(st, 'Costo en trabajos', _money(cost_total) or '$0.00', 'Monto capturado en la ficha'),
-            _analysis_cell(st, 'Generado por', generated_by, 'Reporte unificado preventivo y correctivo'),
+            _analysis_cell(st, 'Generado por', generated_by or '—', 'Preventivo y correctivo'),
         ],
     ]
-    half = inner / 2
-    grid = Table(analysis, colWidths=[half, half])
+    grid = Table(analysis, colWidths=[col, col])
     grid.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, -1), _hex(WHITE)),
         ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('LEFTPADDING', (0, 0), (-1, -1), 8),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 8),
-        ('TOPPADDING', (0, 0), (-1, -1), 7),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 7),
+        ('LEFTPADDING', (0, 0), (-1, -1), 6),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+        ('TOPPADDING', (0, 0), (-1, -1), 5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
         ('BOX', (0, 0), (-1, -1), 0.4, _hex(GOLD)),
         ('INNERGRID', (0, 0), (-1, -1), 0.25, _hex(RULE)),
         ('ROWBACKGROUNDS', (0, 0), (-1, -1), [_hex(SAND), _hex(WHITE)]),
@@ -710,15 +712,14 @@ def _period_summary(works, generated_by, period, st, inner):
     wrap = Table(
         [
             [Paragraph('Resumen del periodo', st['h'])],
-            [Paragraph(_esc(period_label), st['title'])],
+            [Paragraph(_esc(period_label), st['card_t'])],
             [Paragraph(
-                'Periodo del sistema. Incluye todos los trabajos preventivos y '
-                'correctivos registrados en este periodo, igual que Gastos y Cobranza. '
-                'Las fechas de cada trabajo aparecen en su ficha.',
+                'Periodo del sistema. Incluye los trabajos preventivos y '
+                'correctivos de este periodo. Las fechas van en cada ficha.',
                 st['an_n'],
             )],
-            [_kpi_strip(items, st, inner)],
-            [Spacer(1, 8)],
+            [_kpi_strip(items, st, content)],
+            [Spacer(1, 6)],
             [Paragraph('Análisis de indicadores', st['h'])],
             [grid],
         ],
@@ -727,11 +728,11 @@ def _period_summary(works, generated_by, period, st, inner):
     wrap.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, -1), _hex(WHITE)),
         ('BOX', (0, 0), (-1, -1), 0.6, _hex(GOLD)),
-        ('LEFTPADDING', (0, 0), (-1, -1), 12),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 12),
-        ('TOPPADDING', (0, 0), (-1, 0), 10),
-        ('BOTTOMPADDING', (0, -1), (-1, -1), 12),
-        ('TOPPADDING', (0, 1), (-1, -2), 2),
+        ('LEFTPADDING', (0, 0), (-1, -1), pad),
+        ('RIGHTPADDING', (0, 0), (-1, -1), pad),
+        ('TOPPADDING', (0, 0), (-1, 0), 8),
+        ('BOTTOMPADDING', (0, -1), (-1, -1), 8),
+        ('TOPPADDING', (0, 1), (-1, -2), 1),
         ('VALIGN', (0, 0), (-1, -1), 'TOP'),
     ]))
     return KeepTogether([wrap, Spacer(1, 12)])

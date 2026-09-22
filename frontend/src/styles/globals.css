@@ -3105,38 +3105,65 @@ tr:hover td { background: rgba(59,185,144,0.02); }
 .mnt-gasto-list strong { font-size: 13px; }
 .mnt-gasto-list span { font-size: 13px; font-weight: 700; color: var(--teal-700); }
 .mnt-gasto-list small { grid-column: 1 / -1; font-size: 11px; color: var(--ink-400); }
+.mnt-howto-wrap {
+  margin: 0 0 18px;
+  padding: 12px 14px 14px;
+  border: 1px solid var(--sand-100);
+  border-radius: var(--radius-lg);
+  background: var(--sand-50);
+}
+.mnt-howto-kicker {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--teal-700);
+  margin-bottom: 10px;
+}
 .mnt-howto {
   list-style: none;
-  margin: 0 0 18px;
+  margin: 0;
   padding: 0;
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
+  display: flex;
+  align-items: stretch;
+  gap: 0;
 }
 .mnt-howto li {
+  flex: 1;
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 12px 14px;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px 12px;
   border: 1px solid var(--sand-100);
   border-radius: var(--radius-lg);
   background: var(--white);
 }
+.mnt-howto-arrow {
+  flex: 0 0 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--teal-600);
+}
 .mnt-howto span {
-  width: 22px;
-  height: 22px;
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
   border-radius: 99px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   font-size: 11px;
   font-weight: 800;
-  background: var(--teal-50);
-  color: var(--teal-700);
-  margin-bottom: 4px;
+  background: var(--teal-600);
+  color: #fff;
 }
-.mnt-howto strong { font-size: 13px; }
-.mnt-howto small { font-size: 11px; color: var(--ink-400); }
+.mnt-howto strong { display: block; font-size: 13px; line-height: 1.25; }
+.mnt-howto small { display: block; margin-top: 2px; font-size: 11px; color: var(--ink-400); line-height: 1.35; }
 .mnt-filters { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
 .mnt-filter {
   border: 1px solid var(--sand-100);
@@ -3514,7 +3541,8 @@ tr:hover td { background: rgba(59,185,144,0.02); }
 }
 
 @media (max-width: 900px) {
-  .mnt-howto { grid-template-columns: 1fr 1fr; }
+  .mnt-howto { flex-direction: column; }
+  .mnt-howto-arrow { flex: 0 0 18px; transform: rotate(90deg); }
   .mnt-form-grid3, .mnt-upload-grid, .mnt-tl-item, .mnt-stepper, .mnt-paper-meta {
     grid-template-columns: 1fr;
   }
