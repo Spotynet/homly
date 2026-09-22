@@ -3125,42 +3125,37 @@ tr:hover td { background: rgba(59,185,144,0.02); }
   margin: 0;
   padding: 0;
   display: flex;
-  align-items: stretch;
+  align-items: center;
   gap: 0;
 }
 .mnt-howto-step {
   flex: 1;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 10px;
   min-width: 0;
-  padding: 10px 12px;
+  min-height: 72px;
+  padding: 12px 14px;
   border: 1px solid var(--sand-100);
   border-radius: var(--radius-lg);
   background: var(--white);
 }
 .mnt-howto-join {
-  flex: 0 0 36px;
+  flex: 0 0 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   align-self: center;
-  height: 2px;
-  margin: 0 2px;
+  margin: 0;
   padding: 0;
   border: 0;
-  background: linear-gradient(90deg, var(--teal-300), var(--teal-600));
-  border-radius: 99px;
-  position: relative;
+  background: transparent;
+  color: var(--teal-600);
 }
-.mnt-howto-join::after {
-  content: '';
-  position: absolute;
-  right: -1px;
-  top: 50%;
-  width: 0;
-  height: 0;
-  border-top: 5px solid transparent;
-  border-bottom: 5px solid transparent;
-  border-left: 8px solid var(--teal-600);
-  transform: translateY(-50%);
+.mnt-howto-arrow {
+  width: 48px;
+  height: 22px;
+  display: block;
 }
 .mnt-howto-step > span {
   flex: 0 0 24px;
@@ -3556,24 +3551,11 @@ tr:hover td { background: rgba(59,185,144,0.02); }
 @media (max-width: 900px) {
   .mnt-howto { flex-direction: column; }
   .mnt-howto-join {
-    flex: 0 0 22px;
-    width: 2px;
-    height: 22px;
-    align-self: center;
-    margin: 2px 0;
-    background: linear-gradient(180deg, var(--teal-300), var(--teal-600));
+    flex: 0 0 28px;
+    width: 52px;
+    height: 28px;
   }
-  .mnt-howto-join::after {
-    right: auto;
-    left: 50%;
-    top: auto;
-    bottom: -1px;
-    border-top: 8px solid var(--teal-600);
-    border-bottom: 0;
-    border-left: 5px solid transparent;
-    border-right: 5px solid transparent;
-    transform: translateX(-50%);
-  }
+  .mnt-howto-arrow { transform: rotate(90deg); }
   .mnt-form-grid3, .mnt-upload-grid, .mnt-tl-item, .mnt-stepper, .mnt-paper-meta {
     grid-template-columns: 1fr;
   }

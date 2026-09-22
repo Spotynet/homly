@@ -147,6 +147,18 @@ function ProtectedImage({ url, alt, className, onClick }) {
   );
 }
 
+function SequenceArrow() {
+  return (
+    <li className="mnt-howto-join" aria-hidden="true">
+      <svg className="mnt-howto-arrow" viewBox="0 0 56 24" fill="none">
+        <path d="M2 12h34" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
+        <circle cx="22" cy="12" r="3.6" fill="currentColor" />
+        <path d="M37 5.4 53 12 37 18.6V15h-3V9h3V5.4Z" fill="currentColor" />
+      </svg>
+    </li>
+  );
+}
+
 function emptyForm(kind) {
   return {
     kind,
@@ -294,7 +306,7 @@ export default function Mantenimientos() {
               <small>Área, fecha y quién lo hace</small>
             </div>
           </li>
-          <li className="mnt-howto-join" aria-hidden="true" />
+          <SequenceArrow />
           <li className="mnt-howto-step">
             <span>2</span>
             <div>
@@ -302,7 +314,7 @@ export default function Mantenimientos() {
               <small>Pasa a En curso mientras se trabaja</small>
             </div>
           </li>
-          <li className="mnt-howto-join" aria-hidden="true" />
+          <SequenceArrow />
           <li className="mnt-howto-step">
             <span>3</span>
             <div>
@@ -310,7 +322,7 @@ export default function Mantenimientos() {
               <small>Fotos y notas antes de marcar Realizado</small>
             </div>
           </li>
-          <li className="mnt-howto-join" aria-hidden="true" />
+          <SequenceArrow />
           <li className="mnt-howto-step">
             <span>4</span>
             <div>
