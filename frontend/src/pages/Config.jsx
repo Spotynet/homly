@@ -1,7 +1,13 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { tenantsAPI, extraFieldsAPI, assemblyAPI, usersAPI, unitsAPI, superAdminAPI, authAPI, periodsAPI } from '../api/client';
-import { ROLE_BASE_MODULES } from '../constants/modulePermissions';
+import {
+  CONDO_MODULE_KEYS,
+  resolveModuleAccess,
+  isCondoModuleAssignable,
+  emptyProfileModules,
+  normalizeProfileModules,
+} from '../constants/modulePermissions';
 import { CURRENCIES, getStatesForCountry, COUNTRIES, isPdfFile } from '../utils/helpers';
 import AdminConfigTour from '../components/onboarding/AdminConfigTour';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -12,6 +18,7 @@ import {
   AlertCircle, Shield, FileText, Globe, ChevronRight, TrendingUp,
   ShieldAlert, Mail, UserPlus, Bell, Layers, Eye, EyeOff,
   ListOrdered, ArrowUp, ArrowDown, CheckCircle2, Sparkles, Newspaper,
+  Wrench, CreditCard, Send,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -53,6 +60,9 @@ const DEFAULT_RESERVATION_ROLE_PERMS = {
 const MODULE_DEFINITIONS = [
   { key: 'dashboard',       label: 'Dashboard',           icon: Home,         desc: 'Panel principal con métricas del condominio' },
   { key: 'reservas',        label: 'Reservas',            icon: Calendar,     desc: 'Reserva de áreas comunes' },
+  { key: 'blog',            label: 'Comunicación',        icon: Newspaper,    desc: 'Publicaciones y comunicados para la comunidad' },
+  { key: 'asambleas',       label: 'Asambleas',           icon: Users,        desc: 'Convocatoria, desarrollo, minuta de trabajo y acta formal' },
+  { key: 'mantenimientos',  label: 'Mantenimientos',      icon: Wrench,       desc: 'Preventivos y correctivos: planeación, evidencias e historial' },
   { key: 'cobranza',        label: 'Cobranza Mensual',    icon: Receipt,      desc: 'Registro y cobro de mantenimiento' },
   { key: 'gastos',          label: 'Gastos',              icon: ShoppingBag,  desc: 'Gestión de egresos conciliados y en tránsito' },
   { key: 'caja_chica',      label: 'Caja Chica',          icon: DollarSign,   desc: 'Registro de gastos menores de caja chica' },
@@ -60,15 +70,13 @@ const MODULE_DEFINITIONS = [
   { key: 'plan_pagos',      label: 'Plan de Pagos',       icon: TrendingUp,   desc: 'Gestión de planes de pago para adeudos de unidades' },
   { key: 'cierre_periodo',  label: 'Cierre de Período',   icon: Lock,         desc: 'Cierre y flujo de aprobación de períodos contables' },
   { key: 'planeacion',      label: 'Planeación',          icon: TrendingUp,   desc: 'Presupuesto anual y proyectos del condominio' },
-  { key: 'asambleas',       label: 'Asambleas',           icon: Users,        desc: 'Convocatorias, reuniones, minutas e historial del condominio' },
   { key: 'notificaciones',  label: 'Notificaciones',      icon: Bell,         desc: 'Centro de avisos y notificaciones' },
   { key: 'onboarding',      label: 'Guía de Inicio',      icon: Sparkles,     desc: 'Tour interactivo para configurar el tenant paso a paso' },
+  { key: 'mi_membresia',    label: 'Mi Membresía',        icon: CreditCard,   desc: 'Plan, facturación y estado de la suscripción del condominio' },
   { key: 'config',          label: 'Configuración',       icon: Settings,     desc: 'Configuración del condominio' },
   { key: 'my_unit',         label: 'Mi Unidad',           icon: Home,         desc: 'Vista de la unidad del residente (solo Residente)' },
-  { key: 'blog',            label: 'Comunicación',        icon: Newspaper,    desc: 'Publicaciones y comunicados para la comunidad' },
+  { key: 'enviar_pago',     label: 'Enviar pago',         icon: Send,         desc: 'Envío de comprobantes de pago por el residente' },
 ];
-
-// ROLE_BASE_MODULES is now imported from '../constants/modulePermissions'
 
 // ── Generic read-only field ───────────────────────────────────────────────────
 function FieldView({ label, value, mono = false, children }) {
@@ -546,27 +554,32 @@ export default function Config() {
   // Levels: "write" (visible+leer+escribir) | "read" (visible+leer) | "hidden" (sin acceso)
   // Backward-compatible: old format was {role: [moduleKeys]} — treated as "write" for listed keys.
 
-  const getModuleAccess = (roleKey, moduleKey) => {
-    const base = ROLE_BASE_MODULES[roleKey] || [];
-    if (!base.includes(moduleKey)) return 'na'; // not applicable for this role
-    const perms = modulePerms[roleKey];
-    if (perms === undefined) return 'write'; // no config → full access by default
-    if (Array.isArray(perms))                // old array format → backward compat
-      return perms.includes(moduleKey) ? 'write' : 'hidden';
-    return perms[moduleKey] ?? 'write';      // new object format, default write
-  };
+  const getModuleAccess = (roleKey, moduleKey) =>
+    resolveModuleAccess(modulePerms[roleKey], roleKey, moduleKey);
 
   const setModuleAccess = (roleKey, moduleKey, level) => {
-    const base = ROLE_BASE_MODULES[roleKey] || [];
-    if (!base.includes(moduleKey)) return;
+    if (!isCondoModuleAssignable(roleKey, moduleKey)) return;
     setModulePerms(prev => {
-      // Migrate old array format on first edit
       const current = prev[roleKey];
-      const normalized = Array.isArray(current)
-        ? Object.fromEntries(base.map(k => [k, current.includes(k) ? 'write' : 'hidden']))
-        : (current || {});
-      return { ...prev, [roleKey]: { ...normalized, [moduleKey]: level } };
+      const defaults = Object.fromEntries(
+        CONDO_MODULE_KEYS
+          .filter(k => isCondoModuleAssignable(roleKey, k))
+          .map(k => [k, resolveModuleAccess(current, roleKey, k)])
+      );
+      return { ...prev, [roleKey]: { ...defaults, [moduleKey]: level } };
     });
+  };
+
+  const getProfileModuleAccess = (profile, moduleKey) => {
+    const mods = normalizeProfileModules(profile?.modules);
+    return mods[moduleKey] ?? 'hidden';
+  };
+
+  const setProfileModuleAccess = (profileId, moduleKey, level) => {
+    setCustomProfiles(prev => prev.map(p => {
+      if (String(p.id) !== String(profileId)) return p;
+      return { ...p, modules: { ...normalizeProfileModules(p.modules), [moduleKey]: level } };
+    }));
   };
 
   // ── Update a per-role reservation permission (can_request / can_approve) ─────
@@ -1825,7 +1838,7 @@ export default function Config() {
               {isAdmin && (
                 <button className="btn btn-primary btn-sm"
                   onClick={() => {
-                    setProfileForm({ label:'', color:'#0d9488', modules: {} });
+                    setProfileForm({ label:'', color:'#0d9488', modules: emptyProfileModules() });
                     setProfileModalOpen(true);
                   }}>
                   <Plus size={14}/> Nuevo Perfil
@@ -2297,8 +2310,8 @@ export default function Config() {
                 <h3 style={{ margin:0, fontSize:16, fontWeight:700, color:'var(--ink-800)' }}>Visibilidad de Módulos</h3>
               </div>
               <p style={{ margin:0, fontSize:13, color:'var(--ink-400)' }}>
-                Activa o desactiva los módulos del menú principal para cada perfil de usuario en este condominio.
-                Los módulos desactivados no serán visibles para los usuarios de ese perfil.
+                Asigna visibilidad y nivel de acceso de cada módulo a los roles predefinidos y a los perfiles personalizados.
+                Los módulos ocultos no aparecen en el menú de ese rol o perfil.
               </p>
             </div>
             {isAdmin && (
@@ -2311,7 +2324,7 @@ export default function Config() {
           {/* Info banner */}
           <div style={{ padding:'10px 14px', background:'var(--amber-50)', border:'1px solid var(--amber-100)', borderRadius:'var(--radius-md)', fontSize:12, color:'var(--amber-700)', display:'flex', alignItems:'center', gap:8, marginBottom:20 }}>
             <AlertCircle size={14} style={{ flexShrink:0 }}/>
-            <span>Las celdas en gris indican que el módulo no está disponible para ese perfil (sin importar la configuración). Solo puedes activar/desactivar los módulos que aplican a cada rol.</span>
+            <span>Las celdas en gris (N/A) son exclusivas de un rol — por ejemplo Mi Unidad y Enviar pago solo aplican al Residente. El resto de módulos, incluidos los nuevos, se pueden otorgar a cualquier rol predefinido o perfil personalizado.</span>
           </div>
 
           {/* Matrix card */}
@@ -2344,6 +2357,16 @@ export default function Config() {
                       </th>
                     );
                   })}
+                  {customProfiles.map(profile => (
+                    <th key={profile.id} style={{ padding:'10px 8px', textAlign:'center', fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.05em', color: profile.color || 'var(--teal-600)', minWidth:90 }}>
+                      <span style={{ display:'inline-flex', flexDirection:'column', alignItems:'center', gap:3 }}>
+                        <span style={{ padding:'2px 8px', borderRadius:'var(--radius-full)', background:'var(--teal-50)', fontSize:10, fontWeight:700, maxWidth:110, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                          {profile.label || 'Perfil'}
+                        </span>
+                        <span style={{ fontSize:8, fontWeight:600, letterSpacing:'0.04em', color:'var(--ink-300)' }}>PERSONALIZADO</span>
+                      </span>
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
@@ -2384,7 +2407,7 @@ export default function Config() {
                           </div>
                         </div>
                       </td>
-                      {/* Permission level per role */}
+                      {/* Permission level per predefined role + custom profiles */}
                       {TENANT_ROLES.map(roleKey => {
                         const access = getModuleAccess(roleKey, mod.key);
                         const LEVELS = [
@@ -2434,6 +2457,45 @@ export default function Config() {
                           </td>
                         );
                       })}
+                      {customProfiles.map(profile => {
+                        const access = getProfileModuleAccess(profile, mod.key);
+                        const LEVELS = [
+                          { key:'hidden', Icon:EyeOff, label:'Oculto',   activeColor:'var(--coral-500)', activeBg:'var(--coral-50)'  },
+                          { key:'read',   Icon:Eye,    label:'Lectura',   activeColor:'var(--blue-600)',  activeBg:'var(--blue-50)'   },
+                          { key:'write',  Icon:Pencil, label:'Completo',  activeColor:'var(--teal-600)',  activeBg:'var(--teal-50)'   },
+                        ];
+                        const active = LEVELS.find(l => l.key === access);
+                        return (
+                          <td key={profile.id} style={{ padding:'8px 6px', textAlign:'center' }}>
+                            <div style={{ display:'inline-flex', flexDirection:'column', alignItems:'center', gap:3 }}>
+                              <div style={{ display:'inline-flex', borderRadius:8, overflow:'hidden', border:'1px solid var(--sand-200)' }}>
+                                {LEVELS.map(({ key, Icon: LvIcon, label, activeColor, activeBg }) => {
+                                  const isActive = access === key;
+                                  return (
+                                    <button key={key} type="button"
+                                      title={label}
+                                      onClick={() => isAdmin && inPlan && setProfileModuleAccess(profile.id, mod.key, key)}
+                                      style={{
+                                        width:22, height:22, border:'none', padding:0,
+                                        display:'flex', alignItems:'center', justifyContent:'center',
+                                        background: isActive ? activeBg : 'var(--white)',
+                                        color: isActive ? activeColor : 'var(--ink-200)',
+                                        cursor: isAdmin && inPlan ? 'pointer' : 'default',
+                                        transition:'all 0.12s',
+                                        borderRight: key !== 'write' ? '1px solid var(--sand-200)' : 'none',
+                                      }}>
+                                      <LvIcon size={10}/>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                              <span style={{ fontSize:9, fontWeight:700, color: active?.activeColor || 'var(--ink-400)' }}>
+                                {active?.label}
+                              </span>
+                            </div>
+                          </td>
+                        );
+                      })}
                     </tr>
                   );
                 })}
@@ -2442,6 +2504,12 @@ export default function Config() {
           </div>
             );
           })()}
+
+          {customProfiles.length === 0 && isAdmin && (
+            <div style={{ marginTop:12, padding:'10px 14px', background:'var(--teal-50)', border:'1px solid var(--teal-100)', borderRadius:'var(--radius-md)', fontSize:12, color:'var(--teal-700)' }}>
+              Crea un perfil en <strong>Roles y Perfiles</strong> y vuelve a esta tabla para asignarle los mismos módulos que a los roles predefinidos.
+            </div>
+          )}
 
           {/* Legend */}
           <div style={{ display:'flex', alignItems:'center', gap:16, marginTop:14, fontSize:11, color:'var(--ink-500)', flexWrap:'wrap' }}>
@@ -3539,12 +3607,7 @@ export default function Config() {
 
         // Normalise modules to object format { key: "write"|"read"|"hidden" }
         // Default access is 'hidden' — modules must be explicitly enabled.
-        const normalizeMods = (mods) => {
-          if (!mods || (Array.isArray(mods) && mods.length === 0)) return {};
-          if (Array.isArray(mods))
-            return Object.fromEntries(mods.map(k => [k, 'write']));
-          return mods;
-        };
+        const normalizeMods = (mods) => normalizeProfileModules(mods);
         const profileModules = normalizeMods(profileForm.modules);
 
         // Default: hidden (not inherited from any predefined role)
@@ -3564,7 +3627,7 @@ export default function Config() {
           if (!hasVisible) return toast.error('Activa al menos un módulo para el perfil');
           setProfileSaving(true);
           try {
-            const entry = { ...profileForm };
+            const entry = { ...profileForm, modules: mods };
             if (!entry.id) {
               entry.id = `prof_${Date.now()}_${Math.random().toString(36).slice(2,7)}`;
             }

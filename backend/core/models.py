@@ -3010,3 +3010,104 @@ class CondoAssemblyFile(models.Model):
     def __str__(self):
         return self.original_name or str(self.id)
 
+
+# ═══════════════════════════════════════════════════════════
+#  MANTENIMIENTOS DEL CONDOMINIO
+# ═══════════════════════════════════════════════════════════
+
+def condo_maintenance_file_path(instance, filename):
+    ext = ''
+    if filename and '.' in filename:
+        ext = '.' + filename.rsplit('.', 1)[-1].lower()[:8]
+    return f'condo_maintenance/{instance.work_id}/{uuid.uuid4().hex}{ext}'
+
+
+class CondoMaintenanceWork(models.Model):
+    """Planeación y bitácora de un trabajo de mantenimiento preventivo o correctivo."""
+    KIND_CHOICES = [
+        ('preventivo', 'Preventivo'),
+        ('correctivo', 'Correctivo'),
+    ]
+    STATUS_CHOICES = [
+        ('planeado', 'Planeado'),
+        ('en_curso', 'En curso'),
+        ('realizado', 'Realizado'),
+        ('cancelado', 'Cancelado'),
+    ]
+    PRIORITY_CHOICES = [
+        ('baja', 'Baja'),
+        ('media', 'Media'),
+        ('alta', 'Alta'),
+        ('urgente', 'Urgente'),
+    ]
+    FREQUENCY_CHOICES = [
+        ('unica', 'Única'),
+        ('semanal', 'Semanal'),
+        ('mensual', 'Mensual'),
+        ('trimestral', 'Trimestral'),
+        ('semestral', 'Semestral'),
+        ('anual', 'Anual'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='condo_maintenance_works')
+    kind = models.CharField(max_length=16, choices=KIND_CHOICES, default='preventivo', db_index=True)
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default='planeado', db_index=True)
+    priority = models.CharField(max_length=12, choices=PRIORITY_CHOICES, default='media')
+    title = models.CharField(max_length=240)
+    description = models.TextField(blank=True, default='')
+    work_notes = models.TextField(blank=True, default='', help_text='Documentación de lo realizado.')
+    area_id = models.CharField(max_length=80, blank=True, default='')
+    area_name = models.CharField(max_length=200, blank=True, default='')
+    performed_by = models.CharField(max_length=200, blank=True, default='')
+    vendor_name = models.CharField(max_length=200, blank=True, default='')
+    scheduled_date = models.DateField(null=True, blank=True)
+    performed_date = models.DateField(null=True, blank=True)
+    next_due_date = models.DateField(null=True, blank=True)
+    frequency = models.CharField(max_length=16, choices=FREQUENCY_CHOICES, default='unica')
+    cost = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    created_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='condo_maintenance_created',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'condo_maintenance_works'
+        ordering = ['-scheduled_date', '-created_at']
+        indexes = [
+            models.Index(fields=['tenant', 'kind', 'status']),
+        ]
+
+    def __str__(self):
+        return self.title
+
+
+class CondoMaintenanceEvidence(models.Model):
+    """Evidencia fotográfica o documental de un trabajo (antes, después u otro)."""
+    KIND_CHOICES = [
+        ('antes', 'Antes'),
+        ('despues', 'Después'),
+        ('otro', 'Otro'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    work = models.ForeignKey(CondoMaintenanceWork, on_delete=models.CASCADE, related_name='evidences')
+    kind = models.CharField(max_length=12, choices=KIND_CHOICES, default='otro')
+    original_name = models.CharField(max_length=240, blank=True, default='')
+    notes = models.CharField(max_length=400, blank=True, default='')
+    file = models.FileField(upload_to=condo_maintenance_file_path)
+    uploaded_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='condo_maintenance_files_uploaded',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'condo_maintenance_evidences'
+        ordering = ['kind', 'created_at']
+
+    def __str__(self):
+        return self.original_name or str(self.id)
+

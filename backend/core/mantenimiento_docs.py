@@ -1,0 +1,461 @@
+"""Reportes PDF de mantenimientos: ficha de trabajo e historial del condominio."""
+from __future__ import annotations
+
+import logging
+import re
+from django.utils import timezone
+
+from .closing_report import (
+    NumberedCanvas, _dt_es, _esc, _fit_canvas_text, _hex,
+    _homly_logo_reader, _logo_reader, _tenant_address,
+)
+
+logger = logging.getLogger(__name__)
+
+NAVY = '#1b2a4a'
+GOLD = '#b08d57'
+INK = '#1c1917'
+INK_MED = '#44403c'
+INK_LIGHT = '#78716c'
+SAND = '#f7f4ee'
+RULE = '#d6cfc2'
+WHITE = '#ffffff'
+
+KIND_ES = {'preventivo': 'Preventivo', 'correctivo': 'Correctivo'}
+STATUS_ES = {
+    'planeado': 'Planeado',
+    'en_curso': 'En curso',
+    'realizado': 'Realizado',
+    'cancelado': 'Cancelado',
+}
+PRIORITY_ES = {'baja': 'Baja', 'media': 'Media', 'alta': 'Alta', 'urgente': 'Urgente'}
+FREQ_ES = {
+    'unica': 'Única',
+    'semanal': 'Semanal',
+    'mensual': 'Mensual',
+    'trimestral': 'Trimestral',
+    'semestral': 'Semestral',
+    'anual': 'Anual',
+}
+EV_ES = {'antes': 'Antes', 'despues': 'Después', 'otro': 'Otro'}
+
+
+def _safe_filename(text, fallback='documento'):
+    raw = (text or fallback).strip() or fallback
+    raw = re.sub(r'[^\w\s\-áéíóúÁÉÍÓÚñÑ.]', '', raw, flags=re.UNICODE)
+    raw = re.sub(r'\s+', '_', raw)[:80]
+    return raw or fallback
+
+
+def _user_label(user) -> str:
+    if not user:
+        return ''
+    return (getattr(user, 'name', None) or getattr(user, 'email', '') or '').strip()
+
+
+def _date_es(d):
+    if not d:
+        return '—'
+    months = (
+        '', 'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+        'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre',
+    )
+    return f'{d.day} de {months[d.month]} de {d.year}'
+
+
+def _money(n):
+    if n is None:
+        return ''
+    try:
+        return f'${float(n):,.2f}'
+    except (TypeError, ValueError):
+        return ''
+
+
+def _header_footer(canvas, doc, tenant, generated_at, generated_by):
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import cm
+
+    page_w, page_h = A4
+    margin_h = 1.9 * cm
+    tenant_name = (tenant.razon_social or tenant.name or 'Condominio').strip()
+    tenant_alias = (tenant.name or '').strip()
+    rfc = (tenant.rfc or '').strip()
+    addr = _tenant_address(tenant)
+    logo = _logo_reader(tenant)
+    homly_logo = _homly_logo_reader()
+
+    canvas.saveState()
+    canvas.setFillColor(_hex(NAVY))
+    canvas.rect(0, page_h - 0.28 * cm, page_w, 0.28 * cm, fill=1, stroke=0)
+    canvas.setFillColor(_hex(GOLD))
+    canvas.rect(0, page_h - 0.36 * cm, page_w, 0.08 * cm, fill=1, stroke=0)
+
+    inner_top = page_h - 0.55 * cm
+    inner_bottom = page_h - 3.35 * cm
+    inner_h = inner_top - inner_bottom
+    x0 = margin_h
+    text_x = x0
+    logo_h = 1.55 * cm
+    if logo:
+        try:
+            logo_y = inner_bottom + (inner_h - logo_h) / 2
+            canvas.drawImage(
+                logo, x0, logo_y,
+                width=logo_h, height=logo_h,
+                mask='auto', preserveAspectRatio=True, anchor='c',
+            )
+            text_x = x0 + logo_h + 0.32 * cm
+        except Exception:
+            text_x = x0
+
+    show_alias = bool(tenant_alias and tenant_alias.lower() != tenant_name.lower())
+    meta_bits = []
+    if rfc:
+        meta_bits.append(f'RFC {rfc}')
+    if tenant.state:
+        meta_bits.append(tenant.state)
+    meta_line = '  ·  '.join(meta_bits)
+    text_max_w = page_w - margin_h - text_x
+    name_txt, name_sz = _fit_canvas_text(canvas, tenant_name, 'Times-Bold', 12, text_max_w, 8)
+    alias_txt, alias_sz = _fit_canvas_text(canvas, tenant_alias, 'Times-Italic', 8.5, text_max_w, 7) if show_alias else ('', 8)
+    meta_txt, meta_sz = _fit_canvas_text(canvas, meta_line, 'Times-Roman', 8, text_max_w, 7) if meta_line else ('', 8)
+    addr_txt, addr_sz = _fit_canvas_text(canvas, addr, 'Times-Roman', 8, text_max_w, 7) if addr else ('', 8)
+
+    n_lines = 1 + (1 if show_alias else 0) + (1 if meta_line else 0) + (1 if addr else 0)
+    line_h = 0.34 * cm
+    text_h = n_lines * line_h
+    y_cursor = inner_bottom + (inner_h + text_h) / 2 - 0.24 * cm
+    canvas.setFillColor(_hex(NAVY))
+    canvas.setFont('Times-Bold', name_sz)
+    canvas.drawString(text_x, y_cursor, name_txt)
+    y_cursor -= line_h
+    canvas.setFillColor(_hex(INK_MED))
+    if show_alias:
+        canvas.setFont('Times-Italic', alias_sz)
+        canvas.drawString(text_x, y_cursor, alias_txt)
+        y_cursor -= line_h
+    if meta_line:
+        canvas.setFont('Times-Roman', meta_sz)
+        canvas.drawString(text_x, y_cursor, meta_txt)
+        y_cursor -= line_h
+    if addr:
+        canvas.setFont('Times-Roman', addr_sz)
+        canvas.drawString(text_x, y_cursor, addr_txt)
+
+    canvas.setStrokeColor(_hex(NAVY))
+    canvas.setLineWidth(0.8)
+    canvas.line(margin_h, page_h - 3.48 * cm, page_w - margin_h, page_h - 3.48 * cm)
+    canvas.setStrokeColor(_hex(GOLD))
+    canvas.setLineWidth(0.45)
+    canvas.line(margin_h, page_h - 3.58 * cm, page_w - margin_h, page_h - 3.58 * cm)
+
+    canvas.setFillColor(_hex(SAND))
+    canvas.rect(0, 0, page_w, 1.95 * cm, fill=1, stroke=0)
+    canvas.setFillColor(_hex(NAVY))
+    canvas.rect(0, 1.95 * cm, page_w, 0.055 * cm, fill=1, stroke=0)
+    canvas.setFillColor(_hex(GOLD))
+    canvas.rect(0, 1.895 * cm, page_w, 0.055 * cm, fill=1, stroke=0)
+
+    foot_text_x = margin_h
+    if homly_logo:
+        try:
+            logo_fh = 0.72 * cm
+            logo_fw = logo_fh * (677 / 369)
+            canvas.drawImage(
+                homly_logo, margin_h, 0.78 * cm,
+                width=logo_fw, height=logo_fh,
+                mask='auto', preserveAspectRatio=True, anchor='c',
+            )
+            foot_text_x = margin_h + logo_fw + 0.22 * cm
+        except Exception:
+            canvas.setFillColor(_hex(NAVY))
+            canvas.setFont('Times-Bold', 8)
+            canvas.drawString(margin_h, 1.22 * cm, 'Homly')
+            foot_text_x = margin_h + 1.45 * cm
+    else:
+        canvas.setFillColor(_hex(NAVY))
+        canvas.setFont('Times-Bold', 8)
+        canvas.drawString(margin_h, 1.22 * cm, 'Homly')
+        foot_text_x = margin_h + 1.45 * cm
+
+    canvas.setFillColor(_hex(INK_LIGHT))
+    canvas.setFont('Times-Roman', 7)
+    foot_max = page_w - margin_h - 3.4 * cm - foot_text_x
+    canvas.drawString(foot_text_x, 1.22 * cm, 'Plataforma de administración condominial')
+    user_line, fs = _fit_canvas_text(
+        canvas,
+        f'Generado el {_dt_es(generated_at)}  ·  Por: {generated_by}',
+        'Times-Roman', 7, foot_max, 6,
+    )
+    canvas.setFont('Times-Roman', fs)
+    canvas.drawString(foot_text_x, 0.88 * cm, user_line)
+    canvas.restoreState()
+
+
+def _styles():
+    from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY, TA_LEFT
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    styles = getSampleStyleSheet()
+
+    def S(name, **kw):
+        return ParagraphStyle(name, parent=styles['Normal'], **kw)
+
+    return {
+        'kicker': S('kicker', fontName='Times-Bold', fontSize=8.5, textColor=_hex(GOLD),
+                    leading=11, alignment=TA_CENTER, spaceAfter=4),
+        'title': S('title', fontName='Times-Bold', fontSize=16, textColor=_hex(NAVY),
+                   leading=20, alignment=TA_CENTER, spaceAfter=3),
+        'sub': S('sub', fontName='Times-Italic', fontSize=10, textColor=_hex(INK_MED),
+                 leading=13, alignment=TA_CENTER, spaceAfter=12),
+        'body': S('body', fontName='Times-Roman', fontSize=10.5, textColor=_hex(INK),
+                  leading=15.5, alignment=TA_JUSTIFY, spaceAfter=8),
+        'h': S('h', fontName='Times-Bold', fontSize=11, textColor=_hex(NAVY),
+               leading=14, spaceBefore=10, spaceAfter=6),
+        'ml': S('ml', fontName='Times-Bold', fontSize=9, textColor=_hex(NAVY), leading=12),
+        'mv': S('mv', fontName='Times-Roman', fontSize=9.5, textColor=_hex(INK), leading=13),
+        'small': S('sm', fontName='Times-Roman', fontSize=8.5, textColor=_hex(INK_LIGHT),
+                   leading=12, alignment=TA_JUSTIFY, spaceBefore=8),
+        'th': S('th', fontName='Times-Bold', fontSize=8, textColor=_hex(WHITE), leading=10, alignment=TA_CENTER),
+        'td': S('td', fontName='Times-Roman', fontSize=8, textColor=_hex(INK), leading=11, alignment=TA_LEFT),
+        'cap': S('cap', fontName='Times-Italic', fontSize=8, textColor=_hex(INK_LIGHT),
+                 leading=10, alignment=TA_CENTER),
+    }
+
+
+def _meta_table(rows, st, page_w, margin_h):
+    from reportlab.platypus import Paragraph, Table, TableStyle
+    from reportlab.lib.units import cm
+    data = [[Paragraph(_esc(k), st['ml']), Paragraph(_esc(v), st['mv'])] for k, v in rows if v]
+    if not data:
+        return []
+    w = page_w - 2 * margin_h
+    tbl = Table(data, colWidths=[4.4 * cm, w - 4.4 * cm])
+    tbl.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+        ('TOPPADDING', (0, 0), (-1, -1), 2),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+        ('BACKGROUND', (0, 0), (0, -1), _hex(SAND)),
+    ]))
+    return [tbl]
+
+
+def _image_flowable(evidence, max_w, max_h):
+    from reportlab.platypus import Image, Paragraph
+    from reportlab.lib.utils import ImageReader
+    name = ((evidence.original_name or '') + ' ' + (getattr(evidence.file, 'name', '') or '')).lower()
+    if not evidence.file or not any(ext in name for ext in ('.png', '.jpg', '.jpeg', '.webp', '.gif')):
+        return None
+    try:
+        evidence.file.open('rb')
+        reader = ImageReader(evidence.file)
+        iw, ih = reader.getSize()
+        if not iw or not ih:
+            return None
+        scale = min(max_w / iw, max_h / ih, 1)
+        img = Image(reader, width=iw * scale, height=ih * scale)
+        img.hAlign = 'CENTER'
+        return img
+    except Exception:
+        logger.exception('No se pudo incrustar evidencia %s', evidence.id)
+        return None
+
+
+def generate_work_pdf(work, generated_by='') -> bytes | None:
+    try:
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.units import cm
+        from reportlab.platypus import HRFlowable, KeepTogether, Paragraph, SimpleDocTemplate, Spacer
+    except ImportError:
+        logger.exception('ReportLab no disponible')
+        return None
+
+    import io
+    tenant = work.tenant
+    generated_at = timezone.localtime(timezone.now())
+    generated_by = (generated_by or '').strip() or _user_label(work.created_by) or '—'
+    page_w, page_h = A4
+    margin_h = 1.9 * cm
+    st = _styles()
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer, pagesize=A4,
+        leftMargin=margin_h, rightMargin=margin_h,
+        topMargin=3.85 * cm, bottomMargin=2.35 * cm,
+        title=f'Mantenimiento — {work.title}',
+        author=generated_by,
+        subject=f'Reporte de mantenimiento {KIND_ES.get(work.kind, work.kind)}',
+    )
+    story = [
+        Paragraph('REPORTE DE MANTENIMIENTO', st['kicker']),
+        Paragraph(_esc(work.title), st['title']),
+        Paragraph(
+            f'{KIND_ES.get(work.kind, work.kind)} · {STATUS_ES.get(work.status, work.status)}'
+            + (f' · { _esc(work.area_name)}' if work.area_name else ''),
+            st['sub'],
+        ),
+        HRFlowable(width='100%', thickness=0.4, color=_hex(RULE), spaceAfter=12),
+    ]
+    story.extend(_meta_table([
+        ('Tipo', KIND_ES.get(work.kind, work.kind)),
+        ('Estatus', STATUS_ES.get(work.status, work.status)),
+        ('Prioridad', PRIORITY_ES.get(work.priority, work.priority)),
+        ('Área o lugar', work.area_name),
+        ('Quién lo realiza', work.performed_by),
+        ('Proveedor', work.vendor_name),
+        ('Fecha programada', _date_es(work.scheduled_date)),
+        ('Fecha de realización', _date_es(work.performed_date)),
+        ('Periodicidad', FREQ_ES.get(work.frequency, work.frequency) if work.kind == 'preventivo' else ''),
+        ('Próxima fecha', _date_es(work.next_due_date) if work.next_due_date else ''),
+        ('Costo', _money(work.cost)),
+        ('Registró', _user_label(work.created_by)),
+    ], st, page_w, margin_h))
+
+    if work.description:
+        story.append(Paragraph('Planeación del trabajo', st['h']))
+        for para in (work.description or '').split('\n'):
+            if para.strip():
+                story.append(Paragraph(_esc(para.strip()), st['body']))
+    if work.work_notes:
+        story.append(Paragraph('Documentación de lo realizado', st['h']))
+        for para in (work.work_notes or '').split('\n'):
+            if para.strip():
+                story.append(Paragraph(_esc(para.strip()), st['body']))
+
+    evidences = list(work.evidences.all())
+    if evidences:
+        story.append(Paragraph('Evidencias', st['h']))
+        max_w = page_w - 2 * margin_h
+        for ev in evidences:
+            block = [Paragraph(
+                f'{EV_ES.get(ev.kind, ev.kind)}'
+                + (f' — {_esc(ev.notes)}' if ev.notes else '')
+                + (f' · {_esc(ev.original_name)}' if ev.original_name else ''),
+                st['mv'],
+            )]
+            img = _image_flowable(ev, max_w, 7.2 * cm)
+            if img:
+                block.append(Spacer(1, 6))
+                block.append(img)
+            elif ev.original_name:
+                block.append(Paragraph(_esc(f'Archivo adjunto: {ev.original_name}'), st['small']))
+            story.append(KeepTogether(block))
+            story.append(Spacer(1, 8))
+
+    story.append(Paragraph(
+        'Este documento forma parte del historial de mantenimientos del condominio. '
+        'Las fotografías y notas quedan como constancia interna de los trabajos.',
+        st['small'],
+    ))
+
+    def hf(canvas, _doc):
+        _header_footer(canvas, _doc, tenant, generated_at, generated_by)
+
+    try:
+        doc.build(story, onFirstPage=hf, onLaterPages=hf, canvasmaker=NumberedCanvas)
+    except Exception:
+        logger.exception('Error al construir PDF de mantenimiento')
+        return None
+    return buffer.getvalue()
+
+
+def generate_history_pdf(tenant, works, generated_by='', kind_filter='', year=None) -> bytes | None:
+    try:
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.units import cm
+        from reportlab.platypus import HRFlowable, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    except ImportError:
+        logger.exception('ReportLab no disponible')
+        return None
+
+    import io
+    generated_at = timezone.localtime(timezone.now())
+    generated_by = (generated_by or '').strip() or '—'
+    page_w, page_h = A4
+    margin_h = 1.9 * cm
+    st = _styles()
+    kind_label = KIND_ES.get(kind_filter, 'Preventivos y correctivos')
+    year_label = f' · Ejercicio {year}' if year else ''
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer, pagesize=A4,
+        leftMargin=margin_h, rightMargin=margin_h,
+        topMargin=3.85 * cm, bottomMargin=2.35 * cm,
+        title=f'Historial de mantenimientos — {tenant.name}',
+        author=generated_by,
+        subject='Historial de mantenimientos',
+    )
+    story = [
+        Paragraph('HISTORIAL DE MANTENIMIENTOS', st['kicker']),
+        Paragraph(_esc(tenant.razon_social or tenant.name or 'Condominio'), st['title']),
+        Paragraph(f'{kind_label}{year_label}', st['sub']),
+        HRFlowable(width='100%', thickness=0.4, color=_hex(RULE), spaceAfter=12),
+    ]
+
+    counts = {'planeado': 0, 'en_curso': 0, 'realizado': 0, 'cancelado': 0}
+    for w in works:
+        counts[w.status] = counts.get(w.status, 0) + 1
+    story.extend(_meta_table([
+        ('Trabajos', str(len(works))),
+        ('Realizados', str(counts.get('realizado') or 0)),
+        ('En curso', str(counts.get('en_curso') or 0)),
+        ('Planeados', str(counts.get('planeado') or 0)),
+        ('Cancelados', str(counts.get('cancelado') or 0)),
+    ], st, page_w, margin_h))
+    story.append(Spacer(1, 10))
+
+    if not works:
+        story.append(Paragraph('Aún no hay trabajos registrados en este filtro.', st['body']))
+    else:
+        header = [
+            Paragraph('Fecha', st['th']),
+            Paragraph('Tipo', st['th']),
+            Paragraph('Trabajo', st['th']),
+            Paragraph('Área', st['th']),
+            Paragraph('Realiza', st['th']),
+            Paragraph('Estatus', st['th']),
+        ]
+        rows = [header]
+        for w in works:
+            when = w.performed_date or w.scheduled_date
+            rows.append([
+                Paragraph(_esc(when.strftime('%d/%m/%Y') if when else '—'), st['td']),
+                Paragraph(_esc(KIND_ES.get(w.kind, w.kind)), st['td']),
+                Paragraph(_esc(w.title), st['td']),
+                Paragraph(_esc(w.area_name or '—'), st['td']),
+                Paragraph(_esc(w.performed_by or '—'), st['td']),
+                Paragraph(_esc(STATUS_ES.get(w.status, w.status)), st['td']),
+            ])
+        w = page_w - 2 * margin_h
+        tbl = Table(rows, colWidths=[2.1 * cm, 2.2 * cm, w * 0.32, w * 0.18, w * 0.18, 2.2 * cm])
+        tbl.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), _hex(NAVY)),
+            ('BACKGROUND', (0, 1), (-1, -1), _hex(SAND)),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('LEFTPADDING', (0, 0), (-1, -1), 4),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+            ('TOPPADDING', (0, 0), (-1, -1), 4),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+            ('GRID', (0, 0), (-1, -1), 0.25, _hex(RULE)),
+        ]))
+        story.append(tbl)
+
+    story.append(Paragraph(
+        'Bitácora interna de trabajos de mantenimiento. Cada ficha individual '
+        'puede imprimirse con su planeación, documentación y evidencias de antes y después.',
+        st['small'],
+    ))
+
+    def hf(canvas, _doc):
+        _header_footer(canvas, _doc, tenant, generated_at, generated_by)
+
+    try:
+        doc.build(story, onFirstPage=hf, onLaterPages=hf, canvasmaker=NumberedCanvas)
+    except Exception:
+        logger.exception('Error al construir historial de mantenimiento')
+        return None
+    return buffer.getvalue()

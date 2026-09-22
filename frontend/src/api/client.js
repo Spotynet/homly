@@ -385,6 +385,19 @@ export const asambleasAPI = {
   deleteFile:    (tenantId, id, fileId) => api.delete(`/tenants/${tenantId}/condo-assemblies/${id}/files/${fileId}/`),
 };
 
+export const mantenimientosAPI = {
+  context:       (tenantId) => api.get(`/tenants/${tenantId}/mantenimientos-context/`),
+  list:          (tenantId, params) => api.get(`/tenants/${tenantId}/condo-maintenance/`, { params }),
+  get:           (tenantId, id) => api.get(`/tenants/${tenantId}/condo-maintenance/${id}/`),
+  create:        (tenantId, data) => api.post(`/tenants/${tenantId}/condo-maintenance/`, data),
+  update:        (tenantId, id, data) => api.patch(`/tenants/${tenantId}/condo-maintenance/${id}/`, data),
+  delete:        (tenantId, id) => api.delete(`/tenants/${tenantId}/condo-maintenance/${id}/`),
+  uploadEvidence:(tenantId, id, formData) => api.post(`/tenants/${tenantId}/condo-maintenance/${id}/evidences/`, formData),
+  deleteEvidence:(tenantId, id, fileId) => api.delete(`/tenants/${tenantId}/condo-maintenance/${id}/evidences/${fileId}/`),
+  printDoc:      (tenantId, id) => api.get(`/tenants/${tenantId}/condo-maintenance/${id}/print-doc/`, { responseType: 'blob' }),
+  printReport:   (tenantId, params) => api.get(`/tenants/${tenantId}/condo-maintenance/print-report/`, { params, responseType: 'blob' }),
+};
+
 export const assemblyAPI = {
   positions: (tenantId) => api.get(`/tenants/${tenantId}/assembly-positions/`),
   createPosition: (tenantId, data) => api.post(`/tenants/${tenantId}/assembly-positions/`, data),

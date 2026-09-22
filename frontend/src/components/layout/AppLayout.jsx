@@ -4,14 +4,14 @@ import { useAuth } from '../../context/AuthContext';
 import { useGuide } from '../../context/GuideContext';
 import { HomlyBrand, APP_VERSION, ROLES } from '../../utils/helpers';
 import { notificationsAPI, tenantsAPI, paymentPlansAPI } from '../../api/client';
-import { ROLE_BASE_MODULES, RENTAL_ROLE_BASE_MODULES } from '../../constants/modulePermissions';
+import { isModuleVisible } from '../../constants/modulePermissions';
 import GuideModal from '../onboarding/GuideModal';
 import HelpDrawer from './HelpDrawer';
 import {
   Home, Globe, FileText, ShoppingBag, Receipt, Settings,
   Users, Building, Shield, LogOut, Menu, X, Calendar,
   ChevronDown, Check, Building2, Bell, CheckCheck, Activity, Lock, TrendingDown,
-  Sparkles, CreditCard, DollarSign, Target, Newspaper, Send, HelpCircle, ClipboardList, ClipboardCheck, Vote,
+  Sparkles, CreditCard, DollarSign, Target, Newspaper, Send, HelpCircle, ClipboardList, ClipboardCheck, Vote, Wrench,
 } from 'lucide-react';
 
 const NAV_ITEMS = {
@@ -27,7 +27,8 @@ const NAV_ITEMS = {
       { path: '/app/dashboard',      icon: Home,      label: 'Dashboard'      },
       { path: '/app/reservas',       icon: Calendar,  label: 'Reservas'       },
       { path: '/app/blog',           icon: Newspaper, label: 'Comunicación'   },
-      { path: '/app/asambleas',      icon: Vote,      label: 'Asambleas'      },
+      { path: '/app/asambleas',       icon: Vote,      label: 'Asambleas'       },
+      { path: '/app/mantenimientos',  icon: Wrench,    label: 'Mantenimientos'  },
       { path: '/app/notificaciones', icon: Bell,      label: 'Notificaciones' },
       { path: '/app/onboarding',     icon: Sparkles,  label: 'Guías de uso'   },
     ]},
@@ -51,7 +52,8 @@ const NAV_ITEMS = {
       { path: '/app/dashboard',      icon: Home,      label: 'Dashboard'      },
       { path: '/app/reservas',       icon: Calendar,  label: 'Reservas'       },
       { path: '/app/blog',           icon: Newspaper, label: 'Comunicación'   },
-      { path: '/app/asambleas',      icon: Vote,      label: 'Asambleas'      },
+      { path: '/app/asambleas',       icon: Vote,      label: 'Asambleas'       },
+      { path: '/app/mantenimientos',  icon: Wrench,    label: 'Mantenimientos'  },
       { path: '/app/notificaciones', icon: Bell,      label: 'Notificaciones' },
       { path: '/app/onboarding',     icon: Sparkles,  label: 'Guías de uso'   },
     ]},
@@ -75,7 +77,8 @@ const NAV_ITEMS = {
       { path: '/app/dashboard',      icon: Home,      label: 'Dashboard'      },
       { path: '/app/reservas',       icon: Calendar,  label: 'Reservas'       },
       { path: '/app/blog',           icon: Newspaper, label: 'Comunicación'   },
-      { path: '/app/asambleas',      icon: Vote,      label: 'Asambleas'      },
+      { path: '/app/asambleas',       icon: Vote,      label: 'Asambleas'       },
+      { path: '/app/mantenimientos',  icon: Wrench,    label: 'Mantenimientos'  },
       { path: '/app/notificaciones', icon: Bell,      label: 'Notificaciones' },
       { path: '/app/onboarding',     icon: Sparkles,  label: 'Guías de uso'   },
     ]},
@@ -95,7 +98,8 @@ const NAV_ITEMS = {
       { path: '/app/dashboard',      icon: Home,      label: 'Dashboard'      },
       { path: '/app/reservas',       icon: Calendar,  label: 'Reservas'       },
       { path: '/app/blog',           icon: Newspaper, label: 'Comunicación'   },
-      { path: '/app/asambleas',      icon: Vote,      label: 'Asambleas'      },
+      { path: '/app/asambleas',       icon: Vote,      label: 'Asambleas'       },
+      { path: '/app/mantenimientos',  icon: Wrench,    label: 'Mantenimientos'  },
       { path: '/app/notificaciones', icon: Bell,      label: 'Notificaciones' },
       { path: '/app/onboarding',     icon: Sparkles,  label: 'Guías de uso'   },
     ]},
@@ -115,7 +119,8 @@ const NAV_ITEMS = {
       { path: '/app/dashboard',      icon: Home,      label: 'Dashboard'      },
       { path: '/app/reservas',       icon: Calendar,  label: 'Reservas'       },
       { path: '/app/blog',           icon: Newspaper, label: 'Comunicación'   },
-      { path: '/app/asambleas',      icon: Vote,      label: 'Asambleas'      },
+      { path: '/app/asambleas',       icon: Vote,      label: 'Asambleas'       },
+      { path: '/app/mantenimientos',  icon: Wrench,    label: 'Mantenimientos'  },
       { path: '/app/notificaciones', icon: Bell,      label: 'Notificaciones' },
       { path: '/app/onboarding',     icon: Sparkles,  label: 'Guías de uso'   },
     ]},
@@ -135,7 +140,8 @@ const NAV_ITEMS = {
       { path: '/app/dashboard',      icon: Home,      label: 'Dashboard'      },
       { path: '/app/reservas',       icon: Calendar,  label: 'Reservas'       },
       { path: '/app/blog',           icon: Newspaper, label: 'Comunicación'   },
-      { path: '/app/asambleas',      icon: Vote,      label: 'Asambleas'      },
+      { path: '/app/asambleas',       icon: Vote,      label: 'Asambleas'       },
+      { path: '/app/mantenimientos',  icon: Wrench,    label: 'Mantenimientos'  },
       { path: '/app/notificaciones', icon: Bell,      label: 'Notificaciones' },
     ]},
   ],
@@ -145,7 +151,8 @@ const NAV_ITEMS = {
       { path: '/app/my-unit',        icon: Home,      label: 'Mi Unidad'      },
       { path: '/app/reservas',       icon: Calendar,  label: 'Reservas'       },
       { path: '/app/blog',           icon: Newspaper, label: 'Comunicación'   },
-      { path: '/app/asambleas',      icon: Vote,      label: 'Asambleas'      },
+      { path: '/app/asambleas',       icon: Vote,      label: 'Asambleas'       },
+      { path: '/app/mantenimientos',  icon: Wrench,    label: 'Mantenimientos'  },
       { path: '/app/notificaciones', icon: Bell,      label: 'Notificaciones' },
       { path: '/app/onboarding',     icon: Sparkles,  label: 'Guías de uso'   },
     ]},
@@ -232,6 +239,7 @@ const PATH_TO_MODULE = {
   '/app/cierre-periodo':  'cierre_periodo',
   '/app/planeacion':      'planeacion',
   '/app/asambleas':       'asambleas',
+  '/app/mantenimientos':  'mantenimientos',
   '/app/notificaciones':  'notificaciones',
   '/app/config':          'config',
   '/app/my-unit':         'my_unit',
@@ -262,6 +270,7 @@ const PAGE_TITLES = {
   'cierre-periodo': 'Cierre de Período',
   planeacion: 'Planeación',
   asambleas: 'Asambleas',
+  mantenimientos: 'Mantenimientos',
   config: 'Configuración',
   units: 'Unidades',
   users: 'Usuarios',
@@ -569,19 +578,11 @@ function NotificationBell({ tenantId, role, tenantModulePerms, activeProfile }) 
     if (!role || role === 'superadmin' || role === 'admin') return true;
     const moduleKey = n.related_reservation_id ? 'reservas' : NOTIF_MODULE_MAP[n.notif_type];
     if (!moduleKey) return false; // no known destination → read-only
-    let permsEntry;
     if (activeProfile) {
       // Custom profile: strict — only explicitly enabled modules grant navigation
       return isModuleVisible(activeProfile.modules, moduleKey, null, true);
-    } else {
-      permsEntry = tenantModulePerms ? tenantModulePerms[role] : undefined;
     }
-    if (!permsEntry) return true;
-    if (Array.isArray(permsEntry)) {
-      return permsEntry.includes(moduleKey) || !!(ROLE_BASE_MODULES[role]?.includes(moduleKey) || RENTAL_ROLE_BASE_MODULES[role]?.includes(moduleKey));
-    }
-    const level = permsEntry[moduleKey];
-    return level === undefined || level !== 'hidden';
+    return isModuleVisible(tenantModulePerms ? tenantModulePerms[role] : undefined, moduleKey, role);
   };
 
   const handleClickNotif = async (n) => {
@@ -848,27 +849,6 @@ export default function AppLayout() {
   const roleConfig = activeProfile
     ? { label: activeProfile.label, color: activeProfile.color || 'var(--teal-500)' }
     : (ROLES[role] || ROLES.vecino);
-
-  // Helper: resolve visibility from a perms entry (handles old array + new object formats).
-  // roleKey is needed to check ROLE_BASE_MODULES for new modules missing from old-format arrays.
-  // isProfilePerms=true means the entry belongs to a custom profile (standalone, no base role):
-  //   - modules not explicitly configured default to hidden (not visible).
-  const isModuleVisible = (permsEntry, moduleKey, roleKey, isProfilePerms = false) => {
-    if (!permsEntry) return !isProfilePerms; // no config: show for roles, hide for profiles
-    if (Array.isArray(permsEntry)) {
-      // Old array format: explicit allowlist of visible modules.
-      if (permsEntry.includes(moduleKey)) return true;
-      // For profile arrays each entry is a module key explicitly allowed:
-      if (isProfilePerms) return false;
-      // For role configs: if module added after save, default to visible.
-      if (roleKey && (ROLE_BASE_MODULES[roleKey]?.includes(moduleKey) || RENTAL_ROLE_BASE_MODULES[roleKey]?.includes(moduleKey))) return true;
-      return false;
-    }
-    // New object format: { moduleKey: "write"|"read"|"hidden" }
-    const val = permsEntry[moduleKey];
-    if (val === undefined) return !isProfilePerms; // profiles: hidden by default; roles: visible
-    return val !== 'hidden';
-  };
 
   // Filter nav based on module permissions or custom profile modules
   const isRentalWorkspace = workspaceType === 'rentas';

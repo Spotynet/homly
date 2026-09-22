@@ -91,6 +91,8 @@ const SYSTEM_MODULES = [
   { key: 'cierre_periodo',  label: 'Cierre de Período',      desc: 'Cierre y reapertura de períodos' },
   { key: 'planeacion',      label: 'Planeación',             desc: 'Presupuesto anual y proyectos del condominio' },
   { key: 'asambleas',       label: 'Asambleas',               desc: 'Convocatorias, quórum, minutas e historial' },
+  { key: 'mantenimientos',  label: 'Mantenimientos',          desc: 'Preventivos, correctivos, evidencias e historial' },
+  { key: 'blog',            label: 'Comunicación',            desc: 'Publicaciones y comunicados para la comunidad' },
   { key: 'config',          label: 'Configuración',          desc: 'Ajustes generales del condominio' },
   { key: 'my_unit',         label: 'Mi Unidad',              desc: 'Vista individual para residentes' },
 ];

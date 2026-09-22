@@ -5,7 +5,7 @@ import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { queryClient } from './lib/queryClient';
 import { GuideProvider } from './context/GuideContext';
-import { ROLE_BASE_MODULES, RENTAL_ROLE_BASE_MODULES } from './constants/modulePermissions';
+import { ROLE_BASE_MODULES, RENTAL_ROLE_BASE_MODULES, isCondoModuleAssignable } from './constants/modulePermissions';
 import RentalDashboard from './pages/rentas/RentalDashboard';
 import RentalProperties from './pages/rentas/RentalProperties';
 import RentalContracts from './pages/rentas/RentalContracts';
@@ -44,6 +44,7 @@ import Blog from './pages/Blog';
 import EnviarPago from './pages/EnviarPago';
 import Planeacion from './pages/Planeacion';
 import Asambleas from './pages/Asambleas';
+import Mantenimientos from './pages/Mantenimientos';
 
 const LOADER = (
   <div className="flex items-center justify-center h-screen bg-white">
@@ -69,8 +70,8 @@ function PrivateRoute({ children }) {
 }
 
 // Role-based route guard — redirects to /app (index) if the current role
-// does not include the given module in ROLE_BASE_MODULES.
-// superadmin bypasses all checks. Loading state defers the check.
+// cannot receive the given module. Custom profiles are standalone (nav +
+// profile modules decide visibility). Superadmin bypasses all checks.
 function RoleRoute({ module: moduleKey, workspace, children }) {
   const { role, isSuperAdmin, loading, workspaceType } = useAuth();
 
@@ -86,14 +87,25 @@ function RoleRoute({ module: moduleKey, workspace, children }) {
   // Superadmin has unrestricted access
   if (isSuperAdmin) return children;
 
-  const allowedModules = (workspace === 'rentas' || (!workspace && workspaceType === 'rentas'))
-    ? (RENTAL_ROLE_BASE_MODULES[role] || [])
-    : (ROLE_BASE_MODULES[role] || []);
-  if (!allowedModules.includes(moduleKey)) {
-    return <Navigate to="/app" replace />;
+  // Custom profiles do not inherit a predefined role; the profile module list
+  // in AppLayout is the visibility source of truth.
+  if (role === 'custom') return children;
+
+  const isRental = workspace === 'rentas' || (!workspace && workspaceType === 'rentas');
+  if (isRental) {
+    const allowedModules = RENTAL_ROLE_BASE_MODULES[role] || [];
+    if (!allowedModules.includes(moduleKey)) {
+      return <Navigate to="/app" replace />;
+    }
+    return children;
   }
 
-  return children;
+  const base = ROLE_BASE_MODULES[role] || [];
+  if (base.includes(moduleKey) || isCondoModuleAssignable(role, moduleKey)) {
+    return children;
+  }
+
+  return <Navigate to="/app" replace />;
 }
 
 function AppRoutes() {
@@ -159,6 +171,7 @@ function AppRoutes() {
         <Route path="cierre-periodo" element={<RoleRoute module="cierre_periodo" workspace="condominio"><CierrePeriodo /></RoleRoute>} />
         <Route path="planeacion"    element={<RoleRoute module="planeacion" workspace="condominio"><Planeacion /></RoleRoute>} />
         <Route path="asambleas"     element={<RoleRoute module="asambleas" workspace="condominio"><Asambleas /></RoleRoute>} />
+        <Route path="mantenimientos" element={<RoleRoute module="mantenimientos" workspace="condominio"><Mantenimientos /></RoleRoute>} />
         <Route path="plan-pagos"    element={<RoleRoute module="plan_pagos" workspace="condominio"><PlanPagos /></RoleRoute>} />
         <Route path="onboarding"    element={<RoleRoute module="onboarding" workspace="condominio"><Onboarding /></RoleRoute>} />
         <Route path="mi-membresia"  element={<RoleRoute module="mi_membresia"><MiMembresia /></RoleRoute>} />

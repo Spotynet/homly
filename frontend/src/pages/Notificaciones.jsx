@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
 import { notificationsAPI } from '../api/client';
-import { ROLE_BASE_MODULES, RENTAL_ROLE_BASE_MODULES } from '../constants/modulePermissions';
+import { isModuleVisible } from '../constants/modulePermissions';
 import { Bell, CheckCheck, Calendar, Filter, Lock } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useNotificacionesData } from '../hooks/useNotificacionesData';
@@ -120,21 +120,10 @@ export default function Notificaciones() {
     if (!role || role === 'superadmin' || role === 'admin') return true;
     const moduleKey = n.related_reservation_id ? 'reservas' : NOTIF_MODULE_MAP[n.notif_type];
     if (!moduleKey) return false;
-    let permsEntry;
     if (activeProfile) {
-      const profileMods = activeProfile.modules;
-      if (!profileMods || (Array.isArray(profileMods) && profileMods.length === 0) ||
-          (typeof profileMods === 'object' && !Array.isArray(profileMods) && Object.keys(profileMods).length === 0)) return true;
-      permsEntry = profileMods;
-    } else {
-      permsEntry = modulePerms[role];
+      return isModuleVisible(activeProfile.modules, moduleKey, null, true);
     }
-    if (!permsEntry) return true;
-    if (Array.isArray(permsEntry)) {
-      return permsEntry.includes(moduleKey) || !!(ROLE_BASE_MODULES[role]?.includes(moduleKey) || RENTAL_ROLE_BASE_MODULES[role]?.includes(moduleKey));
-    }
-    const level = permsEntry[moduleKey];
-    return level === undefined || level !== 'hidden';
+    return isModuleVisible(modulePerms[role], moduleKey, role);
   };
 
   const handleMarkAll = async () => {
