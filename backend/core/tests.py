@@ -692,3 +692,52 @@ class PaymentPlanSettlementTests(BaseTestCase):
         self.assertLess(balance, 12000)
         self.assertGreater(balance, 7000)
 
+
+# ═══════════════════════════════════════════════════════════
+#  DIRECTORIO (Comunicación)
+# ═══════════════════════════════════════════════════════════
+
+class ResidentDirectoryTests(BaseTestCase):
+
+    def _url(self, tenant_id=None):
+        tid = tenant_id or self.tenant.id
+        return f'/api/tenants/{tid}/blog-posts/directory/'
+
+    def test_admin_can_view_directory(self):
+        self.login_as('carlos@email.com', 'Admin123', self.tenant.id)
+        resp = self.client.get(self._url())
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data['tenant_name'], 'Residencial Las Palmas')
+        kinds = {e['kind'] for e in resp.data['entries']}
+        self.assertIn('propietario', kinds)
+        self.assertIn('inquilino', kinds)
+        self.assertGreaterEqual(resp.data['owners_count'], 3)
+        self.assertGreaterEqual(resp.data['tenants_count'], 1)
+        sample = resp.data['entries'][0]
+        self.assertNotIn('previous_debt', sample)
+        self.assertNotIn('credit_balance', sample)
+
+    def test_vecino_can_view_directory(self):
+        self.login_as('ana@email.com', 'Vecino12', self.tenant.id)
+        resp = self.client.get(self._url())
+        self.assertEqual(resp.status_code, 200)
+        names = {e['name'] for e in resp.data['entries']}
+        self.assertIn('Carlos Rodríguez', names)
+        self.assertIn('Juan Pérez', names)
+
+    def test_inactive_units_are_excluded(self):
+        self.unit3.is_active = False
+        self.unit3.save(update_fields=['is_active'])
+        self.login_as('carlos@email.com', 'Admin123', self.tenant.id)
+        resp = self.client.get(self._url())
+        self.assertEqual(resp.status_code, 200)
+        names = {e['name'] for e in resp.data['entries']}
+        self.assertNotIn('Ana García', names)
+
+    def test_rentas_workspace_rejected(self):
+        self.tenant.workspace_type = 'rentas'
+        self.tenant.save(update_fields=['workspace_type'])
+        self.login_as('carlos@email.com', 'Admin123', self.tenant.id)
+        resp = self.client.get(self._url())
+        self.assertEqual(resp.status_code, 400)
+

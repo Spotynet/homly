@@ -8975,7 +8975,7 @@ class BlogPostViewSet(viewsets.ModelViewSet):
         return BlogPostSerializer
 
     def get_permissions(self):
-        if self.action in ['list', 'retrieve', 'react', 'comments', 'add_comment', 'delete_comment']:
+        if self.action in ['list', 'retrieve', 'react', 'comments', 'add_comment', 'delete_comment', 'directory']:
             return [IsTenantMember()]
         return [IsTenantAdmin()]
 
@@ -9262,6 +9262,72 @@ class BlogPostViewSet(viewsets.ModelViewSet):
             views_count=F('views_count') + 1
         )
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @action(detail=False, methods=['get'], url_path='directory', permission_classes=[IsTenantMember])
+    def directory(self, request, tenant_id=None):
+        """
+        GET /api/tenants/{tenant_id}/blog-posts/directory/
+        Directorio de propietarios e inquilinos del condominio.
+        Solo datos de contacto (sin información financiera).
+        Disponible para cualquier miembro con acceso al módulo de Comunicación.
+        """
+        try:
+            tenant = Tenant.objects.get(id=tenant_id)
+        except Tenant.DoesNotExist:
+            return Response({'detail': 'Condominio no encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+
+        if getattr(tenant, 'workspace_type', 'condominio') != 'condominio':
+            return Response(
+                {'detail': 'El directorio solo está disponible en el espacio de condominio.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        units = Unit.objects.filter(tenant_id=tenant_id, is_active=True).order_by('unit_id_code')
+        entries = []
+
+        def _append(unit, kind, kind_label, first, last, email, phone):
+            name = f'{first or ""} {last or ""}'.strip()
+            email = (email or '').strip()
+            phone = (phone or '').strip()
+            if not (name or email or phone):
+                return
+            entries.append({
+                'unit_id': str(unit.id),
+                'unit_code': unit.unit_id_code,
+                'unit_name': unit.unit_name,
+                'kind': kind,
+                'kind_label': kind_label,
+                'name': name,
+                'email': email,
+                'phone': phone,
+            })
+
+        for unit in units:
+            _append(
+                unit, 'propietario', 'Propietario',
+                unit.owner_first_name, unit.owner_last_name,
+                unit.owner_email, unit.owner_phone,
+            )
+            _append(
+                unit, 'copropietario', 'Copropietario',
+                unit.coowner_first_name, unit.coowner_last_name,
+                unit.coowner_email, unit.coowner_phone,
+            )
+            if unit.occupancy == 'rentado' or unit.tenant_first_name or unit.tenant_last_name or unit.tenant_email or unit.tenant_phone:
+                _append(
+                    unit, 'inquilino', 'Inquilino',
+                    unit.tenant_first_name, unit.tenant_last_name,
+                    unit.tenant_email, unit.tenant_phone,
+                )
+
+        return Response({
+            'tenant_name': tenant.name,
+            'count': len(entries),
+            'owners_count': sum(1 for e in entries if e['kind'] in ('propietario', 'copropietario')),
+            'tenants_count': sum(1 for e in entries if e['kind'] == 'inquilino'),
+            'units_count': units.count(),
+            'entries': entries,
+        })
 
 
 # ═══════════════════════════════════════════════════════════

@@ -11,8 +11,9 @@ import {
   MoreVertical, Heart, MessageSquare, Share2, Tag, Layout,
   Newspaper, Sparkles, Upload, Check, AlertCircle, ChevronRight,
   Building2, Save, EyeOff, Palette, Type, Minus, Quote, CheckCircle2,
-  Loader2, Mail, LayoutList, LayoutGrid,
+  Loader2, Mail, LayoutList, LayoutGrid, Contact,
 } from 'lucide-react';
+import ResidentDirectoryModal from '../components/ResidentDirectoryModal';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const STATUS = {
@@ -574,11 +575,12 @@ function MobileListCard({ article, onView, onEdit, onDelete, isAdmin }) {
 }
 
 // ─── View: Dashboard ──────────────────────────────────────────────────────────
-function BlogDashboard({ articles, loading, isAdmin, onNew, onEdit, onView, onDelete, tenantName }) {
+function BlogDashboard({ articles, loading, isAdmin, onNew, onEdit, onView, onDelete, tenantName, tenantId }) {
   const [search, setSearch]               = useState('');
   const [filterStatus, setFilterStatus]   = useState('all');
   const [filterCategory, setFilterCategory] = useState('all');
   const [mobileView, setMobileView]       = useState('list'); // 'list' | 'grid'
+  const [showDirectory, setShowDirectory] = useState(false);
 
   const uniqueArticles = Array.from(
     new Map((articles || []).map(a => [a.id, a])).values()
@@ -618,13 +620,21 @@ function BlogDashboard({ articles, loading, isAdmin, onNew, onEdit, onView, onDe
               <p className="text-xs font-semibold text-teal-600 truncate">{tenantName}</p>
             </div>
           </div>
-          {/* Desktop new-article button */}
-          {isAdmin && (
-            <button onClick={onNew}
-              className="hidden sm:inline-flex items-center gap-2 bg-teal-600 hover:bg-teal-700 text-white px-4 py-2.5 rounded-xl text-sm font-semibold shadow-sm transition-all hover:shadow-md active:scale-95">
-              <Plus size={15} /> Nuevo Artículo
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <button
+              onClick={() => setShowDirectory(true)}
+              className="inline-flex items-center gap-1.5 sm:gap-2 bg-white hover:bg-teal-50 text-teal-700 border border-teal-200 hover:border-teal-300 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl text-sm font-semibold shadow-sm transition-all active:scale-95"
+            >
+              <Contact size={15} />
+              Directorio
             </button>
-          )}
+            {isAdmin && (
+              <button onClick={onNew}
+                className="hidden sm:inline-flex items-center gap-2 bg-teal-600 hover:bg-teal-700 text-white px-4 py-2.5 rounded-xl text-sm font-semibold shadow-sm transition-all hover:shadow-md active:scale-95">
+                <Plus size={15} /> Nuevo Artículo
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -939,6 +949,14 @@ function BlogDashboard({ articles, loading, isAdmin, onNew, onEdit, onView, onDe
         >
           <Plus size={24} />
         </button>
+      )}
+
+      {showDirectory && (
+        <ResidentDirectoryModal
+          tenantId={tenantId}
+          tenantName={tenantName}
+          onClose={() => setShowDirectory(false)}
+        />
       )}
     </div>
   );
@@ -1895,6 +1913,7 @@ export default function Blog() {
           onView={handleView}
           onDelete={handleDelete}
           tenantName={tenantName}
+          tenantId={tenantId}
         />
       )}
       {view === 'editor' && (

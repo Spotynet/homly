@@ -627,6 +627,7 @@ export const blogAPI = {
     api.post(`/tenants/${tenantId}/blog-posts/${id}/cover-image/`, formData),
   recordView: (tenantId, id)    => api.post(`/tenants/${tenantId}/blog-posts/${id}/view/`),
   react: (tenantId, id, type)   => api.post(`/tenants/${tenantId}/blog-posts/${id}/react/`, { type }),
+  directory: (tenantId)         => api.get(`/tenants/${tenantId}/blog-posts/directory/`),
   comments: {
     list:   (tenantId, postId)            => api.get(`/tenants/${tenantId}/blog-posts/${postId}/comments/`),
     add:    (tenantId, postId, content)   => api.post(`/tenants/${tenantId}/blog-posts/${postId}/comments/add/`, { content }),

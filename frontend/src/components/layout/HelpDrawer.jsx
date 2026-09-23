@@ -259,6 +259,10 @@ const HELP_SECTIONS = [
         q: '¿Los residentes pueden comentar y reaccionar?',
         a: 'Sí. Los residentes pueden dejar reacciones (👍 Me gusta, ❤️ Me encanta, 👏 Aplauso, 💡 Buena idea) en cualquier artículo publicado. Solo pueden tener una reacción activa por artículo. Los comentarios se muestran al final del artículo.',
       },
+      {
+        q: '¿Dónde consulto el directorio de propietarios e inquilinos?',
+        a: 'En Comunicación, el botón "Directorio" abre un listado de propietarios, copropietarios e inquilinos de las unidades activas (nombre, email y teléfono). Quien tenga acceso al módulo puede consultarlo, buscar, filtrar e imprimirlo o descargarlo en CSV.',
+      },
     ],
   },
   {
