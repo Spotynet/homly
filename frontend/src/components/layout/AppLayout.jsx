@@ -26,12 +26,14 @@ const NAV_ITEMS = {
     { section: 'tenant_general', label: 'General', items: [
       { path: '/app/dashboard',      icon: Home,      label: 'Dashboard'      },
       { path: '/app/reservas',       icon: Calendar,  label: 'Reservas'       },
-      { path: '/app/blog',           icon: Newspaper, label: 'Comunicación'   },
-      { path: '/app/asambleas',       icon: Vote,      label: 'Asambleas'       },
-      { path: '/app/mantenimientos',  icon: Wrench,    label: 'Mantenimientos'  },
       { path: '/app/paqueteria',      icon: Package,   label: 'Paquetería'      },
       { path: '/app/notificaciones', icon: Bell,      label: 'Notificaciones' },
       { path: '/app/onboarding',     icon: Sparkles,  label: 'Guías de uso'   },
+    ]},
+    { section: 'tenant_admin', label: 'Administración', items: [
+      { path: '/app/blog',           icon: Newspaper, label: 'Comunicación'   },
+      { path: '/app/mantenimientos',  icon: Wrench,    label: 'Mantenimientos'  },
+      { path: '/app/asambleas',       icon: Vote,      label: 'Asambleas'       },
     ]},
     { section: 'tenant_finanzas', label: 'Finanzas', items: [
       { path: '/app/cobranza',       icon: Receipt,      label: 'Cobranza'          },
@@ -52,12 +54,14 @@ const NAV_ITEMS = {
     { section: 'general', label: 'General', items: [
       { path: '/app/dashboard',      icon: Home,      label: 'Dashboard'      },
       { path: '/app/reservas',       icon: Calendar,  label: 'Reservas'       },
-      { path: '/app/blog',           icon: Newspaper, label: 'Comunicación'   },
-      { path: '/app/asambleas',       icon: Vote,      label: 'Asambleas'       },
-      { path: '/app/mantenimientos',  icon: Wrench,    label: 'Mantenimientos'  },
       { path: '/app/paqueteria',      icon: Package,   label: 'Paquetería'      },
       { path: '/app/notificaciones', icon: Bell,      label: 'Notificaciones' },
       { path: '/app/onboarding',     icon: Sparkles,  label: 'Guías de uso'   },
+    ]},
+    { section: 'administracion', label: 'Administración', items: [
+      { path: '/app/blog',           icon: Newspaper, label: 'Comunicación'   },
+      { path: '/app/mantenimientos',  icon: Wrench,    label: 'Mantenimientos'  },
+      { path: '/app/asambleas',       icon: Vote,      label: 'Asambleas'       },
     ]},
     { section: 'finanzas', label: 'Finanzas', items: [
       { path: '/app/cobranza',       icon: Receipt,      label: 'Cobranza'          },
@@ -78,12 +82,14 @@ const NAV_ITEMS = {
     { section: 'general', label: 'General', items: [
       { path: '/app/dashboard',      icon: Home,      label: 'Dashboard'      },
       { path: '/app/reservas',       icon: Calendar,  label: 'Reservas'       },
-      { path: '/app/blog',           icon: Newspaper, label: 'Comunicación'   },
-      { path: '/app/asambleas',       icon: Vote,      label: 'Asambleas'       },
-      { path: '/app/mantenimientos',  icon: Wrench,    label: 'Mantenimientos'  },
       { path: '/app/paqueteria',      icon: Package,   label: 'Paquetería'      },
       { path: '/app/notificaciones', icon: Bell,      label: 'Notificaciones' },
       { path: '/app/onboarding',     icon: Sparkles,  label: 'Guías de uso'   },
+    ]},
+    { section: 'administracion', label: 'Administración', items: [
+      { path: '/app/blog',           icon: Newspaper, label: 'Comunicación'   },
+      { path: '/app/mantenimientos',  icon: Wrench,    label: 'Mantenimientos'  },
+      { path: '/app/asambleas',       icon: Vote,      label: 'Asambleas'       },
     ]},
     { section: 'finanzas', label: 'Finanzas', items: [
       { path: '/app/cobranza',       icon: Receipt,      label: 'Cobranza'          },
@@ -100,12 +106,14 @@ const NAV_ITEMS = {
     { section: 'general', label: 'General', items: [
       { path: '/app/dashboard',      icon: Home,      label: 'Dashboard'      },
       { path: '/app/reservas',       icon: Calendar,  label: 'Reservas'       },
-      { path: '/app/blog',           icon: Newspaper, label: 'Comunicación'   },
-      { path: '/app/asambleas',       icon: Vote,      label: 'Asambleas'       },
-      { path: '/app/mantenimientos',  icon: Wrench,    label: 'Mantenimientos'  },
       { path: '/app/paqueteria',      icon: Package,   label: 'Paquetería'      },
       { path: '/app/notificaciones', icon: Bell,      label: 'Notificaciones' },
       { path: '/app/onboarding',     icon: Sparkles,  label: 'Guías de uso'   },
+    ]},
+    { section: 'administracion', label: 'Administración', items: [
+      { path: '/app/blog',           icon: Newspaper, label: 'Comunicación'   },
+      { path: '/app/mantenimientos',  icon: Wrench,    label: 'Mantenimientos'  },
+      { path: '/app/asambleas',       icon: Vote,      label: 'Asambleas'       },
     ]},
     { section: 'finanzas', label: 'Finanzas', items: [
       { path: '/app/cobranza',       icon: Receipt,      label: 'Cobranza'          },
@@ -122,12 +130,14 @@ const NAV_ITEMS = {
     { section: 'general', label: 'General', items: [
       { path: '/app/dashboard',      icon: Home,      label: 'Dashboard'      },
       { path: '/app/reservas',       icon: Calendar,  label: 'Reservas'       },
-      { path: '/app/blog',           icon: Newspaper, label: 'Comunicación'   },
-      { path: '/app/asambleas',       icon: Vote,      label: 'Asambleas'       },
-      { path: '/app/mantenimientos',  icon: Wrench,    label: 'Mantenimientos'  },
       { path: '/app/paqueteria',      icon: Package,   label: 'Paquetería'      },
       { path: '/app/notificaciones', icon: Bell,      label: 'Notificaciones' },
       { path: '/app/onboarding',     icon: Sparkles,  label: 'Guías de uso'   },
+    ]},
+    { section: 'administracion', label: 'Administración', items: [
+      { path: '/app/blog',           icon: Newspaper, label: 'Comunicación'   },
+      { path: '/app/mantenimientos',  icon: Wrench,    label: 'Mantenimientos'  },
+      { path: '/app/asambleas',       icon: Vote,      label: 'Asambleas'       },
     ]},
     { section: 'finanzas', label: 'Finanzas', items: [
       { path: '/app/cobranza',       icon: Receipt,      label: 'Cobranza'          },
@@ -144,11 +154,13 @@ const NAV_ITEMS = {
     { section: 'general', label: 'General', items: [
       { path: '/app/dashboard',      icon: Home,      label: 'Dashboard'      },
       { path: '/app/reservas',       icon: Calendar,  label: 'Reservas'       },
-      { path: '/app/blog',           icon: Newspaper, label: 'Comunicación'   },
-      { path: '/app/asambleas',       icon: Vote,      label: 'Asambleas'       },
-      { path: '/app/mantenimientos',  icon: Wrench,    label: 'Mantenimientos'  },
       { path: '/app/paqueteria',      icon: Package,   label: 'Paquetería'      },
       { path: '/app/notificaciones', icon: Bell,      label: 'Notificaciones' },
+    ]},
+    { section: 'administracion', label: 'Administración', items: [
+      { path: '/app/blog',           icon: Newspaper, label: 'Comunicación'   },
+      { path: '/app/mantenimientos',  icon: Wrench,    label: 'Mantenimientos'  },
+      { path: '/app/asambleas',       icon: Vote,      label: 'Asambleas'       },
     ]},
   ],
 
@@ -156,12 +168,14 @@ const NAV_ITEMS = {
     { section: 'general', label: 'General', items: [
       { path: '/app/my-unit',        icon: Home,      label: 'Mi Unidad'      },
       { path: '/app/reservas',       icon: Calendar,  label: 'Reservas'       },
-      { path: '/app/blog',           icon: Newspaper, label: 'Comunicación'   },
-      { path: '/app/asambleas',       icon: Vote,      label: 'Asambleas'       },
-      { path: '/app/mantenimientos',  icon: Wrench,    label: 'Mantenimientos'  },
       { path: '/app/paqueteria',      icon: Package,   label: 'Paquetería'      },
       { path: '/app/notificaciones', icon: Bell,      label: 'Notificaciones' },
       { path: '/app/onboarding',     icon: Sparkles,  label: 'Guías de uso'   },
+    ]},
+    { section: 'administracion', label: 'Administración', items: [
+      { path: '/app/blog',           icon: Newspaper, label: 'Comunicación'   },
+      { path: '/app/mantenimientos',  icon: Wrench,    label: 'Mantenimientos'  },
+      { path: '/app/asambleas',       icon: Vote,      label: 'Asambleas'       },
     ]},
     { section: 'finanzas', label: 'Finanzas', items: [
       { path: '/app/enviar-pago',    icon: Send,         label: 'Enviar pago'      },
