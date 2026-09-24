@@ -3,7 +3,7 @@ import {
   X, Search, ChevronDown, ChevronRight,
   Home, Receipt, ShoppingBag, Wallet, FileText, TrendingDown,
   Lock, Settings, Newspaper, Calendar, Bell, Building2, Send,
-  DollarSign, HelpCircle, BookOpen, CreditCard, BarChart2,
+  DollarSign, HelpCircle, BookOpen, CreditCard, BarChart2, Package,
 } from 'lucide-react';
 
 // ─── Contenido de ayuda ────────────────────────────────────────────────────────
@@ -262,6 +262,27 @@ const HELP_SECTIONS = [
       {
         q: '¿Dónde consulto el directorio de propietarios e inquilinos?',
         a: 'En Comunicación, el botón "Directorio" abre un listado de propietarios, copropietarios e inquilinos de las unidades activas (nombre, email y teléfono). Quien tenga acceso al módulo puede consultarlo, buscar, filtrar e imprimirlo o descargarlo en CSV.',
+      },
+    ],
+  },
+  {
+    id: 'paqueteria',
+    icon: Package,
+    color: '#0f766e',
+    title: 'Paquetería / Mensajería',
+    subtitle: 'Recepción en caseta y entrega al destinatario',
+    articles: [
+      {
+        q: '¿Cómo registrar un paquete que llega a vigilancia?',
+        a: 'Ve a Paquetería → "Recibir paquete" → selecciona la casa → toma o adjunta la foto de evidencia → (opcional) escribe una nota → Guardar. El sistema asigna el folio del año (AAAA-####). Después elige a qué contactos de la unidad se envía el aviso por correo y en Notificaciones.',
+      },
+      {
+        q: '¿Cómo se entrega el paquete al destinatario?',
+        a: 'Abre el paquete en estado "En vigilancia" → "Entregar" → el destinatario firma en pantalla (dedo o mouse) → (opcional) agrega una nota → Confirmar entrega. Queda constancia en la bitácora con fecha, quien entregó y la firma.',
+      },
+      {
+        q: '¿Se puede personalizar el mensaje de aviso?',
+        a: 'El administrador entra a Paquetería → Reglamento y escribe el texto del reglamento interno. Ese apartado se incluye en el correo junto con el logo, los datos del condominio y el folio del paquete.',
       },
     ],
   },

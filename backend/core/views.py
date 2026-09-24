@@ -109,6 +109,8 @@ _NOTIF_MODULE_MAP = {
     'assembly_notice':            'asambleas',
     'assembly_started':           'asambleas',
     'assembly_minute':            'asambleas',
+    'package_received':           'paqueteria',
+    'package_delivered':          'paqueteria',
 }
 
 

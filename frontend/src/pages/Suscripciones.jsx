@@ -92,6 +92,7 @@ const SYSTEM_MODULES = [
   { key: 'planeacion',      label: 'Planeación',             desc: 'Presupuesto anual y proyectos del condominio' },
   { key: 'asambleas',       label: 'Asambleas',               desc: 'Convocatorias, quórum, minutas e historial' },
   { key: 'mantenimientos',  label: 'Mantenimientos',          desc: 'Preventivos, correctivos, evidencias e historial' },
+  { key: 'paqueteria',      label: 'Paquetería / Mensajería', desc: 'Recepción y entrega de paquetes en vigilancia' },
   { key: 'blog',            label: 'Comunicación',            desc: 'Publicaciones y comunicados para la comunidad' },
   { key: 'config',          label: 'Configuración',          desc: 'Ajustes generales del condominio' },
   { key: 'my_unit',         label: 'Mi Unidad',              desc: 'Vista individual para residentes' },

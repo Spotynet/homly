@@ -12,6 +12,7 @@ from . import planeacion
 from . import asambleas
 from . import mantenimientos
 from . import proveedores
+from . import paqueteria
 
 router = DefaultRouter()
 router.register(r'tenants', views.TenantViewSet, basename='tenants')
@@ -67,6 +68,7 @@ tenant_router.register(r'condo-projects', planeacion.CondoProjectViewSet, basena
 tenant_router.register(r'condo-assemblies', asambleas.CondoAssemblyViewSet, basename='condo-assemblies')
 tenant_router.register(r'condo-maintenance', mantenimientos.CondoMaintenanceWorkViewSet, basename='condo-maintenance')
 tenant_router.register(r'condo-providers', proveedores.CondoProviderViewSet, basename='condo-providers')
+tenant_router.register(r'condo-packages', paqueteria.CondoPackageViewSet, basename='condo-packages')
 
 urlpatterns = [
     # Auth

@@ -399,6 +399,18 @@ export const mantenimientosAPI = {
   gastoOptions:  (tenantId, params) => api.get(`/tenants/${tenantId}/condo-maintenance/gasto-options/`, { params }),
 };
 
+export const paqueteriaAPI = {
+  context:      (tenantId) => api.get(`/tenants/${tenantId}/condo-packages/context/`),
+  list:         (tenantId, params) => api.get(`/tenants/${tenantId}/condo-packages/`, { params }),
+  get:          (tenantId, id) => api.get(`/tenants/${tenantId}/condo-packages/${id}/`),
+  create:       (tenantId, formData) => api.post(`/tenants/${tenantId}/condo-packages/`, formData),
+  notify:       (tenantId, id, data) => api.post(`/tenants/${tenantId}/condo-packages/${id}/notify/`, data),
+  deliver:      (tenantId, id, formData) => api.post(`/tenants/${tenantId}/condo-packages/${id}/deliver/`, formData),
+  settings:     (tenantId) => api.get(`/tenants/${tenantId}/condo-packages/settings/`),
+  saveSettings: (tenantId, data) => api.patch(`/tenants/${tenantId}/condo-packages/settings/`, data),
+  unitContacts: (tenantId, unitId) => api.get(`/tenants/${tenantId}/condo-packages/unit-contacts/`, { params: { unit: unitId } }),
+};
+
 export const providersAPI = {
   list:            (tenantId, params) => api.get(`/tenants/${tenantId}/condo-providers/`, { params }),
   options:         (tenantId, params) => api.get(`/tenants/${tenantId}/condo-providers/options/`, { params }),

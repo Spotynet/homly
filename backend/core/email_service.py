@@ -448,6 +448,7 @@ def _make_mime_message(
     cc_emails: list[str] | None = None,
     logo_data: bytes | None = None,
     pdf_attachment: tuple | None = None,  # (filename, bytes, mimetype)
+    extra_inline: list | None = None,  # [(cid, bytes, subtype, filename), ...]
 ):
     """
     Build an RFC-compliant MIME message with correct multipart structure.
@@ -484,13 +485,22 @@ def _make_mime_message(
     alt.attach(SafeMIMEText(html, 'html', 'utf-8'))
 
     # ── Middle: wrap with related if there is an inline logo ────────────────
-    if logo_data:
+    extras = list(extra_inline or [])
+    if logo_data or extras:
         related = SafeMIMEMultipart('related')
         related.attach(alt)
-        logo_part = MIMEImage(logo_data, 'png')
-        logo_part.add_header('Content-Disposition', 'inline', filename='homly-full.png')
-        logo_part.add_header('Content-ID', f'<{LOGO_CID}>')
-        related.attach(logo_part)
+        if logo_data:
+            logo_part = MIMEImage(logo_data, 'png')
+            logo_part.add_header('Content-Disposition', 'inline', filename='homly-full.png')
+            logo_part.add_header('Content-ID', f'<{LOGO_CID}>')
+            related.attach(logo_part)
+        for cid, img_bytes, subtype, filename in extras:
+            if not img_bytes:
+                continue
+            part = MIMEImage(img_bytes, subtype or 'png')
+            part.add_header('Content-Disposition', 'inline', filename=filename or f'{cid}.png')
+            part.add_header('Content-ID', f'<{cid}>')
+            related.attach(part)
         inner = related
     else:
         inner = alt
@@ -557,6 +567,7 @@ def _send_branded_email(
     from_email: str | None = None,
     pdf_attachment: tuple | None = None,   # (filename, bytes, 'application/pdf')
     cc_emails: list[str] | None = None,    # CC recipients
+    extra_inline: list | None = None,
 ) -> bool:
     """Send a branded Homly email with correct multipart/related MIME structure.
 
@@ -583,6 +594,7 @@ def _send_branded_email(
             cc_emails=cc_emails,
             logo_data=logo_data,
             pdf_attachment=pdf_attachment,
+            extra_inline=extra_inline,
         )
         return _dispatch_mime(mime, from_email, all_recipients)
     except Exception as e:
@@ -1309,6 +1321,8 @@ NOTIF_META: dict[str, tuple[str, str, str]] = {
     'assembly_notice':            ('📣', 'Convocatoria',             '#1E594F'),
     'assembly_started':           ('🗳️', 'Asamblea en curso',        '#3B82F6'),
     'assembly_minute':            ('📝', 'Minuta de asamblea',       '#8B5CF6'),
+    'package_received':           ('📦', 'Paquete recibido',         '#1E594F'),
+    'package_delivered':          ('✍️', 'Paquete entregado',        '#10B981'),
 }
 
 
@@ -2920,4 +2934,167 @@ def send_blog_article_email(
         html=html,
         to_emails=[email],
         pdf_attachment=pdf_attachment,
+    )
+
+
+def _tenant_logo_inline(tenant):
+    """Return (bytes, subtype) for the tenant logo, or (None, None)."""
+    import base64 as _b64
+    f = getattr(tenant, 'logo_file', None)
+    if f:
+        try:
+            f.open('rb')
+            data = f.read()
+            f.close()
+            name = (getattr(f, 'name', '') or '').lower()
+            subtype = 'jpeg' if name.endswith(('.jpg', '.jpeg')) else 'png'
+            if name.endswith('.gif'):
+                subtype = 'gif'
+            if name.endswith('.webp'):
+                subtype = 'webp'
+            return data, subtype
+        except Exception:
+            logger.warning('Could not read tenant logo_file for email')
+    raw = (getattr(tenant, 'logo', None) or '').strip()
+    if not raw:
+        return None, None
+    if raw.startswith('data:'):
+        try:
+            header, b64 = raw.split(',', 1)
+            subtype = 'png'
+            if 'jpeg' in header or 'jpg' in header:
+                subtype = 'jpeg'
+            return _b64.b64decode(b64), subtype
+        except Exception:
+            return None, None
+    try:
+        return _b64.b64decode(raw), 'png'
+    except Exception:
+        return None, None
+
+
+def _tenant_address_line(tenant):
+    parts = [
+        getattr(tenant, 'addr_calle', '') or '',
+        getattr(tenant, 'addr_num_externo', '') or '',
+        getattr(tenant, 'addr_colonia', '') or '',
+        getattr(tenant, 'addr_ciudad', '') or getattr(tenant, 'info_ciudad', '') or '',
+        getattr(tenant, 'state', '') or '',
+        getattr(tenant, 'addr_codigo_postal', '') or '',
+    ]
+    return ', '.join(p.strip() for p in parts if p and str(p).strip())
+
+
+def send_package_received_email(*, email, user_name, tenant, package, received_label):
+    """Notify a resident that a package is waiting at security."""
+    from html import escape as _esc
+    c = COLORS
+    app_url = getattr(settings, 'HOMLY_APP_URL', 'https://homly.com.mx/login')
+    tenant_name = tenant.name or 'Condominio'
+    subject = f'[{tenant_name}] Paquete {package.folio} en vigilancia'
+    unit_label = f'{package.unit.unit_id_code} — {package.unit.unit_name}'
+    notes = (package.receive_notes or '').strip()
+    rules = (tenant.package_notify_rules or '').strip()
+    address = _tenant_address_line(tenant)
+    rfc = (getattr(tenant, 'rfc', '') or '').strip()
+
+    tenant_logo_data, tenant_logo_subtype = _tenant_logo_inline(tenant)
+    extra_inline = []
+    tenant_logo_html = ''
+    if tenant_logo_data:
+        extra_inline.append(('tenantlogo', tenant_logo_data, tenant_logo_subtype or 'png', 'tenant-logo.png'))
+        tenant_logo_html = (
+            f'<img src="cid:tenantlogo" alt="{_esc(tenant_name)}" width="88" '
+            f'style="display:block;height:auto;max-width:88px;max-height:88px;border-radius:10px;margin:0 auto 10px;" />'
+        )
+
+    rules_html = ''
+    if rules:
+        rules_html = (
+            f'<div style="margin-top:18px;padding:14px 16px;background:{c["cream_outer"]};'
+            f'border-radius:10px;border-left:4px solid {c["green"]};">'
+            f'<div style="font-size:11px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;'
+            f'color:{c["ink_600"]};margin-bottom:6px;">Reglamento interno</div>'
+            f'<div style="font-size:13px;color:{c["ink_800"]};line-height:1.55;white-space:pre-wrap;">{_esc(rules)}</div>'
+            f'</div>'
+        )
+
+    notes_html = (
+        f'<tr><td style="padding:8px 0;font-size:13px;color:{c["ink_600"]};width:38%;">Nota de recepción</td>'
+        f'<td style="padding:8px 0;font-size:13px;color:{c["ink_800"]};">{_esc(notes)}</td></tr>'
+        if notes else ''
+    )
+    addr_html = (
+        f'<div style="font-size:12px;color:{c["ink_600"]};margin-top:4px;">{_esc(address)}</div>'
+        if address else ''
+    )
+    rfc_html = (
+        f'<div style="font-size:12px;color:{c["ink_600"]};margin-top:2px;">RFC: {_esc(rfc)}</div>'
+        if rfc else ''
+    )
+
+    logo_img = f'<img src="cid:{LOGO_CID}" alt="Homly" width="140" style="display:block;height:auto;max-width:140px;margin:0 auto;" />'
+    html = f"""<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Paquete { _esc(package.folio) }</title></head>
+<body style="margin:0;padding:0;font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:{c['cream_outer']};">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:{c['cream_outer']};padding:32px 16px;">
+<tr><td align="center">
+<table width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:{c['cream']};border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(26,22,18,0.08);">
+  <tr><td style="padding:24px 28px 16px;text-align:center;border-bottom:3px solid {c['green']};">
+    {logo_img}
+    <p style="margin:10px 0 0;font-size:12px;font-weight:600;color:{c['ink_600']};letter-spacing:0.04em;">Paquetería / Mensajería</p>
+  </td></tr>
+  <tr><td style="padding:24px 28px 8px;text-align:center;">
+    {tenant_logo_html}
+    <div style="font-size:18px;font-weight:800;color:{c['ink_800']};">{_esc(tenant_name)}</div>
+    {addr_html}{rfc_html}
+  </td></tr>
+  <tr><td style="padding:8px 28px 24px;">
+    <p style="margin:0 0 14px;font-size:15px;color:{c['ink_800']};">Hola {_esc(user_name or '')},</p>
+    <p style="margin:0 0 18px;font-size:14px;color:{c['ink_600']};line-height:1.55;">
+      Vigilancia recibió un paquete para tu unidad. Preséntate con identificación para recogerlo.
+    </p>
+    <table width="100%" cellpadding="0" cellspacing="0" style="background:{c['white']};border:1px solid #E8DFD1;border-radius:12px;padding:4px 16px;">
+      <tr><td style="padding:10px 0 4px;font-size:11px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:{c['ink_600']};">Información del paquete</td></tr>
+      <tr><td>
+        <table width="100%" cellpadding="0" cellspacing="0">
+          <tr><td style="padding:8px 0;font-size:13px;color:{c['ink_600']};width:38%;">Folio</td>
+              <td style="padding:8px 0;font-size:16px;font-weight:800;color:{c['green']};">{_esc(package.folio)}</td></tr>
+          <tr><td style="padding:8px 0;font-size:13px;color:{c['ink_600']};">Unidad</td>
+              <td style="padding:8px 0;font-size:13px;font-weight:600;color:{c['ink_800']};">{_esc(unit_label)}</td></tr>
+          <tr><td style="padding:8px 0;font-size:13px;color:{c['ink_600']};">Recibido</td>
+              <td style="padding:8px 0;font-size:13px;color:{c['ink_800']};">{_esc(received_label)}</td></tr>
+          <tr><td style="padding:8px 0;font-size:13px;color:{c['ink_600']};">Estado</td>
+              <td style="padding:8px 0;font-size:13px;font-weight:700;color:{c['orange']};">En vigilancia</td></tr>
+          {notes_html}
+        </table>
+      </td></tr>
+    </table>
+    {rules_html}
+    <p style="margin:20px 0 0;text-align:center;">
+      <a href="{_esc(app_url)}" style="display:inline-block;background:{c['green']};color:{c['white']};text-decoration:none;font-size:13px;font-weight:700;padding:10px 18px;border-radius:10px;">Abrir Homly</a>
+    </p>
+  </td></tr>
+  {_email_footer_html(c)}
+</table>
+</td></tr></table>
+</body></html>"""
+
+    plain = (
+        f'Hola {user_name},\n\n'
+        f'{tenant_name} recibió un paquete para {unit_label}.\n'
+        f'Folio: {package.folio}\n'
+        f'Recibido: {received_label}\n'
+        f'Estado: En vigilancia\n'
+        f'{("Nota: " + notes + chr(10)) if notes else ""}'
+        f'{("Reglamento interno:\\n" + rules + chr(10)) if rules else ""}\n'
+        f'Ingresa a Homly: {app_url}\n'
+    )
+    return _send_branded_email(
+        subject=subject,
+        plain=plain,
+        html=html,
+        to_emails=[email],
+        extra_inline=extra_inline or None,
     )

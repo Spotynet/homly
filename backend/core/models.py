@@ -19,6 +19,7 @@ Model hierarchy:
        └── Committee (committees)
 """
 
+import os
 import uuid
 from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
@@ -169,6 +170,19 @@ class Tenant(models.Model):
     receipt_seq = models.PositiveIntegerField(
         default=0,
         help_text='Último consecutivo de recibo principal asignado en este condominio.',
+    )
+    package_folio_year = models.PositiveIntegerField(
+        default=0,
+        help_text='Año del último folio de paquetería (AAAA-####).',
+    )
+    package_folio_seq = models.PositiveIntegerField(
+        default=0,
+        help_text='Último consecutivo de paquetería del año en curso.',
+    )
+    package_notify_rules = models.TextField(
+        blank=True,
+        default='',
+        help_text='Reglamento interno que se incluye en las notificaciones de paquetería.',
     )
     admin_type = models.CharField(max_length=20, choices=ADMIN_TYPE_CHOICES, default='mesa_directiva')
 
@@ -1118,6 +1132,9 @@ class Notification(models.Model):
         ('assembly_notice',       'Convocatoria de asamblea'),
         ('assembly_started',      'Asamblea en curso'),
         ('assembly_minute',       'Minuta de asamblea'),
+        # Paquetería
+        ('package_received',      'Paquete recibido'),
+        ('package_delivered',     'Paquete entregado'),
         # General
         ('general',               'Información General'),
     ]
@@ -1166,6 +1183,7 @@ class AuditLog(models.Model):
         ('config',     'Configuración'),
         ('tenants',    'Tenants'),
         ('sistema',    'Sistema'),
+        ('paqueteria', 'Paquetería / Mensajería'),
     ]
 
     ACTION_CHOICES = [
@@ -3257,5 +3275,97 @@ class CondoProviderDocument(models.Model):
 
     def __str__(self):
         return self.original_name or str(self.id)
+
+
+# ═══════════════════════════════════════════════════════════
+#  PAQUETERÍA / MENSAJERÍA
+# ═══════════════════════════════════════════════════════════
+
+def condo_package_photo_path(instance, filename):
+    ext = os.path.splitext(filename)[1].lower() or '.jpg'
+    return f'packages/{instance.tenant_id}/{instance.id}/recepcion{ext}'
+
+
+def condo_package_signature_path(instance, filename):
+    ext = os.path.splitext(filename)[1].lower() or '.jpg'
+    return f'packages/{instance.tenant_id}/{instance.id}/firma{ext}'
+
+
+class CondoPackage(models.Model):
+    """Paquete o mensajería recibida en vigilancia para una unidad."""
+
+    STATUS_CHOICES = [
+        ('recibido', 'En vigilancia'),
+        ('entregado', 'Entregado'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='packages')
+    unit = models.ForeignKey(Unit, on_delete=models.PROTECT, related_name='packages')
+    folio = models.CharField(max_length=12, db_index=True, help_text='AAAA-####')
+    folio_year = models.PositiveIntegerField()
+    folio_seq = models.PositiveIntegerField()
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default='recibido', db_index=True)
+
+    receive_notes = models.TextField(blank=True, default='')
+    receive_photo = models.ImageField(upload_to=condo_package_photo_path)
+    received_at = models.DateTimeField(auto_now_add=True)
+    received_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='packages_received',
+    )
+
+    delivery_notes = models.TextField(blank=True, default='')
+    delivery_signature = models.ImageField(upload_to=condo_package_signature_path, null=True, blank=True)
+    delivered_at = models.DateTimeField(null=True, blank=True)
+    delivered_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='packages_delivered',
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'condo_packages'
+        ordering = ['-received_at']
+        unique_together = ['tenant', 'folio']
+        indexes = [
+            models.Index(fields=['tenant', 'status']),
+            models.Index(fields=['tenant', 'folio_year']),
+            models.Index(fields=['tenant', 'unit']),
+        ]
+
+    def __str__(self):
+        return f'{self.folio} — {self.unit.unit_id_code}'
+
+
+class CondoPackageEvent(models.Model):
+    """Bitácora de un paquete: recepción, notificación y entrega."""
+
+    EVENT_CHOICES = [
+        ('recibido', 'Recepción en vigilancia'),
+        ('notificado', 'Notificación enviada'),
+        ('entregado', 'Entrega al destinatario'),
+        ('nota', 'Nota'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    package = models.ForeignKey(CondoPackage, on_delete=models.CASCADE, related_name='events')
+    event_type = models.CharField(max_length=16, choices=EVENT_CHOICES, db_index=True)
+    notes = models.TextField(blank=True, default='')
+    extra = models.JSONField(default=dict, blank=True)
+    actor = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='package_events',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'condo_package_events'
+        ordering = ['created_at']
+
+    def __str__(self):
+        return f'{self.package.folio} · {self.event_type}'
 
 

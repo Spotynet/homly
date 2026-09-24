@@ -43,6 +43,8 @@ const NOTIF_MODULE_MAP = {
   rental_airbnb_imported:    'rentas_propiedades',
   rental_airbnb_synced:      'rentas_propiedades',
   rental_airbnb_error:       'rentas_propiedades',
+  package_received:          'paqueteria',
+  package_delivered:         'paqueteria',
 };
 
 const TYPE_CFG = {
@@ -82,6 +84,8 @@ const TYPE_CFG = {
   rental_airbnb_synced:      { icon: '🔄', label: 'Airbnb sincronizado',  color: 'var(--blue-700)',  bg: 'var(--blue-50)'  },
   rental_airbnb_error:       { icon: '⚠️', label: 'Error de Airbnb',      color: 'var(--coral-600)', bg: 'var(--coral-50)' },
   general:               { icon: 'ℹ️', label: 'General',               color: 'var(--amber-600)',  bg: 'var(--amber-50)'  },
+  package_received:      { icon: '📦', label: 'Paquete recibido',      color: 'var(--teal-700)',   bg: 'var(--teal-50)'   },
+  package_delivered:     { icon: '✍️', label: 'Paquete entregado',     color: 'var(--teal-600)',   bg: 'var(--teal-50)'   },
 };
 
 function timeAgo(dateStr) {
@@ -155,6 +159,7 @@ export default function Notificaciones() {
     else if ((n.notif_type || '').startsWith('rental_contract')) navigate('/app/rentas/contratos');
     else if ((n.notif_type || '').startsWith('rental_charge') || (n.notif_type || '').startsWith('rental_payment')) navigate('/app/rentas/cobranza');
     else if ((n.notif_type || '').startsWith('rental_')) navigate('/app/rentas/propiedades');
+    else if ((n.notif_type || '').startsWith('package_')) navigate('/app/paqueteria');
   };
 
   // Apply filters

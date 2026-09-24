@@ -19,7 +19,7 @@ import {
   AlertCircle, Shield, FileText, Globe, ChevronRight, TrendingUp,
   ShieldAlert, Mail, UserPlus, Bell, Layers, Eye, EyeOff,
   ListOrdered, ArrowUp, ArrowDown, CheckCircle2, Sparkles, Newspaper,
-  Wrench, CreditCard, Send,
+  Wrench, CreditCard, Send, Package,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -64,6 +64,7 @@ const MODULE_DEFINITIONS = [
   { key: 'blog',            label: 'Comunicación',        icon: Newspaper,    desc: 'Publicaciones y comunicados para la comunidad' },
   { key: 'asambleas',       label: 'Asambleas',           icon: Users,        desc: 'Convocatoria, desarrollo, minuta de trabajo y acta formal' },
   { key: 'mantenimientos',  label: 'Mantenimientos',      icon: Wrench,       desc: 'Preventivos y correctivos: planeación, evidencias e historial' },
+  { key: 'paqueteria',      label: 'Paquetería',          icon: Package,      desc: 'Recepción y entrega de paquetes y mensajería en vigilancia' },
   { key: 'cobranza',        label: 'Cobranza Mensual',    icon: Receipt,      desc: 'Registro y cobro de mantenimiento' },
   { key: 'gastos',          label: 'Gastos',              icon: ShoppingBag,  desc: 'Gestión de egresos conciliados y en tránsito' },
   { key: 'caja_chica',      label: 'Caja Chica',          icon: DollarSign,   desc: 'Registro de gastos menores de caja chica' },
