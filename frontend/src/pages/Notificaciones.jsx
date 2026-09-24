@@ -46,6 +46,10 @@ const NOTIF_MODULE_MAP = {
   package_received:          'paqueteria',
   package_delivered:         'paqueteria',
   package_reminder:          'paqueteria',
+  visit_authorized:          'visitas',
+  visit_checked_in:          'visitas',
+  visit_checked_out:         'visitas',
+  visit_cancelled:           'visitas',
 };
 
 const TYPE_CFG = {
@@ -88,6 +92,10 @@ const TYPE_CFG = {
   package_received:      { icon: '📦', label: 'Paquete recibido',      color: 'var(--teal-700)',   bg: 'var(--teal-50)'   },
   package_delivered:     { icon: '✍️', label: 'Paquete entregado',     color: 'var(--teal-600)',   bg: 'var(--teal-50)'   },
   package_reminder:      { icon: '📦', label: 'Recordatorio de paquete', color: 'var(--amber-700)', bg: 'var(--amber-50)' },
+  visit_authorized:      { icon: '🪪', label: 'Visita autorizada',     color: 'var(--teal-700)',   bg: 'var(--teal-50)'   },
+  visit_checked_in:      { icon: '➡️', label: 'Ingreso de visita',     color: 'var(--teal-600)',   bg: 'var(--teal-50)'   },
+  visit_checked_out:     { icon: '⬅️', label: 'Salida de visita',      color: 'var(--blue-600)',   bg: 'var(--blue-50)'   },
+  visit_cancelled:       { icon: '🚫', label: 'Visita cancelada',      color: 'var(--amber-700)',  bg: 'var(--amber-50)'  },
 };
 
 function timeAgo(dateStr) {
@@ -162,6 +170,7 @@ export default function Notificaciones() {
     else if ((n.notif_type || '').startsWith('rental_charge') || (n.notif_type || '').startsWith('rental_payment')) navigate('/app/rentas/cobranza');
     else if ((n.notif_type || '').startsWith('rental_')) navigate('/app/rentas/propiedades');
     else if ((n.notif_type || '').startsWith('package_')) navigate('/app/paqueteria');
+    else if ((n.notif_type || '').startsWith('visit_')) navigate('/app/visitas');
   };
 
   // Apply filters
@@ -209,6 +218,10 @@ export default function Notificaciones() {
     { value: 'plan_cancelled',       label: '🚫 Plan cancelado' },
     { value: 'period_closed',        label: '🔒 Período cerrado' },
     { value: 'period_reopened',      label: '🔓 Período reabierto' },
+    { value: 'visit_authorized',     label: '🪪 Visita autorizada' },
+    { value: 'visit_checked_in',     label: '➡️ Ingreso de visita' },
+    { value: 'visit_checked_out',    label: '⬅️ Salida de visita' },
+    { value: 'visit_cancelled',      label: '🚫 Visita cancelada' },
     { value: 'general',              label: 'ℹ️ General' },
   ];
 

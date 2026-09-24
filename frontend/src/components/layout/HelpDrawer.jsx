@@ -3,7 +3,8 @@ import {
   X, Search, ChevronDown, ChevronRight,
   Home, Receipt, ShoppingBag, Wallet, FileText, TrendingDown,
   Lock, Settings, Newspaper, Calendar, Bell, Building2, Send,
-  DollarSign, HelpCircle, BookOpen, CreditCard, BarChart2, Package,
+  DollarSign, HelpCircle, BookOpen, CreditCard, BarChart2, Package, UserCheck,
+  Wrench, Vote, ClipboardCheck,
 } from 'lucide-react';
 
 // ─── Contenido de ayuda ────────────────────────────────────────────────────────
@@ -87,7 +88,7 @@ const HELP_SECTIONS = [
       },
       {
         q: '¿Cómo adjuntar el comprobante de un gasto?',
-        a: 'Al crear o editar un gasto, haz clic en el área de "Evidencia / Comprobante". Puedes subir imágenes (JPG, PNG) o PDF hasta 10 MB. El comprobante queda vinculado al gasto y puede verse desde el detalle del registro.',
+        a: 'Al crear o editar un gasto, haz clic en el área de "Evidencia / Comprobante". Puedes subir imágenes (JPG, PNG) o PDF hasta 10 MB. El comprobante queda vinculado al gasto. En la lista, el ícono de ojo se ve verde si hay archivo para abrir y gris (apagado) si no hay adjunto.',
       },
       {
         q: '¿Puedo editar o eliminar un gasto?',
@@ -112,7 +113,7 @@ const HELP_SECTIONS = [
       },
       {
         q: '¿Cómo registrar un movimiento de Caja Chica?',
-        a: 'Ve a Caja Chica → selecciona el período → haz clic en "Nuevo Registro" → indica descripción, monto y fecha → opcionalmente adjunta un comprobante → guarda. El saldo total de caja se actualiza automáticamente.',
+        a: 'Ve a Caja Chica → selecciona el período → haz clic en "Nuevo Registro" → indica descripción, monto y fecha → opcionalmente adjunta un comprobante → guarda. El saldo total de caja se actualiza automáticamente. El ícono de ojo se ve verde si hay evidencia y gris si no hay archivo.',
       },
       {
         q: '¿Cómo ver el historial de Caja Chica?',
@@ -278,7 +279,7 @@ const HELP_SECTIONS = [
       },
       {
         q: '¿Cómo se entrega el paquete al destinatario?',
-        a: 'Abre el paquete en "En vigilancia" → Entregar y elige Código QR o Firma. Con QR, escanea el código del correo (o de la pantalla del vecino) o escríbelo. Con firma, el destinatario firma en pantalla. También puedes usar "Escanear QR" en el tablero para identificar el paquete y entregarlo.',
+        a: 'Abre el paquete en "En vigilancia" → Entregar y elige Código QR o Firma. Con QR, escanea el código del correo (o de la pantalla del vecino); el código no se puede escribir ni borrar a mano y debe coincidir con el paquete. Con firma, el destinatario firma en pantalla. También puedes usar "Escanear QR" en el tablero para identificar el paquete y entregarlo.',
       },
       {
         q: '¿Qué llega en el correo de aviso?',
@@ -291,6 +292,106 @@ const HELP_SECTIONS = [
       {
         q: '¿Quién puede eliminar un paquete?',
         a: 'Solo el administrador del condominio. Al eliminar debe escribir un comentario (motivo). El registro se borra de la bitácora y el comentario queda en el log del sistema, junto con el folio y la unidad.',
+      },
+      {
+        q: '¿Cómo saco un reporte de paquetes?',
+        a: 'En Paquetería pulsa "Reporte". Elige el periodo (este mes, mes anterior o fechas). Verás el resumen y la lista de paquetes recibidos. Desde el mismo modal puedes descargar el PDF.',
+      },
+    ],
+  },
+  {
+    id: 'visitas',
+    icon: UserCheck,
+    color: '#0d9488',
+    title: 'Visitas Autorizadas',
+    subtitle: 'Permanentes, ocasionales e ingreso en caseta',
+    articles: [
+      {
+        q: '¿Cómo autorizo una visita desde mi unidad?',
+        a: 'En Mi Unidad o en Visitas Autorizadas pulsa "Autorizar visita". Captura nombres, apellidos, correo y celular. Elige ocasional (fecha y hora de llegada) o permanente (cantidad de visitas o indefinido, siempre con vigencia). Al guardar se envía un correo al visitante con el QR, los datos del condominio y las normas.',
+      },
+      {
+        q: '¿Qué diferencia hay entre visita permanente y ocasional?',
+        a: 'Ocasional es una visita temporal: se indica la llegada estimada y la vigencia cubre ese día. Permanente es para familiares, amigos recurrentes o personal de trabajo: se elige si es por un número de visitas o indefinido, y siempre se define el periodo de vigencia.',
+      },
+      {
+        q: '¿Cómo registra vigilancia el ingreso y la salida?',
+        a: 'En Visitas Autorizadas el vigilante abre la bitácora de la unidad o usa "Escanear QR". El QR debe coincidir con esa autorización; no se puede escribir ni borrar a mano. Si el visitante no trae el QR, presenta una identificación con el mismo nombre registrado. Vigilancia toma una foto de evidencia y no resguarda el documento. Al confirmar el ingreso o la salida se eligen los contactos de la unidad y se les envía un correo con los detalles y las fotos de evidencia (identificación y, si aplica, vehículo).',
+      },
+      {
+        q: '¿Qué significa el folio de la autorización?',
+        a: 'Cada registro tiene un ID único formado por el ID de la unidad, el año (AAAA) y un consecutivo de 3 dígitos, por ejemplo C-001-2026-001.',
+      },
+      {
+        q: '¿Quién puede usar este módulo?',
+        a: 'El administrador tiene acceso completo, incluida la personalización de normas. El residente autoriza visitas de su unidad. El vigilante consulta la bitácora y registra ingresos y salidas. Cualquier otro rol se habilita en Configuración → Permisos del tenant.',
+      },
+      {
+        q: '¿Cómo indico a quién visita y qué pasa si llega en auto?',
+        a: 'Al autorizar eliges a la persona del registro de la unidad (propietario, copropietario, inquilino o usuario) o escribes el nombre de otro integrante. Ese dato va en el correo y en la bitácora. Si ingresa en vehículo, vigilancia toma foto, anota la placa y asigna cajón o gafete. Cajones y gafetes se dan de alta en Configuración → Visitas.',
+      },
+      {
+        q: '¿Cómo saco un reporte de visitas?',
+        a: 'En Visitas Autorizadas pulsa "Reporte". Elige el periodo y consulta el resumen (autorizaciones, ingresos y salidas) más la lista. Desde el mismo modal puedes descargar el PDF.',
+      },
+    ],
+  },
+  {
+    id: 'mantenimientos',
+    icon: Wrench,
+    color: '#b45309',
+    title: 'Mantenimientos',
+    subtitle: 'Preventivos, correctivos y evidencias',
+    articles: [
+      {
+        q: '¿Cómo registro un mantenimiento preventivo o correctivo?',
+        a: 'Ve a Mantenimientos. El preventivo es una planeación (revisión programada de un área). El correctivo documenta una falla ya ocurrida. Indica el área, quién lo realiza y el estatus. Al terminar, márcalo como Realizado.',
+      },
+      {
+        q: '¿Cómo cargo evidencias de un trabajo?',
+        a: 'Abre la ficha del trabajo (debe estar En curso o Realizado) → Cargar evidencia → elige la fecha real de las fotos (puede ser distinta al día en que las subes) → adjunta imágenes o archivos. Quedan en la línea de tiempo de esa ficha.',
+      },
+      {
+        q: '¿Puedo ver un reporte del mantenimiento?',
+        a: 'Sí. Desde la ficha pulsa "Ver reporte". Ahí están la planeación, las evidencias y las fechas. El historial se conserva aunque el período financiero ya esté cerrado.',
+      },
+    ],
+  },
+  {
+    id: 'asambleas',
+    icon: Vote,
+    color: '#0d9488',
+    title: 'Asambleas',
+    subtitle: 'Convocatoria, quórum, minuta y acta',
+    articles: [
+      {
+        q: '¿Cómo convoco una asamblea?',
+        a: 'Ve a Asambleas → crea una ordinaria o extraordinaria. Homly aplica los días de anticipación y el quórum según el estado configurado en el condominio. Completa lugar, orden del día y emite la convocatoria; se notifica a la comunidad.',
+      },
+      {
+        q: '¿Qué pasa si no hay quórum?',
+        a: 'Pasa lista y registra cartas poder. Solo instalas la mesa si hay quórum. Si no se reúne, abres la segunda convocatoria con el receso que marca la normativa.',
+      },
+      {
+        q: '¿Dónde queda la minuta y el acta?',
+        a: 'En la misma asamblea registras votaciones, redactas el acta y la firman presidente y secretario. Si el acuerdo lo requiere, la marcas como protocolizada. Los documentos (convocatoria, minuta, acta) se consultan y descargan desde la ficha.',
+      },
+    ],
+  },
+  {
+    id: 'planeacion',
+    icon: ClipboardCheck,
+    color: '#b45309',
+    title: 'Planeación',
+    subtitle: 'Presupuesto anual y proyectos de obra',
+    articles: [
+      {
+        q: '¿Cómo armo el presupuesto del año?',
+        a: 'Ve a Planeación e indica los rubros y montos autorizados del año. Conforme se registran gastos, ves lo ejecutado contra lo planeado. Así el comité sabe si un rubro ya se pasó.',
+      },
+      {
+        q: '¿Cómo sigo un proyecto de obra?',
+        a: 'En la misma pantalla registras el proyecto (fachada, cisterna, techumbre…) con monto y avance. Los gastos reales se contrastan con lo autorizado para reportar en asamblea.',
       },
     ],
   },

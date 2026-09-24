@@ -5,6 +5,7 @@ Styled HTML email with Homly logo (Homly_Full.png) and brand colors (naranja, cr
 Logo is attached as inline MIME (cid:) inside a multipart/related container so it
 displays correctly in ALL major clients: Gmail, Outlook, Hotmail, Yahoo, AOL, etc.
 """
+import io
 import logging
 import os
 
@@ -735,7 +736,7 @@ def send_receipt_email(
         <p style="margin:0 0 4px;font-size:11px;font-weight:700;color:{c['green']};text-transform:uppercase;letter-spacing:0.06em;">Contenido de este correo</p>
         <p style="margin:0;font-size:13px;color:{c['ink_600']};line-height:1.6;">
           Este correo contiene el <strong>{receipt_kind.lower()} del período {period_str}</strong> correspondiente a la unidad
-          <strong>{unit_code} — {unit_name}</strong> del condominio <strong>{tenant_name}</strong>.
+          <strong>{unit_name} ({unit_code})</strong> del condominio <strong>{tenant_name}</strong>.
           {parent_line}{related_line}
         </p>
       </td>
@@ -749,7 +750,7 @@ def send_receipt_email(
     <tr>
       <td style="width:50%;padding-bottom:8px;">
         <div style="font-size:10px;font-weight:700;color:{c['ink_600']};text-transform:uppercase;letter-spacing:0.06em;">Unidad</div>
-        <div style="font-size:14px;font-weight:700;color:{c['ink_800']};margin-top:2px;">{unit_code} — {unit_name}</div>
+        <div style="font-size:14px;font-weight:700;color:{c['ink_800']};margin-top:2px;">{unit_name} ({unit_code})</div>
       </td>
       <td style="width:50%;padding-bottom:8px;">
         <div style="font-size:10px;font-weight:700;color:{c['ink_600']};text-transform:uppercase;letter-spacing:0.06em;">Responsable</div>
@@ -804,7 +805,7 @@ def send_receipt_email(
     plain = (
         f'{receipt_kind} — {period_str}\n'
         f'{tenant_name}\n\n'
-        f'Unidad: {unit_code} — {unit_name}\n'
+        f'Unidad: {unit_name} ({unit_code})\n'
         f'Responsable: {responsible}\n'
         f'Forma de Pago: {payment_type_label}\n'
         f'Fecha: {payment_date_label}\n\n'
@@ -895,7 +896,7 @@ def send_unit_statement_email(
       <td>
         <p style="margin:0 0 4px;font-size:11px;font-weight:700;color:{c['green']};text-transform:uppercase;letter-spacing:0.06em;">Contenido de este correo</p>
         <p style="margin:0;font-size:13px;color:{c['ink_600']};line-height:1.6;">
-          Este correo contiene el <strong>estado de cuenta de la unidad {unit_code} — {unit_name}</strong>
+          Este correo contiene el <strong>estado de cuenta de la unidad {unit_name} ({unit_code})</strong>
           del condominio <strong>{tenant_name}</strong>, correspondiente al período <strong>{range_str}</strong>.
           Incluye el historial de cargos, abonos y saldo acumulado por período.
         </p>
@@ -910,7 +911,7 @@ def send_unit_statement_email(
     <tr>
       <td style="width:50%;padding-bottom:6px;">
         <div style="font-size:10px;font-weight:700;color:{c['ink_600']};text-transform:uppercase;letter-spacing:0.06em;">Unidad</div>
-        <div style="font-size:14px;font-weight:700;color:{c['ink_800']};margin-top:2px;">{unit_code} — {unit_name}</div>
+        <div style="font-size:14px;font-weight:700;color:{c['ink_800']};margin-top:2px;">{unit_name} ({unit_code})</div>
       </td>
       <td style="width:50%;padding-bottom:6px;">
         <div style="font-size:10px;font-weight:700;color:{c['ink_600']};text-transform:uppercase;letter-spacing:0.06em;">Responsable</div>
@@ -974,7 +975,7 @@ def send_unit_statement_email(
 </html>"""
 
     plain = (
-        f'Estado de Cuenta — {unit_code} — {unit_name}\n'
+        f'Estado de Cuenta — {unit_name} ({unit_code})\n'
         f'{tenant_name}\n'
         f'Período: {range_str}\n\n'
         f'Total Cargos: {fmt(total_charges)}\n'
@@ -1175,8 +1176,8 @@ def send_general_statement_email(
         bal_color = c['orange'] if adj_bal > 0 else c['green']
         rows_html += (
             f'<tr style="border-bottom:1px solid {c["cream_outer"]};">'
-            f'<td style="padding:9px 12px;font-size:12px;font-weight:700;color:{c["ink_800"]};">{u.get("unit_code", "")}</td>'
-            f'<td style="padding:9px 12px;font-size:12px;color:{c["ink_600"]};">{u.get("unit_name", "")}</td>'
+            f'<td style="padding:9px 12px;font-size:12px;font-weight:700;color:{c["ink_800"]};">{u.get("unit_name", "")}</td>'
+            f'<td style="padding:9px 12px;font-size:12px;color:{c["ink_600"]};">{u.get("unit_code", "")}</td>'
             f'<td style="padding:9px 12px;font-size:12px;color:{c["ink_600"]};">{u.get("responsible", "")}</td>'
             f'<td style="padding:9px 12px;text-align:right;font-size:12px;color:{c["ink_600"]};">{fmt(u.get("total_charges", 0))}</td>'
             f'<td style="padding:9px 12px;text-align:right;font-size:12px;color:{c["green"]};font-weight:600;">{fmt(u.get("total_paid", 0))}</td>'
@@ -1244,8 +1245,8 @@ def send_general_statement_email(
   <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid {c['cream_outer']};border-radius:8px;overflow:hidden;">
     <thead>
       <tr style="background:{c['green']};">
-        <th style="padding:10px 12px;text-align:left;font-size:11px;font-weight:700;color:{c['white']};text-transform:uppercase;">Código</th>
         <th style="padding:10px 12px;text-align:left;font-size:11px;font-weight:700;color:{c['white']};text-transform:uppercase;">Unidad</th>
+        <th style="padding:10px 12px;text-align:left;font-size:11px;font-weight:700;color:{c['white']};text-transform:uppercase;">Código</th>
         <th style="padding:10px 12px;text-align:left;font-size:11px;font-weight:700;color:{c['white']};text-transform:uppercase;">Responsable</th>
         <th style="padding:10px 12px;text-align:right;font-size:11px;font-weight:700;color:{c['white']};text-transform:uppercase;">Cargos</th>
         <th style="padding:10px 12px;text-align:right;font-size:11px;font-weight:700;color:{c['white']};text-transform:uppercase;">Abonado</th>
@@ -1272,7 +1273,7 @@ def send_general_statement_email(
         f'Total Abonado: {fmt(total_abono)}\n'
         f'Total Adeudo: {fmt(total_deuda)}\n\n'
         + '\n'.join(
-            f'{u.get("unit_code","")} | {u.get("unit_name","")} | {u.get("responsible","")} | Adeudo: {fmt(max(0, float(u.get("balance", 0))))}'
+            f'{u.get("unit_name","")} | {u.get("unit_code","")} | {u.get("responsible","")} | Adeudo: {fmt(max(0, float(u.get("balance", 0))))}'
             for u in units_data
         )
         + '\n\n© Homly — La administración que tu hogar se merece'
@@ -1324,6 +1325,10 @@ NOTIF_META: dict[str, tuple[str, str, str]] = {
     'package_received':           ('📦', 'Paquete recibido',         '#1E594F'),
     'package_delivered':          ('✍️', 'Paquete entregado',        '#10B981'),
     'package_reminder':           ('📦', 'Recordatorio de paquete',  '#D97706'),
+    'visit_authorized':           ('🪪', 'Visita autorizada',        '#1E594F'),
+    'visit_checked_in':           ('➡️', 'Ingreso de visita',        '#0F766E'),
+    'visit_checked_out':          ('⬅️', 'Salida de visita',         '#0369A1'),
+    'visit_cancelled':            ('🚫', 'Visita cancelada',         '#B45309'),
 }
 
 
@@ -1336,6 +1341,7 @@ def _build_notification_html(
     app_url: str,
     workspace_label: str = 'Condominio',
     details: list | None = None,
+    evidence_images: list | None = None,
 ) -> str:
     """Branded HTML for a notification alert email."""
     from html import escape as _esc
@@ -1373,6 +1379,31 @@ def _build_notification_html(
             f'style="margin:14px 0 4px;border-top:1px solid #E8DFD1;padding-top:8px;">'
             f'{"".join(rows)}</table>'
         )
+
+    evidence_html = ''
+    if evidence_images:
+        blocks = []
+        for item in evidence_images:
+            cid = (item.get('cid') or '').strip()
+            label = (item.get('label') or 'Evidencia').strip()
+            if not cid:
+                continue
+            blocks.append(
+                f'<div style="margin:16px 0 0;">'
+                f'<div style="font-size:11px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;'
+                f'color:{c["ink_600"]};margin-bottom:8px;">{_esc(label)}</div>'
+                f'<img src="cid:{_esc(cid)}" alt="{_esc(label)}" width="480" '
+                f'style="display:block;width:100%;max-width:480px;height:auto;border-radius:12px;'
+                f'border:1px solid #E8DFD1;" />'
+                f'</div>'
+            )
+        if blocks:
+            evidence_html = (
+                f'<div style="margin:0 0 20px;">'
+                f'<div style="font-size:11px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;'
+                f'color:{c["ink_600"]};margin-bottom:4px;">Evidencia del proceso</div>'
+                f'{"".join(blocks)}</div>'
+            )
 
     first_name = _esc((user_name or 'Usuario').split()[0] or 'Usuario')
 
@@ -1429,6 +1460,7 @@ def _build_notification_html(
                   </td>
                 </tr>
               </table>
+              {evidence_html}
               <p style="margin:0 0 6px;font-size:13px;color:{c['ink_600']};line-height:1.5;">
                 Ingresa a <strong style="color:{c['green']};">Homly</strong> para ver los detalles completos y tomar acción si es necesario.
               </p>
@@ -1480,6 +1512,8 @@ def send_notification_email(
     tenant_name: str = '',
     workspace_label: str = 'Condominio',
     details: list | None = None,
+    extra_inline: list | None = None,
+    evidence_images: list | None = None,
 ) -> bool:
     """
     Send a notification alert email to a single user.
@@ -1493,6 +1527,8 @@ def send_notification_email(
         tenant_name:      Condominium / inmobiliaria display name shown in the email.
         workspace_label:  'Condominio' or 'Inmobiliaria'.
         details:          Optional list of (label, value) rows rendered as a table.
+        extra_inline:     Optional CID images [(cid, bytes, subtype, filename), ...].
+        evidence_images:  Optional [{cid, label}] shown under the message.
 
     Returns True on success, False if the send failed.
     """
@@ -1517,9 +1553,12 @@ def send_notification_email(
     )
     html = _build_notification_html(
         user_name, notif_type, title, message, tenant_name, app_url,
-        workspace_label=label, details=details,
+        workspace_label=label, details=details, evidence_images=evidence_images,
     )
-    return _send_branded_email(subject=subject, plain=plain, html=html, to_emails=[email])
+    return _send_branded_email(
+        subject=subject, plain=plain, html=html, to_emails=[email],
+        extra_inline=extra_inline or None,
+    )
 
 
 # ═══════════════════════════════════════════════════════════
@@ -1870,7 +1909,7 @@ def send_payment_plan_email(
         <tr><td style="padding:28px 32px 16px;">
           <h1 style="margin:0;font-size:22px;font-weight:800;color:{c['ink_800']};">Propuesta de Plan de Pago</h1>
           <p style="margin:6px 0 0;font-size:14px;color:{c['ink_600']};">
-            Unidad <strong>{unit_code}</strong> — {unit_name} &nbsp;·&nbsp; Responsable: <strong>{responsible}</strong>
+            Unidad <strong>{unit_name}</strong> ({unit_code}) &nbsp;·&nbsp; Responsable: <strong>{responsible}</strong>
           </p>
         </td></tr>
 
@@ -1882,7 +1921,7 @@ def send_payment_plan_email(
             </p>
             <p style="margin:0 0 8px;font-size:13px;color:{c['ink_600']};line-height:1.6;">
               La administración de <strong>{tenant_name}</strong> te ha enviado una <strong>Propuesta de Plan de Pago</strong>
-              para liquidar el adeudo registrado en tu cuenta correspondiente a la unidad <strong>{unit_code}</strong>.
+              para liquidar el adeudo registrado en tu cuenta correspondiente a la unidad <strong>{unit_name}</strong> ({unit_code}).
               {options_text}
             </p>
             <p style="margin:0;font-size:13px;color:{c['ink_600']};line-height:1.6;">
@@ -1970,7 +2009,7 @@ def send_payment_plan_email(
         f"{'=' * 40}\n"
         f"Estimado/a {responsible},\n\n"
         f"La administración de {tenant_name} te ha enviado una Propuesta de Plan de Pago\n"
-        f"para la unidad {unit_code} — {unit_name}.\n\n"
+        f"para la unidad {unit_name} ({unit_code}).\n\n"
         f"Adeudo: {fmt(total_adeudo)}  |  Monto a liquidar: {fmt(total_with_interest)}\n"
         f"Plan: {num_payments} pagos {frequency_label}\n\n"
         f"TABLA DE PAGOS:\n"
@@ -2974,6 +3013,36 @@ def _tenant_logo_inline(tenant):
         return None, None
 
 
+def image_field_inline(field, max_dim=900):
+    """Return (bytes, subtype) for an ImageField, resized for email."""
+    if not field:
+        return None, None
+    try:
+        field.open('rb')
+        data = field.read()
+        field.close()
+    except Exception:
+        return None, None
+    if not data:
+        return None, None
+    name = (getattr(field, 'name', '') or '').lower()
+    subtype = 'jpeg' if name.endswith(('.jpg', '.jpeg')) else 'png'
+    if name.endswith('.gif'):
+        subtype = 'gif'
+    if name.endswith('.webp'):
+        subtype = 'webp'
+    try:
+        from PIL import Image
+        img = Image.open(io.BytesIO(data))
+        img = img.convert('RGB')
+        img.thumbnail((max_dim, max_dim))
+        out = io.BytesIO()
+        img.save(out, format='JPEG', quality=78)
+        return out.getvalue(), 'jpeg'
+    except Exception:
+        return data, subtype
+
+
 def _tenant_address_line(tenant):
     parts = [
         getattr(tenant, 'addr_calle', '') or '',
@@ -2998,7 +3067,7 @@ def send_package_received_email(*, email, user_name, tenant, package, received_l
         if is_reminder else
         f'[{tenant_name}] Paquete {package.folio} en vigilancia'
     )
-    unit_label = f'{package.unit.unit_id_code} — {package.unit.unit_name}'
+    unit_label = package.unit.display_label
     notes = (package.receive_notes or '').strip()
     rules = (tenant.package_notify_rules or '').strip()
     address = _tenant_address_line(tenant)
@@ -3127,6 +3196,194 @@ def send_package_received_email(*, email, user_name, tenant, package, received_l
         f'{("Nota: " + notes + chr(10)) if notes else ""}'
         f'Código de entrega: {payload}\n'
         f'{("Reglamento interno:\\n" + rules + chr(10)) if rules else ""}\n'
+        f'Ingresa a Homly: {app_url}\n'
+    )
+    return _send_branded_email(
+        subject=subject,
+        plain=plain,
+        html=html,
+        to_emails=[email],
+        extra_inline=extra_inline or None,
+    )
+
+
+def send_visit_authorization_email(*, email, visitor_name, tenant, visit):
+    """Notify the visitor of a new authorized visit, including QR and house rules."""
+    from html import escape as _esc
+    from django.utils import timezone
+    from .visitas import ensure_qr_token, qr_payload, qr_png_bytes
+    c = COLORS
+    app_url = getattr(settings, 'HOMLY_APP_URL', 'https://homly.com.mx/login')
+    tenant_name = tenant.name or 'Condominio'
+    subject = f'[{tenant_name}] Autorización de visita {visit.folio}'
+    unit_label = visit.unit.display_label
+    rules = (getattr(tenant, 'visit_notify_rules', '') or '').strip()
+    address = _tenant_address_line(tenant)
+    rfc = (getattr(tenant, 'rfc', '') or '').strip()
+    token = ensure_qr_token(visit)
+    payload = qr_payload(token)
+    kind_label = 'Permanente' if visit.kind == 'permanente' else 'Ocasional'
+    if visit.kind == 'permanente':
+        if visit.duration_mode == 'count':
+            duration = f'{visit.max_visits} visita(s) autorizada(s)'
+        else:
+            duration = 'Indefinido, con vigencia de fechas'
+    else:
+        duration = 'Visita única'
+    valid_from = visit.valid_from.strftime('%d/%m/%Y') if visit.valid_from else '—'
+    valid_until = visit.valid_until.strftime('%d/%m/%Y') if visit.valid_until else '—'
+    arrive = ''
+    if visit.expected_arrive_at:
+        arrive = timezone.localtime(visit.expected_arrive_at).strftime('%d/%m/%Y %H:%M')
+    host_name = (getattr(visit, 'host_name', '') or '').strip()
+    host_kind = (getattr(visit, 'host_kind_label', '') or '').strip()
+    host_display = f'{host_name} ({host_kind})' if host_name and host_kind else host_name
+
+    tenant_logo_data, tenant_logo_subtype = _tenant_logo_inline(tenant)
+    extra_inline = []
+    tenant_logo_html = ''
+    if tenant_logo_data:
+        extra_inline.append(('tenantlogo', tenant_logo_data, tenant_logo_subtype or 'png', 'tenant-logo.png'))
+        tenant_logo_html = (
+            f'<img src="cid:tenantlogo" alt="{_esc(tenant_name)}" width="88" '
+            f'style="display:block;height:auto;max-width:88px;max-height:88px;border-radius:10px;margin:0 auto 10px;" />'
+        )
+    qr_data = qr_png_bytes(token)
+    qr_html = ''
+    if qr_data:
+        extra_inline.append(('visitqr', qr_data, 'png', 'visita-qr.png'))
+        qr_html = (
+            f'<div style="margin:22px 0 0;padding:16px;background:{c["white"]};border:1px solid #E8DFD1;'
+            f'border-radius:12px;text-align:center;">'
+            f'<div style="font-size:11px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;'
+            f'color:{c["ink_600"]};margin-bottom:8px;">Código de acceso</div>'
+            f'<img src="cid:visitqr" alt="QR de visita autorizada" width="180" height="180" '
+            f'style="display:block;margin:0 auto 10px;width:180px;height:180px;" />'
+            f'<div style="font-size:13px;font-weight:700;color:{c["ink_800"]};">Muestra este QR en caseta</div>'
+            f'<div style="font-size:12px;color:{c["ink_600"]};margin-top:4px;line-height:1.45;">'
+            f'Folio <strong>{_esc(visit.folio)}</strong><br/>'
+            f'<span style="font-family:monospace;font-size:12px;color:{c["green"]};">{_esc(payload)}</span>'
+            f'</div></div>'
+        )
+
+    rules_html = ''
+    if rules:
+        rules_html = (
+            f'<div style="margin-top:18px;padding:14px 16px;background:{c["cream_outer"]};'
+            f'border-radius:10px;border-left:4px solid {c["green"]};">'
+            f'<div style="font-size:11px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;'
+            f'color:{c["ink_600"]};margin-bottom:6px;">Normas del condominio</div>'
+            f'<div style="font-size:13px;color:{c["ink_800"]};line-height:1.55;white-space:pre-wrap;">{_esc(rules)}</div>'
+            f'</div>'
+        )
+
+    flow_html = (
+        f'<div style="margin-top:18px;padding:14px 16px;background:{c["white"]};'
+        f'border:1px solid #E8DFD1;border-radius:10px;">'
+        f'<div style="font-size:11px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;'
+        f'color:{c["ink_600"]};margin-bottom:8px;">Cómo ingresar y salir</div>'
+        f'<div style="font-size:13px;color:{c["ink_800"]};line-height:1.6;">'
+        f'1. Al llegar, muestra este código QR en caseta para registrar tu ingreso.<br/>'
+        f'2. Si no tienes el QR a la mano, presenta una identificación oficial cuyo nombre coincida '
+        f'con el de esta autorización. Vigilancia tomará una foto de evidencia y no resguardará tu identificación.<br/>'
+        f'3. Al salir, vuelve a mostrar el QR o la misma identificación para registrar tu salida.'
+        f'</div></div>'
+    )
+
+    host_html = (
+        f'<tr><td style="padding:8px 0;font-size:13px;color:{c["ink_600"]};width:38%;">Visita a</td>'
+        f'<td style="padding:8px 0;font-size:13px;font-weight:600;color:{c["ink_800"]};">{_esc(host_display)}</td></tr>'
+        if host_display else ''
+    )
+    arrive_html = (
+        f'<tr><td style="padding:8px 0;font-size:13px;color:{c["ink_600"]};width:38%;">Llegada estimada</td>'
+        f'<td style="padding:8px 0;font-size:13px;color:{c["ink_800"]};">{_esc(arrive)}</td></tr>'
+        if arrive else ''
+    )
+    phone = (visit.visitor_phone or '').strip()
+    phone_html = (
+        f'<tr><td style="padding:8px 0;font-size:13px;color:{c["ink_600"]};">Celular</td>'
+        f'<td style="padding:8px 0;font-size:13px;color:{c["ink_800"]};">{_esc(phone)}</td></tr>'
+        if phone else ''
+    )
+    addr_html = (
+        f'<div style="font-size:12px;color:{c["ink_600"]};margin-top:4px;">{_esc(address)}</div>'
+        if address else ''
+    )
+    rfc_html = (
+        f'<div style="font-size:12px;color:{c["ink_600"]};margin-top:2px;">RFC: {_esc(rfc)}</div>'
+        if rfc else ''
+    )
+
+    logo_img = f'<img src="cid:{LOGO_CID}" alt="Homly" width="140" style="display:block;height:auto;max-width:140px;margin:0 auto;" />'
+    html = f"""<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Visita { _esc(visit.folio) }</title></head>
+<body style="margin:0;padding:0;font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:{c['cream_outer']};">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:{c['cream_outer']};padding:32px 16px;">
+<tr><td align="center">
+<table width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:{c['cream']};border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(26,22,18,0.08);">
+  <tr><td style="padding:24px 28px 16px;text-align:center;border-bottom:3px solid {c['green']};">
+    {logo_img}
+    <p style="margin:10px 0 0;font-size:12px;font-weight:600;color:{c['ink_600']};letter-spacing:0.04em;">Visitas Autorizadas</p>
+  </td></tr>
+  <tr><td style="padding:24px 28px 8px;text-align:center;">
+    {tenant_logo_html}
+    <div style="font-size:18px;font-weight:800;color:{c['ink_800']};">{_esc(tenant_name)}</div>
+    {addr_html}{rfc_html}
+  </td></tr>
+  <tr><td style="padding:8px 28px 24px;">
+    <p style="margin:0 0 14px;font-size:15px;color:{c['ink_800']};">Hola {_esc(visitor_name or '')},</p>
+    <p style="margin:0 0 18px;font-size:14px;color:{c['ink_600']};line-height:1.55;">
+      Un residente de {_esc(tenant_name)} te autorizó el acceso. Conserva este correo: el código QR identifica tu visita en caseta.
+    </p>
+    <table width="100%" cellpadding="0" cellspacing="0" style="background:{c['white']};border:1px solid #E8DFD1;border-radius:12px;padding:4px 16px;">
+      <tr><td style="padding:10px 0 4px;font-size:11px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:{c['ink_600']};">Información de la autorización</td></tr>
+      <tr><td>
+        <table width="100%" cellpadding="0" cellspacing="0">
+          <tr><td style="padding:8px 0;font-size:13px;color:{c['ink_600']};width:38%;">Folio</td>
+              <td style="padding:8px 0;font-size:16px;font-weight:800;color:{c['green']};">{_esc(visit.folio)}</td></tr>
+          <tr><td style="padding:8px 0;font-size:13px;color:{c['ink_600']};">Visitante</td>
+              <td style="padding:8px 0;font-size:13px;font-weight:600;color:{c['ink_800']};">{_esc(visitor_name)}</td></tr>
+          <tr><td style="padding:8px 0;font-size:13px;color:{c['ink_600']};">Unidad</td>
+              <td style="padding:8px 0;font-size:13px;font-weight:600;color:{c['ink_800']};">{_esc(unit_label)}</td></tr>
+          {host_html}
+          <tr><td style="padding:8px 0;font-size:13px;color:{c['ink_600']};">Tipo</td>
+              <td style="padding:8px 0;font-size:13px;color:{c['ink_800']};">{_esc(kind_label)} · {_esc(duration)}</td></tr>
+          <tr><td style="padding:8px 0;font-size:13px;color:{c['ink_600']};">Vigencia</td>
+              <td style="padding:8px 0;font-size:13px;color:{c['ink_800']};">{_esc(valid_from)} al {_esc(valid_until)}</td></tr>
+          {arrive_html}
+          {phone_html}
+        </table>
+      </td></tr>
+    </table>
+    {qr_html}
+    {flow_html}
+    {rules_html}
+    <p style="margin:20px 0 0;text-align:center;">
+      <a href="{_esc(app_url)}" style="display:inline-block;background:{c['green']};color:{c['white']};text-decoration:none;font-size:13px;font-weight:700;padding:10px 18px;border-radius:10px;">Abrir Homly</a>
+    </p>
+  </td></tr>
+  {_email_footer_html(c)}
+</table>
+</td></tr></table>
+</body></html>"""
+
+    plain = (
+        f'Hola {visitor_name},\n\n'
+        f'{tenant_name} te autorizó el acceso a {unit_label}.\n'
+        f'{("Visita a: " + host_display + chr(10)) if host_display else ""}'
+        f'Folio: {visit.folio}\n'
+        f'Tipo: {kind_label} · {duration}\n'
+        f'Vigencia: {valid_from} al {valid_until}\n'
+        f'{("Llegada estimada: " + arrive + chr(10)) if arrive else ""}'
+        f'Código de acceso: {payload}\n\n'
+        f'Cómo ingresar y salir:\n'
+        f'1. Muestra este QR en caseta para registrar tu ingreso.\n'
+        f'2. Si no tienes el QR, presenta una identificación oficial con el mismo nombre. '
+        f'Vigilancia tomará una foto de evidencia y no resguardará tu identificación.\n'
+        f'3. Al salir, vuelve a mostrar el QR o la identificación.\n'
+        f'{("\\nNormas del condominio:\\n" + rules + chr(10)) if rules else ""}\n'
         f'Ingresa a Homly: {app_url}\n'
     )
     return _send_branded_email(

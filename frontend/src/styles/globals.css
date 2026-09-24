@@ -524,6 +524,12 @@ tr:hover td { background: rgba(59,185,144,0.02); }
   transition: all 0.2s;
 }
 .btn-icon:hover { background: var(--sand-50); color: var(--ink-800); }
+.btn-icon:disabled,
+.btn-icon:disabled:hover {
+  background: transparent;
+  cursor: default;
+  opacity: 1;
+}
 
 /* ─── Form fields ─── */
 .field-label {
@@ -3466,6 +3472,72 @@ tr:hover td { background: rgba(59,185,144,0.02); }
 .mnt-foot-main, .mnt-foot-danger { display: flex; gap: 8px; flex-wrap: wrap; }
 .mnt-report-overlay { z-index: 260; }
 .mnt-report { max-width: 780px; }
+.ops-report-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 280;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(26, 22, 18, 0.45);
+  backdrop-filter: blur(6px);
+}
+.ops-report-modal {
+  width: min(840px, calc(100vw - 48px));
+  max-height: min(860px, calc(100vh - 48px));
+  background: var(--white);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-xl);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+  z-index: 1;
+}
+.ops-report-head,
+.ops-report-filters,
+.ops-report-foot {
+  flex-shrink: 0;
+  background: var(--white);
+}
+.ops-report-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 22px 24px 16px;
+  border-bottom: 1px solid var(--sand-100);
+}
+.ops-report-filters {
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--sand-100);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.ops-report-body {
+  padding: 16px 24px 12px;
+  overflow: auto;
+  flex: 1;
+  min-height: 0;
+}
+.ops-report-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 14px 24px 18px;
+  border-top: 1px solid var(--sand-100);
+}
+@media (max-width: 700px) {
+  .ops-report-overlay { padding: 12px; align-items: flex-end; }
+  .ops-report-modal {
+    width: 100%;
+    max-height: calc(100vh - 16px);
+    border-radius: 20px 20px 0 0;
+  }
+}
 .mnt-paper {
   background: #fff;
   border: 1px solid var(--sand-100);

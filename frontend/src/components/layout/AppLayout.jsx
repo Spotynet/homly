@@ -11,7 +11,7 @@ import {
   Home, Globe, FileText, ShoppingBag, Receipt, Settings,
   Users, Building, Shield, LogOut, Menu, X, Calendar,
   ChevronDown, Check, Building2, Bell, CheckCheck, Activity, Lock, TrendingDown,
-  Sparkles, CreditCard, DollarSign, Target, Newspaper, Send, HelpCircle, ClipboardList, ClipboardCheck, Vote, Wrench, Package,
+  Sparkles, CreditCard, DollarSign, Target, Newspaper, Send, HelpCircle, ClipboardList, ClipboardCheck, Vote, Wrench, Package, UserCheck,
 } from 'lucide-react';
 
 const NAV_ITEMS = {
@@ -25,13 +25,14 @@ const NAV_ITEMS = {
     ]},
     { section: 'tenant_general', label: 'General', items: [
       { path: '/app/dashboard',      icon: Home,      label: 'Dashboard'      },
-      { path: '/app/reservas',       icon: Calendar,  label: 'Reservas'       },
-      { path: '/app/paqueteria',      icon: Package,   label: 'Paquetería'      },
       { path: '/app/notificaciones', icon: Bell,      label: 'Notificaciones' },
       { path: '/app/onboarding',     icon: Sparkles,  label: 'Guías de uso'   },
     ]},
     { section: 'tenant_admin', label: 'Administración', items: [
       { path: '/app/blog',           icon: Newspaper, label: 'Comunicación'   },
+      { path: '/app/reservas',       icon: Calendar,  label: 'Reservas'       },
+      { path: '/app/paqueteria',      icon: Package,   label: 'Paquetería'      },
+      { path: '/app/visitas',         icon: UserCheck, label: 'Visitas Autorizadas' },
       { path: '/app/mantenimientos',  icon: Wrench,    label: 'Mantenimientos'  },
       { path: '/app/asambleas',       icon: Vote,      label: 'Asambleas'       },
     ]},
@@ -53,13 +54,14 @@ const NAV_ITEMS = {
   admin: [
     { section: 'general', label: 'General', items: [
       { path: '/app/dashboard',      icon: Home,      label: 'Dashboard'      },
-      { path: '/app/reservas',       icon: Calendar,  label: 'Reservas'       },
-      { path: '/app/paqueteria',      icon: Package,   label: 'Paquetería'      },
       { path: '/app/notificaciones', icon: Bell,      label: 'Notificaciones' },
       { path: '/app/onboarding',     icon: Sparkles,  label: 'Guías de uso'   },
     ]},
     { section: 'administracion', label: 'Administración', items: [
       { path: '/app/blog',           icon: Newspaper, label: 'Comunicación'   },
+      { path: '/app/reservas',       icon: Calendar,  label: 'Reservas'       },
+      { path: '/app/paqueteria',      icon: Package,   label: 'Paquetería'      },
+      { path: '/app/visitas',         icon: UserCheck, label: 'Visitas Autorizadas' },
       { path: '/app/mantenimientos',  icon: Wrench,    label: 'Mantenimientos'  },
       { path: '/app/asambleas',       icon: Vote,      label: 'Asambleas'       },
     ]},
@@ -81,13 +83,14 @@ const NAV_ITEMS = {
   tesorero: [
     { section: 'general', label: 'General', items: [
       { path: '/app/dashboard',      icon: Home,      label: 'Dashboard'      },
-      { path: '/app/reservas',       icon: Calendar,  label: 'Reservas'       },
-      { path: '/app/paqueteria',      icon: Package,   label: 'Paquetería'      },
       { path: '/app/notificaciones', icon: Bell,      label: 'Notificaciones' },
       { path: '/app/onboarding',     icon: Sparkles,  label: 'Guías de uso'   },
     ]},
     { section: 'administracion', label: 'Administración', items: [
       { path: '/app/blog',           icon: Newspaper, label: 'Comunicación'   },
+      { path: '/app/reservas',       icon: Calendar,  label: 'Reservas'       },
+      { path: '/app/paqueteria',      icon: Package,   label: 'Paquetería'      },
+      { path: '/app/visitas',         icon: UserCheck, label: 'Visitas Autorizadas' },
       { path: '/app/mantenimientos',  icon: Wrench,    label: 'Mantenimientos'  },
       { path: '/app/asambleas',       icon: Vote,      label: 'Asambleas'       },
     ]},
@@ -105,13 +108,14 @@ const NAV_ITEMS = {
   contador: [
     { section: 'general', label: 'General', items: [
       { path: '/app/dashboard',      icon: Home,      label: 'Dashboard'      },
-      { path: '/app/reservas',       icon: Calendar,  label: 'Reservas'       },
-      { path: '/app/paqueteria',      icon: Package,   label: 'Paquetería'      },
       { path: '/app/notificaciones', icon: Bell,      label: 'Notificaciones' },
       { path: '/app/onboarding',     icon: Sparkles,  label: 'Guías de uso'   },
     ]},
     { section: 'administracion', label: 'Administración', items: [
       { path: '/app/blog',           icon: Newspaper, label: 'Comunicación'   },
+      { path: '/app/reservas',       icon: Calendar,  label: 'Reservas'       },
+      { path: '/app/paqueteria',      icon: Package,   label: 'Paquetería'      },
+      { path: '/app/visitas',         icon: UserCheck, label: 'Visitas Autorizadas' },
       { path: '/app/mantenimientos',  icon: Wrench,    label: 'Mantenimientos'  },
       { path: '/app/asambleas',       icon: Vote,      label: 'Asambleas'       },
     ]},
@@ -129,13 +133,14 @@ const NAV_ITEMS = {
   auditor: [
     { section: 'general', label: 'General', items: [
       { path: '/app/dashboard',      icon: Home,      label: 'Dashboard'      },
-      { path: '/app/reservas',       icon: Calendar,  label: 'Reservas'       },
-      { path: '/app/paqueteria',      icon: Package,   label: 'Paquetería'      },
       { path: '/app/notificaciones', icon: Bell,      label: 'Notificaciones' },
       { path: '/app/onboarding',     icon: Sparkles,  label: 'Guías de uso'   },
     ]},
     { section: 'administracion', label: 'Administración', items: [
       { path: '/app/blog',           icon: Newspaper, label: 'Comunicación'   },
+      { path: '/app/reservas',       icon: Calendar,  label: 'Reservas'       },
+      { path: '/app/paqueteria',      icon: Package,   label: 'Paquetería'      },
+      { path: '/app/visitas',         icon: UserCheck, label: 'Visitas Autorizadas' },
       { path: '/app/mantenimientos',  icon: Wrench,    label: 'Mantenimientos'  },
       { path: '/app/asambleas',       icon: Vote,      label: 'Asambleas'       },
     ]},
@@ -153,12 +158,13 @@ const NAV_ITEMS = {
   vigilante: [
     { section: 'general', label: 'General', items: [
       { path: '/app/dashboard',      icon: Home,      label: 'Dashboard'      },
-      { path: '/app/reservas',       icon: Calendar,  label: 'Reservas'       },
-      { path: '/app/paqueteria',      icon: Package,   label: 'Paquetería'      },
       { path: '/app/notificaciones', icon: Bell,      label: 'Notificaciones' },
     ]},
     { section: 'administracion', label: 'Administración', items: [
       { path: '/app/blog',           icon: Newspaper, label: 'Comunicación'   },
+      { path: '/app/reservas',       icon: Calendar,  label: 'Reservas'       },
+      { path: '/app/paqueteria',      icon: Package,   label: 'Paquetería'      },
+      { path: '/app/visitas',         icon: UserCheck, label: 'Visitas Autorizadas' },
       { path: '/app/mantenimientos',  icon: Wrench,    label: 'Mantenimientos'  },
       { path: '/app/asambleas',       icon: Vote,      label: 'Asambleas'       },
     ]},
@@ -167,13 +173,14 @@ const NAV_ITEMS = {
   vecino: [
     { section: 'general', label: 'General', items: [
       { path: '/app/my-unit',        icon: Home,      label: 'Mi Unidad'      },
-      { path: '/app/reservas',       icon: Calendar,  label: 'Reservas'       },
-      { path: '/app/paqueteria',      icon: Package,   label: 'Paquetería'      },
       { path: '/app/notificaciones', icon: Bell,      label: 'Notificaciones' },
       { path: '/app/onboarding',     icon: Sparkles,  label: 'Guías de uso'   },
     ]},
     { section: 'administracion', label: 'Administración', items: [
       { path: '/app/blog',           icon: Newspaper, label: 'Comunicación'   },
+      { path: '/app/reservas',       icon: Calendar,  label: 'Reservas'       },
+      { path: '/app/paqueteria',      icon: Package,   label: 'Paquetería'      },
+      { path: '/app/visitas',         icon: UserCheck, label: 'Visitas Autorizadas' },
       { path: '/app/mantenimientos',  icon: Wrench,    label: 'Mantenimientos'  },
       { path: '/app/asambleas',       icon: Vote,      label: 'Asambleas'       },
     ]},
@@ -262,6 +269,7 @@ const PATH_TO_MODULE = {
   '/app/asambleas':       'asambleas',
   '/app/mantenimientos':  'mantenimientos',
   '/app/paqueteria':      'paqueteria',
+  '/app/visitas':         'visitas',
   '/app/notificaciones':  'notificaciones',
   '/app/config':          'config',
   '/app/my-unit':         'my_unit',
@@ -294,6 +302,7 @@ const PAGE_TITLES = {
   asambleas: 'Asambleas',
   mantenimientos: 'Mantenimientos',
   paqueteria: 'Paquetería / Mensajería',
+  visitas: 'Visitas Autorizadas',
   config: 'Configuración',
   units: 'Unidades',
   users: 'Usuarios',

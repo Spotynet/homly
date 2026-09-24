@@ -112,6 +112,10 @@ _NOTIF_MODULE_MAP = {
     'package_received':           'paqueteria',
     'package_delivered':          'paqueteria',
     'package_reminder':           'paqueteria',
+    'visit_authorized':           'visitas',
+    'visit_checked_in':           'visitas',
+    'visit_checked_out':          'visitas',
+    'visit_cancelled':            'visitas',
 }
 
 
@@ -1227,19 +1231,19 @@ class UnitViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         unit = serializer.save(tenant_id=self.kwargs['tenant_id'])
         _audit_log(self.request, 'unidades', 'create',
-                   f'Unidad creada: {unit.unit_id_code} — {unit.unit_name}',
+                   f'Unidad creada: {unit.display_label}',
                    tenant_id=self.kwargs['tenant_id'],
                    object_type='Unit', object_id=str(unit.id),
-                   object_repr=f'{unit.unit_id_code} {unit.unit_name}')
+                   object_repr=unit.display_label)
         self._auto_create_residente(unit)
 
     def perform_update(self, serializer):
         unit = serializer.save()
         _audit_log(self.request, 'unidades', 'update',
-                   f'Unidad actualizada: {unit.unit_id_code} — {unit.unit_name}',
+                   f'Unidad actualizada: {unit.display_label}',
                    tenant_id=self.kwargs['tenant_id'],
                    object_type='Unit', object_id=str(unit.id),
-                   object_repr=f'{unit.unit_id_code} {unit.unit_name}')
+                   object_repr=unit.display_label)
 
     def perform_destroy(self, instance):
         from .models import Payment as _Payment
@@ -1257,7 +1261,7 @@ class UnitViewSet(viewsets.ModelViewSet):
                 ),
             })
         _audit_log(self.request, 'unidades', 'delete',
-                   f'Unidad eliminada: {instance.unit_id_code} — {instance.unit_name}',
+                   f'Unidad eliminada: {instance.display_label}',
                    tenant_id=self.kwargs['tenant_id'],
                    object_type='Unit', object_id=str(instance.id),
                    object_repr=f'{instance.unit_id_code} {instance.unit_name}')
@@ -1273,10 +1277,10 @@ class UnitViewSet(viewsets.ModelViewSet):
         unit.is_active = False
         unit.save(update_fields=['is_active', 'updated_at'])
         _audit_log(request, 'unidades', 'inactivate',
-                   f'Unidad inactivada: {unit.unit_id_code} — {unit.unit_name}',
+                   f'Unidad inactivada: {unit.display_label}',
                    tenant_id=tenant_id,
                    object_type='Unit', object_id=str(unit.id),
-                   object_repr=f'{unit.unit_id_code} {unit.unit_name}')
+                   object_repr=unit.display_label)
         return Response(UnitListSerializer(unit).data)
 
     @action(detail=True, methods=['post'], url_path='activate', permission_classes=[IsTenantAdmin])
@@ -1289,10 +1293,10 @@ class UnitViewSet(viewsets.ModelViewSet):
         unit.is_active = True
         unit.save(update_fields=['is_active', 'updated_at'])
         _audit_log(request, 'unidades', 'activate',
-                   f'Unidad reactivada: {unit.unit_id_code} — {unit.unit_name}',
+                   f'Unidad reactivada: {unit.display_label}',
                    tenant_id=tenant_id,
                    object_type='Unit', object_id=str(unit.id),
-                   object_repr=f'{unit.unit_id_code} {unit.unit_name}')
+                   object_repr=unit.display_label)
         return Response(UnitListSerializer(unit).data)
 
     @action(detail=True, methods=['post'], url_path='services-suspension', permission_classes=[IsFinancialManager])
@@ -1321,10 +1325,10 @@ class UnitViewSet(viewsets.ModelViewSet):
         verb = 'activada' if active else 'desactivada'
         _audit_log(
             request, 'unidades', 'update',
-            f'Suspensión de servicios {verb}: {unit.unit_id_code} — {unit.unit_name}',
+            f'Suspensión de servicios {verb}: {unit.display_label}',
             tenant_id=tenant_id,
             object_type='Unit', object_id=str(unit.id),
-            object_repr=f'{unit.unit_id_code} {unit.unit_name}',
+            object_repr=unit.display_label,
         )
         return Response(UnitListSerializer(unit).data)
 
@@ -1506,7 +1510,7 @@ class UnitViewSet(viewsets.ModelViewSet):
         try:
             from .email_service import send_welcome_invitation
             tenant_obj = Tenant.objects.get(id=unit.tenant_id)
-            unit_name = f'{unit.unit_id_code} — {unit.unit_name}'
+            unit_name = unit.display_label
             send_welcome_invitation(
                 email=user.email,
                 user_name=user.name or user.email,
@@ -1633,8 +1637,7 @@ class TenantUserViewSet(viewsets.ModelViewSet):
         unit = tenant_user.unit
         unit_name = None
         if unit:
-            parts = [p for p in [unit.unit_id_code, unit.unit_name] if p]
-            unit_name = ' — '.join(parts) if parts else None
+            unit_name = unit.display_label or None
 
         success = send_welcome_invitation(
             email=user.email,
@@ -6783,7 +6786,7 @@ def _generate_unit_statement_pdf(tenant, unit, rows, total_charges, total_paid, 
     occ_label  = 'Inquilino' if unit.occupancy == 'rentado' else 'Propietario'
 
     info_rows = [
-        [Paragraph('<b>Unidad</b>', st_info), Paragraph(f'{unit.unit_id_code} — {unit.unit_name}', st_info)],
+        [Paragraph('<b>Unidad</b>', st_info), Paragraph(unit.display_label, st_info)],
         [Paragraph('<b>Responsable</b>', st_info), Paragraph(f'{resp_str} ({occ_label})', st_info)],
         [Paragraph('<b>Período</b>', st_info), Paragraph(period_range_str, st_info)],
         [Paragraph('<b>Moneda</b>', st_info), Paragraph(currency, st_info)],

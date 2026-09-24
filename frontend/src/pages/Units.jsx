@@ -107,8 +107,8 @@ export default function Units() {
           <table>
             <thead>
               <tr>
-                <th>ID</th>
                 <th>Nombre</th>
+                <th>ID</th>
                 <th>Propietario</th>
                 <th>Email</th>
                 <th>Teléfono</th>
@@ -120,12 +120,12 @@ export default function Units() {
             <tbody>
               {filtered.map(u => (
                 <tr key={u.id}>
+                  <td style={{ fontWeight: 700 }}>{u.unit_name}</td>
                   <td>
-                    <span style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--teal-600)', background: 'var(--teal-50)', padding: '3px 10px', borderRadius: 6, fontSize: 12 }}>
+                    <span style={{ fontFamily: 'monospace', fontWeight: 500, color: 'var(--ink-400)', fontSize: 12 }}>
                       {u.unit_id_code}
                     </span>
                   </td>
-                  <td style={{ fontWeight: 600 }}>{u.unit_name}</td>
                   <td>{u.owner_first_name} {u.owner_last_name}</td>
                   <td style={{ fontSize: 12, color: 'var(--ink-500)' }}>{u.owner_email || '—'}</td>
                   <td style={{ fontSize: 12, color: 'var(--ink-500)' }}>{u.owner_phone || '—'}</td>

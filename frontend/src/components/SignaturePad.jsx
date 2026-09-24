@@ -98,8 +98,8 @@ export default function SignaturePad({ onChange, disabled = false, height = 180 
           style={{ display: 'block', width: '100%', cursor: disabled ? 'default' : 'crosshair' }}
         />
       </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}>
-        <span style={{ fontSize: 12, color: 'var(--ink-400)' }}>Firma con el dedo o el mouse</span>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 10 }}>
+        <span style={{ fontSize: 12, color: 'var(--ink-400)', lineHeight: 1.4 }}>Firma con el dedo o el mouse</span>
         <button type="button" className="btn btn-outline btn-sm" onClick={resize} disabled={disabled}>
           Borrar
         </button>

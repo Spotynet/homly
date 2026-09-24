@@ -95,13 +95,21 @@ def qr_payload(token):
     return f'{QR_PREFIX}{token}'
 
 
+QR_MISMATCH_MSG = 'El QR no corresponde a la validación del registro escaneado.'
+
+
 def parse_qr_payload(raw):
     text = (raw or '').strip()
+    if not text:
+        return None
     upper = text.upper()
+    for foreign in ('HOMLY-VIS:', 'HOMLY:VIS:'):
+        if upper.startswith(foreign):
+            return None
     for prefix in (QR_PREFIX, 'HOMLY:PKG:', 'HOMLY-PKG:'):
         if upper.startswith(prefix):
-            return text[len(prefix):].strip()
-    return text
+            return text[len(prefix):].strip() or None
+    return None
 
 
 def qr_png_bytes(token):
@@ -128,33 +136,8 @@ def qr_data_url(token):
 
 def package_photo_inline(package, max_dim=900):
     """Return (bytes, subtype) for the reception photo, resized for email."""
-    field = getattr(package, 'receive_photo', None)
-    if not field:
-        return None, None
-    try:
-        field.open('rb')
-        data = field.read()
-        field.close()
-    except Exception:
-        return None, None
-    if not data:
-        return None, None
-    name = (getattr(field, 'name', '') or '').lower()
-    subtype = 'jpeg' if name.endswith(('.jpg', '.jpeg')) else 'png'
-    if name.endswith('.gif'):
-        subtype = 'gif'
-    if name.endswith('.webp'):
-        subtype = 'webp'
-    try:
-        from PIL import Image
-        img = Image.open(io.BytesIO(data))
-        img = img.convert('RGB')
-        img.thumbnail((max_dim, max_dim))
-        out = io.BytesIO()
-        img.save(out, format='JPEG', quality=78)
-        return out.getvalue(), 'jpeg'
-    except Exception:
-        return data, subtype
+    from .email_service import image_field_inline
+    return image_field_inline(getattr(package, 'receive_photo', None), max_dim=max_dim)
 
 
 def reminder_settings(tenant):
@@ -350,7 +333,7 @@ def notify_package_recipients(tenant, package, recipients, actor):
     received_label = received_at.strftime('%d/%m/%Y %H:%M')
     title = f'Paquete {package.folio} en vigilancia'
     message = (
-        f'Se recibió un paquete para {package.unit.unit_id_code} — {package.unit.unit_name}. '
+        f'Se recibió un paquete para {package.unit.display_label}. '
         f'Folio {package.folio}. Recibido el {received_label}.'
     )
     if package.receive_notes:
@@ -503,6 +486,41 @@ class CondoPackageViewSet(viewsets.ModelViewSet):
         data['contacts'] = unit_contacts(pkg.unit)
         return Response(data)
 
+    def _scoped_packages(self, tenant_id):
+        qs = CondoPackage.objects.filter(tenant_id=tenant_id).select_related(
+            'unit', 'received_by', 'delivered_by',
+        )
+        user = request_user(self.request)
+        role = tenant_role(user, tenant_id)
+        if role == 'vecino':
+            uid = resident_unit_id(user, tenant_id)
+            qs = qs.filter(unit_id=uid) if uid else qs.none()
+        return qs
+
+    def _package_report(self, request, tenant_id):
+        tenant = Tenant.objects.get(id=tenant_id)
+        _require_condominio(tenant)
+        from .ops_reports import parse_report_range, package_report_payload
+        date_from, date_to, start, end = parse_report_range(request)
+        payload = package_report_payload(self._scoped_packages(tenant_id), date_from, date_to, start, end)
+        payload['tenant_name'] = (tenant.razon_social or tenant.name or '').strip()
+        return tenant, payload
+
+    @action(detail=False, methods=['get'], url_path='report')
+    def report(self, request, tenant_id=None):
+        _tenant, payload = self._package_report(request, tenant_id)
+        return Response(payload)
+
+    @action(detail=False, methods=['get'], url_path='report-pdf')
+    def report_pdf(self, request, tenant_id=None):
+        from .ops_reports import generate_ops_report_pdf, generated_by, pdf_response
+        tenant, payload = self._package_report(request, tenant_id)
+        pdf_bytes = generate_ops_report_pdf(tenant, payload, generated_by(request))
+        if not pdf_bytes:
+            return Response({'detail': 'No se pudo generar el PDF.'}, status=500)
+        filename = f'Paqueteria_{payload["date_from"]}_{payload["date_to"]}.pdf'
+        return pdf_response(pdf_bytes, filename)
+
     @action(detail=False, methods=['get'], url_path='context')
     def context(self, request, tenant_id=None):
         tenant = Tenant.objects.get(id=tenant_id)
@@ -634,12 +652,12 @@ class CondoPackageViewSet(viewsets.ModelViewSet):
         )
         token = parse_qr_payload(raw)
         if not token:
-            raise ValidationError({'qr': 'Escanea o escribe el código del paquete.'})
+            raise ValidationError({'qr': QR_MISMATCH_MSG})
         pkg = CondoPackage.objects.filter(tenant_id=tenant_id, qr_token=token).select_related(
             'unit', 'received_by', 'delivered_by',
         ).prefetch_related('events__actor').first()
         if not pkg:
-            raise ValidationError({'qr': 'No se encontró un paquete con ese código.'})
+            raise ValidationError({'qr': QR_MISMATCH_MSG})
         data = PackageSerializer(pkg, context={'request': request}).data
         data['contacts'] = unit_contacts(pkg.unit)
         return Response(data)
@@ -659,7 +677,7 @@ class CondoPackageViewSet(viewsets.ModelViewSet):
         if method == 'qr':
             token = parse_qr_payload(request.data.get('qr') or request.data.get('qr_token') or '')
             if not token or token != ensure_qr_token(pkg):
-                raise ValidationError({'qr': 'El código QR no corresponde a este paquete.'})
+                raise ValidationError({'qr': QR_MISMATCH_MSG})
         else:
             signature = validate_image(signature, 'signature')
         now = timezone.now()
@@ -730,7 +748,7 @@ class CondoPackageViewSet(viewsets.ModelViewSet):
 
         _audit(
             request, 'delete',
-            f'Paquete {folio} eliminado ({unit_code} — {unit_name}). Comentario: {comment}',
+            f'Paquete {folio} eliminado ({unit_name} ({unit_code})). Comentario: {comment}',
             tenant_id, 'CondoPackage', pkg_id, folio,
             extra_data=extra,
         )
@@ -773,7 +791,7 @@ def run_package_reminders():
             received_label = timezone.localtime(pkg.received_at).strftime('%d/%m/%Y %H:%M')
             title = f'Recordatorio: paquete {pkg.folio} en vigilancia'
             message = (
-                f'El paquete {pkg.folio} de {pkg.unit.unit_id_code} — {pkg.unit.unit_name} '
+                f'El paquete {pkg.folio} de {pkg.unit.display_label} '
                 f'sigue en caseta. Recibido el {received_label}.'
             )
             notified_users = set()

@@ -63,7 +63,7 @@ export default function PlanPagosPrintModal({ plan, unit, tc, onClose }) {
     if (!el) return;
 
     const tenantName = (tc?.name || '').replace(/[^a-zA-Z0-9À-ÿ\s]/g, '').trim();
-    const printTitle = `Plan de Pago — ${unitCode} — ${tenantName}`;
+    const printTitle = `Plan de Pago — ${unitName !== '—' ? unitName : unitCode} — ${tenantName}`;
 
     let css = '';
     Array.from(document.styleSheets).forEach(sheet => {
@@ -115,7 +115,7 @@ export default function PlanPagosPrintModal({ plan, unit, tc, onClose }) {
         <div className="modal-head">
           <h3 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <FileText size={18} style={{ display: 'inline', verticalAlign: -4 }} />
-            Plan de Pago — {unitCode}
+            Plan de Pago — {unitName !== '—' ? unitName : unitCode}
           </h3>
           <button className="modal-close" onClick={onClose}><X size={16} /></button>
         </div>
@@ -167,7 +167,7 @@ export default function PlanPagosPrintModal({ plan, unit, tc, onClose }) {
 
             {/* ── Datos de la unidad ── */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
-              <InfoCell label="Unidad" value={`${unitCode}  ${unitName !== '—' ? unitName : ''}`} />
+              <InfoCell label="Unidad" value={unitName !== '—' ? `${unitName}${unitCode !== '—' ? ` (${unitCode})` : ''}` : unitCode} />
               <InfoCell label="Responsable" value={responsible} />
               <InfoCell label="Frecuencia de pago" value={plan.plan_type === 'settlement' ? 'Pago único · liquidación con quita' : `${freqLabel} · ${plan.num_payments} cuotas`} />
               <InfoCell label="Período inicial" value={plan.start_period ? periodLabel(plan.start_period) : '—'} />

@@ -93,6 +93,7 @@ const SYSTEM_MODULES = [
   { key: 'asambleas',       label: 'Asambleas',               desc: 'Convocatorias, quórum, minutas e historial' },
   { key: 'mantenimientos',  label: 'Mantenimientos',          desc: 'Preventivos, correctivos, evidencias e historial' },
   { key: 'paqueteria',      label: 'Paquetería / Mensajería', desc: 'Recepción y entrega de paquetes en vigilancia' },
+  { key: 'visitas',         label: 'Visitas Autorizadas',     desc: 'Autorizaciones de visitas, QR e ingreso en caseta' },
   { key: 'blog',            label: 'Comunicación',            desc: 'Publicaciones y comunicados para la comunidad' },
   { key: 'config',          label: 'Configuración',          desc: 'Ajustes generales del condominio' },
   { key: 'my_unit',         label: 'Mi Unidad',              desc: 'Vista individual para residentes' },

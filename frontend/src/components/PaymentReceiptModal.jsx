@@ -405,7 +405,7 @@ export default function PaymentReceiptModal({ pay: payProp, unit, tc, extraField
               </div>
               <div style={{ height: 2, background: 'linear-gradient(to right, var(--teal-400), var(--teal-100))', margin: '0 0 16px' }} />
               <div className="receipt-info-grid">
-                <div className="receipt-info-row"><span className="receipt-info-label">Unidad</span><span className="receipt-info-val">{unit?.unit_id_code} — {unit?.unit_name}</span></div>
+                <div className="receipt-info-row"><span className="receipt-info-label">Unidad</span><span className="receipt-info-val">{unit?.unit_name}{unit?.unit_id_code ? ` (${unit.unit_id_code})` : ''}</span></div>
                 <div className="receipt-info-row"><span className="receipt-info-label">Responsable</span><span className="receipt-info-val">{pay?.responsible || unit?.responsible_name || '—'}</span></div>
                 <div className="receipt-info-row"><span className="receipt-info-label">Período</span><span className="receipt-info-val">{periodLabel(pay.period)}</span></div>
                 <div className="receipt-info-row"><span className="receipt-info-label">Forma de Pago</span><span className="receipt-info-val">{ptLabel}</span></div>

@@ -21,7 +21,9 @@ import {
   // Contador
   ShoppingBag, BookOpen, Lock, ClipboardCheck, Vote,
   // Residente
-  Home, Calendar, Bell,
+  Home, Calendar, Bell, UserCheck,
+  // Operación
+  Package, Wrench, Newspaper, Camera, QrCode,
   // Comunes
   Building2, Globe, Mail, CheckCircle2,
 } from 'lucide-react';
@@ -125,7 +127,7 @@ const adminChapters = [
         title: 'Módulos del sistema',
         subtitle: 'Prende/apaga funciones completas',
         body:
-          'Si tu condominio no usa Reservas, Plan de Pagos u otro módulo, puedes desactivarlo en Configuración → Módulos. Desaparece del menú para todos los usuarios.',
+          'Si tu condominio no usa Reservas, Paquetería, Visitas u otro módulo, puedes desactivarlo en Configuración → Permisos. Desaparece del menú para todos los usuarios.',
       },
     ],
   },
@@ -188,6 +190,165 @@ const adminChapters = [
         body:
           'Registra votaciones (simple, calificada o unanimidad), redacta el acta, fírmala con presidente y secretario y, si el acuerdo lo requiere, márcala como protocolizada ante notario.',
         route: '/app/asambleas',
+      },
+    ],
+  },
+  {
+    id: 'admin-mantenimientos',
+    kind: 'modal',
+    icon: Wrench,
+    color: '#b45309',
+    bg: '#fffbeb',
+    title: 'Mantenimientos',
+    subtitle: 'Preventivos, correctivos y evidencias',
+    length: '3 pasos',
+    steps: [
+      {
+        icon: Wrench, color: '#b45309', bg: '#fffbeb',
+        title: 'Crear un trabajo',
+        subtitle: 'Preventivo o correctivo',
+        body:
+          'En Mantenimientos abre una planeación preventiva (revisiones programadas) o un correctivo (falla ya ocurrida). Indica el área, quién lo realiza y el estatus. Al concluir, cambia a Realizado.',
+        route: '/app/mantenimientos',
+      },
+      {
+        icon: Camera, color: '#b45309', bg: '#fffbeb',
+        title: 'Cargar evidencias',
+        subtitle: 'Fecha real de la foto',
+        body:
+          'Con el trabajo En curso o Realizado, sube fotos o archivos y elige la fecha en que se tomó la evidencia (puede ser distinta al día en que la cargas). Quedan en la línea de tiempo de la ficha.',
+        tips: ['Si las fotos se tomaron un día y se suben después, usa la fecha real de la evidencia.'],
+      },
+      {
+        icon: FileText, color: '#b45309', bg: '#fffbeb',
+        title: 'Reporte e historial',
+        subtitle: 'Para el comité y la bitácora',
+        body:
+          'Desde la ficha puedes ver el reporte del trabajo. El historial conserva planeación, evidencias y fechas aunque el período financiero ya esté cerrado.',
+        route: '/app/mantenimientos',
+      },
+    ],
+  },
+  {
+    id: 'admin-paqueteria',
+    kind: 'modal',
+    icon: Package,
+    color: '#0f766e',
+    bg: '#ccfbf1',
+    title: 'Paquetería / Mensajería',
+    subtitle: 'Recepción en caseta y entrega al vecino',
+    length: '4 pasos',
+    steps: [
+      {
+        icon: Package, color: '#0f766e', bg: '#ccfbf1',
+        title: 'Recibir un paquete',
+        subtitle: 'Foto, unidad y folio del año',
+        body:
+          'En Paquetería pulsa "Recibir paquete", elige la unidad (el nombre se ve primero, el ID después), toma la foto de evidencia y guarda. Homly asigna el folio AAAA-####. Luego eliges a qué contactos de la unidad se envía el aviso.',
+        route: '/app/paqueteria',
+      },
+      {
+        icon: Mail, color: '#0f766e', bg: '#ccfbf1',
+        title: 'Aviso con QR y foto',
+        subtitle: 'Lo que recibe el vecino',
+        body:
+          'El correo incluye folio, unidad, foto, código QR de entrega y, si lo configuraste, el reglamento. El vecino muestra ese QR en caseta; no se escribe a mano.',
+      },
+      {
+        icon: QrCode, color: '#0f766e', bg: '#ccfbf1',
+        title: 'Entregar con QR o firma',
+        subtitle: 'El código debe coincidir',
+        body:
+          'Abre el paquete en "En vigilancia" → Entregar. Con QR, escanea con la cámara: si no es el de ese paquete, Homly avisa "El QR no corresponde a la validación del registro escaneado". Con firma, el destinatario firma en pantalla. También puedes usar "Escanear QR" en el tablero.',
+        tips: ['El texto del QR es de solo lectura: solo se reemplaza al escanear de nuevo.'],
+      },
+      {
+        icon: FileText, color: '#0f766e', bg: '#ccfbf1',
+        title: 'Personalizar y reportar',
+        subtitle: 'Reglamento, recordatorios y PDF',
+        body:
+          'En Personalizar editas el reglamento del correo y los recordatorios automáticos si el paquete sigue en vigilancia. En Reporte eliges un periodo, ves el resumen y descargas el PDF. Solo el administrador puede eliminar un paquete, con comentario para el log.',
+        route: '/app/paqueteria',
+      },
+    ],
+  },
+  {
+    id: 'admin-visitas',
+    kind: 'modal',
+    icon: UserCheck,
+    color: '#0d9488',
+    bg: '#ccfbf1',
+    title: 'Visitas Autorizadas',
+    subtitle: 'Permanentes, ocasionales y caseta',
+    length: '4 pasos',
+    steps: [
+      {
+        icon: UserCheck, color: '#0d9488', bg: '#ccfbf1',
+        title: 'Autorizar una visita',
+        subtitle: 'Anfitrión, vigencia y QR',
+        body:
+          'Registra nombres, apellidos, correo y celular. Elige ocasional (llegada estimada) o permanente (cantidad de visitas o indefinido, siempre con vigencia). Indica quién recibe: alguien del registro de la unidad u otro nombre. El visitante recibe el QR y las normas por correo.',
+        route: '/app/visitas',
+      },
+      {
+        icon: Settings, color: '#0d9488', bg: '#ccfbf1',
+        title: 'Cajones y gafetes',
+        subtitle: 'Configuración del condominio',
+        body:
+          'En Configuración → Visitas das de alta cajones de visita y gafetes, y activas si se usan. En el ingreso, vigilancia asigna el que corresponda. Un cajón o gafete ocupado se marca, pero se puede elegir si hace falta.',
+        route: '/app/config',
+      },
+      {
+        icon: Camera, color: '#0d9488', bg: '#ccfbf1',
+        title: 'Ingreso y salida en caseta',
+        subtitle: 'QR o identificación + foto',
+        body:
+          'El vigilante abre la bitácora o usa "Escanear QR". El código debe ser el de esa autorización. Si no trae QR, presenta identificación con el mismo nombre; se toma foto de evidencia y no se guarda el documento. Si llega en vehículo: foto, placa y cajón o gafete.',
+        tips: ['Al confirmar ingreso o salida se eligen los contactos de la unidad; reciben correo con detalles y fotos.'],
+      },
+      {
+        icon: FileText, color: '#0d9488', bg: '#ccfbf1',
+        title: 'Reporte del periodo',
+        subtitle: 'Resumen y PDF',
+        body:
+          'En Visitas → Reporte eliges el periodo. Ves autorizaciones, ingresos, salidas y la lista. Desde el mismo popup descargas el PDF. El folio de cada visita es ID-unidad + año + consecutivo de 3 dígitos.',
+        route: '/app/visitas',
+      },
+    ],
+  },
+  {
+    id: 'admin-comunicacion',
+    kind: 'modal',
+    icon: Newspaper,
+    color: '#0d9488',
+    bg: '#ccfbf1',
+    title: 'Comunicación y directorio',
+    subtitle: 'Avisos a la comunidad y contactos',
+    length: '3 pasos',
+    steps: [
+      {
+        icon: Newspaper, color: '#0d9488', bg: '#ccfbf1',
+        title: 'Publicar un aviso',
+        subtitle: 'Artículo, audiencia y portada',
+        body:
+          'En Comunicación crea un artículo (aviso, mantenimiento, evento…). Elige audiencia: todos, por rol o personas. Puedes poner imagen de portada o un color. Los vecinos reaccionan y comentan.',
+        route: '/app/blog',
+      },
+      {
+        icon: Users, color: '#0d9488', bg: '#ccfbf1',
+        title: 'Directorio de la comunidad',
+        subtitle: 'Propietarios e inquilinos',
+        body:
+          'El botón Directorio lista propietarios, copropietarios e inquilinos de las unidades activas (nombre, correo y teléfono). Sirve para buscar, filtrar, imprimir o bajar CSV.',
+        route: '/app/blog',
+      },
+      {
+        icon: Bell, color: '#0d9488', bg: '#ccfbf1',
+        title: 'Notificaciones',
+        subtitle: 'En la app y por correo',
+        body:
+          'Los avisos de paquetes, visitas, pagos y asambleas también llegan al centro de notificaciones. El vecino marca como leído lo que ya revisó.',
+        route: '/app/notificaciones',
       },
     ],
   },
@@ -299,7 +460,7 @@ const tesoreroChapters = [
         title: 'Capturar un gasto',
         subtitle: 'Fecha, categoría, proveedor',
         body:
-          'En Gastos usa "Registrar gasto" e indica la fecha, la categoría (definida por el admin), el proveedor, el monto y un concepto descriptivo. Puedes adjuntar la foto o PDF del comprobante.',
+          'En Gastos usa "Registrar gasto" e indica la fecha, la categoría (definida por el admin), el proveedor, el monto y un concepto descriptivo. Puedes adjuntar la foto o PDF del comprobante. En la lista, el ojo se ve verde si hay archivo y gris si no hay nada que abrir.',
         route: '/app/gastos',
       },
       {
@@ -376,6 +537,67 @@ const tesoreroChapters = [
         subtitle: 'Queda en solo lectura',
         body:
           'Cuando todas las firmas estén en orden, cierras el período. A partir de ese momento los movimientos son solo lectura. Si se necesita corregir algo, debes reabrirlo explícitamente.',
+      },
+    ],
+  },
+  {
+    id: 'tes-caja-chica',
+    kind: 'modal',
+    icon: Wallet,
+    color: '#8b5cf6',
+    bg: '#ede9fe',
+    title: 'Caja Chica',
+    subtitle: 'Gastos menores en efectivo',
+    length: '3 pasos',
+    steps: [
+      {
+        icon: Wallet, color: '#8b5cf6', bg: '#ede9fe',
+        title: 'Para qué sirve',
+        subtitle: 'Separada de Gastos',
+        body:
+          'La caja chica es el fondo de gastos chicos del día a día (papelería, limpieza, una reparación menor) que se pagan en efectivo. No se mezcla con los gastos que salen de la cuenta bancaria.',
+        route: '/app/caja-chica',
+      },
+      {
+        icon: ShoppingBag, color: '#8b5cf6', bg: '#ede9fe',
+        title: 'Registrar un movimiento',
+        subtitle: 'Descripción, monto y evidencia',
+        body:
+          'Elige el período, pulsa "Nuevo registro" e indica descripción, monto, forma de pago y fecha. Adjunta el comprobante si lo tienes. El ícono de ojo se ve verde cuando hay archivo y gris si no hay nada que abrir.',
+      },
+      {
+        icon: Lock, color: '#8b5cf6', bg: '#ede9fe',
+        title: 'Periodo cerrado',
+        subtitle: 'Solo lectura',
+        body:
+          'Cuando el mes se cierra, caja chica queda en solo lectura, igual que Gastos. Para corregir hay que reabrir el período (queda en la bitácora).',
+      },
+    ],
+  },
+  {
+    id: 'tes-planeacion',
+    kind: 'modal',
+    icon: ClipboardCheck,
+    color: '#b45309',
+    bg: '#fffbeb',
+    title: 'Planeación',
+    subtitle: 'Presupuesto anual y obras',
+    length: '2 pasos',
+    steps: [
+      {
+        icon: ClipboardCheck, color: '#b45309', bg: '#fffbeb',
+        title: 'Presupuesto del año',
+        subtitle: 'Lo planeado vs lo real',
+        body:
+          'En Planeación armas el presupuesto anual por rubro. Conforme se registran gastos, ves lo ejecutado contra lo autorizado. Así el comité sabe si un rubro ya se pasó.',
+        route: '/app/planeacion',
+      },
+      {
+        icon: Wrench, color: '#b45309', bg: '#fffbeb',
+        title: 'Proyectos de obra',
+        subtitle: 'Seguimiento de avances',
+        body:
+          'Registra proyectos (fachada, cisterna, techumbre…) con montos y avance. Los gastos reales se contrastan con lo planeado para reportar en asamblea.',
       },
     ],
   },
@@ -617,6 +839,197 @@ const residenteChapters = [
       },
     ],
   },
+  {
+    id: 'vec-visitas',
+    kind: 'modal',
+    icon: UserCheck,
+    color: '#0d9488',
+    bg: '#ccfbf1',
+    title: 'Visitas Autorizadas',
+    subtitle: 'Familiares, personal y visitas temporales',
+    length: '3 pasos',
+    steps: [
+      {
+        icon: UserCheck, color: '#0d9488', bg: '#ccfbf1',
+        title: 'Autorizar desde tu unidad',
+        subtitle: 'Permanente u ocasional',
+        body:
+          'En Mi Unidad o Visitas Autorizadas registra a la persona (nombre, apellidos, correo y celular). Si es ocasional indica la llegada estimada. Si es permanente elige cantidad de visitas o indefinido, siempre con vigencia. El visitante recibe el QR por correo.',
+        route: '/app/visitas',
+      },
+      {
+        icon: Mail, color: '#0d9488', bg: '#ccfbf1',
+        title: 'Cómo entra y sale tu visita',
+        subtitle: 'QR o identificación',
+        body:
+          'En caseta se escanea el QR. Si no lo trae, presenta una identificación con el mismo nombre; vigilancia toma una foto de evidencia y no se queda con el documento. La salida se registra igual. Si llega en auto, se toma foto del vehículo, placa y cajón o gafete.',
+      },
+      {
+        icon: Mail, color: '#0d9488', bg: '#ccfbf1',
+        title: 'Aviso de ingreso y salida',
+        subtitle: 'A los contactos de tu unidad',
+        body:
+          'Al confirmar el ingreso o la salida, vigilancia elige a quién avisar (propietario, copropietario, inquilino). El correo trae folio, visitante, anfitrión, hora, método y las fotos de evidencia.',
+      },
+    ],
+  },
+  {
+    id: 'vec-paqueteria',
+    kind: 'modal',
+    icon: Package,
+    color: '#0f766e',
+    bg: '#ccfbf1',
+    title: 'Recoger un paquete',
+    subtitle: 'Aviso, QR y entrega en caseta',
+    length: '2 pasos',
+    steps: [
+      {
+        icon: Bell, color: '#0f766e', bg: '#ccfbf1',
+        title: 'Cuando llega tu paquete',
+        subtitle: 'Correo y notificación',
+        body:
+          'Vigilancia registra el paquete con foto. Te llega un correo (y aviso en Homly) con el folio, la foto y un QR. Si configuraron reglamento, también lo ves en el mismo mensaje.',
+        route: '/app/paqueteria',
+      },
+      {
+        icon: QrCode, color: '#0f766e', bg: '#ccfbf1',
+        title: 'Recoger en caseta',
+        subtitle: 'Muestra el QR o firma',
+        body:
+          'En caseta muestran el QR del correo (o de la pantalla). Debe ser el de ese paquete; no se escribe a mano. Si no lo tienes, puedes firmar en la tablet de vigilancia.',
+      },
+    ],
+  },
+  {
+    id: 'vec-enviar-pago',
+    kind: 'modal',
+    icon: Send,
+    color: '#0d9488',
+    bg: '#ccfbf1',
+    title: 'Enviar comprobante de pago',
+    subtitle: 'Que administración registre tu cuota',
+    length: '2 pasos',
+    steps: [
+      {
+        icon: Send, color: '#0d9488', bg: '#ccfbf1',
+        title: 'Subir el comprobante',
+        subtitle: 'Periodo, archivo y nota',
+        body:
+          'En Enviar Pago elige el mes, adjunta la foto o PDF de la transferencia y, si quieres, una nota. Administración lo revisa y lo captura en Cobranza.',
+        route: '/app/enviar-pago',
+      },
+      {
+        icon: CheckCircle2, color: '#0d9488', bg: '#ccfbf1',
+        title: 'Estatus del envío',
+        subtitle: 'Pendiente, recibido o rechazado',
+        body:
+          'Pendiente: ya lo vieron o está en cola. Recibido: ya quedó registrado tu pago. Rechazado: verás el motivo y puedes enviar otro comprobante.',
+      },
+    ],
+  },
+  {
+    id: 'vec-asambleas',
+    kind: 'modal',
+    icon: Vote,
+    color: '#0d9488',
+    bg: '#ccfbf1',
+    title: 'Asambleas',
+    subtitle: 'Convocatoria y documentos',
+    length: '2 pasos',
+    steps: [
+      {
+        icon: Vote, color: '#0d9488', bg: '#ccfbf1',
+        title: 'Ver la convocatoria',
+        subtitle: 'Fecha, lugar y orden del día',
+        body:
+          'Cuando administración emite una asamblea, te llega aviso. En Asambleas ves tipo (ordinaria o extraordinaria), fecha, lugar, orden del día y los documentos (convocatoria, minuta, acta).',
+        route: '/app/asambleas',
+      },
+      {
+        icon: FileText, color: '#0d9488', bg: '#ccfbf1',
+        title: 'Poderes y acuerdos',
+        subtitle: 'Si no puedes asistir',
+        body:
+          'Si el condominio usa cartas poder, se registran en la misma asamblea. Después puedes consultar la minuta y, si ya se protocolizó, el acta.',
+      },
+    ],
+  },
+];
+
+// ═══════════════════════════════════════════════════════════════
+//  VIGILANTE — caseta
+// ═══════════════════════════════════════════════════════════════
+const vigilanteChapters = [
+  {
+    id: 'vig-paquetes',
+    kind: 'modal',
+    icon: Package,
+    color: '#0f766e',
+    bg: '#ccfbf1',
+    title: 'Paquetes en caseta',
+    subtitle: 'Recibir, avisar y entregar',
+    length: '3 pasos',
+    steps: [
+      {
+        icon: Package, color: '#0f766e', bg: '#ccfbf1',
+        title: 'Recibir el paquete',
+        subtitle: 'Unidad, foto y folio',
+        body:
+          'En Paquetería → Recibir paquete elige la casa (primero el nombre, luego el ID), toma la foto y guarda. Se asigna el folio del año. Después eliges a quién avisar de esa unidad.',
+        route: '/app/paqueteria',
+      },
+      {
+        icon: QrCode, color: '#0f766e', bg: '#ccfbf1',
+        title: 'Entregar al destinatario',
+        subtitle: 'Escanear o firmar',
+        body:
+          'Abre el paquete en "En vigilancia" o usa "Escanear QR". El código del correo debe ser el de ese paquete. Si no coincide: "El QR no corresponde a la validación del registro escaneado". También puedes pedir firma en pantalla.',
+        tips: ['El campo del QR no se borra ni se teclea: solo se reemplaza al escanear.'],
+      },
+      {
+        icon: FileText, color: '#0f766e', bg: '#ccfbf1',
+        title: 'Reporte del turno',
+        subtitle: 'Resumen y PDF',
+        body:
+          'Con el botón Reporte eliges el periodo, ves cuántos paquetes llegaron y descargas el PDF para la bitácora del turno.',
+      },
+    ],
+  },
+  {
+    id: 'vig-visitas',
+    kind: 'modal',
+    icon: UserCheck,
+    color: '#0d9488',
+    bg: '#ccfbf1',
+    title: 'Ingreso y salida de visitas',
+    subtitle: 'Bitácora, QR e identificación',
+    length: '3 pasos',
+    steps: [
+      {
+        icon: UserCheck, color: '#0d9488', bg: '#ccfbf1',
+        title: 'Localizar la autorización',
+        subtitle: 'Por unidad o por QR',
+        body:
+          'En Visitas Autorizadas abre la bitácora de la unidad o pulsa "Escanear QR". Confirma que el visitante es el de esa autorización (nombre, folio, vigencia, anfitrión).',
+        route: '/app/visitas',
+      },
+      {
+        icon: Camera, color: '#0d9488', bg: '#ccfbf1',
+        title: 'Registrar ingreso o salida',
+        subtitle: 'QR, foto de ID y vehículo',
+        body:
+          'Escanea el QR de la autorización. Si no lo trae, pide identificación con el mismo nombre, toma foto y no te quedes con el documento. Si entra en auto: foto, placa y cajón o gafete. Luego elige a qué contactos de la unidad se envía el aviso (con las fotos).',
+        tips: ['El QR de un paquete no sirve para una visita, ni al revés.'],
+      },
+      {
+        icon: FileText, color: '#0d9488', bg: '#ccfbf1',
+        title: 'Reporte de visitas',
+        subtitle: 'Ingresos y salidas del periodo',
+        body:
+          'En Reporte ves autorizaciones, ingresos y salidas del periodo y descargas el PDF. Sirve para el cierre de turno o para administración.',
+      },
+    ],
+  },
 ];
 
 // ═══════════════════════════════════════════════════════════════
@@ -629,7 +1042,7 @@ export const GUIDE_ROLES = [
     icon: Sparkles,
     color: 'var(--teal-500)',
     bg: 'var(--teal-50)',
-    description: 'Configurar el tenant, usuarios, permisos y comité',
+    description: 'Configurar el tenant, operación (paquetes, visitas, mantenimientos) y comité',
     chapters: adminChapters,
   },
   {
@@ -638,7 +1051,7 @@ export const GUIDE_ROLES = [
     icon: Wallet,
     color: '#22c55e',
     bg: '#dcfce7',
-    description: 'Cobranza, gastos, planes de pago y cierre mensual',
+    description: 'Cobranza, gastos, caja chica, planeación y cierre mensual',
     chapters: tesoreroChapters,
   },
   {
@@ -656,8 +1069,17 @@ export const GUIDE_ROLES = [
     icon: Home,
     color: 'var(--coral-500)',
     bg: 'var(--coral-50)',
-    description: 'Mi unidad, reservas, estado de cuenta y notificaciones',
+    description: 'Mi unidad, visitas, paquetes, reservas, pagos y asambleas',
     chapters: residenteChapters,
+  },
+  {
+    key: 'vigilante',
+    label: 'Vigilante',
+    icon: Shield,
+    color: '#0f766e',
+    bg: '#ccfbf1',
+    description: 'Caseta: paquetes, visitas autorizadas y bitácora de ingresos',
+    chapters: vigilanteChapters,
   },
 ];
 

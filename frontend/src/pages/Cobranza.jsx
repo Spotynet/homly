@@ -664,10 +664,10 @@ export default function Cobranza() {
                 return (
                   <tr key={u.id}>
                     <td>
-                      <span style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--teal-600)', background: 'var(--teal-50)', padding: '2px 8px', borderRadius: 6, fontSize: 12, marginRight: 6 }}>
+                      <span style={{ fontWeight: 700, fontSize: 13 }}>{u.unit_name}</span>
+                      <span style={{ fontFamily: 'monospace', fontWeight: 500, color: 'var(--ink-400)', marginLeft: 6, fontSize: 12 }}>
                         {u.unit_id_code}
                       </span>
-                      <span style={{ fontWeight: 600, fontSize: 13 }}>{u.unit_name}</span>
                       {rowPlanInst && (
                         <span title={`Plan de pago activo — Cuota ${rowPlanInst.num || '?'}: ${fmt(parseFloat(rowPlanInst.debt_part) || 0)}`}
                           style={{ marginLeft: 6, fontSize: 10, color: 'var(--teal-700)', background: 'var(--teal-50)', border: '1px solid var(--teal-200)', padding: '1px 5px', borderRadius: 4, cursor: 'default', verticalAlign: 'middle' }}>
@@ -705,7 +705,7 @@ export default function Cobranza() {
                         <div style={{ marginTop: pay?.notes ? 4 : 0, display: 'inline-flex', alignItems: 'center', gap: 4,
                           background: 'var(--amber-50)', color: 'var(--amber-700)', border: '1px solid var(--amber-200)',
                           borderRadius: 6, padding: '2px 7px', fontSize: 11, fontWeight: 700 }}>
-                          🔀 → {pay.applied_to_unit_code || pay.applied_to_unit_id}
+                          🔀 → {pay.applied_to_unit_name || pay.applied_to_unit_code || pay.applied_to_unit_id}
                         </div>
                       )}
                     </td>
@@ -813,7 +813,7 @@ export default function Cobranza() {
                           <button
                             title="Eliminar cobro"
                             onClick={async () => {
-                              if (window.confirm(`¿Eliminar el cobro de ${u.unit_id_code} — ${u.unit_name}? Esta acción no se puede deshacer.`)) {
+                              if (window.confirm(`¿Eliminar el cobro de ${u.unit_name || u.unit_id_code}${u.unit_id_code ? ` (${u.unit_id_code})` : ''}? Esta acción no se puede deshacer.`)) {
                                 try { await paymentsAPI.clear(tenantId, pay.id); toast.success('Cobro eliminado'); queryClient.invalidateQueries({ queryKey: queryKeys.payments(tenantId, period) }); }
                                 catch (e) { toast.error(e.response?.data?.detail || 'Error al eliminar'); }
                               }
@@ -1018,9 +1018,9 @@ export default function Cobranza() {
                 return (
                   <>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', background: 'var(--sand-50)', border: '1px solid var(--sand-100)', borderRadius: 'var(--radius-md)', marginBottom: 16 }}>
-                      <span style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--teal-600)', background: 'var(--teal-50)', padding: '4px 10px', borderRadius: 6, fontSize: 12 }}>{unit.unit_id_code}</span>
                       <div style={{ flex: 1 }}>
                         <div style={{ fontWeight: 700, fontSize: 14 }}>{unit.unit_name}</div>
+                        <div style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--ink-400)' }}>{unit.unit_id_code}</div>
                         <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>{resp || '—'}</div>
                       </div>
                       <span style={{ fontSize: 12, padding: '4px 10px', background: 'var(--blue-50)', color: 'var(--blue-700)', borderRadius: 99, fontWeight: 700 }}>Pago #{pagoNum}</span>
@@ -1112,7 +1112,7 @@ export default function Cobranza() {
                               .filter(u => u.id !== showAddPaymentModal?.unit?.id)
                               .map(u => (
                                 <option key={u.id} value={u.id}>
-                                  {u.unit_id_code}{u.unit_name ? ` — ${u.unit_name}` : ''}{u.responsible_name ? ` (${u.responsible_name})` : ''}
+                                  {u.unit_name || u.unit_id_code}{u.unit_name && u.unit_id_code ? ` (${u.unit_id_code})` : ''}{u.responsible_name ? ` · ${u.responsible_name}` : ''}
                                 </option>
                               ))
                             }
@@ -1182,7 +1182,7 @@ export default function Cobranza() {
           <div className="modal-bg open" onClick={() => { setShowAdditionalPaymentsModal(null); setEditingAdditional(null); }}>
             <div className="modal lg" onClick={e => e.stopPropagation()} style={{ maxWidth: 560 }}>
               <div className="modal-head">
-                <h3><Edit size={16} style={{ display: 'inline', verticalAlign: -3, marginRight: 8 }} />Pagos Adicionales — {unit.unit_id_code} — {periodLabel(period)}</h3>
+                <h3><Edit size={16} style={{ display: 'inline', verticalAlign: -3, marginRight: 8 }} />Pagos Adicionales — {unit.unit_name || unit.unit_id_code} — {periodLabel(period)}</h3>
                 <button className="modal-close" onClick={() => { setShowAdditionalPaymentsModal(null); setEditingAdditional(null); }}><X size={16} /></button>
               </div>
               <div className="modal-body">
@@ -1434,9 +1434,9 @@ export default function Cobranza() {
                 )}
                 {/* Unit header */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', background: 'var(--sand-50)', border: '1px solid var(--sand-100)', borderRadius: 'var(--radius-md)', flexWrap: 'wrap' }}>
-                  <span style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--teal-600)', background: 'var(--teal-50)', padding: '4px 10px', borderRadius: 6, fontSize: 12 }}>{showCapture.unit_id_code}</span>
                   <div style={{ flex: 1 }}>
                     <div style={{ fontWeight: 700, fontSize: 14 }}>{showCapture.unit_name}</div>
+                    <div style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--ink-400)' }}>{showCapture.unit_id_code}</div>
                     <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>{responsible || '—'} · {showCapture.occupancy === 'rentado' ? 'Inquilino' : 'Propietario'}</div>
                   </div>
                   <button
@@ -1515,7 +1515,7 @@ export default function Cobranza() {
                               onChange={e => setFieldTargetUnit(ef.id, e.target.value || null)}>
                               <option value="">— Seleccionar unidad destino —</option>
                               {units.filter(u => u.id !== showCapture.id).map(u => (
-                                <option key={u.id} value={u.id}>{u.unit_id_code} — {u.unit_name}</option>
+                                <option key={u.id} value={u.id}>{u.unit_name}{u.unit_id_code ? ` (${u.unit_id_code})` : ''}</option>
                               ))}
                             </select>
                           </div>
@@ -1591,7 +1591,7 @@ export default function Cobranza() {
                               onChange={e => setFieldTargetUnit(ef.id, e.target.value || null)}>
                               <option value="">— Seleccionar unidad destino —</option>
                               {units.filter(u => u.id !== showCapture.id).map(u => (
-                                <option key={u.id} value={u.id}>{u.unit_id_code} — {u.unit_name}</option>
+                                <option key={u.id} value={u.id}>{u.unit_name}{u.unit_id_code ? ` (${u.unit_id_code})` : ''}</option>
                               ))}
                             </select>
                           </div>

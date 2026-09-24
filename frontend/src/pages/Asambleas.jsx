@@ -1060,7 +1060,7 @@ function compileMinuta(assembly) {
       ? 'Punto informativo (sin votación).'
       : `Votos: a favor ${item.votes_for || 0}, en contra ${item.votes_against || 0}, abstenciones ${item.votes_abstain || 0}.`;
     const ballots = (item.vote_detail || []).map(b => {
-      const who = [b.unit_code, b.name].filter(Boolean).join(' ');
+      const who = [b.unit_name, b.unit_code && `(${b.unit_code})`, b.name].filter(Boolean).join(' ');
       return `   · ${who || 'Asistente'}: ${BALLOT[b.choice] || b.choice}`;
     });
     return [
@@ -1083,7 +1083,7 @@ function VoteDetailList({ item }) {
     <div className="asm-vote-detail">
       {rows.map((b, i) => (
         <span key={b.attendee_id || i}>
-          {[b.unit_code, b.name].filter(Boolean).join(' ') || 'Asistente'}: {BALLOT[b.choice] || b.choice}
+          {[b.unit_name, b.unit_code && `(${b.unit_code})`, b.name].filter(Boolean).join(' ') || 'Asistente'}: {BALLOT[b.choice] || b.choice}
         </span>
       ))}
     </div>
@@ -1153,7 +1153,7 @@ function VoteModal({ assembly, item, q, canWrite, onClose, onSave }) {
                   <tbody>
                     {voters.map(a => (
                       <tr key={a.id}>
-                        <td>{a.unit_code || '—'}</td>
+                        <td>{a.unit_name || a.unit_code || '—'}{a.unit_name && a.unit_code ? <span style={{ color: 'var(--ink-400)', marginLeft: 6 }}>({a.unit_code})</span> : null}</td>
                         <td>{a.attendee_name}{a.proxy_name ? ` (repr. ${a.proxy_name})` : ''}</td>
                         {['for', 'against', 'abstain'].map(c => (
                           <td key={c} style={{ textAlign: 'center' }}>
@@ -1392,7 +1392,7 @@ function AssemblyDetail({ tenantId, assembly, ctx, canWrite, tabHint, onClose, o
                   <tbody>
                     {(assembly.attendees || []).map(a => (
                       <tr key={a.id}>
-                        <td>{a.unit_code || '—'}</td>
+                        <td>{a.unit_name || a.unit_code || '—'}{a.unit_name && a.unit_code ? <span style={{ color: 'var(--ink-400)', marginLeft: 6 }}>({a.unit_code})</span> : null}</td>
                         <td>{a.attendee_name}</td>
                         <td>{a.capacity}</td>
                         <td>

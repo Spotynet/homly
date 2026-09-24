@@ -9,12 +9,12 @@
  */
 
 export const ROLE_BASE_MODULES = {
-  admin:     ['dashboard', 'reservas', 'cobranza', 'gastos', 'caja_chica', 'estado_cuenta', 'plan_pagos', 'cierre_periodo', 'planeacion', 'asambleas', 'mantenimientos', 'paqueteria', 'notificaciones', 'onboarding', 'mi_membresia', 'config', 'blog'],
+  admin:     ['dashboard', 'reservas', 'cobranza', 'gastos', 'caja_chica', 'estado_cuenta', 'plan_pagos', 'cierre_periodo', 'planeacion', 'asambleas', 'mantenimientos', 'paqueteria', 'visitas', 'notificaciones', 'onboarding', 'mi_membresia', 'config', 'blog'],
   tesorero:  ['dashboard', 'reservas', 'cobranza', 'gastos', 'caja_chica', 'estado_cuenta', 'plan_pagos', 'cierre_periodo', 'planeacion', 'asambleas', 'mantenimientos', 'notificaciones', 'onboarding', 'blog'],
   contador:  ['dashboard', 'reservas', 'cobranza', 'gastos', 'caja_chica', 'estado_cuenta', 'plan_pagos', 'cierre_periodo', 'planeacion', 'asambleas', 'mantenimientos', 'notificaciones', 'onboarding', 'blog'],
   auditor:   ['dashboard', 'cobranza', 'reservas', 'gastos', 'caja_chica', 'estado_cuenta', 'plan_pagos', 'cierre_periodo', 'planeacion', 'asambleas', 'mantenimientos', 'notificaciones', 'onboarding', 'blog'],
-  vigilante: ['dashboard', 'reservas', 'asambleas', 'mantenimientos', 'paqueteria', 'notificaciones', 'blog'],
-  vecino:    ['my_unit', 'reservas', 'estado_cuenta', 'plan_pagos', 'notificaciones', 'onboarding', 'blog', 'enviar_pago', 'asambleas', 'mantenimientos'],
+  vigilante: ['dashboard', 'reservas', 'asambleas', 'mantenimientos', 'paqueteria', 'visitas', 'notificaciones', 'blog'],
+  vecino:    ['my_unit', 'reservas', 'estado_cuenta', 'plan_pagos', 'notificaciones', 'onboarding', 'blog', 'enviar_pago', 'asambleas', 'mantenimientos', 'visitas'],
 };
 
 /** Módulos del espacio de rentas (inmobiliaria). Independiente del condominio. */
@@ -40,6 +40,7 @@ export const CONDO_MODULE_KEYS = [
   'asambleas',
   'mantenimientos',
   'paqueteria',
+  'visitas',
   'notificaciones',
   'onboarding',
   'mi_membresia',

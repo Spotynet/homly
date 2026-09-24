@@ -1234,10 +1234,8 @@ export default function EstadoCuenta() {
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                                   <div style={{ width: 4, height: 36, borderRadius: 2, background: hasDebt ? 'var(--coral-400)' : 'var(--teal-400)', flexShrink: 0 }} />
                                   <div>
-                                    <span style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--teal-600)', background: 'var(--teal-50)', padding: '2px 8px', borderRadius: 5, fontSize: 12 }}>
-                                      {u.unit_id_code}
-                                    </span>
-                                    <div style={{ fontWeight: 600, fontSize: 13, marginTop: 3 }}>{u.unit_name}</div>
+                                    <div style={{ fontWeight: 700, fontSize: 14 }}>{u.unit_name}</div>
+                                    <div style={{ fontFamily: 'monospace', fontWeight: 500, color: 'var(--ink-400)', fontSize: 12, marginTop: 2 }}>{u.unit_id_code}</div>
                                   </div>
                                 </div>
                               </td>
@@ -1379,8 +1377,8 @@ export default function EstadoCuenta() {
                   <thead>
                     <tr style={{ background: '#1a1a2e', color: 'white' }}>
                       <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 700 }}>#</th>
-                      <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 700 }}>Código</th>
                       <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 700 }}>Nombre / Unidad</th>
+                      <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 700 }}>Código</th>
                       <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 700 }}>Responsable</th>
                       <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 700 }}>Cargos</th>
                       <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 700 }}>Abonado</th>
@@ -1399,12 +1397,12 @@ export default function EstadoCuenta() {
                       return (
                         <tr key={u.id} style={{ background: rowBg }}>
                           <td style={{ padding: '5px 8px', color: '#64748b', borderBottom: '1px solid #e5e0d5' }}>{idx + 1}</td>
+                          <td style={{ padding: '5px 8px', fontWeight: 700, color: '#1a1a2e', borderBottom: '1px solid #e5e0d5' }}>{u.unit_name}</td>
                           <td style={{ padding: '5px 8px', borderBottom: '1px solid #e5e0d5' }}>
-                            <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#0d7c6e', background: '#e6f4f2', padding: '1px 5px', borderRadius: 3 }}>
+                            <span style={{ fontFamily: 'monospace', fontWeight: 500, color: '#64748b' }}>
                               {u.unit_id_code}
                             </span>
                           </td>
-                          <td style={{ padding: '5px 8px', fontWeight: 600, color: '#1a1a2e', borderBottom: '1px solid #e5e0d5' }}>{u.unit_name}</td>
                           <td style={{ padding: '5px 8px', color: '#64748b', borderBottom: '1px solid #e5e0d5' }}>{u.responsible_name || '—'}</td>
                           <td style={{ padding: '5px 8px', textAlign: 'right', borderBottom: '1px solid #e5e0d5' }}>{fmt(u.total_charges)}</td>
                           <td style={{ padding: '5px 8px', textAlign: 'right', color: '#0d7c6e', borderBottom: '1px solid #e5e0d5' }}>{fmt(u.total_payments)}</td>
@@ -1751,10 +1749,10 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
         const responsible = pay.responsible || '';
         if (pay.bank_reconciled) {
           recaudoConciliado += income;
-          if (income > 0) recaudoDetails.conciliado.push({ unit: pay.unit_id_code || '', responsible, amount: income, payment_type: pay.payment_type });
+          if (income > 0) recaudoDetails.conciliado.push({ unit: pay.unit_name || pay.unit_id_code || '', unit_code: pay.unit_id_code || '', responsible, amount: income, payment_type: pay.payment_type });
         } else {
           recaudoNoConciliado += income;
-          if (income > 0) recaudoDetails.noConciliado.push({ unit: pay.unit_id_code || '', responsible, amount: income, payment_type: pay.payment_type });
+          if (income > 0) recaudoDetails.noConciliado.push({ unit: pay.unit_name || pay.unit_id_code || '', unit_code: pay.unit_id_code || '', responsible, amount: income, payment_type: pay.payment_type });
         }
       });
       if (aggData) {
@@ -2174,7 +2172,7 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
                       {/* Detalle colapsable */}
                       {isExpanded && hasRecaudoDetail && row.recaudoDetails.conciliado.map((d, i) => (
                         <tr key={`rc-${i}`} style={{ background: 'rgba(42,157,115,0.04)', fontSize: 11 }}>
-                          <td style={{ paddingLeft: 32, color: 'var(--teal-600)', fontStyle: 'italic' }}>↳ 🏦 {d.unit}{d.responsible ? ` — ${d.responsible}` : ''}</td>
+                          <td style={{ paddingLeft: 32, color: 'var(--teal-600)', fontStyle: 'italic' }}>↳ 🏦 {d.unit}{d.unit_code ? ` (${d.unit_code})` : ''}{d.responsible ? ` — ${d.responsible}` : ''}</td>
                           <td></td>
                           <td style={{ textAlign: 'right', color: 'var(--teal-600)' }}>{fmt(d.amount)}</td>
                           <td colSpan={8}><span style={{ fontSize: 10, color: 'var(--ink-400)' }}>{d.payment_type || ''}</span></td>
@@ -2182,7 +2180,7 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
                       ))}
                       {isExpanded && hasRecaudoDetail && row.recaudoDetails.noConciliado.map((d, i) => (
                         <tr key={`rn-${i}`} style={{ background: 'rgba(255,180,0,0.04)', fontSize: 11 }}>
-                          <td style={{ paddingLeft: 32, color: 'var(--amber-600)', fontStyle: 'italic' }}>↳ ⏳ {d.unit}{d.responsible ? ` — ${d.responsible}` : ''}</td>
+                          <td style={{ paddingLeft: 32, color: 'var(--amber-600)', fontStyle: 'italic' }}>↳ ⏳ {d.unit}{d.unit_code ? ` (${d.unit_code})` : ''}{d.responsible ? ` — ${d.responsible}` : ''}</td>
                           <td></td>
                           <td></td>
                           <td style={{ textAlign: 'right', color: 'var(--amber-500)' }}>{fmt(d.amount)}</td>
@@ -2493,7 +2491,7 @@ function ReporteGeneralView({ tenantData, generalData, genLoading, cutoff, setCu
                 {(rd.ingresos_no_recon_details || []).map((nr, i) => (
                   <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid rgba(124,58,237,0.08)' }}>
                     <div>
-                      <span style={{ fontSize: 13, color: 'var(--purple-700)', fontWeight: 600 }}>{nr.unit_id} · {nr.unit_name}</span>
+                      <span style={{ fontSize: 13, color: 'var(--purple-700)', fontWeight: 600 }}>{nr.unit_name || nr.unit_id}{nr.unit_name && nr.unit_id ? ` (${nr.unit_id})` : ''}</span>
                       {nr.payment_type && <span style={{ fontSize: 10, color: 'var(--purple-400)', marginLeft: 8 }}>{nr.payment_type}</span>}
                       {nr.payment_date && <span style={{ fontSize: 10, color: 'var(--purple-400)', marginLeft: 6 }}>{nr.payment_date}</span>}
                     </div>
@@ -2987,10 +2985,12 @@ function DebtPaymentPlanModal({ unit, totalAdeudo, maintenanceFee = 0, onClose, 
           <h3 style={{ display: 'flex', alignItems: 'center', gap: 8, margin: 0, fontSize: 15, flexWrap: 'wrap' }}>
             <TrendingDown size={18} color="var(--coral-500)" />
             Planes de Pago —&nbsp;
-            <span style={{ fontFamily: 'monospace', background: 'var(--teal-50)', color: 'var(--teal-700)', padding: '2px 8px', borderRadius: 5 }}>
-              {unit?.unit_id_code}
-            </span>
-            &nbsp;{unit?.unit_name}
+            <span style={{ fontWeight: 700 }}>{unit?.unit_name}</span>
+            {unit?.unit_id_code && (
+              <span style={{ fontFamily: 'monospace', color: 'var(--ink-400)', fontWeight: 500, fontSize: 13, marginLeft: 6 }}>
+                {unit.unit_id_code}
+              </span>
+            )}
           </h3>
           <button className="modal-close" onClick={onClose}><X size={16} /></button>
         </div>
@@ -3460,8 +3460,8 @@ function ReporteAdeudosView({ tenantData, adeudosData, setAdeudosData, adeudosLo
           <thead>
             <tr style={{ background: '#1a1a2e', color: 'white' }}>
               <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 700 }}>#</th>
-              <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 700 }}>Código</th>
               <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 700 }}>Nombre / Unidad</th>
+              <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 700 }}>Código</th>
               <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 700 }}>Responsable</th>
               <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 700 }}>Deuda Anterior</th>
               <th style={{ padding: '6px 8px', textAlign: 'center', fontWeight: 700 }}>Períodos No Pagados</th>
@@ -3478,18 +3478,16 @@ function ReporteAdeudosView({ tenantData, adeudosData, setAdeudosData, adeudosLo
               return (
                 <tr key={u.id} style={{ background: rowBg }}>
                   <td style={{ padding: '5px 8px', color: '#64748b', borderBottom: '1px solid #fde8e8' }}>{idx + 1}</td>
-                  <td style={{ padding: '5px 8px', borderBottom: '1px solid #fde8e8' }}>
-                    <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#0d7c6e', background: '#e6f4f2', padding: '1px 5px', borderRadius: 3 }}>
-                      {u.unit_id_code}
-                    </span>
-                  </td>
-                  <td style={{ padding: '5px 8px', fontWeight: 600, color: '#1a1a2e', borderBottom: '1px solid #fde8e8' }}>
+                  <td style={{ padding: '5px 8px', fontWeight: 700, color: '#1a1a2e', borderBottom: '1px solid #fde8e8' }}>
                     {u.unit_name}
                     {(u.services_suspended || item.services_suspended) && (
                       <div style={{ marginTop: 2, fontSize: 8, fontWeight: 800, color: '#92400e', letterSpacing: '0.04em' }}>
                         SUSPENSIÓN DE SERVICIOS
                       </div>
                     )}
+                  </td>
+                  <td style={{ padding: '5px 8px', borderBottom: '1px solid #fde8e8' }}>
+                    <span style={{ fontFamily: 'monospace', fontWeight: 500, color: '#64748b' }}>{u.unit_id_code}</span>
                   </td>
                   <td style={{ padding: '5px 8px', color: '#64748b', borderBottom: '1px solid #fde8e8' }}>{u.responsible_name || '—'}</td>
                   <td style={{ padding: '5px 8px', textAlign: 'right', color: prevDebt > 0 ? '#c0392b' : '#64748b', fontWeight: prevDebt > 0 ? 700 : 400, borderBottom: '1px solid #fde8e8' }}>
@@ -3575,10 +3573,8 @@ function ReporteAdeudosView({ tenantData, adeudosData, setAdeudosData, adeudosLo
                             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                               <div style={{ width: 4, height: 36, borderRadius: 2, background: (u.services_suspended || item.services_suspended) ? 'var(--amber-500)' : 'var(--coral-400)', flexShrink: 0 }} />
                               <div>
-                                <span style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--teal-600)', background: 'var(--teal-50)', padding: '2px 8px', borderRadius: 5, fontSize: 12 }}>
-                                  {u.unit_id_code}
-                                </span>
-                                <div style={{ fontWeight: 600, fontSize: 13, marginTop: 3 }}>{u.unit_name}</div>
+                                <div style={{ fontWeight: 700, fontSize: 14 }}>{u.unit_name}</div>
+                                <div style={{ fontFamily: 'monospace', fontWeight: 500, color: 'var(--ink-400)', fontSize: 12, marginTop: 2 }}>{u.unit_id_code}</div>
                                 {(u.services_suspended || item.services_suspended) && (
                                   <div style={{ marginTop: 5 }}>
                                     <ServicesSuspensionBadge />

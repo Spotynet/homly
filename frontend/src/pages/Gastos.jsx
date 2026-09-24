@@ -154,18 +154,18 @@ function GastosTable({ rows, isReadOnly, onEdit, onDelete, onViewEvidence, showB
                 {g.notes && <div style={{ color: 'var(--ink-400)', fontStyle: 'italic', marginTop: 2 }}><AlertCircle size={10} style={{ display:'inline', verticalAlign: -1, marginRight: 3 }} />{g.notes}</div>}
               </td>
               <td style={{ textAlign: 'center' }}>
-                {hasEv ? (
-                  <button
-                    className="btn-icon"
-                    title="Ver evidencia adjunta"
-                    style={{ color: 'var(--teal-600)' }}
-                    onClick={() => onViewEvidence && onViewEvidence(g.id, g.evidence)}
-                  >
-                    <Eye size={14} />
-                  </button>
-                ) : (
-                  <span style={{ fontSize: 10, color: 'var(--ink-300)' }}>—</span>
-                )}
+                <button
+                  className="btn-icon"
+                  title={hasEv ? 'Ver evidencia adjunta' : 'Sin evidencia adjunta'}
+                  disabled={!hasEv}
+                  style={{
+                    color: hasEv ? 'var(--teal-600)' : 'var(--ink-300)',
+                    cursor: hasEv ? 'pointer' : 'default',
+                  }}
+                  onClick={() => { if (hasEv && onViewEvidence) onViewEvidence(g.id, g.evidence); }}
+                >
+                  <Eye size={14} />
+                </button>
               </td>
               {!isReadOnly && (
                 <td style={{ textAlign: 'center' }}>

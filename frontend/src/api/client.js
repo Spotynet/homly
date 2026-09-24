@@ -399,6 +399,30 @@ export const mantenimientosAPI = {
   gastoOptions:  (tenantId, params) => api.get(`/tenants/${tenantId}/condo-maintenance/gasto-options/`, { params }),
 };
 
+export const visitasAPI = {
+  context:      (tenantId) => api.get(`/tenants/${tenantId}/condo-visits/context/`),
+  list:         (tenantId, params) => api.get(`/tenants/${tenantId}/condo-visits/`, { params }),
+  get:          (tenantId, id) => api.get(`/tenants/${tenantId}/condo-visits/${id}/`),
+  create:       (tenantId, data) => api.post(`/tenants/${tenantId}/condo-visits/`, data),
+  checkin:      (tenantId, id, formData) => api.post(`/tenants/${tenantId}/condo-visits/${id}/checkin/`, formData),
+  checkout:     (tenantId, id, formData) => api.post(`/tenants/${tenantId}/condo-visits/${id}/checkout/`, formData),
+  cancel:       (tenantId, id, data) => api.post(`/tenants/${tenantId}/condo-visits/${id}/cancel/`, data),
+  resend:       (tenantId, id) => api.post(`/tenants/${tenantId}/condo-visits/${id}/resend/`),
+  settings:     (tenantId) => api.get(`/tenants/${tenantId}/condo-visits/settings/`),
+  saveSettings: (tenantId, data) => api.patch(`/tenants/${tenantId}/condo-visits/settings/`, data),
+  lookup:       (tenantId, qr) => api.post(`/tenants/${tenantId}/condo-visits/lookup/`, { qr }),
+  report:       (tenantId, params) => api.get(`/tenants/${tenantId}/condo-visits/report/`, { params }),
+  reportPdf:    (tenantId, params) => api.get(`/tenants/${tenantId}/condo-visits/report-pdf/`, { params, responseType: 'blob' }),
+  hosts:        (tenantId, unitId) => api.get(`/tenants/${tenantId}/condo-visits/hosts/`, { params: unitId ? { unit: unitId } : {} }),
+  unitContacts: (tenantId, unitId) => api.get(`/tenants/${tenantId}/condo-visits/unit-contacts/`, { params: unitId ? { unit: unitId } : {} }),
+  createParking:(tenantId, data) => api.post(`/tenants/${tenantId}/condo-visits/parking-spots/`, data),
+  updateParking:(tenantId, id, data) => api.patch(`/tenants/${tenantId}/condo-visits/parking-spots/${id}/`, data),
+  deleteParking:(tenantId, id) => api.delete(`/tenants/${tenantId}/condo-visits/parking-spots/${id}/`),
+  createBadge:  (tenantId, data) => api.post(`/tenants/${tenantId}/condo-visits/badges/`, data),
+  updateBadge:  (tenantId, id, data) => api.patch(`/tenants/${tenantId}/condo-visits/badges/${id}/`, data),
+  deleteBadge:  (tenantId, id) => api.delete(`/tenants/${tenantId}/condo-visits/badges/${id}/`),
+};
+
 export const paqueteriaAPI = {
   context:      (tenantId) => api.get(`/tenants/${tenantId}/condo-packages/context/`),
   list:         (tenantId, params) => api.get(`/tenants/${tenantId}/condo-packages/`, { params }),
@@ -411,6 +435,8 @@ export const paqueteriaAPI = {
   unitContacts: (tenantId, unitId) => api.get(`/tenants/${tenantId}/condo-packages/unit-contacts/`, { params: { unit: unitId } }),
   lookup:       (tenantId, qr) => api.post(`/tenants/${tenantId}/condo-packages/lookup/`, { qr }),
   delete:       (tenantId, id, data) => api.post(`/tenants/${tenantId}/condo-packages/${id}/delete/`, data),
+  report:       (tenantId, params) => api.get(`/tenants/${tenantId}/condo-packages/report/`, { params }),
+  reportPdf:    (tenantId, params) => api.get(`/tenants/${tenantId}/condo-packages/report-pdf/`, { params, responseType: 'blob' }),
 };
 
 export const providersAPI = {

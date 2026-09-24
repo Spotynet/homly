@@ -406,26 +406,27 @@ export default function CajaChica() {
                         <td style={{ fontSize: 11 }}>{PAYMENT_TYPES[c.payment_type]?.short || c.payment_type || '—'}</td>
                         <td style={{ fontSize: 11, color: 'var(--ink-500)' }}>{fmtDate(c.date)}</td>
                         <td style={{ textAlign: 'center' }}>
-                          {hasEv ? (
-                            <button
-                              className="btn-icon"
-                              title="Ver evidencia adjunta"
-                              style={{ color: 'var(--purple-600, #7C3AED)' }}
-                              onClick={() => {
-                                if (c.evidence) {
-                                  setViewerFiles(parseEvidence(c.evidence));
-                                } else {
-                                  cajaChicaAPI.get(tenantId, c.id)
-                                    .then(({ data }) => setViewerFiles(parseEvidence(data.evidence)))
-                                    .catch(() => {});
-                                }
-                              }}
-                            >
-                              <Eye size={14} />
-                            </button>
-                          ) : (
-                            <span style={{ fontSize: 10, color: 'var(--ink-300)' }}>—</span>
-                          )}
+                          <button
+                            className="btn-icon"
+                            title={hasEv ? 'Ver evidencia adjunta' : 'Sin evidencia adjunta'}
+                            disabled={!hasEv}
+                            style={{
+                              color: hasEv ? 'var(--teal-600)' : 'var(--ink-300)',
+                              cursor: hasEv ? 'pointer' : 'default',
+                            }}
+                            onClick={() => {
+                              if (!hasEv) return;
+                              if (c.evidence) {
+                                setViewerFiles(parseEvidence(c.evidence));
+                              } else {
+                                cajaChicaAPI.get(tenantId, c.id)
+                                  .then(({ data }) => setViewerFiles(parseEvidence(data.evidence)))
+                                  .catch(() => {});
+                              }
+                            }}
+                          >
+                            <Eye size={14} />
+                          </button>
                         </td>
                         {!isReadOnly && (
                           <td style={{ textAlign: 'center' }}>

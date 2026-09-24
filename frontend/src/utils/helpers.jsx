@@ -282,7 +282,23 @@ export const HOMLY_LOGO_FULL = (
   />
 );
 
-export const APP_VERSION = '10.4.0';
+export const APP_VERSION = '10.5.0';
+
+export function unitCodeOf(u = {}) {
+  return String(u.unit_id_code || u.unit_code || u.unitIdCode || '').trim();
+}
+
+export function unitNameOf(u = {}) {
+  return String(u.unit_name || u.unitName || '').trim();
+}
+
+/** Nombre primero, ID entre paréntesis. Ambos se conservan. */
+export function unitLabel(u, fallback = '—') {
+  const name = unitNameOf(u);
+  const code = unitCodeOf(u);
+  if (name && code) return `${name} (${code})`;
+  return name || code || fallback;
+}
 
 /** True for any PDF the OS may report with a non-standard MIME (empty, octet-stream, .PDF). */
 export function isPdfFile(file) {

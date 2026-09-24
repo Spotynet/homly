@@ -201,6 +201,19 @@ class Tenant(models.Model):
         default=3,
         help_text='Máximo de recordatorios automáticos por paquete.',
     )
+    visit_notify_rules = models.TextField(
+        blank=True,
+        default='',
+        help_text='Normas del condominio que se incluyen en el correo de autorización de visitas.',
+    )
+    visit_use_parking = models.BooleanField(
+        default=True,
+        help_text='Si está activo, vigilancia asigna cajón de visitas al ingreso en vehículo.',
+    )
+    visit_use_badges = models.BooleanField(
+        default=False,
+        help_text='Si está activo, vigilancia asigna un gafete de visitas al ingreso.',
+    )
     admin_type = models.CharField(max_length=20, choices=ADMIN_TYPE_CHOICES, default='mesa_directiva')
 
     # Fiscal info (Info tab)
@@ -418,8 +431,16 @@ class Unit(models.Model):
             models.Index(fields=['tenant', 'unit_name']),
         ]
 
+    @property
+    def display_label(self):
+        name = (self.unit_name or '').strip()
+        code = (self.unit_id_code or '').strip()
+        if name and code:
+            return f'{name} ({code})'
+        return name or code or '—'
+
     def __str__(self):
-        return f'{self.unit_id_code} — {self.unit_name}'
+        return self.display_label
 
     @property
     def responsible_name(self):
@@ -1153,6 +1174,11 @@ class Notification(models.Model):
         ('package_received',      'Paquete recibido'),
         ('package_delivered',     'Paquete entregado'),
         ('package_reminder',      'Recordatorio de paquete'),
+        # Visitas autorizadas
+        ('visit_authorized',      'Visita autorizada'),
+        ('visit_checked_in',      'Ingreso de visita'),
+        ('visit_checked_out',     'Salida de visita'),
+        ('visit_cancelled',       'Visita cancelada'),
         # General
         ('general',               'Información General'),
     ]
@@ -1202,6 +1228,7 @@ class AuditLog(models.Model):
         ('tenants',    'Tenants'),
         ('sistema',    'Sistema'),
         ('paqueteria', 'Paquetería / Mensajería'),
+        ('visitas',    'Visitas Autorizadas'),
     ]
 
     ACTION_CHOICES = [
@@ -3398,5 +3425,204 @@ class CondoPackageEvent(models.Model):
 
     def __str__(self):
         return f'{self.package.folio} · {self.event_type}'
+
+
+# ═══════════════════════════════════════════════════════════
+#  VISITAS AUTORIZADAS
+# ═══════════════════════════════════════════════════════════
+
+def condo_visit_evidence_path(instance, filename):
+    ext = os.path.splitext(filename)[1].lower() or '.jpg'
+    visit = instance.visit
+    return f'visits/{visit.tenant_id}/{visit.id}/{instance.id}{ext}'
+
+
+def default_visit_qr_token():
+    return secrets.token_urlsafe(16)
+
+
+def condo_visit_vehicle_path(instance, filename):
+    ext = os.path.splitext(filename)[1].lower() or '.jpg'
+    visit = getattr(instance, 'visit', instance)
+    return f'visits/{visit.tenant_id}/{visit.id}/vehiculo-{instance.id}{ext}'
+
+
+class CondoVisitParkingSpot(models.Model):
+    """Cajón de visitas configurado por el tenant."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='visit_parking_spots')
+    code = models.CharField(max_length=40)
+    name = models.CharField(max_length=120, blank=True, default='')
+    notes = models.CharField(max_length=200, blank=True, default='')
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'condo_visit_parking_spots'
+        ordering = ['code']
+        unique_together = ['tenant', 'code']
+
+    def __str__(self):
+        return self.name or self.code
+
+
+class CondoVisitBadge(models.Model):
+    """Gafete de visitas configurado por el tenant."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='visit_badges')
+    code = models.CharField(max_length=40)
+    name = models.CharField(max_length=120, blank=True, default='')
+    notes = models.CharField(max_length=200, blank=True, default='')
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'condo_visit_badges'
+        ordering = ['code']
+        unique_together = ['tenant', 'code']
+
+    def __str__(self):
+        return self.name or self.code
+
+
+class CondoVisitAuth(models.Model):
+    """Autorización de visita permanente u ocasional, creada por el residente."""
+
+    KIND_CHOICES = [
+        ('ocasional', 'Ocasional'),
+        ('permanente', 'Permanente'),
+    ]
+    DURATION_CHOICES = [
+        ('count', 'Cantidad de visitas'),
+        ('indefinido', 'Indefinido'),
+    ]
+    STATUS_CHOICES = [
+        ('vigente', 'Vigente'),
+        ('en_condominio', 'En el condominio'),
+        ('completada', 'Completada'),
+        ('agotada', 'Visitas agotadas'),
+        ('vencida', 'Vencida'),
+        ('cancelada', 'Cancelada'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='visit_auths')
+    unit = models.ForeignKey(Unit, on_delete=models.PROTECT, related_name='visit_auths')
+    folio = models.CharField(max_length=80, db_index=True, help_text='{id-unidad}-{AAAA}-{###}')
+    folio_year = models.PositiveIntegerField()
+    folio_seq = models.PositiveIntegerField()
+    qr_token = models.CharField(
+        max_length=64, unique=True, default=default_visit_qr_token, db_index=True,
+    )
+
+    visitor_first_name = models.CharField(max_length=120)
+    visitor_last_name = models.CharField(max_length=120)
+    visitor_email = models.EmailField()
+    visitor_phone = models.CharField(max_length=40, blank=True, default='')
+
+    host_key = models.CharField(max_length=80, blank=True, default='')
+    host_kind_label = models.CharField(max_length=40, blank=True, default='')
+    host_name = models.CharField(max_length=200, blank=True, default='')
+
+    arrived_by_vehicle = models.BooleanField(default=False)
+    vehicle_plate = models.CharField(max_length=20, blank=True, default='')
+    vehicle_photo = models.ImageField(upload_to=condo_visit_vehicle_path, null=True, blank=True)
+    parking_spot = models.ForeignKey(
+        'CondoVisitParkingSpot', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='current_visits',
+    )
+    parking_label = models.CharField(max_length=120, blank=True, default='')
+    badge = models.ForeignKey(
+        'CondoVisitBadge', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='current_visits',
+    )
+    badge_label = models.CharField(max_length=120, blank=True, default='')
+
+    kind = models.CharField(max_length=16, choices=KIND_CHOICES, db_index=True)
+    expected_arrive_at = models.DateTimeField(null=True, blank=True)
+    duration_mode = models.CharField(max_length=16, choices=DURATION_CHOICES, blank=True, default='')
+    max_visits = models.PositiveIntegerField(null=True, blank=True)
+    visits_used = models.PositiveIntegerField(default=0)
+    valid_from = models.DateField()
+    valid_until = models.DateField()
+
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default='vigente', db_index=True)
+    currently_inside = models.BooleanField(default=False, db_index=True)
+    last_check_in_at = models.DateTimeField(null=True, blank=True)
+    last_check_out_at = models.DateTimeField(null=True, blank=True)
+    notes = models.TextField(blank=True, default='')
+
+    created_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='visit_auths_created',
+    )
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+    cancelled_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='visit_auths_cancelled',
+    )
+    cancel_reason = models.CharField(max_length=300, blank=True, default='')
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'condo_visit_auths'
+        ordering = ['-created_at']
+        unique_together = ['tenant', 'folio']
+        indexes = [
+            models.Index(fields=['tenant', 'kind', 'status'], name='condo_visit_tenant__kind_idx'),
+            models.Index(fields=['tenant', 'unit'], name='condo_visit_tenant__unit_idx'),
+            models.Index(fields=['tenant', 'currently_inside'], name='condo_visit_tenant__inside_idx'),
+            models.Index(fields=['tenant', 'folio_year', 'unit'], name='condo_visit_tenant__folio_idx'),
+        ]
+
+    def __str__(self):
+        return f'{self.folio} — {self.visitor_full_name}'
+
+    @property
+    def visitor_full_name(self):
+        return f'{self.visitor_first_name} {self.visitor_last_name}'.strip()
+
+
+class CondoVisitEvent(models.Model):
+    """Bitácora de una autorización: alta, ingreso, salida, cancelación."""
+
+    EVENT_CHOICES = [
+        ('creado', 'Autorización creada'),
+        ('ingreso', 'Ingreso al condominio'),
+        ('salida', 'Salida del condominio'),
+        ('cancelado', 'Autorización cancelada'),
+        ('reenviado', 'Correo reenviado'),
+    ]
+    METHOD_CHOICES = [
+        ('qr', 'Código QR'),
+        ('identificacion', 'Identificación con foto'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    visit = models.ForeignKey(CondoVisitAuth, on_delete=models.CASCADE, related_name='events')
+    event_type = models.CharField(max_length=16, choices=EVENT_CHOICES, db_index=True)
+    method = models.CharField(max_length=16, choices=METHOD_CHOICES, blank=True, default='')
+    notes = models.TextField(blank=True, default='')
+    extra = models.JSONField(default=dict, blank=True)
+    evidence_photo = models.ImageField(upload_to=condo_visit_evidence_path, null=True, blank=True)
+    vehicle_photo = models.ImageField(upload_to=condo_visit_vehicle_path, null=True, blank=True)
+    actor = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='visit_events',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'condo_visit_events'
+        ordering = ['created_at']
+
+    def __str__(self):
+        return f'{self.visit.folio} · {self.event_type}'
 
 

@@ -46,6 +46,7 @@ import Planeacion from './pages/Planeacion';
 import Asambleas from './pages/Asambleas';
 import Mantenimientos from './pages/Mantenimientos';
 import Paqueteria from './pages/Paqueteria';
+import Visitas from './pages/Visitas';
 
 const LOADER = (
   <div className="flex items-center justify-center h-screen bg-white">
@@ -174,6 +175,7 @@ function AppRoutes() {
         <Route path="asambleas"     element={<RoleRoute module="asambleas" workspace="condominio"><Asambleas /></RoleRoute>} />
         <Route path="mantenimientos" element={<RoleRoute module="mantenimientos" workspace="condominio"><Mantenimientos /></RoleRoute>} />
         <Route path="paqueteria" element={<RoleRoute module="paqueteria" workspace="condominio"><Paqueteria /></RoleRoute>} />
+        <Route path="visitas" element={<RoleRoute module="visitas" workspace="condominio"><Visitas /></RoleRoute>} />
         <Route path="plan-pagos"    element={<RoleRoute module="plan_pagos" workspace="condominio"><PlanPagos /></RoleRoute>} />
         <Route path="onboarding"    element={<RoleRoute module="onboarding" workspace="condominio"><Onboarding /></RoleRoute>} />
         <Route path="mi-membresia"  element={<RoleRoute module="mi_membresia"><MiMembresia /></RoleRoute>} />

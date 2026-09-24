@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { tenantsAPI, extraFieldsAPI, assemblyAPI, usersAPI, unitsAPI, superAdminAPI, authAPI, periodsAPI } from '../api/client';
 import ProvidersTab from '../components/config/ProvidersTab';
+import VisitasConfigTab from '../components/config/VisitasConfigTab';
 import {
   CONDO_MODULE_KEYS,
   resolveModuleAccess,
@@ -65,6 +66,7 @@ const MODULE_DEFINITIONS = [
   { key: 'asambleas',       label: 'Asambleas',           icon: Users,        desc: 'Convocatoria, desarrollo, minuta de trabajo y acta formal' },
   { key: 'mantenimientos',  label: 'Mantenimientos',      icon: Wrench,       desc: 'Preventivos y correctivos: planeación, evidencias e historial' },
   { key: 'paqueteria',      label: 'Paquetería',          icon: Package,      desc: 'Recepción y entrega de paquetes y mensajería en vigilancia' },
+  { key: 'visitas',         label: 'Visitas Autorizadas', icon: UserCheck,    desc: 'Autorización de visitas permanentes y ocasionales, QR e ingreso en caseta' },
   { key: 'cobranza',        label: 'Cobranza Mensual',    icon: Receipt,      desc: 'Registro y cobro de mantenimiento' },
   { key: 'gastos',          label: 'Gastos',              icon: ShoppingBag,  desc: 'Gestión de egresos conciliados y en tránsito' },
   { key: 'caja_chica',      label: 'Caja Chica',          icon: DollarSign,   desc: 'Registro de gastos menores de caja chica' },
@@ -751,6 +753,7 @@ export default function Config() {
     { key: 'roles',    label: 'Roles y Perfiles' },
     { key: 'org',         label: 'Organización' },
     { key: 'proveedores', label: 'Proveedores' },
+    { key: 'visitas',     label: 'Visitas' },
     { key: 'modules',     label: 'Permisos' },
     { key: 'flujos',   label: 'Flujos' },
   ];
@@ -1134,7 +1137,7 @@ export default function Config() {
                 <table>
                   <thead>
                     <tr>
-                      <th>ID</th><th>Nombre</th><th>Propietario</th><th>Email</th>
+                      <th>Nombre</th><th>ID</th><th>Propietario</th><th>Email</th>
                       <th>Ocupación</th><th>Inquilino</th>
                       {t.admin_type === 'mesa_directiva' && <th>Exención</th>}
                       <th style={{ textAlign:'right' }}>Adeudo Ant.</th>
@@ -1147,12 +1150,12 @@ export default function Config() {
                       const pd = parseFloat(u.previous_debt || 0);
                       return (
                       <tr key={u.id}>
+                        <td style={{ fontWeight:700 }}>{u.unit_name}</td>
                         <td>
-                          <span style={{ fontFamily:'monospace', fontWeight:700, color:'var(--teal-600)', background:'var(--teal-50)', padding:'3px 10px', borderRadius:6, fontSize:13 }}>
+                          <span style={{ fontFamily:'monospace', fontWeight:500, color:'var(--ink-400)', fontSize:12 }}>
                             {u.unit_id_code}
                           </span>
                         </td>
-                        <td style={{ fontWeight:600 }}>{u.unit_name}</td>
                         <td>{u.owner_first_name} {u.owner_last_name}</td>
                         <td style={{ fontSize:13, color:'var(--ink-500)' }}>{u.owner_email || '—'}</td>
                         <td>
@@ -1703,7 +1706,7 @@ export default function Config() {
                                     ? (() => {
                                         const unit = units.find(x => String(x.id) === String(u.unit));
                                         return unit
-                                          ? [unit.unit_id_code, unit.unit_name].filter(Boolean).join(' — ')
+                                          ? [unit.unit_name, unit.unit_id_code && `(${unit.unit_id_code})`].filter(Boolean).join(' ')
                                           : (u.unit_code || <span style={{ color:'var(--coral-400)' }}>Sin unidad</span>);
                                       })()
                                     : <span style={{ color:'var(--ink-300)' }}>—</span>
@@ -2155,7 +2158,7 @@ export default function Config() {
                     </td>
                     <td style={{ padding:'12px 14px' }}>
                       {posUnit
-                        ? <span style={{ fontFamily:'monospace', fontWeight:700, color:'var(--teal-600)', background:'var(--teal-50)', padding:'2px 8px', borderRadius:4, fontSize:12 }}>{posUnit.unit_id_code}</span>
+                        ? <span style={{ fontWeight:700 }}>{posUnit.unit_name}{posUnit.unit_id_code ? <span style={{ fontFamily:'monospace', fontWeight:500, color:'var(--ink-400)', marginLeft:6, fontSize:12 }}>{posUnit.unit_id_code}</span> : null}</span>
                         : <span style={{ color:'var(--ink-300)', fontSize:12 }}>—</span>}
                     </td>
                     <td style={{ padding:'12px 14px' }}>
@@ -2304,6 +2307,10 @@ export default function Config() {
 
       {tab === 'proveedores' && (
         <ProvidersTab tenantId={tenantId} isAdmin={isAdmin} />
+      )}
+
+      {tab === 'visitas' && (
+        <VisitasConfigTab tenantId={tenantId} isAdmin={isAdmin} />
       )}
 
       {/* ══════════════════════════ TAB: MÓDULOS ══════════════════════════════ */}
@@ -3161,7 +3168,7 @@ export default function Config() {
                   <strong>Email:</strong> {emailMap[persona]}
                 </div>
                 <div style={{ color:'var(--ink-700)', marginTop:4 }}>
-                  <strong>Unidad:</strong> {unit.unit_id_code} — {unit.unit_name}
+                  <strong>Unidad:</strong> {unit.unit_name}{unit.unit_id_code ? ` (${unit.unit_id_code})` : ''}
                 </div>
               </div>
               <p style={{ fontSize:13, color:'var(--ink-500)', margin:0 }}>
@@ -3185,7 +3192,7 @@ export default function Config() {
                   </div>
                   <div>
                     <div style={{ fontWeight:700, fontSize:15, color:'var(--ink-800)' }}>Eliminar unidad</div>
-                    <div style={{ fontSize:12, color:'var(--ink-400)' }}>{unitActionModal.unit.unit_id_code} — {unitActionModal.unit.unit_name}</div>
+                    <div style={{ fontSize:12, color:'var(--ink-400)' }}>{unitActionModal.unit.unit_name}{unitActionModal.unit.unit_id_code ? ` (${unitActionModal.unit.unit_id_code})` : ''}</div>
                   </div>
                 </div>
                 <p style={{ fontSize:13, color:'var(--ink-600)', lineHeight:1.6, marginBottom:20 }}>
@@ -3207,7 +3214,7 @@ export default function Config() {
                   </div>
                   <div>
                     <div style={{ fontWeight:700, fontSize:15, color:'var(--ink-800)' }}>No se puede eliminar</div>
-                    <div style={{ fontSize:12, color:'var(--ink-400)' }}>{unitActionModal.unit.unit_id_code} — {unitActionModal.unit.unit_name}</div>
+                    <div style={{ fontSize:12, color:'var(--ink-400)' }}>{unitActionModal.unit.unit_name}{unitActionModal.unit.unit_id_code ? ` (${unitActionModal.unit.unit_id_code})` : ''}</div>
                   </div>
                 </div>
                 <div style={{ padding:'12px 14px', background:'var(--amber-50)', border:'1px solid var(--amber-200)', borderRadius:10, marginBottom:16, fontSize:13, color:'var(--amber-800)', lineHeight:1.6 }}>
@@ -3473,7 +3480,7 @@ export default function Config() {
                 <label className="field-label">Unidad Asignada *</label>
                 <select className="field-select" value={addUserForm.unit_id||''} onChange={e=>setAddUserForm(f=>({...f,unit_id:e.target.value}))}>
                   <option value="">— Seleccione una unidad —</option>
-                  {units.map(u=><option key={u.id} value={u.id}>{[u.unit_id_code,u.unit_name].filter(Boolean).join(' — ')}</option>)}
+                  {units.map(u=><option key={u.id} value={u.id}>{[u.unit_name, u.unit_id_code && `(${u.unit_id_code})`].filter(Boolean).join(' ')}</option>)}
                 </select>
               </div>
             )}
@@ -3599,7 +3606,7 @@ export default function Config() {
                 <label className="field-label">Unidad Asignada *</label>
                 <select className="field-select" value={editUserForm.unit_id||''} onChange={e => setEditUserForm(f => ({ ...f, unit_id: e.target.value }))}>
                   <option value="">— Seleccione una unidad —</option>
-                  {units.map(u => <option key={u.id} value={u.id}>{[u.unit_id_code,u.unit_name].filter(Boolean).join(' — ')}</option>)}
+                  {units.map(u => <option key={u.id} value={u.id}>{[u.unit_name, u.unit_id_code && `(${u.unit_id_code})`].filter(Boolean).join(' ')}</option>)}
                 </select>
               </div>
             )}
@@ -3833,7 +3840,7 @@ export default function Config() {
               <label className="field-label"><Building2 size={13}/> Unidad que Representa</label>
               <select className="field-select" value={posForm.holder_unit||''} onChange={e=>setPosForm(f=>({...f,holder_unit:e.target.value||null}))}>
                 <option value="">— Sin unidad —</option>
-                {units.map(u => <option key={u.id} value={u.id}>{u.unit_id_code} — {u.unit_name}</option>)}
+                {units.map(u => <option key={u.id} value={u.id}>{u.unit_name}{u.unit_id_code ? ` (${u.unit_id_code})` : ''}</option>)}
               </select>
               <div style={{ fontSize:11, color:'var(--ink-400)', marginTop:4 }}>Vincular a una unidad para habilitar la exención de mantenimiento</div>
             </div>

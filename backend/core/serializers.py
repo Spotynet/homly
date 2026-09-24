@@ -420,8 +420,7 @@ class UserCreateSerializer(serializers.ModelSerializer):
             if unit_id:
                 unit_obj = Unit.objects.filter(id=unit_id).first()
                 if unit_obj:
-                    parts = [p for p in [unit_obj.unit_id_code, unit_obj.unit_name] if p]
-                    unit_name = ' — '.join(parts) if parts else None
+                    unit_name = unit_obj.display_label or None
             send_welcome_invitation(
                 email=user.email,
                 user_name=user.name or user.email,
@@ -1717,8 +1716,7 @@ class PaymentVoucherSubmissionSerializer(serializers.ModelSerializer):
     def get_unit_name(self, obj):
         if not obj.unit:
             return ''
-        parts = [p for p in [obj.unit.unit_id_code, obj.unit.unit_name] if p]
-        return ' — '.join(parts) if parts else str(obj.unit)
+        return obj.unit.display_label or str(obj.unit)
 
     def get_evidence_file_url(self, obj):
         if not obj.evidence_file:

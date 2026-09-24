@@ -103,6 +103,31 @@ const IconTarget = () => (
     <circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>
   </svg>
 );
+const IconPackage = () => (
+  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#E85D43" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/>
+    <path d="M3.3 7 12 12l8.7-5M12 22V12"/>
+  </svg>
+);
+const IconUserCheck = () => (
+  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#E85D43" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+    <circle cx="9" cy="7" r="4"/>
+    <polyline points="16 11 18 13 22 9"/>
+  </svg>
+);
+const IconWrench = () => (
+  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#E85D43" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+  </svg>
+);
+const IconVote = () => (
+  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#E85D43" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="m9 12 2 2 4-4"/>
+    <path d="M5 7c0-1.1.9-2 2-2h10a2 2 0 0 1 2 2v12H5V7Z"/>
+    <path d="M22 19H2"/>
+  </svg>
+);
 const IconList = () => (
   <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#E85D43" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>
@@ -140,11 +165,15 @@ const CONDO_FEATURES = [
   { icon: <IconReceipt />, title: 'Cobranza mensual', desc: 'Registra cuotas, genera recibos con folio y ve quién ya pagó.' },
   { icon: <IconShoppingBag />, title: 'Gastos y caja chica', desc: 'Controla egresos con comprobantes y categorías claras.' },
   { icon: <IconClipboard />, title: 'Planeación', desc: 'Presupuesto anual frente a lo real, y proyectos de obra del condominio.' },
+  { icon: <IconWrench />, title: 'Mantenimientos', desc: 'Preventivos y correctivos con evidencias, fechas y bitácora de cada trabajo.' },
+  { icon: <IconVote />, title: 'Asambleas', desc: 'Convocatoria, quórum, votación, minuta y acta, con plazos según tu estado.' },
+  { icon: <IconPackage />, title: 'Paquetería', desc: 'Recepción en caseta, aviso con foto y QR, entrega por código o firma.' },
+  { icon: <IconUserCheck />, title: 'Visitas autorizadas', desc: 'Permanentes u ocasionales, QR en caseta, bitácora y aviso al anfitrión.' },
   { icon: <IconCalendar />, title: 'Reservas de áreas', desc: 'Salón, alberca o gimnasio, con calendario y reglas por área.' },
   { icon: <IconFileText />, title: 'Estado de cuenta', desc: 'Cada unidad ve su saldo, adeudos y comprobantes en PDF.' },
   { icon: <IconTrendingDown />, title: 'Plan de pagos', desc: 'Acuerdos a plazos para adeudos, aceptados por el residente.' },
   { icon: <IconLock />, title: 'Cierre de período', desc: 'Cierra el mes con aprobación. Lo cerrado ya no se altera.' },
-  { icon: <IconNewspaper />, title: 'Comunicación', desc: 'Avisos, blog interno y notificaciones para la comunidad.' },
+  { icon: <IconNewspaper />, title: 'Comunicación', desc: 'Avisos, directorio de la comunidad y notificaciones a vecinos.' },
   { icon: <IconUsers />, title: 'Roles y permisos', desc: 'Admin, tesorero, contador, auditor, vigilante y vecino.' },
 ];
 
@@ -405,9 +434,9 @@ export default function Landing() {
               points={[
                 'Cobranza de cuotas y recibos con folio',
                 'Gastos, caja chica y cierre de período',
-                'Planeación: presupuesto anual y proyectos de obra',
-                'Estado de cuenta por unidad',
-                'Reservas, avisos y roles de la comunidad',
+                'Planeación, mantenimientos y asambleas',
+                'Paquetería y visitas autorizadas con QR',
+                'Reservas, avisos y directorio de la comunidad',
               ]}
             />
             <ServiceCard
@@ -694,7 +723,7 @@ export default function Landing() {
               },
               {
                 q: '¿Qué módulos nuevos tiene cada servicio?',
-                a: 'En condominios, Planeación arma el presupuesto anual y sigue proyectos de obra contra los gastos reales. En rentas, el CRM convierte leads a contrato, el Rent Roll muestra ocupación y vacancia, y Airbnb entra por iCal oficial sin guardar contraseña.',
+                a: 'En condominios, además de cobranza y finanzas: Planeación (presupuesto y obra), Mantenimientos (preventivos y correctivos con evidencias), Asambleas (convocatoria, quórum y acta), Paquetería (recepción, QR y entrega) y Visitas Autorizadas (permanentes u ocasionales, bitácora en caseta y aviso al anfitrión). En rentas, el CRM convierte leads a contrato, el Rent Roll muestra ocupación y vacancia, y Airbnb entra por iCal oficial sin guardar contraseña.',
               },
               {
                 q: '¿Se mezclan el dinero del condominio y el de las rentas?',
@@ -718,7 +747,7 @@ export default function Landing() {
               },
               {
                 q: '¿Los residentes o inquilinos también entran?',
-                a: 'En condominios, sí: cada vecino puede ver su estado de cuenta, pagos y reservas. En rentas, el equipo de la inmobiliaria opera el espacio; el cobro y los recibos salen desde ahí.',
+                a: 'En condominios, sí: cada vecino ve su unidad, estado de cuenta, reservas, autoriza visitas y recoge paquetes con el QR del correo. En rentas, el equipo de la inmobiliaria opera el espacio; el cobro y los recibos salen desde ahí.',
               },
               {
                 q: '¿Puedo llevar varios condominios y varias inmobiliarias?',
@@ -773,7 +802,7 @@ export default function Landing() {
                       </svg>
                     </span>
                   </button>
-                  <div style={{ maxHeight: isOpen ? 420 : 0, overflow: 'hidden', transition: 'max-height 0.3s ease' }}>
+                  <div style={{ maxHeight: isOpen ? 560 : 0, overflow: 'hidden', transition: 'max-height 0.3s ease' }}>
                     <p style={{ margin: 0, padding: '0 32px 20px 4px', fontSize: 14, color: '#5C5347', lineHeight: 1.75 }}>
                       {item.a}
                     </p>
@@ -864,7 +893,7 @@ export default function Landing() {
           </div>
           <div style={{ width: '100%', height: 1, background: 'rgba(26,22,18,0.1)' }} />
           <div style={{ fontSize: 12, color: '#7A7166', fontWeight: 500 }}>
-            © 2025 Homly · soporte@homly.mx
+            © 2026 Homly · soporte@homly.mx
           </div>
         </div>
       </footer>
@@ -925,8 +954,8 @@ function CondoSpaceCard({ cardRef }) {
         <div className="landing-space-bar"><i style={{ width: '78%', background: '#1F7D5B' }} /></div>
         <div className="landing-space-chips">
           <Chip color="#175F45" bg="#EFFAF6">Cobranza</Chip>
-          <Chip color="#175F45" bg="#EFFAF6">Gastos</Chip>
-          <Chip color="#B45309" bg="#FFFBEB">Planeación</Chip>
+          <Chip color="#175F45" bg="#EFFAF6">Visitas</Chip>
+          <Chip color="#B45309" bg="#FFFBEB">Paquetería</Chip>
         </div>
       </div>
     </div>

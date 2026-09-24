@@ -2061,7 +2061,8 @@ export default function Dashboard() {
                                 {r.start_time?.slice(0, 5)} – {r.end_time?.slice(0, 5)}
                               </td>
                               <td style={{ fontSize: 12 }}>
-                                {r.unit_id_code || r.unit_name || <span style={{ color: 'var(--ink-300)' }}>—</span>}
+                                {r.unit_name || r.unit_id_code || <span style={{ color: 'var(--ink-300)' }}>—</span>}
+                                {r.unit_name && r.unit_id_code ? <span style={{ color: 'var(--ink-400)', marginLeft: 4 }}>({r.unit_id_code})</span> : null}
                               </td>
                               <td>
                                 <span className={`badge ${sc.cls}`} style={{ fontSize: 11 }}>{sc.label}</span>

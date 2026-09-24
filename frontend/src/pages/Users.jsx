@@ -212,7 +212,7 @@ export default function Users() {
   };
 
   const setField  = (k, v) => setForm(f => ({ ...f, [k]: v }));
-  const unitLabel = (u) => [u.unit_id_code, u.unit_name].filter(Boolean).join(' — ');
+  const unitLabel = (u) => [u.unit_name, u.unit_id_code && `(${u.unit_id_code})`].filter(Boolean).join(' ');
   const unitById  = (id) => units.find(u => String(u.id) === String(id));
 
   // ── Badge info for the table ──────────────────────────────────────────────

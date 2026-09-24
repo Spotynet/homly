@@ -3,6 +3,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   Legend, ResponsiveContainer, ReferenceLine,
 } from 'recharts';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { reportsAPI, tenantsAPI, assemblyAPI, unitsAPI } from '../api/client';
 import { periodLabel, statusClass, statusLabel, fmtDate } from '../utils/helpers';
@@ -212,6 +213,7 @@ function SubLabel({ children }) {
 // ─── Main Component ────────────────────────────────────────────────────────
 export default function MyUnit() {
   const { tenantId, tenantName, user } = useAuth();
+  const navigate = useNavigate();
 
   // Tab
   const [activeTab, setActiveTab] = useState('unidad');
@@ -582,6 +584,28 @@ export default function MyUnit() {
         <ServicesSuspensionBanner style={{ marginBottom: 16 }} />
       )}
 
+      <button
+        type="button"
+        className="card"
+        onClick={() => navigate('/app/visitas')}
+        style={{
+          width: '100%', textAlign: 'left', marginBottom: 16, padding: 16, cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+          border: '1px solid var(--teal-100)', background: 'var(--teal-50)',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div className="stat-icon teal"><UserCheck size={16} /></div>
+          <div>
+            <div style={{ fontWeight: 800, color: 'var(--ink-800)' }}>Visitas Autorizadas</div>
+            <div style={{ fontSize: 13, color: 'var(--ink-500)' }}>
+              Registra familiares, personal de trabajo o visitas temporales. El visitante recibe su QR por correo.
+            </div>
+          </div>
+        </div>
+        <span className="btn btn-primary btn-sm" style={{ pointerEvents: 'none' }}>Autorizar</span>
+      </button>
+
       {/* ── Tab bar + Period navigator ───────────────────────────────────── */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
         <div className="tabs" style={{ marginBottom: 0 }}>
@@ -625,13 +649,11 @@ export default function MyUnit() {
                   <div className="stat-icon teal"><Home size={16} /></div>
                   <h3>Tu Unidad</h3>
                 </div>
-                <span style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--teal-600)', background: 'var(--teal-50)', padding: '4px 12px', borderRadius: 8, fontSize: 13 }}>
-                  {unit.unit_id_code}
-                </span>
+                <span style={{ fontWeight: 700, fontSize: 15 }}>{unit.unit_name}</span>
               </div>
               <div className="card-body">
                 <div className="info-grid">
-                  <InfoCard label="Nombre" value={unit.unit_name} />
+                  <InfoCard label="ID / Código" value={unit.unit_id_code} />
                   <InfoCard label="Ocupación" value={unit.occupancy ? unit.occupancy.charAt(0).toUpperCase() + unit.occupancy.slice(1) : null} />
                 </div>
               </div>

@@ -34,9 +34,9 @@ function escapeHtml(value) {
 }
 
 function downloadCsv(entries, tenantName) {
-  const header = ['Unidad', 'Nombre unidad', 'Tipo', 'Nombre', 'Email', 'Teléfono'];
+  const header = ['Nombre unidad', 'ID', 'Tipo', 'Nombre', 'Email', 'Teléfono'];
   const rows = entries.map(e => [
-    e.unit_code, e.unit_name, e.kind_label, e.name, e.email, e.phone,
+    e.unit_name, e.unit_code, e.kind_label, e.name, e.email, e.phone,
   ].map(csvEscape).join(','));
   const bom = '\uFEFF';
   const csv = bom + [header.join(','), ...rows].join('\n');
@@ -55,8 +55,8 @@ function downloadCsv(entries, tenantName) {
 function printDirectory(entries, tenantName, counts) {
   const rows = entries.map(e => `
     <tr>
-      <td>${escapeHtml(e.unit_code)}</td>
       <td>${escapeHtml(e.unit_name)}</td>
+      <td>${escapeHtml(e.unit_code)}</td>
       <td>${escapeHtml(e.kind_label)}</td>
       <td>${escapeHtml(e.name || '—')}</td>
       <td>${escapeHtml(e.email || '—')}</td>
@@ -84,7 +84,7 @@ function printDirectory(entries, tenantName, counts) {
   <table>
     <thead>
       <tr>
-        <th>Unidad</th><th>Nombre unidad</th><th>Tipo</th><th>Nombre</th><th>Email</th><th>Teléfono</th>
+        <th>Nombre unidad</th><th>ID</th><th>Tipo</th><th>Nombre</th><th>Email</th><th>Teléfono</th>
       </tr>
     </thead>
     <tbody>${rows || '<tr><td colspan="6">Sin registros</td></tr>'}</tbody>
@@ -283,8 +283,8 @@ export default function ResidentDirectoryModal({ tenantId, tenantName, onClose }
                       return (
                         <tr key={`${e.unit_id}-${e.kind}-${i}`} className="border-t border-slate-100 hover:bg-slate-50/70">
                           <td className="px-6 py-3">
-                            <div className="font-mono text-xs font-bold text-teal-700">{e.unit_code}</div>
-                            <div className="text-xs text-slate-400">{e.unit_name}</div>
+                            <div className="text-sm font-bold text-slate-800">{e.unit_name}</div>
+                            <div className="font-mono text-xs text-slate-400">{e.unit_code}</div>
                           </td>
                           <td className="px-3 py-3">
                             <span className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-semibold border ${style.bg} ${style.text} ${style.border}`}>
@@ -319,13 +319,13 @@ export default function ResidentDirectoryModal({ tenantId, tenantName, onClose }
                   return (
                     <div key={`${e.unit_id}-${e.kind}-${i}`} className="px-4 py-3">
                       <div className="flex items-center justify-between gap-2 mb-1">
-                        <div className="font-mono text-xs font-bold text-teal-700">{e.unit_code}</div>
+                        <div className="text-sm font-bold text-slate-800">{e.unit_name}</div>
                         <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold border ${style.bg} ${style.text} ${style.border}`}>
                           {style.label}
                         </span>
                       </div>
                       <div className="font-semibold text-slate-800 text-sm">{e.name || 'Sin nombre'}</div>
-                      <div className="text-xs text-slate-400 mb-1.5">{e.unit_name}</div>
+                      <div className="font-mono text-xs text-slate-400 mb-1.5">{e.unit_code}</div>
                       <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
                         {e.email && (
                           <a href={`mailto:${e.email}`} className="inline-flex items-center gap-1 text-teal-700">

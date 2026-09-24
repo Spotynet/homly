@@ -16,7 +16,7 @@ import GUIDE_ROLES from '../constants/guideCatalog';
  * ─────────────────────────────────────────────────────────────────
  * Hub central de la Guía de Uso. Muestra las guías agrupadas por
  * rol en secciones colapsables (Administrador, Tesorero, Contador,
- * Residente). Cada sección expone los capítulos operativos
+ * Residente, Vigilante). Cada sección expone los capítulos operativos
  * de ese rol.
  *
  * Tipos de capítulos:
@@ -30,29 +30,43 @@ function mapUserRoleToCatalog(role) {
   if (role === 'superadmin' || role === 'admin') return 'admin';
   if (role === 'tesorero')   return 'tesorero';
   if (role === 'contador' || role === 'auditor') return 'contador';
-  if (role === 'vecino' || role === 'vigilante') return 'vecino';
+  if (role === 'vecino') return 'vecino';
+  if (role === 'vigilante') return 'vigilante';
   return 'admin';
 }
 
 // Módulo requerido por chapter id (null = sin restricción de membresía)
 const CHAPTER_MODULE = {
-  'admin-setup':       null,
-  'admin-units':       null,
-  'admin-users':       null,
-  'admin-committee':   null,
-  'tes-cobranza':      'cobranza',
-  'tes-plan-pagos':    'plan_pagos',
-  'tes-gastos':        'gastos',
-  'tes-estado-cuenta': 'estado_cuenta',
-  'tes-cierre':        'cierre_periodo',
-  'cont-dashboard':    'dashboard',
-  'cont-reportes':     'estado_cuenta',
-  'cont-categorias':   null,
-  'cont-cierre':       'cierre_periodo',
-  'vec-my-unit':       'my_unit',
-  'vec-estado-cuenta': 'estado_cuenta',
-  'vec-reservas':      'reservas',
-  'vec-notificaciones':'notificaciones',
+  'admin-setup':          null,
+  'admin-units':          null,
+  'admin-users':          null,
+  'admin-committee':      null,
+  'admin-asambleas':      'asambleas',
+  'admin-mantenimientos': 'mantenimientos',
+  'admin-paqueteria':     'paqueteria',
+  'admin-visitas':        'visitas',
+  'admin-comunicacion':   'blog',
+  'tes-cobranza':         'cobranza',
+  'tes-plan-pagos':       'plan_pagos',
+  'tes-gastos':           'gastos',
+  'tes-estado-cuenta':    'estado_cuenta',
+  'tes-cierre':           'cierre_periodo',
+  'tes-caja-chica':       'caja_chica',
+  'tes-planeacion':       'planeacion',
+  'cont-dashboard':       'dashboard',
+  'cont-reportes':        'estado_cuenta',
+  'cont-categorias':      null,
+  'cont-cierre':          'cierre_periodo',
+  'vec-my-unit':          'my_unit',
+  'vec-estado-cuenta':    'estado_cuenta',
+  'vec-reservas':         'reservas',
+  'vec-notificaciones':   'notificaciones',
+  'vec-visitas':          'visitas',
+  'vec-paqueteria':       'paqueteria',
+  'vec-enviar-pago':      'enviar_pago',
+  'vec-asambleas':        'asambleas',
+  'vig-paquetes':         'paqueteria',
+  'vig-visitas':          'visitas',
 };
 
 // Admin and superadmin see all role sections; everyone else sees only their own.

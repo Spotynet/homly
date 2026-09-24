@@ -2,13 +2,16 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import {
   Package, Plus, Search, X, Camera, Mail, PenLine, Settings, Loader2, Image as ImageIcon, Trash2,
-  QrCode, ScanLine, Clock, SlidersHorizontal,
+  QrCode, ScanLine, Clock, SlidersHorizontal, FileText,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { paqueteriaAPI } from '../api/client';
 import { useUnits } from '../hooks/useUnits';
 import ProtectedImage from '../components/ProtectedImage';
 import SignaturePad from '../components/SignaturePad';
+import QrCapture from '../components/QrCapture';
+import PeriodReportModal from '../components/PeriodReportModal';
+import { QR_MISMATCH_MSG, qrMatchesExpected } from '../utils/homlyQr';
 
 function compressImage(file, { maxDim = 1600, quality = 0.8 } = {}) {
   return new Promise((resolve) => {
@@ -75,7 +78,7 @@ const EVENT_META = {
 };
 
 export default function Paqueteria() {
-  const { tenantId } = useAuth();
+  const { tenantId, tenantName } = useAuth();
   const { data: units = [] } = useUnits(tenantId);
   const [ctx, setCtx] = useState(null);
   const [list, setList] = useState([]);
@@ -89,6 +92,7 @@ export default function Paqueteria() {
   const [notifyPkg, setNotifyPkg] = useState(null);
   const [deliverPkg, setDeliverPkg] = useState(null);
   const [deletePkg, setDeletePkg] = useState(null);
+  const [reportOpen, setReportOpen] = useState(false);
 
   const canWrite = !!ctx?.can_write;
   const canDelete = !!ctx?.can_delete;
@@ -130,15 +134,28 @@ export default function Paqueteria() {
   const delivered = ctx?.counts?.entregado ?? list.filter(p => p.status === 'entregado').length;
 
   return (
-    <div className="content-fade">
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
-        <div>
-          <h2 style={{ margin: 0, fontSize: 22 }}>Paquetería / Mensajería</h2>
-          <p style={{ margin: '4px 0 0', color: 'var(--ink-400)', fontSize: 13 }}>
+    <div className="content-fade pkg-page" style={{ paddingBottom: 24 }}>
+      <style>{`
+        .pkg-page .field { gap: 8px; }
+        .pkg-page .field-label { margin-bottom: 0; }
+        .pkg-form { display: flex; flex-direction: column; gap: 16px; }
+        .pkg-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; }
+        .pkg-page table th, .pkg-page table td { padding: 12px 14px; vertical-align: middle; }
+        .pkg-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+        .pkg-page table .pkg-actions { justify-content: flex-end; }
+        .pkg-page .badge { line-height: 1.3; }
+      `}</style>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 20 }}>
+        <div style={{ minWidth: 0, flex: '1 1 240px' }}>
+          <h2 style={{ margin: 0, fontSize: 22, lineHeight: 1.25 }}>Paquetería / Mensajería</h2>
+          <p style={{ margin: '8px 0 0', color: 'var(--ink-400)', fontSize: 13, lineHeight: 1.45, maxWidth: 560 }}>
             Recepción en vigilancia, aviso a la unidad y entrega con QR o firma.
           </p>
         </div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <div className="pkg-actions">
+          <button className="btn btn-outline" onClick={() => setReportOpen(true)}>
+            <FileText size={14} /> Reporte
+          </button>
           {canEditSettings && (
             <button className="btn btn-outline" onClick={() => setCustomizeOpen(true)}>
               <SlidersHorizontal size={14} /> Personalizar
@@ -158,20 +175,20 @@ export default function Paqueteria() {
       </div>
 
       <>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10, marginBottom: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 12, marginBottom: 20 }}>
             {[
               { label: 'En vigilancia', value: pending, color: 'var(--amber-600)' },
               { label: 'Entregados', value: delivered, color: 'var(--teal-700)' },
               { label: 'Total', value: ctx?.counts?.total ?? list.length, color: 'var(--ink-700)' },
             ].map(card => (
-              <div key={card.label} className="card" style={{ padding: 14 }}>
-                <div style={{ fontSize: 11, color: 'var(--ink-400)', fontWeight: 700, textTransform: 'uppercase' }}>{card.label}</div>
-                <div style={{ fontSize: 26, fontWeight: 800, color: card.color, lineHeight: 1.1 }}>{card.value}</div>
+              <div key={card.label} className="card" style={{ padding: 16 }}>
+                <div style={{ fontSize: 11, color: 'var(--ink-400)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{card.label}</div>
+                <div style={{ fontSize: 26, fontWeight: 800, color: card.color, lineHeight: 1.15, marginTop: 6 }}>{card.value}</div>
               </div>
             ))}
           </div>
 
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16, alignItems: 'center' }}>
             <div style={{ position: 'relative', flex: '1 1 220px', maxWidth: 360 }}>
               <Search size={14} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--ink-400)' }} />
               <input
@@ -183,7 +200,7 @@ export default function Paqueteria() {
                 onKeyDown={e => e.key === 'Enter' && loadList()}
               />
             </div>
-            <div style={{ display: 'flex', gap: 6 }}>
+            <div className="pkg-actions">
               {[['','Todos'], ['recibido','En vigilancia'], ['entregado','Entregados']].map(([key, label]) => (
                 <button
                   key={key || 'all'}
@@ -204,9 +221,9 @@ export default function Paqueteria() {
               </div>
             ) : list.length === 0 ? (
               <div style={{ padding: 36, textAlign: 'center', color: 'var(--ink-400)' }}>
-                <Package size={36} style={{ opacity: 0.3, marginBottom: 8 }} />
-                <div style={{ fontWeight: 700, color: 'var(--ink-600)' }}>Sin paquetes</div>
-                <div style={{ fontSize: 13 }}>Registra la primera recepción desde vigilancia.</div>
+                <Package size={36} style={{ opacity: 0.3, marginBottom: 12 }} />
+                <div style={{ fontWeight: 700, color: 'var(--ink-600)', marginBottom: 6 }}>Sin paquetes</div>
+                <div style={{ fontSize: 13, lineHeight: 1.45 }}>Registra la primera recepción desde vigilancia.</div>
               </div>
             ) : (
               <div className="table-wrap">
@@ -226,8 +243,10 @@ export default function Paqueteria() {
                       <tr key={pkg.id} style={{ cursor: 'pointer' }} onClick={() => openDetail(pkg.id)}>
                         <td style={{ fontFamily: 'monospace', fontWeight: 800, color: 'var(--teal-700)' }}>{pkg.folio}</td>
                         <td>
-                          <div style={{ fontWeight: 700 }}>{pkg.unit_code}</div>
-                          <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>{pkg.unit_name}</div>
+                          <div style={{ fontWeight: 700, lineHeight: 1.35 }}>{pkg.unit_name}</div>
+                          {pkg.unit_code ? (
+                            <div style={{ fontSize: 12, color: 'var(--ink-400)', fontFamily: 'monospace', marginTop: 3 }}>{pkg.unit_code}</div>
+                          ) : null}
                         </td>
                         <td>
                           <span className={`badge ${pkg.status === 'entregado' ? 'badge-teal' : 'badge-amber'}`}>
@@ -236,18 +255,18 @@ export default function Paqueteria() {
                         </td>
                         <td style={{ fontSize: 12 }}>
                           <div>{fmtDate(pkg.received_at)}</div>
-                          <div style={{ color: 'var(--ink-400)' }}>{pkg.received_by_name}</div>
+                          <div style={{ color: 'var(--ink-400)', marginTop: 3 }}>{pkg.received_by_name}</div>
                         </td>
                         <td style={{ fontSize: 12 }}>
                           {pkg.delivered_at ? (
                             <>
                               <div>{fmtDate(pkg.delivered_at)}</div>
-                              <div style={{ color: 'var(--ink-400)' }}>{pkg.delivered_by_name}</div>
+                              <div style={{ color: 'var(--ink-400)', marginTop: 3 }}>{pkg.delivered_by_name}</div>
                             </>
                           ) : '—'}
                         </td>
                         <td>
-                          <div style={{ display: 'flex', gap: 6 }} onClick={e => e.stopPropagation()}>
+                          <div className="pkg-actions" onClick={e => e.stopPropagation()}>
                             {canWrite && pkg.status === 'recibido' && (
                               <>
                                 <button className="btn btn-outline btn-sm" onClick={() => setNotifyPkg(pkg)}><Mail size={13} /> Avisar</button>
@@ -268,6 +287,18 @@ export default function Paqueteria() {
             )}
           </div>
         </>
+
+      {reportOpen && (
+        <PeriodReportModal
+          title="Reporte de paquetería"
+          subtitle="Resumen y bitácora del periodo"
+          tenantName={tenantName}
+          filenamePrefix="Paqueteria"
+          onClose={() => setReportOpen(false)}
+          loadReport={(params) => paqueteriaAPI.report(tenantId, params)}
+          downloadReport={(params) => paqueteriaAPI.reportPdf(tenantId, params)}
+        />
+      )}
 
       {customizeOpen && (
         <CustomizeModal
@@ -421,8 +452,8 @@ function CustomizeModal({ tenantId, initialRules, initialReminders, onClose, onS
       wide
     >
       <div style={{
-        display: 'flex', gap: 6, padding: 4, background: 'var(--sand-100)',
-        borderRadius: 12, marginBottom: 18,
+        display: 'flex', gap: 8, padding: 6, background: 'var(--sand-100)',
+        borderRadius: 12, marginBottom: 20,
       }}>
         {[
           { key: 'reglamento', icon: <Settings size={14} />, label: 'Reglamento' },
@@ -447,8 +478,8 @@ function CustomizeModal({ tenantId, initialRules, initialReminders, onClose, onS
       </div>
 
       {tab === 'reglamento' ? (
-        <div>
-          <p style={{ color: 'var(--ink-500)', fontSize: 13, marginTop: 0, lineHeight: 1.5 }}>
+        <div className="pkg-form">
+          <p style={{ color: 'var(--ink-500)', fontSize: 13, margin: 0, lineHeight: 1.5 }}>
             Este texto se incluye en el correo de aviso y en los recordatorios, junto con el QR y la foto de evidencia.
           </p>
           <textarea
@@ -460,15 +491,15 @@ function CustomizeModal({ tenantId, initialRules, initialReminders, onClose, onS
           />
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <label className="card" style={{ padding: 14, display: 'flex', gap: 12, alignItems: 'center', cursor: 'pointer' }}>
+        <div className="pkg-form">
+          <label className="card" style={{ padding: 16, display: 'flex', gap: 12, alignItems: 'flex-start', cursor: 'pointer' }}>
             <input type="checkbox" checked={enabled} onChange={e => setEnabled(e.target.checked)} />
             <div>
-              <div style={{ fontWeight: 800, fontSize: 14 }}>Recordatorios automáticos</div>
-              <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>Avisar de nuevo si el paquete sigue en caseta</div>
+              <div style={{ fontWeight: 800, fontSize: 14, lineHeight: 1.3 }}>Recordatorios automáticos</div>
+              <div style={{ fontSize: 12, color: 'var(--ink-400)', marginTop: 4, lineHeight: 1.4 }}>Avisar de nuevo si el paquete sigue en caseta</div>
             </div>
           </label>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, opacity: enabled ? 1 : 0.45, pointerEvents: enabled ? 'auto' : 'none' }}>
+          <div className="pkg-grid" style={{ opacity: enabled ? 1 : 0.45, pointerEvents: enabled ? 'auto' : 'none' }}>
             <div className="field" style={{ margin: 0 }}>
               <div className="field-label">Primer aviso</div>
               <select className="field-input" value={afterHours} onChange={e => setAfterHours(e.target.value)}>
@@ -504,7 +535,7 @@ function CustomizeModal({ tenantId, initialRules, initialReminders, onClose, onS
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18 }}>
+      <div className="pkg-actions" style={{ justifyContent: 'flex-end', marginTop: 20 }}>
         <button className="btn btn-outline" onClick={onClose} disabled={saving}>Cancelar</button>
         <button className="btn btn-primary" onClick={save} disabled={saving}>
           {saving ? 'Guardando…' : 'Guardar cambios'}
@@ -560,6 +591,7 @@ function ReceiveModal({ tenantId, units, onClose, onCreated }) {
 
   return (
     <Modal title="Recibir paquete" subtitle="Captura sencilla para vigilancia" onClose={onClose} icon={<Package size={18} />}>
+      <div className="pkg-form">
       <div className="field">
         <div className="field-label">Casa / unidad *</div>
         <input
@@ -568,20 +600,23 @@ function ReceiveModal({ tenantId, units, onClose, onCreated }) {
           value={unitQuery}
           onChange={e => { setUnitQuery(e.target.value); setUnitId(''); }}
         />
-        <div style={{ maxHeight: 180, overflowY: 'auto', marginTop: 8, border: '1px solid var(--sand-200)', borderRadius: 10 }}>
+        <div style={{ maxHeight: 200, overflowY: 'auto', marginTop: 4, border: '1px solid var(--sand-200)', borderRadius: 10 }}>
           {filteredUnits.slice(0, 40).map(u => (
             <button
               key={u.id}
               type="button"
-              onClick={() => { setUnitId(u.id); setUnitQuery(`${u.unit_id_code} — ${u.unit_name}`); }}
+              onClick={() => { setUnitId(u.id); setUnitQuery(`${u.unit_name}${u.unit_id_code ? ` (${u.unit_id_code})` : ''}`); }}
               style={{
-                display: 'block', width: '100%', textAlign: 'left', padding: '8px 12px',
+                display: 'block', width: '100%', textAlign: 'left', padding: '10px 14px',
                 background: unitId === u.id ? 'var(--teal-50)' : 'transparent',
                 border: 'none', borderBottom: '1px solid var(--sand-100)', cursor: 'pointer',
               }}
             >
-              <div style={{ fontWeight: 700, fontSize: 13 }}>{u.unit_id_code} · {u.unit_name}</div>
-              <div style={{ fontSize: 11, color: 'var(--ink-400)' }}>{u.owner_first_name} {u.owner_last_name}</div>
+              <div style={{ fontWeight: 700, fontSize: 13, lineHeight: 1.35 }}>{u.unit_name}</div>
+              {u.unit_id_code ? (
+                <div style={{ fontSize: 11, color: 'var(--ink-400)', fontFamily: 'monospace', marginTop: 2 }}>{u.unit_id_code}</div>
+              ) : null}
+              <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 2 }}>{u.owner_first_name} {u.owner_last_name}</div>
             </button>
           ))}
         </div>
@@ -600,7 +635,7 @@ function ReceiveModal({ tenantId, units, onClose, onCreated }) {
         {preview ? (
           <div>
             <img src={preview} alt="Evidencia" style={{ width: '100%', maxHeight: 220, objectFit: 'cover', borderRadius: 12 }} />
-            <button type="button" className="btn btn-outline btn-sm" style={{ marginTop: 8 }} onClick={() => inputRef.current?.click()}>
+            <button type="button" className="btn btn-outline btn-sm" style={{ marginTop: 10 }} onClick={() => inputRef.current?.click()}>
               Cambiar foto
             </button>
           </div>
@@ -616,11 +651,12 @@ function ReceiveModal({ tenantId, units, onClose, onCreated }) {
         <textarea className="field-input" rows={3} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Empresa, número de guía u observación..." />
       </div>
 
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+      <div className="pkg-actions" style={{ justifyContent: 'flex-end', paddingTop: 4 }}>
         <button className="btn btn-outline" onClick={onClose} disabled={saving}>Cancelar</button>
         <button className="btn btn-primary" onClick={save} disabled={saving}>
           {saving ? 'Guardando…' : 'Guardar recepción'}
         </button>
+      </div>
       </div>
     </Modal>
   );
@@ -673,18 +709,19 @@ function NotifyModal({ tenantId, pkg, onClose, onDone }) {
   };
 
   return (
-    <Modal title={`Avisar — ${pkg.folio}`} subtitle={`${pkg.unit_code} · ${pkg.unit_name}`} onClose={onClose} icon={<Mail size={18} />}>
-      <p style={{ fontSize: 13, color: 'var(--ink-500)', marginTop: 0 }}>
+    <Modal title={`Avisar — ${pkg.folio}`} subtitle={`${pkg.unit_name}${pkg.unit_code ? ` (${pkg.unit_code})` : ''}`} onClose={onClose} icon={<Mail size={18} />}>
+      <div className="pkg-form">
+      <p style={{ fontSize: 13, color: 'var(--ink-500)', margin: 0, lineHeight: 1.5 }}>
         Elige a quién se envía el correo y la notificación en Homly.
       </p>
       {loading ? (
         <div style={{ padding: 20, textAlign: 'center', color: 'var(--ink-400)' }}>Cargando contactos...</div>
       ) : contacts.length === 0 ? (
-        <div style={{ padding: 16, color: 'var(--ink-400)' }}>Esta unidad no tiene contactos registrados.</div>
+        <div style={{ padding: 16, color: 'var(--ink-400)', lineHeight: 1.45 }}>Esta unidad no tiene contactos registrados.</div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 280, overflowY: 'auto', marginBottom: 16 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 280, overflowY: 'auto' }}>
           {contacts.map(c => (
-            <label key={c.key} className="card" style={{ padding: 10, display: 'flex', gap: 10, alignItems: 'flex-start', opacity: c.has_email ? 1 : 0.55 }}>
+            <label key={c.key} className="card" style={{ padding: 12, display: 'flex', gap: 12, alignItems: 'flex-start', margin: 0, opacity: c.has_email ? 1 : 0.55 }}>
               <input
                 type="checkbox"
                 checked={selected.has(c.key)}
@@ -693,18 +730,19 @@ function NotifyModal({ tenantId, pkg, onClose, onDone }) {
                 style={{ marginTop: 3 }}
               />
               <div>
-                <div style={{ fontWeight: 700, fontSize: 13 }}>{c.name || 'Sin nombre'}</div>
-                <div style={{ fontSize: 11, color: 'var(--ink-400)' }}>{c.kind_label}{c.email ? ` · ${c.email}` : ' · sin correo'}</div>
+                <div style={{ fontWeight: 700, fontSize: 13, lineHeight: 1.35 }}>{c.name || 'Sin nombre'}</div>
+                <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 4, lineHeight: 1.4 }}>{c.kind_label}{c.email ? ` · ${c.email}` : ' · sin correo'}</div>
               </div>
             </label>
           ))}
         </div>
       )}
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+      <div className="pkg-actions" style={{ justifyContent: 'flex-end', paddingTop: 4 }}>
         <button className="btn btn-outline" onClick={onClose} disabled={sending}>Cancelar</button>
         <button className="btn btn-primary" onClick={send} disabled={sending || loading}>
           {sending ? 'Enviando…' : 'Enviar notificación'}
         </button>
+      </div>
       </div>
     </Modal>
   );
@@ -716,83 +754,15 @@ function MethodCard({ active, icon, title, desc, onClick }) {
       type="button"
       onClick={onClick}
       style={{
-        flex: 1, textAlign: 'left', padding: 14, borderRadius: 14, cursor: 'pointer',
+        flex: 1, minWidth: 140, textAlign: 'left', padding: 16, borderRadius: 14, cursor: 'pointer',
         border: active ? '2px solid var(--teal-600)' : '1px solid var(--sand-200)',
         background: active ? 'var(--teal-50)' : '#fff',
       }}
     >
-      <div style={{ color: 'var(--teal-700)', marginBottom: 6 }}>{icon}</div>
-      <div style={{ fontWeight: 800, fontSize: 14 }}>{title}</div>
-      <div style={{ fontSize: 12, color: 'var(--ink-400)', marginTop: 4, lineHeight: 1.4 }}>{desc}</div>
+      <div style={{ color: 'var(--teal-700)', marginBottom: 8 }}>{icon}</div>
+      <div style={{ fontWeight: 800, fontSize: 14, lineHeight: 1.3 }}>{title}</div>
+      <div style={{ fontSize: 12, color: 'var(--ink-400)', marginTop: 6, lineHeight: 1.45 }}>{desc}</div>
     </button>
-  );
-}
-
-function QrCapture({ value, onChange }) {
-  const videoRef = useRef(null);
-  const [scanning, setScanning] = useState(false);
-  const [camError, setCamError] = useState('');
-
-  useEffect(() => {
-    if (!scanning) return undefined;
-    let stream;
-    let timer;
-    let stopped = false;
-    const start = async () => {
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          await videoRef.current.play();
-        }
-        if (typeof window.BarcodeDetector !== 'function') {
-          setCamError('Este navegador no lee QR. Escribe el código que aparece bajo el QR del correo.');
-          return;
-        }
-        const detector = new window.BarcodeDetector({ formats: ['qr_code'] });
-        const tick = async () => {
-          if (stopped || !videoRef.current) return;
-          try {
-            const codes = await detector.detect(videoRef.current);
-            if (codes[0]?.rawValue) {
-              onChange(codes[0].rawValue);
-              setScanning(false);
-              return;
-            }
-          } catch { /* keep scanning */ }
-          timer = setTimeout(tick, 280);
-        };
-        tick();
-      } catch {
-        setCamError('No se pudo abrir la cámara. Escribe el código manualmente.');
-      }
-    };
-    start();
-    return () => {
-      stopped = true;
-      clearTimeout(timer);
-      stream?.getTracks().forEach(t => t.stop());
-    };
-  }, [scanning, onChange]);
-
-  return (
-    <div>
-      {scanning && (
-        <video ref={videoRef} muted playsInline style={{ width: '100%', borderRadius: 12, background: '#111', maxHeight: 220, objectFit: 'cover' }} />
-      )}
-      <div style={{ display: 'flex', gap: 8, margin: '8px 0' }}>
-        <button type="button" className={`btn ${scanning ? 'btn-primary' : 'btn-outline'} btn-sm`} onClick={() => { setCamError(''); setScanning(s => !s); }}>
-          <Camera size={13} /> {scanning ? 'Cerrar cámara' : 'Abrir cámara'}
-        </button>
-      </div>
-      {camError && <div style={{ fontSize: 12, color: 'var(--amber-700)', marginBottom: 8 }}>{camError}</div>}
-      <input
-        className="field-input"
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        placeholder="HOMLY-PKG:… o el código del correo"
-      />
-    </div>
   );
 }
 
@@ -800,13 +770,18 @@ function DeliverModal({ tenantId, pkg, onClose, onDone, initialMethod = '', init
   const [method, setMethod] = useState(initialMethod || '');
   const [notes, setNotes] = useState('');
   const [signature, setSignature] = useState(null);
-  const [qr, setQr] = useState(initialQr || '');
+  const [qr, setQr] = useState(
+    initialQr && qrMatchesExpected(initialQr, pkg.qr_payload, 'pkg') ? initialQr : ''
+  );
   const [saving, setSaving] = useState(false);
 
   const save = async () => {
     if (!method) return toast.error('Elige entrega con QR o con firma');
     if (method === 'firma' && !signature) return toast.error('La firma del destinatario es obligatoria');
-    if (method === 'qr' && !qr.trim()) return toast.error('Escanea o escribe el código QR');
+    if (method === 'qr' && !qr.trim()) return toast.error('Escanea el código QR con la cámara');
+    if (method === 'qr' && !qrMatchesExpected(qr, pkg.qr_payload, 'pkg')) {
+      return toast.error(QR_MISMATCH_MSG);
+    }
     setSaving(true);
     try {
       const fd = new FormData();
@@ -825,8 +800,9 @@ function DeliverModal({ tenantId, pkg, onClose, onDone, initialMethod = '', init
   };
 
   return (
-    <Modal title={`Entregar — ${pkg.folio}`} subtitle={`${pkg.unit_code} · ${pkg.unit_name}`} onClose={onClose} icon={<Package size={18} />}>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+    <Modal title={`Entregar — ${pkg.folio}`} subtitle={`${pkg.unit_name}${pkg.unit_code ? ` (${pkg.unit_code})` : ''}`} onClose={onClose} icon={<Package size={18} />}>
+      <div className="pkg-form">
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
         <MethodCard
           active={method === 'qr'}
           icon={<QrCode size={20} />}
@@ -845,7 +821,7 @@ function DeliverModal({ tenantId, pkg, onClose, onDone, initialMethod = '', init
       {method === 'qr' && (
         <div className="field">
           <div className="field-label">Código del paquete *</div>
-          <QrCapture value={qr} onChange={setQr} />
+          <QrCapture value={qr} onChange={setQr} kind="pkg" expectedPayload={pkg.qr_payload} />
         </div>
       )}
       {method === 'firma' && (
@@ -858,11 +834,12 @@ function DeliverModal({ tenantId, pkg, onClose, onDone, initialMethod = '', init
         <div className="field-label">Nota de entrega (opcional)</div>
         <textarea className="field-input" rows={3} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Quién recogió el paquete u observación..." />
       </div>
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+      <div className="pkg-actions" style={{ justifyContent: 'flex-end', paddingTop: 4 }}>
         <button className="btn btn-outline" onClick={onClose} disabled={saving}>Cancelar</button>
-        <button className="btn btn-primary" onClick={save} disabled={saving || !method}>
+        <button className="btn btn-primary" onClick={save} disabled={saving || !method || (method === 'qr' && !qr)}>
           {saving ? 'Guardando…' : 'Confirmar entrega'}
         </button>
+      </div>
       </div>
     </Modal>
   );
@@ -876,7 +853,7 @@ function ScanDeliverModal({ tenantId, onClose, onDelivered }) {
 
   const lookup = async (value) => {
     const code = (value || qr).trim();
-    if (!code) return toast.error('Escanea o escribe el código');
+    if (!code) return toast.error('Escanea el código QR con la cámara');
     lastLookup.current = code;
     setLoading(true);
     try {
@@ -889,8 +866,10 @@ function ScanDeliverModal({ tenantId, onClose, onDelivered }) {
         setQr(code);
       }
     } catch (e) {
-      toast.error(errMsg(e, 'No se encontró ese código'));
+      toast.error(errMsg(e, QR_MISMATCH_MSG));
       setPkg(null);
+      setQr('');
+      lastLookup.current = '';
     } finally {
       setLoading(false);
     }
@@ -917,22 +896,22 @@ function ScanDeliverModal({ tenantId, onClose, onDelivered }) {
 
   return (
     <Modal title="Escanear QR" subtitle="Identifica el paquete para entregarlo" onClose={onClose} icon={<ScanLine size={18} />}>
-      <p style={{ fontSize: 13, color: 'var(--ink-500)', marginTop: 0 }}>
+      <div className="pkg-form">
+      <p style={{ fontSize: 13, color: 'var(--ink-500)', margin: 0, lineHeight: 1.5 }}>
         Apunta la cámara al QR del correo o de la pantalla del vecino.
       </p>
-      <QrCapture value={qr} onChange={setQr} />
+      <QrCapture value={qr} onChange={setQr} kind="pkg" />
+      {loading && <div style={{ fontSize: 13, color: 'var(--ink-400)' }}>Validando QR…</div>}
       {pkg?.status === 'entregado' && (
-        <div className="card" style={{ padding: 12, marginTop: 12 }}>
+        <div className="card" style={{ padding: 14 }}>
           <div style={{ fontFamily: 'monospace', fontWeight: 800, color: 'var(--teal-700)' }}>{pkg.folio}</div>
-          <div style={{ fontSize: 13 }}>{pkg.unit_code} · {pkg.unit_name}</div>
-          <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>Ya entregado el {fmtDate(pkg.delivered_at)}</div>
+          <div style={{ fontSize: 13, marginTop: 4 }}>{pkg.unit_name}{pkg.unit_code ? ` (${pkg.unit_code})` : ''}</div>
+          <div style={{ fontSize: 12, color: 'var(--ink-400)', marginTop: 4 }}>Ya entregado el {fmtDate(pkg.delivered_at)}</div>
         </div>
       )}
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
+      <div className="pkg-actions" style={{ justifyContent: 'flex-end', paddingTop: 4 }}>
         <button className="btn btn-outline" onClick={onClose}>Cerrar</button>
-        <button className="btn btn-primary" onClick={() => lookup()} disabled={loading}>
-          {loading ? 'Buscando…' : 'Buscar paquete'}
-        </button>
+      </div>
       </div>
     </Modal>
   );
@@ -959,8 +938,9 @@ function DeleteModal({ tenantId, pkg, onClose, onDone }) {
   };
 
   return (
-    <Modal title={`Eliminar — ${pkg.folio}`} subtitle={`${pkg.unit_code} · ${pkg.unit_name}`} onClose={onClose} icon={<Trash2 size={18} />}>
-      <p style={{ fontSize: 13, color: 'var(--ink-500)', marginTop: 0 }}>
+    <Modal title={`Eliminar — ${pkg.folio}`} subtitle={`${pkg.unit_name}${pkg.unit_code ? ` (${pkg.unit_code})` : ''}`} onClose={onClose} icon={<Trash2 size={18} />}>
+      <div className="pkg-form">
+      <p style={{ fontSize: 13, color: 'var(--ink-500)', margin: 0, lineHeight: 1.5 }}>
         Esta acción borra el registro de forma permanente, incluida la foto y la firma.
         El comentario queda en el log del sistema.
       </p>
@@ -974,11 +954,12 @@ function DeleteModal({ tenantId, pkg, onClose, onDone }) {
           placeholder="Ej. Registro duplicado, captura de prueba o unidad incorrecta..."
         />
       </div>
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+      <div className="pkg-actions" style={{ justifyContent: 'flex-end', paddingTop: 4 }}>
         <button className="btn btn-outline" onClick={onClose} disabled={saving}>Cancelar</button>
         <button className="btn btn-danger" onClick={save} disabled={saving}>
           {saving ? 'Eliminando…' : 'Eliminar paquete'}
         </button>
+      </div>
       </div>
     </Modal>
   );
@@ -987,18 +968,18 @@ function DeleteModal({ tenantId, pkg, onClose, onDone }) {
 function DetailDrawer({ pkg, canWrite, canDelete, onClose, onNotify, onDeliver, onDelete }) {
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex justify-end" onClick={onClose}>
-      <div className="bg-white h-full w-full max-w-lg overflow-y-auto shadow-2xl" onClick={e => e.stopPropagation()} style={{ padding: 20 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
-          <div>
-            <div style={{ fontFamily: 'monospace', fontWeight: 800, color: 'var(--teal-700)', fontSize: 20 }}>{pkg.folio}</div>
-            <div style={{ fontWeight: 700 }}>{pkg.unit_code} · {pkg.unit_name}</div>
-            <span className={`badge ${pkg.status === 'entregado' ? 'badge-teal' : 'badge-amber'}`}>{pkg.status_label}</span>
+      <div className="bg-white h-full w-full max-w-lg overflow-y-auto shadow-2xl" onClick={e => e.stopPropagation()} style={{ padding: 24 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 14 }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontFamily: 'monospace', fontWeight: 800, color: 'var(--teal-700)', fontSize: 20, lineHeight: 1.2 }}>{pkg.folio}</div>
+            <div style={{ fontWeight: 700, marginTop: 6, lineHeight: 1.35 }}>{pkg.unit_name}{pkg.unit_code ? <span style={{ fontWeight: 500, color: 'var(--ink-400)', marginLeft: 6 }}>({pkg.unit_code})</span> : null}</div>
+            <span className={`badge ${pkg.status === 'entregado' ? 'badge-teal' : 'badge-amber'}`} style={{ marginTop: 8, display: 'inline-block' }}>{pkg.status_label}</span>
           </div>
-          <button className="btn-icon" onClick={onClose}><X size={18} /></button>
+          <button className="btn-icon" onClick={onClose} style={{ flexShrink: 0 }}><X size={18} /></button>
         </div>
 
         {(canWrite && pkg.status === 'recibido') || canDelete ? (
-          <div style={{ display: 'flex', gap: 8, margin: '16px 0', flexWrap: 'wrap' }}>
+          <div className="pkg-actions" style={{ margin: '20px 0' }}>
             {canWrite && pkg.status === 'recibido' && (
               <>
                 <button className="btn btn-outline" onClick={onNotify}><Mail size={14} /> Avisar</button>
@@ -1011,7 +992,7 @@ function DetailDrawer({ pkg, canWrite, canDelete, onClose, onNotify, onDeliver, 
           </div>
         ) : null}
 
-        <h4 style={{ margin: '20px 0 8px' }}>Evidencia de recepción</h4>
+        <h4 style={{ margin: '24px 0 12px' }}>Evidencia de recepción</h4>
         {pkg.receive_photo_url ? (
           <ProtectedImage
             src={pkg.receive_photo_url}
@@ -1020,11 +1001,11 @@ function DetailDrawer({ pkg, canWrite, canDelete, onClose, onNotify, onDeliver, 
             fallback={<div style={{ padding: 24, textAlign: 'center', color: 'var(--ink-400)' }}><ImageIcon size={22} /></div>}
           />
         ) : null}
-        {pkg.receive_notes && <p style={{ fontSize: 13, color: 'var(--ink-600)' }}>{pkg.receive_notes}</p>}
+        {pkg.receive_notes && <p style={{ fontSize: 13, color: 'var(--ink-600)', marginTop: 10, lineHeight: 1.5 }}>{pkg.receive_notes}</p>}
 
         {pkg.qr_data_url && (
           <>
-            <h4 style={{ margin: '20px 0 8px' }}>Código QR del paquete</h4>
+            <h4 style={{ margin: '24px 0 12px' }}>Código QR del paquete</h4>
             <div className="card" style={{ padding: 16, textAlign: 'center' }}>
               <img src={pkg.qr_data_url} alt="QR del paquete" style={{ width: 180, height: 180 }} />
               <div style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: 8 }}>
@@ -1039,7 +1020,7 @@ function DetailDrawer({ pkg, canWrite, canDelete, onClose, onNotify, onDeliver, 
 
         {(pkg.delivery_signature_url || pkg.delivery_method_label) && (
           <>
-            <h4 style={{ margin: '20px 0 8px' }}>
+            <h4 style={{ margin: '24px 0 12px' }}>
               Entrega{pkg.delivery_method_label ? ` · ${pkg.delivery_method_label}` : ''}
             </h4>
             {pkg.delivery_signature_url && (
@@ -1050,24 +1031,24 @@ function DetailDrawer({ pkg, canWrite, canDelete, onClose, onNotify, onDeliver, 
                 fallback={null}
               />
             )}
-            {pkg.delivery_notes && <p style={{ fontSize: 13, color: 'var(--ink-600)' }}>{pkg.delivery_notes}</p>}
+            {pkg.delivery_notes && <p style={{ fontSize: 13, color: 'var(--ink-600)', marginTop: 10, lineHeight: 1.5 }}>{pkg.delivery_notes}</p>}
           </>
         )}
 
-        <h4 style={{ margin: '24px 0 10px' }}>Bitácora</h4>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <h4 style={{ margin: '28px 0 12px' }}>Bitácora</h4>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {(pkg.events || []).map(ev => {
             const meta = EVENT_META[ev.event_type] || EVENT_META.nota;
             return (
-              <div key={ev.id} className="card" style={{ padding: 12 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-                  <div style={{ fontWeight: 700, fontSize: 13, color: meta.color }}>{meta.icon} {meta.label}</div>
-                  <div style={{ fontSize: 11, color: 'var(--ink-400)' }}>{fmtDate(ev.created_at)}</div>
+              <div key={ev.id} className="card" style={{ padding: 14 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+                  <div style={{ fontWeight: 700, fontSize: 13, color: meta.color, lineHeight: 1.35 }}>{meta.icon} {meta.label}</div>
+                  <div style={{ fontSize: 11, color: 'var(--ink-400)', flexShrink: 0 }}>{fmtDate(ev.created_at)}</div>
                 </div>
-                <div style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: 4 }}>{ev.actor_name}</div>
-                {ev.notes && <div style={{ fontSize: 13, marginTop: 6 }}>{ev.notes}</div>}
+                <div style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: 6 }}>{ev.actor_name}</div>
+                {ev.notes && <div style={{ fontSize: 13, marginTop: 8, lineHeight: 1.45 }}>{ev.notes}</div>}
                 {ev.event_type === 'notificado' && Array.isArray(ev.extra?.sent) && ev.extra.sent.length > 0 && (
-                  <div style={{ fontSize: 12, color: 'var(--ink-400)', marginTop: 6 }}>
+                  <div style={{ fontSize: 12, color: 'var(--ink-400)', marginTop: 8, lineHeight: 1.45 }}>
                     Destinatarios: {ev.extra.sent.map(s => s.email || s.name).join(', ')}
                   </div>
                 )}
@@ -1082,23 +1063,23 @@ function DetailDrawer({ pkg, canWrite, canDelete, onClose, onNotify, onDeliver, 
 
 function Modal({ title, subtitle, icon, onClose, children, wide }) {
   return (
-    <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-3 sm:p-5" onClick={onClose}>
       <div
         className="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full max-h-[92vh] overflow-y-auto"
         onClick={e => e.stopPropagation()}
-        style={{ padding: 20, maxWidth: wide ? 640 : 512 }}
+        style={{ padding: '24px 22px 22px', maxWidth: wide ? 680 : 520, margin: '0 auto' }}
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
-          <div style={{ display: 'flex', gap: 10 }}>
-            <div style={{ width: 36, height: 36, borderRadius: 10, background: 'var(--teal-50)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--teal-700)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 20 }}>
+          <div style={{ display: 'flex', gap: 12, minWidth: 0 }}>
+            <div style={{ width: 40, height: 40, flexShrink: 0, borderRadius: 10, background: 'var(--teal-50)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--teal-700)' }}>
               {icon}
             </div>
-            <div>
-              <div style={{ fontWeight: 800 }}>{title}</div>
-              {subtitle && <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>{subtitle}</div>}
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontWeight: 800, lineHeight: 1.3 }}>{title}</div>
+              {subtitle && <div style={{ fontSize: 12, color: 'var(--ink-400)', marginTop: 4, lineHeight: 1.4 }}>{subtitle}</div>}
             </div>
           </div>
-          <button className="btn-icon" onClick={onClose}><X size={18} /></button>
+          <button className="btn-icon" onClick={onClose} style={{ flexShrink: 0 }}><X size={18} /></button>
         </div>
         {children}
       </div>

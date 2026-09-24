@@ -1435,8 +1435,8 @@ export default function PlanPagos() {
           <div style={{ background: '#1e3a5f', padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 10 }}>
             <Building size={15} color="#fff" />
             <span style={{ color: '#fff', fontWeight: 700, fontSize: 13 }}>
-              {u.unit_id_code && <span style={{ fontFamily: 'monospace', background: 'rgba(255,255,255,0.15)', padding: '1px 7px', borderRadius: 4, marginRight: 8 }}>{u.unit_id_code}</span>}
               {u.unit_name || '—'}
+              {u.unit_id_code && <span style={{ fontFamily: 'monospace', background: 'rgba(255,255,255,0.15)', padding: '1px 7px', borderRadius: 4, marginLeft: 8 }}>{u.unit_id_code}</span>}
             </span>
             <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.7)', background: 'rgba(255,255,255,0.1)', padding: '2px 8px', borderRadius: 10 }}>
               {occLabel}
@@ -1748,9 +1748,9 @@ export default function PlanPagos() {
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 6 }}>
                         <div>
                           <div style={{ fontSize: 12, fontWeight: 700, color: isActive ? 'var(--teal-700)' : 'var(--ink-700)', marginBottom: 2 }}>
-                            {u.unit_id_code || u.id}
+                            {u.unit_name || u.unit_id_code || u.id}
                           </div>
-                          <div style={{ fontSize: 11, color: 'var(--ink-500)' }}>{u.unit_name || ''}</div>
+                          <div style={{ fontSize: 11, color: 'var(--ink-500)', fontFamily: 'monospace' }}>{u.unit_id_code || ''}</div>
                           <div style={{ fontSize: 11, color: 'var(--ink-400)' }}>{u.responsible_name || ''}</div>
                         </div>
                         <div style={{ textAlign: 'right', flexShrink: 0 }}>
@@ -1840,7 +1840,7 @@ export default function PlanPagos() {
                 <div>
                   {!isResidente && selectedUnit && (
                     <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--ink-800)' }}>
-                      {selectedUnit.unit_id_code} {selectedUnit.unit_name && `— ${selectedUnit.unit_name}`}
+                      {selectedUnit.unit_name || selectedUnit.unit_id_code}{selectedUnit.unit_name && selectedUnit.unit_id_code ? ` (${selectedUnit.unit_id_code})` : ''}
                     </div>
                   )}
                   {isResidente && (

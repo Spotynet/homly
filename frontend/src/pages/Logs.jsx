@@ -21,6 +21,7 @@ const MODULE_OPTIONS = [
   { value: 'tenants',   label: 'Tenants' },
   { value: 'sistema',    label: 'Sistema' },
   { value: 'paqueteria', label: 'Paquetería' },
+  { value: 'visitas',    label: 'Visitas Autorizadas' },
 ];
 
 const ACTION_OPTIONS = [
@@ -65,6 +66,7 @@ const MODULE_COLOR = {
   tenants:  '#06b6d4',
   sistema:    '#94a3b8',
   paqueteria: '#0f766e',
+  visitas:    '#0d9488',
 };
 
 // ──────────────────────────────────────────────────────────────

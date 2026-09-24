@@ -612,7 +612,10 @@ export default function Reservas() {
                             {r.start_time?.slice(0, 5)} – {r.end_time?.slice(0, 5)}
                           </td>
                           <td style={{ fontSize: 12 }}>
-                            <div>{r.unit_id_code || r.unit_name || <span style={{ color: 'var(--ink-300)' }}>—</span>}</div>
+                            <div>
+                              {r.unit_name || r.unit_id_code || <span style={{ color: 'var(--ink-300)' }}>—</span>}
+                              {r.unit_name && r.unit_id_code ? <span style={{ color: 'var(--ink-400)' }}> ({r.unit_id_code})</span> : null}
+                            </div>
                             {r.requested_by_name && (
                               <div style={{ fontSize: 11, color: 'var(--ink-400)' }}>{r.requested_by_name}</div>
                             )}
@@ -760,7 +763,7 @@ export default function Reservas() {
                     <option value="">Selecciona una unidad</option>
                     {units.map(u => (
                       <option key={u.id} value={u.id}>
-                        {u.unit_id_code ? `${u.unit_id_code}` : ''}{u.unit_name ? ` — ${u.unit_name}` : ''}
+                        {u.unit_name || ''}{u.unit_id_code ? ` (${u.unit_id_code})` : ''}
                         {u.owner_name ? ` (${u.owner_name})` : ''}
                       </option>
                     ))}
