@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import {
-  Package, Plus, Search, X, Camera, Mail, PenLine, Settings, Loader2, Image as ImageIcon,
+  Package, Plus, Search, X, Camera, Mail, PenLine, Settings, Loader2, Image as ImageIcon, Trash2,
+  QrCode, ScanLine, Clock, SlidersHorizontal,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { paqueteriaAPI } from '../api/client';
@@ -59,14 +60,18 @@ function errMsg(e, fallback) {
     || e?.response?.data?.photo?.[0]
     || e?.response?.data?.signature?.[0]
     || e?.response?.data?.recipients?.[0]
+    || e?.response?.data?.comment?.[0]
+    || e?.response?.data?.qr?.[0]
+    || e?.response?.data?.method?.[0]
     || fallback;
 }
 
 const EVENT_META = {
   recibido:   { icon: '📦', label: 'Recepción en vigilancia', color: 'var(--teal-700)' },
   notificado: { icon: '✉️', label: 'Notificación enviada',    color: 'var(--blue-600)' },
-  entregado:  { icon: '✍️', label: 'Entrega al destinatario', color: 'var(--teal-600)' },
-  nota:       { icon: '📝', label: 'Nota',                    color: 'var(--ink-500)' },
+  entregado:    { icon: '✍️', label: 'Entrega al destinatario', color: 'var(--teal-600)' },
+  recordatorio: { icon: '⏰', label: 'Recordatorio automático', color: 'var(--amber-700)' },
+  nota:         { icon: '📝', label: 'Nota',                    color: 'var(--ink-500)' },
 };
 
 export default function Paqueteria() {
@@ -77,13 +82,16 @@ export default function Paqueteria() {
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState('');
   const [search, setSearch] = useState('');
-  const [tab, setTab] = useState('tablero');
   const [detail, setDetail] = useState(null);
   const [receiveOpen, setReceiveOpen] = useState(false);
+  const [customizeOpen, setCustomizeOpen] = useState(false);
+  const [scanOpen, setScanOpen] = useState(false);
   const [notifyPkg, setNotifyPkg] = useState(null);
   const [deliverPkg, setDeliverPkg] = useState(null);
+  const [deletePkg, setDeletePkg] = useState(null);
 
   const canWrite = !!ctx?.can_write;
+  const canDelete = !!ctx?.can_delete;
   const canEditSettings = !!ctx?.can_edit_settings;
 
   const loadCtx = () => {
@@ -127,16 +135,21 @@ export default function Paqueteria() {
         <div>
           <h2 style={{ margin: 0, fontSize: 22 }}>Paquetería / Mensajería</h2>
           <p style={{ margin: '4px 0 0', color: 'var(--ink-400)', fontSize: 13 }}>
-            Recepción en vigilancia, aviso a la unidad y entrega con firma.
+            Recepción en vigilancia, aviso a la unidad y entrega con QR o firma.
           </p>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {canEditSettings && (
-            <button className={`btn ${tab === 'config' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setTab(tab === 'config' ? 'tablero' : 'config')}>
-              <Settings size={14} /> Reglamento
+            <button className="btn btn-outline" onClick={() => setCustomizeOpen(true)}>
+              <SlidersHorizontal size={14} /> Personalizar
             </button>
           )}
-          {canWrite && tab === 'tablero' && (
+          {canWrite && (
+            <button className="btn btn-outline" onClick={() => setScanOpen(true)}>
+              <ScanLine size={15} /> Escanear QR
+            </button>
+          )}
+          {canWrite && (
             <button className="btn btn-primary" onClick={() => setReceiveOpen(true)}>
               <Plus size={15} /> Recibir paquete
             </button>
@@ -144,15 +157,7 @@ export default function Paqueteria() {
         </div>
       </div>
 
-      {tab === 'config' ? (
-        <RulesPanel
-          tenantId={tenantId}
-          initial={ctx?.notify_rules || ''}
-          onSaved={(rules) => setCtx(c => ({ ...c, notify_rules: rules }))}
-          onBack={() => setTab('tablero')}
-        />
-      ) : (
-        <>
+      <>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10, marginBottom: 16 }}>
             {[
               { label: 'En vigilancia', value: pending, color: 'var(--amber-600)' },
@@ -250,6 +255,9 @@ export default function Paqueteria() {
                               </>
                             )}
                             <button className="btn btn-outline btn-sm" onClick={() => openDetail(pkg.id)}>Ver</button>
+                            {canDelete && (
+                              <button className="btn btn-danger btn-sm" onClick={() => setDeletePkg(pkg)}><Trash2 size={13} /> Eliminar</button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -260,6 +268,31 @@ export default function Paqueteria() {
             )}
           </div>
         </>
+
+      {customizeOpen && (
+        <CustomizeModal
+          tenantId={tenantId}
+          initialRules={ctx?.notify_rules || ''}
+          initialReminders={ctx?.reminders}
+          onClose={() => setCustomizeOpen(false)}
+          onSaved={(data) => setCtx(c => ({
+            ...c,
+            notify_rules: data.notify_rules ?? c?.notify_rules,
+            reminders: data.reminders || c?.reminders,
+          }))}
+        />
+      )}
+
+      {scanOpen && (
+        <ScanDeliverModal
+          tenantId={tenantId}
+          onClose={() => setScanOpen(false)}
+          onDelivered={() => {
+            setScanOpen(false);
+            loadList();
+            loadCtx();
+          }}
+        />
       )}
 
       {receiveOpen && (
@@ -303,57 +336,181 @@ export default function Paqueteria() {
         />
       )}
 
+      {deletePkg && (
+        <DeleteModal
+          tenantId={tenantId}
+          pkg={deletePkg}
+          onClose={() => setDeletePkg(null)}
+          onDone={() => {
+            if (detail?.id === deletePkg.id) setDetail(null);
+            setDeletePkg(null);
+            loadList();
+            loadCtx();
+          }}
+        />
+      )}
+
       {detail && (
         <DetailDrawer
           pkg={detail}
           canWrite={canWrite}
+          canDelete={canDelete}
           onClose={() => setDetail(null)}
           onNotify={() => setNotifyPkg(detail)}
           onDeliver={() => setDeliverPkg(detail)}
+          onDelete={() => setDeletePkg(detail)}
         />
       )}
     </div>
   );
 }
 
-function RulesPanel({ tenantId, initial, onSaved, onBack }) {
-  const [rules, setRules] = useState(initial || '');
+function hoursLabel(n) {
+  const v = Number(n);
+  if (!v) return 'no se repite';
+  if (v === 1) return '1 hora';
+  if (v % 24 === 0) {
+    const d = v / 24;
+    return d === 1 ? '1 día' : `${d} días`;
+  }
+  return `${v} horas`;
+}
+
+function CustomizeModal({ tenantId, initialRules, initialReminders, onClose, onSaved }) {
+  const rem = initialReminders || {};
+  const [tab, setTab] = useState('reglamento');
+  const [rules, setRules] = useState(initialRules || '');
+  const [enabled, setEnabled] = useState(!!rem.enabled);
+  const [afterHours, setAfterHours] = useState(String(rem.after_hours || 24));
+  const [repeatHours, setRepeatHours] = useState(String(rem.repeat_hours ?? 24));
+  const [maxCount, setMaxCount] = useState(String(rem.max_count || 3));
   const [saving, setSaving] = useState(false);
 
   const save = async () => {
     setSaving(true);
     try {
-      const r = await paqueteriaAPI.saveSettings(tenantId, { notify_rules: rules });
-      onSaved(r.data.notify_rules || '');
-      toast.success('Reglamento guardado');
+      const r = await paqueteriaAPI.saveSettings(tenantId, {
+        notify_rules: rules,
+        reminders: {
+          enabled,
+          after_hours: Number(afterHours) || 24,
+          repeat_hours: Number(repeatHours) || 0,
+          max_count: Number(maxCount) || 3,
+        },
+      });
+      onSaved(r.data);
+      toast.success('Personalización guardada');
+      onClose();
     } catch (e) {
-      toast.error(errMsg(e, 'No se pudo guardar el reglamento'));
+      toast.error(errMsg(e, 'No se pudo guardar'));
     } finally {
       setSaving(false);
     }
   };
 
+  const preview = enabled
+    ? `Si un paquete sigue en vigilancia, el primer aviso sale a las ${hoursLabel(afterHours)} y ${Number(repeatHours) ? `se repite cada ${hoursLabel(repeatHours)}` : 'no se vuelve a enviar'} (máximo ${maxCount}).`
+    : 'Los recordatorios automáticos están desactivados. Solo se envía el aviso cuando vigilancia elige los contactos.';
+
   return (
-    <div className="card" style={{ maxWidth: 720 }}>
-      <h3 style={{ marginTop: 0 }}>Mensaje y reglamento de notificaciones</h3>
-      <p style={{ color: 'var(--ink-400)', fontSize: 13, marginTop: 0 }}>
-        Este texto se incluye en el correo cuando vigilancia avisa que llegó un paquete.
-        Úsalo para el reglamento interno del condominio.
-      </p>
-      <textarea
-        className="field-input"
-        rows={8}
-        value={rules}
-        onChange={e => setRules(e.target.value)}
-        placeholder="Ej. El paquete se entrega en caseta presentando identificación. El condominio no se hace responsable por paquetes no reclamados después de 5 días hábiles."
-      />
-      <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-        <button className="btn btn-outline" onClick={onBack}>Volver</button>
+    <Modal
+      title="Personalizar paquetería"
+      subtitle="Reglamento del correo y recordatorios de entrega"
+      onClose={onClose}
+      icon={<SlidersHorizontal size={18} />}
+      wide
+    >
+      <div style={{
+        display: 'flex', gap: 6, padding: 4, background: 'var(--sand-100)',
+        borderRadius: 12, marginBottom: 18,
+      }}>
+        {[
+          { key: 'reglamento', icon: <Settings size={14} />, label: 'Reglamento' },
+          { key: 'recordatorios', icon: <Clock size={14} />, label: 'Recordatorios' },
+        ].map(item => (
+          <button
+            key={item.key}
+            type="button"
+            onClick={() => setTab(item.key)}
+            style={{
+              flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+              border: 'none', borderRadius: 10, padding: '10px 12px', cursor: 'pointer',
+              fontWeight: 700, fontSize: 13,
+              background: tab === item.key ? '#fff' : 'transparent',
+              color: tab === item.key ? 'var(--teal-700)' : 'var(--ink-500)',
+              boxShadow: tab === item.key ? '0 1px 4px rgba(26,22,18,0.08)' : 'none',
+            }}
+          >
+            {item.icon} {item.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'reglamento' ? (
+        <div>
+          <p style={{ color: 'var(--ink-500)', fontSize: 13, marginTop: 0, lineHeight: 1.5 }}>
+            Este texto se incluye en el correo de aviso y en los recordatorios, junto con el QR y la foto de evidencia.
+          </p>
+          <textarea
+            className="field-input"
+            rows={8}
+            value={rules}
+            onChange={e => setRules(e.target.value)}
+            placeholder="Ej. El paquete se entrega en caseta presentando identificación o el código QR del correo. El condominio no se hace responsable por paquetes no reclamados después de 5 días hábiles."
+          />
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <label className="card" style={{ padding: 14, display: 'flex', gap: 12, alignItems: 'center', cursor: 'pointer' }}>
+            <input type="checkbox" checked={enabled} onChange={e => setEnabled(e.target.checked)} />
+            <div>
+              <div style={{ fontWeight: 800, fontSize: 14 }}>Recordatorios automáticos</div>
+              <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>Avisar de nuevo si el paquete sigue en caseta</div>
+            </div>
+          </label>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, opacity: enabled ? 1 : 0.45, pointerEvents: enabled ? 'auto' : 'none' }}>
+            <div className="field" style={{ margin: 0 }}>
+              <div className="field-label">Primer aviso</div>
+              <select className="field-input" value={afterHours} onChange={e => setAfterHours(e.target.value)}>
+                {[6, 12, 24, 48, 72, 120, 168].map(h => (
+                  <option key={h} value={h}>A las {hoursLabel(h)}</option>
+                ))}
+              </select>
+            </div>
+            <div className="field" style={{ margin: 0 }}>
+              <div className="field-label">Repetir</div>
+              <select className="field-input" value={repeatHours} onChange={e => setRepeatHours(e.target.value)}>
+                <option value="0">No repetir</option>
+                {[6, 12, 24, 48, 72].map(h => (
+                  <option key={h} value={h}>Cada {hoursLabel(h)}</option>
+                ))}
+              </select>
+            </div>
+            <div className="field" style={{ margin: 0, gridColumn: '1 / -1' }}>
+              <div className="field-label">Máximo de recordatorios</div>
+              <select className="field-input" value={maxCount} onChange={e => setMaxCount(e.target.value)}>
+                {[1, 2, 3, 4, 5, 8, 10].map(n => (
+                  <option key={n} value={n}>{n} {n === 1 ? 'aviso' : 'avisos'}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div style={{
+            padding: '12px 14px', borderRadius: 12, background: 'var(--teal-50)',
+            color: 'var(--teal-800)', fontSize: 13, lineHeight: 1.5,
+          }}>
+            {preview}
+          </div>
+        </div>
+      )}
+
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18 }}>
+        <button className="btn btn-outline" onClick={onClose} disabled={saving}>Cancelar</button>
         <button className="btn btn-primary" onClick={save} disabled={saving}>
-          {saving ? 'Guardando…' : 'Guardar reglamento'}
+          {saving ? 'Guardando…' : 'Guardar cambios'}
         </button>
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -553,18 +710,110 @@ function NotifyModal({ tenantId, pkg, onClose, onDone }) {
   );
 }
 
-function DeliverModal({ tenantId, pkg, onClose, onDone }) {
+function MethodCard({ active, icon, title, desc, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        flex: 1, textAlign: 'left', padding: 14, borderRadius: 14, cursor: 'pointer',
+        border: active ? '2px solid var(--teal-600)' : '1px solid var(--sand-200)',
+        background: active ? 'var(--teal-50)' : '#fff',
+      }}
+    >
+      <div style={{ color: 'var(--teal-700)', marginBottom: 6 }}>{icon}</div>
+      <div style={{ fontWeight: 800, fontSize: 14 }}>{title}</div>
+      <div style={{ fontSize: 12, color: 'var(--ink-400)', marginTop: 4, lineHeight: 1.4 }}>{desc}</div>
+    </button>
+  );
+}
+
+function QrCapture({ value, onChange }) {
+  const videoRef = useRef(null);
+  const [scanning, setScanning] = useState(false);
+  const [camError, setCamError] = useState('');
+
+  useEffect(() => {
+    if (!scanning) return undefined;
+    let stream;
+    let timer;
+    let stopped = false;
+    const start = async () => {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play();
+        }
+        if (typeof window.BarcodeDetector !== 'function') {
+          setCamError('Este navegador no lee QR. Escribe el código que aparece bajo el QR del correo.');
+          return;
+        }
+        const detector = new window.BarcodeDetector({ formats: ['qr_code'] });
+        const tick = async () => {
+          if (stopped || !videoRef.current) return;
+          try {
+            const codes = await detector.detect(videoRef.current);
+            if (codes[0]?.rawValue) {
+              onChange(codes[0].rawValue);
+              setScanning(false);
+              return;
+            }
+          } catch { /* keep scanning */ }
+          timer = setTimeout(tick, 280);
+        };
+        tick();
+      } catch {
+        setCamError('No se pudo abrir la cámara. Escribe el código manualmente.');
+      }
+    };
+    start();
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+      stream?.getTracks().forEach(t => t.stop());
+    };
+  }, [scanning, onChange]);
+
+  return (
+    <div>
+      {scanning && (
+        <video ref={videoRef} muted playsInline style={{ width: '100%', borderRadius: 12, background: '#111', maxHeight: 220, objectFit: 'cover' }} />
+      )}
+      <div style={{ display: 'flex', gap: 8, margin: '8px 0' }}>
+        <button type="button" className={`btn ${scanning ? 'btn-primary' : 'btn-outline'} btn-sm`} onClick={() => { setCamError(''); setScanning(s => !s); }}>
+          <Camera size={13} /> {scanning ? 'Cerrar cámara' : 'Abrir cámara'}
+        </button>
+      </div>
+      {camError && <div style={{ fontSize: 12, color: 'var(--amber-700)', marginBottom: 8 }}>{camError}</div>}
+      <input
+        className="field-input"
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder="HOMLY-PKG:… o el código del correo"
+      />
+    </div>
+  );
+}
+
+function DeliverModal({ tenantId, pkg, onClose, onDone, initialMethod = '', initialQr = '' }) {
+  const [method, setMethod] = useState(initialMethod || '');
   const [notes, setNotes] = useState('');
   const [signature, setSignature] = useState(null);
+  const [qr, setQr] = useState(initialQr || '');
   const [saving, setSaving] = useState(false);
 
   const save = async () => {
-    if (!signature) return toast.error('La firma del destinatario es obligatoria');
+    if (!method) return toast.error('Elige entrega con QR o con firma');
+    if (method === 'firma' && !signature) return toast.error('La firma del destinatario es obligatoria');
+    if (method === 'qr' && !qr.trim()) return toast.error('Escanea o escribe el código QR');
     setSaving(true);
     try {
       const fd = new FormData();
+      fd.append('method', method);
       if (notes.trim()) fd.append('notes', notes.trim());
-      fd.append('signature', signature, 'firma.png');
+      if (method === 'qr') fd.append('qr', qr.trim());
+      if (method === 'firma' && signature) fd.append('signature', signature, 'firma.png');
       await paqueteriaAPI.deliver(tenantId, pkg.id, fd);
       toast.success(`Paquete ${pkg.folio} entregado`);
       onDone();
@@ -576,18 +825,42 @@ function DeliverModal({ tenantId, pkg, onClose, onDone }) {
   };
 
   return (
-    <Modal title={`Entregar — ${pkg.folio}`} subtitle={`${pkg.unit_code} · ${pkg.unit_name}`} onClose={onClose} icon={<PenLine size={18} />}>
-      <div className="field">
-        <div className="field-label">Firma de recepción *</div>
-        <SignaturePad onChange={setSignature} />
+    <Modal title={`Entregar — ${pkg.folio}`} subtitle={`${pkg.unit_code} · ${pkg.unit_name}`} onClose={onClose} icon={<Package size={18} />}>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+        <MethodCard
+          active={method === 'qr'}
+          icon={<QrCode size={20} />}
+          title="Código QR"
+          desc="Escanea el QR del correo o de la pantalla del vecino."
+          onClick={() => setMethod('qr')}
+        />
+        <MethodCard
+          active={method === 'firma'}
+          icon={<PenLine size={20} />}
+          title="Firma"
+          desc="El destinatario firma en pantalla al recoger."
+          onClick={() => setMethod('firma')}
+        />
       </div>
+      {method === 'qr' && (
+        <div className="field">
+          <div className="field-label">Código del paquete *</div>
+          <QrCapture value={qr} onChange={setQr} />
+        </div>
+      )}
+      {method === 'firma' && (
+        <div className="field">
+          <div className="field-label">Firma de recepción *</div>
+          <SignaturePad onChange={setSignature} />
+        </div>
+      )}
       <div className="field">
         <div className="field-label">Nota de entrega (opcional)</div>
         <textarea className="field-input" rows={3} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Quién recogió el paquete u observación..." />
       </div>
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
         <button className="btn btn-outline" onClick={onClose} disabled={saving}>Cancelar</button>
-        <button className="btn btn-primary" onClick={save} disabled={saving}>
+        <button className="btn btn-primary" onClick={save} disabled={saving || !method}>
           {saving ? 'Guardando…' : 'Confirmar entrega'}
         </button>
       </div>
@@ -595,7 +868,123 @@ function DeliverModal({ tenantId, pkg, onClose, onDone }) {
   );
 }
 
-function DetailDrawer({ pkg, canWrite, onClose, onNotify, onDeliver }) {
+function ScanDeliverModal({ tenantId, onClose, onDelivered }) {
+  const [qr, setQr] = useState('');
+  const [pkg, setPkg] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const lastLookup = useRef('');
+
+  const lookup = async (value) => {
+    const code = (value || qr).trim();
+    if (!code) return toast.error('Escanea o escribe el código');
+    lastLookup.current = code;
+    setLoading(true);
+    try {
+      const r = await paqueteriaAPI.lookup(tenantId, code);
+      if (r.data.status === 'entregado') {
+        toast.error(`El paquete ${r.data.folio} ya fue entregado`);
+        setPkg(r.data);
+      } else {
+        setPkg(r.data);
+        setQr(code);
+      }
+    } catch (e) {
+      toast.error(errMsg(e, 'No se encontró ese código'));
+      setPkg(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (/HOMLY-PKG:/i.test(qr) && lastLookup.current !== qr && !loading) {
+      lookup(qr);
+    }
+  }, [qr]);
+
+  if (pkg && pkg.status === 'recibido') {
+    return (
+      <DeliverModal
+        tenantId={tenantId}
+        pkg={pkg}
+        initialMethod="qr"
+        initialQr={qr || pkg.qr_payload || ''}
+        onClose={onClose}
+        onDone={onDelivered}
+      />
+    );
+  }
+
+  return (
+    <Modal title="Escanear QR" subtitle="Identifica el paquete para entregarlo" onClose={onClose} icon={<ScanLine size={18} />}>
+      <p style={{ fontSize: 13, color: 'var(--ink-500)', marginTop: 0 }}>
+        Apunta la cámara al QR del correo o de la pantalla del vecino.
+      </p>
+      <QrCapture value={qr} onChange={setQr} />
+      {pkg?.status === 'entregado' && (
+        <div className="card" style={{ padding: 12, marginTop: 12 }}>
+          <div style={{ fontFamily: 'monospace', fontWeight: 800, color: 'var(--teal-700)' }}>{pkg.folio}</div>
+          <div style={{ fontSize: 13 }}>{pkg.unit_code} · {pkg.unit_name}</div>
+          <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>Ya entregado el {fmtDate(pkg.delivered_at)}</div>
+        </div>
+      )}
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
+        <button className="btn btn-outline" onClick={onClose}>Cerrar</button>
+        <button className="btn btn-primary" onClick={() => lookup()} disabled={loading}>
+          {loading ? 'Buscando…' : 'Buscar paquete'}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function DeleteModal({ tenantId, pkg, onClose, onDone }) {
+  const [comment, setComment] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    if (comment.trim().length < 3) {
+      return toast.error('Escribe un comentario para el log del sistema');
+    }
+    setSaving(true);
+    try {
+      await paqueteriaAPI.delete(tenantId, pkg.id, { comment: comment.trim() });
+      toast.success(`Paquete ${pkg.folio} eliminado`);
+      onDone();
+    } catch (e) {
+      toast.error(errMsg(e, 'No se pudo eliminar el paquete'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal title={`Eliminar — ${pkg.folio}`} subtitle={`${pkg.unit_code} · ${pkg.unit_name}`} onClose={onClose} icon={<Trash2 size={18} />}>
+      <p style={{ fontSize: 13, color: 'var(--ink-500)', marginTop: 0 }}>
+        Esta acción borra el registro de forma permanente, incluida la foto y la firma.
+        El comentario queda en el log del sistema.
+      </p>
+      <div className="field">
+        <div className="field-label">Comentario para el log *</div>
+        <textarea
+          className="field-input"
+          rows={4}
+          value={comment}
+          onChange={e => setComment(e.target.value)}
+          placeholder="Ej. Registro duplicado, captura de prueba o unidad incorrecta..."
+        />
+      </div>
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+        <button className="btn btn-outline" onClick={onClose} disabled={saving}>Cancelar</button>
+        <button className="btn btn-danger" onClick={save} disabled={saving}>
+          {saving ? 'Eliminando…' : 'Eliminar paquete'}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function DetailDrawer({ pkg, canWrite, canDelete, onClose, onNotify, onDeliver, onDelete }) {
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex justify-end" onClick={onClose}>
       <div className="bg-white h-full w-full max-w-lg overflow-y-auto shadow-2xl" onClick={e => e.stopPropagation()} style={{ padding: 20 }}>
@@ -608,12 +997,19 @@ function DetailDrawer({ pkg, canWrite, onClose, onNotify, onDeliver }) {
           <button className="btn-icon" onClick={onClose}><X size={18} /></button>
         </div>
 
-        {canWrite && pkg.status === 'recibido' && (
-          <div style={{ display: 'flex', gap: 8, margin: '16px 0' }}>
-            <button className="btn btn-outline" onClick={onNotify}><Mail size={14} /> Avisar</button>
-            <button className="btn btn-primary" onClick={onDeliver}><PenLine size={14} /> Entregar</button>
+        {(canWrite && pkg.status === 'recibido') || canDelete ? (
+          <div style={{ display: 'flex', gap: 8, margin: '16px 0', flexWrap: 'wrap' }}>
+            {canWrite && pkg.status === 'recibido' && (
+              <>
+                <button className="btn btn-outline" onClick={onNotify}><Mail size={14} /> Avisar</button>
+                <button className="btn btn-primary" onClick={onDeliver}><PenLine size={14} /> Entregar</button>
+              </>
+            )}
+            {canDelete && (
+              <button className="btn btn-danger" onClick={onDelete}><Trash2 size={14} /> Eliminar</button>
+            )}
           </div>
-        )}
+        ) : null}
 
         <h4 style={{ margin: '20px 0 8px' }}>Evidencia de recepción</h4>
         {pkg.receive_photo_url ? (
@@ -626,15 +1022,34 @@ function DetailDrawer({ pkg, canWrite, onClose, onNotify, onDeliver }) {
         ) : null}
         {pkg.receive_notes && <p style={{ fontSize: 13, color: 'var(--ink-600)' }}>{pkg.receive_notes}</p>}
 
-        {pkg.delivery_signature_url && (
+        {pkg.qr_data_url && (
           <>
-            <h4 style={{ margin: '20px 0 8px' }}>Firma de entrega</h4>
-            <ProtectedImage
-              src={pkg.delivery_signature_url}
-              alt="Firma"
-              style={{ width: '100%', background: '#fff', border: '1px solid var(--sand-200)', borderRadius: 12 }}
-              fallback={null}
-            />
+            <h4 style={{ margin: '20px 0 8px' }}>Código QR del paquete</h4>
+            <div className="card" style={{ padding: 16, textAlign: 'center' }}>
+              <img src={pkg.qr_data_url} alt="QR del paquete" style={{ width: 180, height: 180 }} />
+              <div style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: 8 }}>
+                Muestra este código en caseta para recoger el paquete.
+              </div>
+              {pkg.qr_payload && (
+                <div style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--teal-700)', marginTop: 4 }}>{pkg.qr_payload}</div>
+              )}
+            </div>
+          </>
+        )}
+
+        {(pkg.delivery_signature_url || pkg.delivery_method_label) && (
+          <>
+            <h4 style={{ margin: '20px 0 8px' }}>
+              Entrega{pkg.delivery_method_label ? ` · ${pkg.delivery_method_label}` : ''}
+            </h4>
+            {pkg.delivery_signature_url && (
+              <ProtectedImage
+                src={pkg.delivery_signature_url}
+                alt="Firma"
+                style={{ width: '100%', background: '#fff', border: '1px solid var(--sand-200)', borderRadius: 12 }}
+                fallback={null}
+              />
+            )}
             {pkg.delivery_notes && <p style={{ fontSize: 13, color: 'var(--ink-600)' }}>{pkg.delivery_notes}</p>}
           </>
         )}
@@ -665,10 +1080,14 @@ function DetailDrawer({ pkg, canWrite, onClose, onNotify, onDeliver }) {
   );
 }
 
-function Modal({ title, subtitle, icon, onClose, children }) {
+function Modal({ title, subtitle, icon, onClose, children, wide }) {
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={onClose}>
-      <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full max-w-lg max-h-[92vh] overflow-y-auto" onClick={e => e.stopPropagation()} style={{ padding: 20 }}>
+      <div
+        className="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full max-h-[92vh] overflow-y-auto"
+        onClick={e => e.stopPropagation()}
+        style={{ padding: 20, maxWidth: wide ? 640 : 512 }}
+      >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
           <div style={{ display: 'flex', gap: 10 }}>
             <div style={{ width: 36, height: 36, borderRadius: 10, background: 'var(--teal-50)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--teal-700)' }}>

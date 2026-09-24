@@ -111,6 +111,7 @@ _NOTIF_MODULE_MAP = {
     'assembly_minute':            'asambleas',
     'package_received':           'paqueteria',
     'package_delivered':          'paqueteria',
+    'package_reminder':           'paqueteria',
 }
 
 

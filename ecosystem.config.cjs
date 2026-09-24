@@ -21,6 +21,16 @@ module.exports = {
       watch: false,
     },
     {
+      name: 'homly-package-reminders',
+      cwd: './backend',
+      script: './venv/bin/python',
+      args: 'manage.py send_package_reminders',
+      interpreter: 'none',
+      cron_restart: '15 * * * *',
+      autorestart: false,
+      watch: false,
+    },
+    {
       name: 'homly-frontend',
       cwd: './frontend',
       script: 'npx',

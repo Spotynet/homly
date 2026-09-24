@@ -1,6 +1,11 @@
 """Paquetería / Mensajería del condominio: recepción, notificación y entrega."""
 from __future__ import annotations
 
+import base64
+import io
+import secrets
+from datetime import timedelta
+
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
@@ -48,6 +53,11 @@ def can_write_packages(user, tenant_id):
     return tenant_role(user, tenant_id) in WRITE_ROLES
 
 
+def can_delete_packages(user, tenant_id):
+    """Solo el administrador del tenant (o superadmin) puede eliminar un paquete."""
+    return tenant_role(user, tenant_id) == 'admin'
+
+
 def resident_unit_id(user, tenant_id):
     tu = TenantUser.objects.filter(user=user, tenant_id=tenant_id).select_related('unit').first()
     if tu and tu.role == 'vecino' and tu.unit_id:
@@ -55,14 +65,105 @@ def resident_unit_id(user, tenant_id):
     return None
 
 
-def _audit(request, action, description, tenant_id, object_type, object_id, object_repr):
+def _audit(request, action, description, tenant_id, object_type, object_id, object_repr, extra_data=None):
     from .views import _audit_log
     _audit_log(
         request, 'paqueteria', action, description,
         tenant_id=tenant_id, object_type=object_type,
         object_id=str(object_id) if object_id else '',
         object_repr=object_repr or '',
+        extra_data=extra_data,
     )
+
+
+QR_PREFIX = 'HOMLY-PKG:'
+
+
+def new_qr_token():
+    return secrets.token_urlsafe(16)
+
+
+def ensure_qr_token(package):
+    if package.qr_token:
+        return package.qr_token
+    package.qr_token = new_qr_token()
+    package.save(update_fields=['qr_token', 'updated_at'])
+    return package.qr_token
+
+
+def qr_payload(token):
+    return f'{QR_PREFIX}{token}'
+
+
+def parse_qr_payload(raw):
+    text = (raw or '').strip()
+    upper = text.upper()
+    for prefix in (QR_PREFIX, 'HOMLY:PKG:', 'HOMLY-PKG:'):
+        if upper.startswith(prefix):
+            return text[len(prefix):].strip()
+    return text
+
+
+def qr_png_bytes(token):
+    try:
+        import qrcode
+        from qrcode.constants import ERROR_CORRECT_M
+    except ImportError:
+        return None
+    qr = qrcode.QRCode(version=None, error_correction=ERROR_CORRECT_M, box_size=8, border=2)
+    qr.add_data(qr_payload(token))
+    qr.make(fit=True)
+    img = qr.make_image(fill_color='#1E594F', back_color='white')
+    buf = io.BytesIO()
+    img.save(buf, format='PNG')
+    return buf.getvalue()
+
+
+def qr_data_url(token):
+    raw = qr_png_bytes(token)
+    if not raw:
+        return ''
+    return 'data:image/png;base64,' + base64.b64encode(raw).decode('ascii')
+
+
+def package_photo_inline(package, max_dim=900):
+    """Return (bytes, subtype) for the reception photo, resized for email."""
+    field = getattr(package, 'receive_photo', None)
+    if not field:
+        return None, None
+    try:
+        field.open('rb')
+        data = field.read()
+        field.close()
+    except Exception:
+        return None, None
+    if not data:
+        return None, None
+    name = (getattr(field, 'name', '') or '').lower()
+    subtype = 'jpeg' if name.endswith(('.jpg', '.jpeg')) else 'png'
+    if name.endswith('.gif'):
+        subtype = 'gif'
+    if name.endswith('.webp'):
+        subtype = 'webp'
+    try:
+        from PIL import Image
+        img = Image.open(io.BytesIO(data))
+        img = img.convert('RGB')
+        img.thumbnail((max_dim, max_dim))
+        out = io.BytesIO()
+        img.save(out, format='JPEG', quality=78)
+        return out.getvalue(), 'jpeg'
+    except Exception:
+        return data, subtype
+
+
+def reminder_settings(tenant):
+    return {
+        'enabled': bool(getattr(tenant, 'package_reminder_enabled', False)),
+        'after_hours': int(getattr(tenant, 'package_reminder_after_hours', 24) or 24),
+        'repeat_hours': int(getattr(tenant, 'package_reminder_repeat_hours', 24) or 0),
+        'max_count': int(getattr(tenant, 'package_reminder_max', 3) or 3),
+    }
 
 
 def next_package_folio(tenant):
@@ -183,6 +284,9 @@ class PackageSerializer(serializers.ModelSerializer):
     delivery_signature_url = serializers.SerializerMethodField()
     events = PackageEventSerializer(many=True, read_only=True)
     status_label = serializers.SerializerMethodField()
+    qr_payload = serializers.SerializerMethodField()
+    qr_data_url = serializers.SerializerMethodField()
+    delivery_method_label = serializers.SerializerMethodField()
 
     class Meta:
         model = CondoPackage
@@ -190,7 +294,9 @@ class PackageSerializer(serializers.ModelSerializer):
             'id', 'folio', 'status', 'status_label',
             'unit', 'unit_code', 'unit_name',
             'receive_notes', 'receive_photo_url', 'received_at', 'received_by_name',
-            'delivery_notes', 'delivery_signature_url', 'delivered_at', 'delivered_by_name',
+            'delivery_notes', 'delivery_method', 'delivery_method_label',
+            'delivery_signature_url', 'delivered_at', 'delivered_by_name',
+            'qr_payload', 'qr_data_url',
             'events', 'created_at',
         )
         read_only_fields = fields
@@ -209,6 +315,19 @@ class PackageSerializer(serializers.ModelSerializer):
 
     def get_status_label(self, obj):
         return 'Entregado' if obj.status == 'entregado' else 'En vigilancia'
+
+    def get_qr_payload(self, obj):
+        return qr_payload(ensure_qr_token(obj))
+
+    def get_qr_data_url(self, obj):
+        return qr_data_url(ensure_qr_token(obj))
+
+    def get_delivery_method_label(self, obj):
+        if obj.delivery_method == 'qr':
+            return 'Código QR'
+        if obj.delivery_method == 'firma':
+            return 'Firma'
+        return ''
 
 
 class PackageListSerializer(PackageSerializer):
@@ -271,9 +390,16 @@ def notify_package_recipients(tenant, package, recipients, actor):
             received_label=received_label,
         )
         if ok:
-            sent.append({'name': name, 'email': email})
+            sent.append({'name': name, 'email': email, 'user_id': str(user.id) if user else rec.get('user_id')})
         else:
             skipped.append({'name': name, 'email': email, 'reason': 'error de envío'})
+
+    stored = [
+        {'name': r.get('name') or '', 'email': (r.get('email') or '').strip(), 'user_id': r.get('user_id')}
+        for r in recipients if (r.get('email') or '').strip() or r.get('user_id')
+    ]
+    package.notify_recipients = stored
+    package.save(update_fields=['notify_recipients', 'updated_at'])
 
     CondoPackageEvent.objects.create(
         package=package,
@@ -288,7 +414,7 @@ def notify_package_recipients(tenant, package, recipients, actor):
 class CondoPackageViewSet(viewsets.ModelViewSet):
     permission_classes = [IsTenantMember]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
-    http_method_names = ['get', 'post', 'patch', 'head', 'options']
+    http_method_names = ['get', 'post', 'patch', 'delete', 'head', 'options']
 
     def get_serializer_class(self):
         if self.action == 'list':
@@ -300,7 +426,7 @@ class CondoPackageViewSet(viewsets.ModelViewSet):
         qs = CondoPackage.objects.filter(tenant_id=tid).select_related(
             'unit', 'received_by', 'delivered_by',
         )
-        if self.action in ('retrieve', 'deliver', 'notify'):
+        if self.action in ('retrieve', 'deliver', 'notify', 'lookup'):
             qs = qs.prefetch_related('events__actor')
         user = request_user(self.request)
         role = tenant_role(user, tid)
@@ -389,8 +515,10 @@ class CondoPackageViewSet(viewsets.ModelViewSet):
             qs = qs.filter(unit_id=uid) if uid else qs.none()
         return Response({
             'can_write': can_write_packages(user, tenant_id),
+            'can_delete': can_delete_packages(user, tenant_id),
             'can_edit_settings': role in ('admin',) or getattr(user, 'is_super_admin', False),
             'notify_rules': tenant.package_notify_rules or '',
+            'reminders': reminder_settings(tenant),
             'tenant_name': tenant.name,
             'counts': {
                 'total': qs.count(),
@@ -403,18 +531,45 @@ class CondoPackageViewSet(viewsets.ModelViewSet):
     def package_settings(self, request, tenant_id=None):
         tenant = Tenant.objects.get(id=tenant_id)
         _require_condominio(tenant)
+        can_edit = tenant_role(request.user, tenant_id) == 'admin' or getattr(request.user, 'is_super_admin', False)
         if request.method == 'GET':
             return Response({
                 'notify_rules': tenant.package_notify_rules or '',
-                'can_edit': tenant_role(request.user, tenant_id) == 'admin' or getattr(request.user, 'is_super_admin', False),
+                'reminders': reminder_settings(tenant),
+                'can_edit': can_edit,
             })
-        if tenant_role(request.user, tenant_id) not in ('admin',) and not getattr(request.user, 'is_super_admin', False):
-            raise PermissionDenied('Solo el administrador puede editar el reglamento.')
-        rules = (request.data.get('notify_rules') or '').strip()
-        tenant.package_notify_rules = rules
-        tenant.save(update_fields=['package_notify_rules', 'updated_at'])
-        _audit(request, 'update', 'Reglamento de paquetería actualizado', tenant_id, 'Tenant', tenant.id, tenant.name)
-        return Response({'notify_rules': tenant.package_notify_rules, 'can_edit': True})
+        if not can_edit:
+            raise PermissionDenied('Solo el administrador puede personalizar paquetería.')
+        if 'notify_rules' in request.data:
+            tenant.package_notify_rules = (request.data.get('notify_rules') or '').strip()
+        rem = request.data.get('reminders') if isinstance(request.data.get('reminders'), dict) else request.data
+        if rem is not None:
+            if 'enabled' in rem or 'reminder_enabled' in rem:
+                tenant.package_reminder_enabled = bool(rem.get('enabled', rem.get('reminder_enabled')))
+            for src, field, lo, hi, default in (
+                ('after_hours', 'package_reminder_after_hours', 1, 720, 24),
+                ('repeat_hours', 'package_reminder_repeat_hours', 0, 720, 24),
+                ('max_count', 'package_reminder_max', 1, 20, 3),
+            ):
+                if src in rem:
+                    try:
+                        val = int(rem.get(src))
+                    except (TypeError, ValueError):
+                        raise ValidationError({src: 'Indica un número válido.'})
+                    if val < lo or val > hi:
+                        raise ValidationError({src: f'Debe estar entre {lo} y {hi}.'})
+                    setattr(tenant, field, val)
+        tenant.save(update_fields=[
+            'package_notify_rules', 'package_reminder_enabled',
+            'package_reminder_after_hours', 'package_reminder_repeat_hours',
+            'package_reminder_max', 'updated_at',
+        ])
+        _audit(request, 'update', 'Personalización de paquetería actualizada', tenant_id, 'Tenant', tenant.id, tenant.name)
+        return Response({
+            'notify_rules': tenant.package_notify_rules,
+            'reminders': reminder_settings(tenant),
+            'can_edit': True,
+        })
 
     @action(detail=False, methods=['get'], url_path='unit-contacts')
     def unit_contacts_view(self, request, tenant_id=None):
@@ -467,6 +622,28 @@ class CondoPackageViewSet(viewsets.ModelViewSet):
         data['notify'] = {'sent': sent, 'skipped': skipped}
         return Response(data)
 
+    @action(detail=False, methods=['get', 'post'], url_path='lookup')
+    def lookup(self, request, tenant_id=None):
+        if not can_write_packages(request.user, tenant_id):
+            raise PermissionDenied('No tienes permiso para escanear paquetes.')
+        raw = (
+            (request.data.get('qr') if hasattr(request.data, 'get') else None)
+            or request.query_params.get('qr')
+            or request.query_params.get('token')
+            or ''
+        )
+        token = parse_qr_payload(raw)
+        if not token:
+            raise ValidationError({'qr': 'Escanea o escribe el código del paquete.'})
+        pkg = CondoPackage.objects.filter(tenant_id=tenant_id, qr_token=token).select_related(
+            'unit', 'received_by', 'delivered_by',
+        ).prefetch_related('events__actor').first()
+        if not pkg:
+            raise ValidationError({'qr': 'No se encontró un paquete con ese código.'})
+        data = PackageSerializer(pkg, context={'request': request}).data
+        data['contacts'] = unit_contacts(pkg.unit)
+        return Response(data)
+
     @action(detail=True, methods=['post'], url_path='deliver')
     def deliver(self, request, tenant_id=None, pk=None):
         if not can_write_packages(request.user, tenant_id):
@@ -474,34 +651,161 @@ class CondoPackageViewSet(viewsets.ModelViewSet):
         pkg = self.get_object()
         if pkg.status == 'entregado':
             raise ValidationError({'detail': 'Este paquete ya fue entregado.'})
-        signature = validate_image(
-            request.FILES.get('signature') or request.FILES.get('delivery_signature'),
-            'signature',
-        )
+        method = (request.data.get('method') or request.data.get('delivery_method') or 'firma').strip().lower()
+        if method not in ('qr', 'firma'):
+            raise ValidationError({'method': 'Elige entrega con QR o con firma.'})
         notes = (request.data.get('notes') or request.data.get('delivery_notes') or '').strip()
+        signature = request.FILES.get('signature') or request.FILES.get('delivery_signature')
+        if method == 'qr':
+            token = parse_qr_payload(request.data.get('qr') or request.data.get('qr_token') or '')
+            if not token or token != ensure_qr_token(pkg):
+                raise ValidationError({'qr': 'El código QR no corresponde a este paquete.'})
+        else:
+            signature = validate_image(signature, 'signature')
         now = timezone.now()
         pkg.status = 'entregado'
         pkg.delivery_notes = notes
-        pkg.delivery_signature = signature
+        pkg.delivery_method = method
         pkg.delivered_at = now
         pkg.delivered_by = request.user
-        pkg.save(update_fields=[
-            'status', 'delivery_notes', 'delivery_signature',
+        update = [
+            'status', 'delivery_notes', 'delivery_method',
             'delivered_at', 'delivered_by', 'updated_at',
-        ])
+        ]
+        if signature:
+            pkg.delivery_signature = signature
+            update.append('delivery_signature')
+        pkg.save(update_fields=update)
         CondoPackageEvent.objects.create(
             package=pkg,
             event_type='entregado',
             notes=notes,
-            extra={'signed': True},
+            extra={'method': method, 'signed': method == 'firma'},
             actor=request.user,
         )
         _audit(
             request, 'update',
-            f'Paquete {pkg.folio} entregado a {pkg.unit.unit_id_code}',
+            f'Paquete {pkg.folio} entregado a {pkg.unit.unit_id_code} ({method})',
             tenant_id, 'CondoPackage', pkg.id, pkg.folio,
         )
         pkg = CondoPackage.objects.prefetch_related('events__actor').select_related(
             'unit', 'received_by', 'delivered_by',
         ).get(pk=pkg.pk)
         return Response(PackageSerializer(pkg, context={'request': request}).data)
+
+    def destroy(self, request, tenant_id=None, pk=None):
+        if not can_delete_packages(request.user, tenant_id):
+            raise PermissionDenied('Solo el administrador del condominio puede eliminar un paquete.')
+        pkg = self.get_object()
+        data = getattr(request, 'data', None) or {}
+        comment = ''
+        if hasattr(data, 'get'):
+            comment = data.get('comment') or data.get('notes') or data.get('motivo') or ''
+        if not comment:
+            comment = request.query_params.get('comment') or ''
+        comment = str(comment).strip()
+        if len(comment) < 3:
+            raise ValidationError({'comment': 'Escribe un comentario para el log del sistema (mínimo 3 caracteres).'})
+
+        unit_code = pkg.unit.unit_id_code
+        unit_name = pkg.unit.unit_name
+        folio = pkg.folio
+        pkg_id = pkg.id
+        pkg_status = pkg.status
+        extra = {
+            'comment': comment,
+            'folio': folio,
+            'unit_code': unit_code,
+            'unit_name': unit_name,
+            'status': pkg_status,
+            'received_at': pkg.received_at.isoformat() if pkg.received_at else None,
+            'delivered_at': pkg.delivered_at.isoformat() if pkg.delivered_at else None,
+        }
+
+        if pkg.receive_photo:
+            pkg.receive_photo.delete(save=False)
+        if pkg.delivery_signature:
+            pkg.delivery_signature.delete(save=False)
+        pkg.delete()
+
+        _audit(
+            request, 'delete',
+            f'Paquete {folio} eliminado ({unit_code} — {unit_name}). Comentario: {comment}',
+            tenant_id, 'CondoPackage', pkg_id, folio,
+            extra_data=extra,
+        )
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @action(detail=True, methods=['post'], url_path='delete')
+    def delete_record(self, request, tenant_id=None, pk=None):
+        return self.destroy(request, tenant_id=tenant_id, pk=pk)
+
+
+def run_package_reminders():
+    """Envía recordatorios de paquetes en vigilancia según la config de cada tenant."""
+    from .email_service import send_package_received_email
+
+    now = timezone.now()
+    sent_total = 0
+    tenants = Tenant.objects.filter(package_reminder_enabled=True)
+    for tenant in tenants:
+        if getattr(tenant, 'workspace_type', 'condominio') != 'condominio':
+            continue
+        cfg = reminder_settings(tenant)
+        after = timedelta(hours=cfg['after_hours'])
+        repeat = cfg['repeat_hours']
+        max_count = cfg['max_count']
+        pkgs = CondoPackage.objects.filter(tenant=tenant, status='recibido').select_related('unit', 'tenant')
+        for pkg in pkgs:
+            if not pkg.received_at or now - pkg.received_at < after:
+                continue
+            if (pkg.reminder_count or 0) >= max_count:
+                continue
+            if pkg.reminder_count:
+                if not repeat:
+                    continue
+                last = pkg.last_reminded_at or pkg.received_at
+                if now - last < timedelta(hours=repeat):
+                    continue
+            recipients = list(pkg.notify_recipients or [])
+            if not recipients:
+                continue
+            received_label = timezone.localtime(pkg.received_at).strftime('%d/%m/%Y %H:%M')
+            title = f'Recordatorio: paquete {pkg.folio} en vigilancia'
+            message = (
+                f'El paquete {pkg.folio} de {pkg.unit.unit_id_code} — {pkg.unit.unit_name} '
+                f'sigue en caseta. Recibido el {received_label}.'
+            )
+            notified_users = set()
+            emailed = []
+            for rec in recipients:
+                email = (rec.get('email') or '').strip()
+                name = (rec.get('name') or email or 'Vecino').strip()
+                user = None
+                if rec.get('user_id'):
+                    user = User.objects.filter(id=rec.get('user_id')).first()
+                if not user and email:
+                    user = User.objects.filter(email__iexact=email).first()
+                if user and user.id not in notified_users:
+                    Notification.objects.create(
+                        tenant=tenant, user=user,
+                        notif_type='package_reminder',
+                        title=title, message=message,
+                    )
+                    notified_users.add(user.id)
+                if email and send_package_received_email(
+                    email=email, user_name=name, tenant=tenant,
+                    package=pkg, received_label=received_label, is_reminder=True,
+                ):
+                    emailed.append(email)
+            pkg.reminder_count = (pkg.reminder_count or 0) + 1
+            pkg.last_reminded_at = now
+            pkg.save(update_fields=['reminder_count', 'last_reminded_at', 'updated_at'])
+            CondoPackageEvent.objects.create(
+                package=pkg,
+                event_type='recordatorio',
+                notes=f'Recordatorio automático #{pkg.reminder_count} a {len(emailed)} destinatario(s).',
+                extra={'sent': emailed, 'count': pkg.reminder_count},
+            )
+            sent_total += 1
+    return sent_total

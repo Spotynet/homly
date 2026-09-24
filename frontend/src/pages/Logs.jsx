@@ -19,7 +19,8 @@ const MODULE_OPTIONS = [
   { value: 'unidades',  label: 'Unidades' },
   { value: 'config',    label: 'Configuración' },
   { value: 'tenants',   label: 'Tenants' },
-  { value: 'sistema',   label: 'Sistema' },
+  { value: 'sistema',    label: 'Sistema' },
+  { value: 'paqueteria', label: 'Paquetería' },
 ];
 
 const ACTION_OPTIONS = [
@@ -62,7 +63,8 @@ const MODULE_COLOR = {
   unidades: '#ef4444',
   config:   '#64748b',
   tenants:  '#06b6d4',
-  sistema:  '#94a3b8',
+  sistema:    '#94a3b8',
+  paqueteria: '#0f766e',
 };
 
 // ──────────────────────────────────────────────────────────────
@@ -513,6 +515,14 @@ export default function Logs() {
                 </td>
                 <td style={{ ...S.td, maxWidth: 260, fontSize: 12, color: '#334155' }}>
                   {log.description || '—'}
+                  {log.extra_data?.comment && (
+                    <div style={{
+                      marginTop: 4, fontSize: 11, color: '#334155',
+                      background: '#f8fafc', padding: '4px 6px', borderRadius: 6,
+                    }}>
+                      Comentario: {log.extra_data.comment}
+                    </div>
+                  )}
                   {log.object_repr && (
                     <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
                       {log.object_type} · {log.object_repr}

@@ -1323,6 +1323,7 @@ NOTIF_META: dict[str, tuple[str, str, str]] = {
     'assembly_minute':            ('📝', 'Minuta de asamblea',       '#8B5CF6'),
     'package_received':           ('📦', 'Paquete recibido',         '#1E594F'),
     'package_delivered':          ('✍️', 'Paquete entregado',        '#10B981'),
+    'package_reminder':           ('📦', 'Recordatorio de paquete',  '#D97706'),
 }
 
 
@@ -2985,18 +2986,25 @@ def _tenant_address_line(tenant):
     return ', '.join(p.strip() for p in parts if p and str(p).strip())
 
 
-def send_package_received_email(*, email, user_name, tenant, package, received_label):
+def send_package_received_email(*, email, user_name, tenant, package, received_label, is_reminder=False):
     """Notify a resident that a package is waiting at security."""
     from html import escape as _esc
+    from .paqueteria import ensure_qr_token, qr_payload, qr_png_bytes, package_photo_inline
     c = COLORS
     app_url = getattr(settings, 'HOMLY_APP_URL', 'https://homly.com.mx/login')
     tenant_name = tenant.name or 'Condominio'
-    subject = f'[{tenant_name}] Paquete {package.folio} en vigilancia'
+    subject = (
+        f'[{tenant_name}] Recordatorio: paquete {package.folio} en vigilancia'
+        if is_reminder else
+        f'[{tenant_name}] Paquete {package.folio} en vigilancia'
+    )
     unit_label = f'{package.unit.unit_id_code} — {package.unit.unit_name}'
     notes = (package.receive_notes or '').strip()
     rules = (tenant.package_notify_rules or '').strip()
     address = _tenant_address_line(tenant)
     rfc = (getattr(tenant, 'rfc', '') or '').strip()
+    token = ensure_qr_token(package)
+    payload = qr_payload(token)
 
     tenant_logo_data, tenant_logo_subtype = _tenant_logo_inline(tenant)
     extra_inline = []
@@ -3006,6 +3014,33 @@ def send_package_received_email(*, email, user_name, tenant, package, received_l
         tenant_logo_html = (
             f'<img src="cid:tenantlogo" alt="{_esc(tenant_name)}" width="88" '
             f'style="display:block;height:auto;max-width:88px;max-height:88px;border-radius:10px;margin:0 auto 10px;" />'
+        )
+    photo_data, photo_subtype = package_photo_inline(package)
+    photo_html = ''
+    if photo_data:
+        extra_inline.append(('packagephoto', photo_data, photo_subtype or 'jpeg', 'evidencia.jpg'))
+        photo_html = (
+            f'<div style="margin:18px 0 6px;font-size:11px;font-weight:700;letter-spacing:0.05em;'
+            f'text-transform:uppercase;color:{c["ink_600"]};">Foto de evidencia</div>'
+            f'<img src="cid:packagephoto" alt="Evidencia del paquete" width="480" '
+            f'style="display:block;width:100%;max-width:480px;height:auto;border-radius:12px;border:1px solid #E8DFD1;" />'
+        )
+    qr_data = qr_png_bytes(token)
+    qr_html = ''
+    if qr_data:
+        extra_inline.append(('packageqr', qr_data, 'png', 'paquete-qr.png'))
+        qr_html = (
+            f'<div style="margin:22px 0 0;padding:16px;background:{c["white"]};border:1px solid #E8DFD1;'
+            f'border-radius:12px;text-align:center;">'
+            f'<div style="font-size:11px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;'
+            f'color:{c["ink_600"]};margin-bottom:8px;">Código de entrega</div>'
+            f'<img src="cid:packageqr" alt="QR del paquete" width="180" height="180" '
+            f'style="display:block;margin:0 auto 10px;width:180px;height:180px;" />'
+            f'<div style="font-size:13px;font-weight:700;color:{c["ink_800"]};">Muestra este QR en caseta</div>'
+            f'<div style="font-size:12px;color:{c["ink_600"]};margin-top:4px;line-height:1.45;">'
+            f'También puedes dictar el folio <strong>{_esc(package.folio)}</strong> o el código<br/>'
+            f'<span style="font-family:monospace;font-size:12px;color:{c["green"]};">{_esc(payload)}</span>'
+            f'</div></div>'
         )
 
     rules_html = ''
@@ -3053,7 +3088,7 @@ def send_package_received_email(*, email, user_name, tenant, package, received_l
   <tr><td style="padding:8px 28px 24px;">
     <p style="margin:0 0 14px;font-size:15px;color:{c['ink_800']};">Hola {_esc(user_name or '')},</p>
     <p style="margin:0 0 18px;font-size:14px;color:{c['ink_600']};line-height:1.55;">
-      Vigilancia recibió un paquete para tu unidad. Preséntate con identificación para recogerlo.
+      {"Este es un recordatorio: tu paquete sigue en caseta. Preséntate con el código QR o con identificación para recogerlo." if is_reminder else "Vigilancia recibió un paquete para tu unidad. Preséntate con el código QR o con identificación para recogerlo."}
     </p>
     <table width="100%" cellpadding="0" cellspacing="0" style="background:{c['white']};border:1px solid #E8DFD1;border-radius:12px;padding:4px 16px;">
       <tr><td style="padding:10px 0 4px;font-size:11px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:{c['ink_600']};">Información del paquete</td></tr>
@@ -3071,6 +3106,8 @@ def send_package_received_email(*, email, user_name, tenant, package, received_l
         </table>
       </td></tr>
     </table>
+    {photo_html}
+    {qr_html}
     {rules_html}
     <p style="margin:20px 0 0;text-align:center;">
       <a href="{_esc(app_url)}" style="display:inline-block;background:{c['green']};color:{c['white']};text-decoration:none;font-size:13px;font-weight:700;padding:10px 18px;border-radius:10px;">Abrir Homly</a>
@@ -3088,6 +3125,7 @@ def send_package_received_email(*, email, user_name, tenant, package, received_l
         f'Recibido: {received_label}\n'
         f'Estado: En vigilancia\n'
         f'{("Nota: " + notes + chr(10)) if notes else ""}'
+        f'Código de entrega: {payload}\n'
         f'{("Reglamento interno:\\n" + rules + chr(10)) if rules else ""}\n'
         f'Ingresa a Homly: {app_url}\n'
     )

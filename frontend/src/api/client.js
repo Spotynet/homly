@@ -409,6 +409,8 @@ export const paqueteriaAPI = {
   settings:     (tenantId) => api.get(`/tenants/${tenantId}/condo-packages/settings/`),
   saveSettings: (tenantId, data) => api.patch(`/tenants/${tenantId}/condo-packages/settings/`, data),
   unitContacts: (tenantId, unitId) => api.get(`/tenants/${tenantId}/condo-packages/unit-contacts/`, { params: { unit: unitId } }),
+  lookup:       (tenantId, qr) => api.post(`/tenants/${tenantId}/condo-packages/lookup/`, { qr }),
+  delete:       (tenantId, id, data) => api.post(`/tenants/${tenantId}/condo-packages/${id}/delete/`, data),
 };
 
 export const providersAPI = {

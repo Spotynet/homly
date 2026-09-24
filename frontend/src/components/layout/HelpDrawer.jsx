@@ -278,11 +278,19 @@ const HELP_SECTIONS = [
       },
       {
         q: '¿Cómo se entrega el paquete al destinatario?',
-        a: 'Abre el paquete en estado "En vigilancia" → "Entregar" → el destinatario firma en pantalla (dedo o mouse) → (opcional) agrega una nota → Confirmar entrega. Queda constancia en la bitácora con fecha, quien entregó y la firma.',
+        a: 'Abre el paquete en "En vigilancia" → Entregar y elige Código QR o Firma. Con QR, escanea el código del correo (o de la pantalla del vecino) o escríbelo. Con firma, el destinatario firma en pantalla. También puedes usar "Escanear QR" en el tablero para identificar el paquete y entregarlo.',
       },
       {
-        q: '¿Se puede personalizar el mensaje de aviso?',
-        a: 'El administrador entra a Paquetería → Reglamento y escribe el texto del reglamento interno. Ese apartado se incluye en el correo junto con el logo, los datos del condominio y el folio del paquete.',
+        q: '¿Qué llega en el correo de aviso?',
+        a: 'El correo incluye el folio, la unidad, la foto de evidencia, el código QR de entrega y, si lo configuraste, el reglamento interno. El vecino muestra el QR en caseta para recoger.',
+      },
+      {
+        q: '¿Cómo personalizo el reglamento y los recordatorios?',
+        a: 'El administrador entra a Paquetería → Personalizar. En Reglamento editas el texto que viaja en el correo. En Recordatorios puedes activar avisos automáticos si el paquete sigue en vigilancia: primer aviso, repetición y máximo de envíos.',
+      },
+      {
+        q: '¿Quién puede eliminar un paquete?',
+        a: 'Solo el administrador del condominio. Al eliminar debe escribir un comentario (motivo). El registro se borra de la bitácora y el comentario queda en el log del sistema, junto con el folio y la unidad.',
       },
     ],
   },

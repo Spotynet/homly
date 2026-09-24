@@ -20,6 +20,7 @@ Model hierarchy:
 """
 
 import os
+import secrets
 import uuid
 from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
@@ -183,6 +184,22 @@ class Tenant(models.Model):
         blank=True,
         default='',
         help_text='Reglamento interno que se incluye en las notificaciones de paquetería.',
+    )
+    package_reminder_enabled = models.BooleanField(
+        default=False,
+        help_text='Si está activo, Homly recuerda paquetes que siguen en vigilancia.',
+    )
+    package_reminder_after_hours = models.PositiveIntegerField(
+        default=24,
+        help_text='Horas desde la recepción para el primer recordatorio.',
+    )
+    package_reminder_repeat_hours = models.PositiveIntegerField(
+        default=24,
+        help_text='Horas entre recordatorios. 0 = no repetir.',
+    )
+    package_reminder_max = models.PositiveIntegerField(
+        default=3,
+        help_text='Máximo de recordatorios automáticos por paquete.',
     )
     admin_type = models.CharField(max_length=20, choices=ADMIN_TYPE_CHOICES, default='mesa_directiva')
 
@@ -1135,6 +1152,7 @@ class Notification(models.Model):
         # Paquetería
         ('package_received',      'Paquete recibido'),
         ('package_delivered',     'Paquete entregado'),
+        ('package_reminder',      'Recordatorio de paquete'),
         # General
         ('general',               'Información General'),
     ]
@@ -3291,6 +3309,10 @@ def condo_package_signature_path(instance, filename):
     return f'packages/{instance.tenant_id}/{instance.id}/firma{ext}'
 
 
+def default_package_qr_token():
+    return secrets.token_urlsafe(16)
+
+
 class CondoPackage(models.Model):
     """Paquete o mensajería recibida en vigilancia para una unidad."""
 
@@ -3306,6 +3328,10 @@ class CondoPackage(models.Model):
     folio_year = models.PositiveIntegerField()
     folio_seq = models.PositiveIntegerField()
     status = models.CharField(max_length=16, choices=STATUS_CHOICES, default='recibido', db_index=True)
+    qr_token = models.CharField(
+        max_length=64, unique=True, default=default_package_qr_token, db_index=True,
+        help_text='Token opaco del QR de identificación/entrega.',
+    )
 
     receive_notes = models.TextField(blank=True, default='')
     receive_photo = models.ImageField(upload_to=condo_package_photo_path)
@@ -3316,8 +3342,12 @@ class CondoPackage(models.Model):
     )
 
     delivery_notes = models.TextField(blank=True, default='')
+    delivery_method = models.CharField(max_length=12, blank=True, default='', help_text='qr | firma')
     delivery_signature = models.ImageField(upload_to=condo_package_signature_path, null=True, blank=True)
     delivered_at = models.DateTimeField(null=True, blank=True)
+    notify_recipients = models.JSONField(default=list, blank=True)
+    reminder_count = models.PositiveIntegerField(default=0)
+    last_reminded_at = models.DateTimeField(null=True, blank=True)
     delivered_by = models.ForeignKey(
         User, on_delete=models.SET_NULL, null=True, blank=True,
         related_name='packages_delivered',
@@ -3346,6 +3376,7 @@ class CondoPackageEvent(models.Model):
     EVENT_CHOICES = [
         ('recibido', 'Recepción en vigilancia'),
         ('notificado', 'Notificación enviada'),
+        ('recordatorio', 'Recordatorio automático'),
         ('entregado', 'Entrega al destinatario'),
         ('nota', 'Nota'),
     ]

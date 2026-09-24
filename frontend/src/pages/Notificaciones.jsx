@@ -45,6 +45,7 @@ const NOTIF_MODULE_MAP = {
   rental_airbnb_error:       'rentas_propiedades',
   package_received:          'paqueteria',
   package_delivered:         'paqueteria',
+  package_reminder:          'paqueteria',
 };
 
 const TYPE_CFG = {
@@ -86,6 +87,7 @@ const TYPE_CFG = {
   general:               { icon: 'ℹ️', label: 'General',               color: 'var(--amber-600)',  bg: 'var(--amber-50)'  },
   package_received:      { icon: '📦', label: 'Paquete recibido',      color: 'var(--teal-700)',   bg: 'var(--teal-50)'   },
   package_delivered:     { icon: '✍️', label: 'Paquete entregado',     color: 'var(--teal-600)',   bg: 'var(--teal-50)'   },
+  package_reminder:      { icon: '📦', label: 'Recordatorio de paquete', color: 'var(--amber-700)', bg: 'var(--amber-50)' },
 };
 
 function timeAgo(dateStr) {
