@@ -16,11 +16,20 @@ export default defineConfig({
   // Proxy de desarrollo: redirige /api/* al backend Django
   // Equivalente al campo "proxy": "http://localhost:8000" de CRA en package.json
   server: {
-    port: 3000,
-    allowedHosts: ['homly-dev.spotynet.com'],
+    port: 3003,
+    // Docker Compose + shared EC2 hostname; keep localhost for host-side Vite.
+    allowedHosts: [
+      'homly-dev.spotynet.com',
+      'homly.com.mx',
+      'www.homly.com.mx',
+      'localhost',
+      '127.0.0.1',
+    ],
     proxy: {
       '/api': {
-        target: 'http://localhost:3004',
+        // In Docker: VITE_API_PROXY=http://127.0.0.1:3004 (set by ./dev.sh / compose).
+        // On host PM2: falls back to local Django.
+        target: process.env.VITE_API_PROXY || 'http://127.0.0.1:3004',
         changeOrigin: true,
         // M-06: Reenviar cookies al backend en desarrollo
         cookieDomainRewrite: 'localhost',

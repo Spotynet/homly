@@ -33,7 +33,10 @@ export function buildUnitAnalysis(data, { fromPeriod, toPeriod } = {}) {
       period: p.period,
       charge: num(p.charge),
       paidAmt: num(p.paid),
-      deficit: Math.max(0, num(p.charge) - num(p.paid)),
+      // period_deficit (backend) es el faltante real del mes; charge - paid se infla con abonos a otros meses
+      deficit: p.period_deficit !== undefined && p.period_deficit !== null
+        ? Math.max(0, num(p.period_deficit))
+        : Math.max(0, num(p.charge) - num(p.paid)),
       status: p.status,
       saldoAcum: num(p.saldo_accum),
     }))

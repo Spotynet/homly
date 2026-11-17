@@ -37,7 +37,11 @@ export function AuthProvider({ children }) {
           setRole(savedRole);
           setTenantId(savedTenant && savedTenant !== 'null' ? savedTenant : null);
           setTenantName(savedTenantName && savedTenantName !== 'null' ? savedTenantName : null);
-          setWorkspaceType(savedWorkspace && savedWorkspace !== 'null' ? savedWorkspace : null);
+          setWorkspaceType(
+            savedWorkspace && savedWorkspace !== 'null'
+              ? savedWorkspace
+              : (savedRole === 'superadmin' && (!savedTenant || savedTenant === 'null') ? 'sistema' : null),
+          );
           setMustChangePassword(savedMustChange === 'true');
           setProfileId(savedProfileId || '');
           setSystemRole(savedSystemRole && savedSystemRole !== 'null' ? savedSystemRole : null);
@@ -75,7 +79,12 @@ export function AuthProvider({ children }) {
     } else {
       localStorage.removeItem('tenant_id');
       localStorage.removeItem('tenant_name');
-      localStorage.removeItem('workspace_type');
+      // Superadmin sin tenant → espacio virtual «Súper Admin»
+      if (data.workspace_type === 'sistema' || data.role === 'superadmin') {
+        localStorage.setItem('workspace_type', 'sistema');
+      } else {
+        localStorage.removeItem('workspace_type');
+      }
     }
   };
 
@@ -89,7 +98,7 @@ export function AuthProvider({ children }) {
     setRole(data.role);
     setTenantId(data.tenant_id);
     setTenantName(data.tenant_name);
-    setWorkspaceType(data.workspace_type || (data.tenant_id ? 'condominio' : null));
+    setWorkspaceType(data.workspace_type || (data.tenant_id ? 'condominio' : (data.role === 'superadmin' ? 'sistema' : null)));
     setMustChangePassword(data.must_change_password);
     setProfileId(data.profile_id || '');
     setSystemRole(data.system_role || null);
@@ -106,7 +115,7 @@ export function AuthProvider({ children }) {
     setRole(data.role);
     setTenantId(data.tenant_id);
     setTenantName(data.tenant_name);
-    setWorkspaceType(data.workspace_type || (data.tenant_id ? 'condominio' : null));
+    setWorkspaceType(data.workspace_type || (data.tenant_id ? 'condominio' : (data.role === 'superadmin' ? 'sistema' : null)));
     setMustChangePassword(data.must_change_password);
     setProfileId(data.profile_id || '');
     setSystemRole(data.system_role || null);
@@ -125,13 +134,17 @@ export function AuthProvider({ children }) {
 
   // ── Switch tenant — re-issues JWT with new tenant/role claims ─────────────
   const switchTenant = useCallback(async (newTenantId) => {
+    // null / '__sistema__' → espacio virtual Súper Admin (solo módulos de Sistema)
     const { data } = await authAPI.switchTenant(newTenantId);
     _persist(data);
     setUser(data.user);
     setRole(data.role);
-    setTenantId(data.tenant_id);
-    setTenantName(data.tenant_name);
-    setWorkspaceType(data.workspace_type || (data.tenant_id ? 'condominio' : null));
+    setTenantId(data.tenant_id || null);
+    setTenantName(data.tenant_name || null);
+    setWorkspaceType(
+      data.workspace_type
+      || (data.tenant_id ? 'condominio' : (data.role === 'superadmin' ? 'sistema' : null)),
+    );
     setMustChangePassword(data.must_change_password);
     setProfileId(data.profile_id || '');
     setSystemRole(data.system_role || null);

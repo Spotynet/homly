@@ -146,11 +146,30 @@ ROLE_DESCRIPTIONS = {
 }
 
 
-def _build_invitation_html(user_name: str, tenant_name: str, role: str, unit_name: str | None, app_url: str, email: str = '') -> str:
+def _invitation_context(role: str, workspace_type: str | None):
+    """(etiqueta del perfil, descripción, nombre del espacio, resumen de la plataforma)."""
+    if workspace_type == 'rentas':
+        from .rental_access import RENTAL_ROLE_DESCRIPTIONS, RENTAL_ROLE_LABELS
+        label = RENTAL_ROLE_LABELS.get(role) or ROLE_DESCRIPTIONS.get(role, (role.capitalize(), ''))[0]
+        desc = RENTAL_ROLE_DESCRIPTIONS.get(role) or 'Tienes acceso al sistema Homly.'
+        return (
+            label, desc, 'Portafolio',
+            'la plataforma de administración de propiedades en renta: contratos, cobranza, mantenimiento y '
+            'finanzas de tu portafolio en un solo lugar.',
+        )
+    label, desc = ROLE_DESCRIPTIONS.get(role, (role.capitalize(), 'Tienes acceso al sistema Homly.'))
+    return (
+        label, desc, 'Condominio',
+        'la plataforma de administración de condominios que te permite consultar pagos, estados de cuenta y '
+        'comunicados de tu comunidad desde cualquier lugar.',
+    )
+
+
+def _build_invitation_html(user_name: str, tenant_name: str, role: str, unit_name: str | None, app_url: str, email: str = '', workspace_type: str | None = None) -> str:
     """Build branded HTML for the welcome invitation email."""
     c = COLORS
     logo_img = f'<img src="cid:{LOGO_CID}" alt="Homly" width="160" style="display:block; height:auto; max-width:160px;" />'
-    role_label, role_desc = ROLE_DESCRIPTIONS.get(role, (role.capitalize(), 'Tienes acceso al sistema Homly.'))
+    role_label, role_desc, space_word, platform_blurb = _invitation_context(role, workspace_type)
     unit_block = (
         f'<tr><td style="padding:10px 0 0;">'
         f'<p style="margin:0; font-size:13px; color:{c["ink_600"]};">'
@@ -206,8 +225,7 @@ def _build_invitation_html(user_name: str, tenant_name: str, role: str, unit_nam
                   <td style="padding-bottom:20px;">
                     <p style="margin:0;font-size:14px;color:{c['ink_800']};line-height:1.6;">
                       Has sido invitado a <strong>{tenant_name}</strong> en <strong style="color:{c['green']};">Homly</strong>,
-                      la plataforma de administración de condominios que te permite consultar pagos, estados de cuenta y comunicados
-                      de tu comunidad desde cualquier lugar.
+                      {platform_blurb}
                     </p>
                   </td>
                 </tr>
@@ -226,7 +244,7 @@ def _build_invitation_html(user_name: str, tenant_name: str, role: str, unit_nam
                       <tr>
                         <td>
                           <p style="margin:0;font-size:13px;color:{c['ink_600']};">
-                            <strong>Condominio:</strong> {tenant_name}</p>
+                            <strong>{space_word}:</strong> {tenant_name}</p>
                         </td>
                       </tr>
                       <tr>
@@ -349,14 +367,14 @@ def _build_invitation_html(user_name: str, tenant_name: str, role: str, unit_nam
 </html>"""
 
 
-def _build_invitation_plain(user_name: str, tenant_name: str, role: str, unit_name: str | None, app_url: str, email: str = '') -> str:
-    role_label, role_desc = ROLE_DESCRIPTIONS.get(role, (role.capitalize(), ''))
+def _build_invitation_plain(user_name: str, tenant_name: str, role: str, unit_name: str | None, app_url: str, email: str = '', workspace_type: str | None = None) -> str:
+    role_label, role_desc, space_word, platform_blurb = _invitation_context(role, workspace_type)
     unit_line = f'\nUnidad asignada: {unit_name}' if unit_name else ''
     return (
         f'¡Bienvenido a Homly, {user_name}!\n\n'
-        f'Has sido invitado al condominio "{tenant_name}" en Homly, la plataforma de administración de condominios.\n\n'
+        f'Has sido invitado a "{tenant_name}" en Homly, {platform_blurb}\n\n'
         f'DATOS DE TU ACCESO\n'
-        f'Condominio: {tenant_name}\n'
+        f'{space_word}: {tenant_name}\n'
         f'Perfil: {role_label}{unit_line}\n\n'
         f'CON TU PERFIL PODRÁS:\n{role_desc}\n\n'
         f'CÓMO INGRESAR AL SISTEMA:\n'
@@ -375,17 +393,18 @@ def send_welcome_invitation(
     tenant_name: str,
     role: str,
     unit_name: str | None = None,
+    workspace_type: str | None = None,
 ) -> bool:
     """
-    Send a welcome / invitation email to a user added to a condominio.
+    Send a welcome / invitation email to a user added to a condominio (or a rentas portfolio).
     Includes tenant name, role description, access URL and login instructions.
     Uses multipart/related MIME structure for cross-provider logo rendering.
     """
     app_url = getattr(settings, 'HOMLY_APP_URL', 'https://homly.com.mx/login')
     from_email = _get_noreply()
     subject = f'Bienvenido a Homly — {tenant_name}'
-    plain = _build_invitation_plain(user_name, tenant_name, role, unit_name, app_url, email)
-    html = _build_invitation_html(user_name, tenant_name, role, unit_name, app_url, email)
+    plain = _build_invitation_plain(user_name, tenant_name, role, unit_name, app_url, email, workspace_type)
+    html = _build_invitation_html(user_name, tenant_name, role, unit_name, app_url, email, workspace_type)
     try:
         mime = _make_mime_message(
             subject=subject,
@@ -393,7 +412,7 @@ def send_welcome_invitation(
             html=html,
             from_email=from_email,
             to_emails=[email],
-            logo_data=_read_logo_bytes('homly-full.png'),
+            logo_data=_read_logo_bytes('homly-full-r.png'),
         )
         return _dispatch_mime(mime, from_email, [email])
     except Exception as e:
@@ -421,7 +440,7 @@ def send_verification_email(email: str, code: str) -> bool:
             html=html,
             from_email=from_email,
             to_emails=[email],
-            logo_data=_read_logo_bytes('homly-full.png'),
+            logo_data=_read_logo_bytes('homly-full-r.png'),
         )
         return _dispatch_mime(mime, from_email, [email])
     except Exception as e:
@@ -492,7 +511,7 @@ def _make_mime_message(
         related.attach(alt)
         if logo_data:
             logo_part = MIMEImage(logo_data, 'png')
-            logo_part.add_header('Content-Disposition', 'inline', filename='homly-full.png')
+            logo_part.add_header('Content-Disposition', 'inline', filename='homly-full-r.png')
             logo_part.add_header('Content-ID', f'<{LOGO_CID}>')
             related.attach(logo_part)
         for cid, img_bytes, subtype, filename in extras:
@@ -582,7 +601,7 @@ def _send_branded_email(
     if not from_email:
         from_email = _get_noreply()
 
-    logo_data = _read_logo_bytes('homly-full.png')
+    logo_data = _read_logo_bytes('homly-full-r.png')
     all_recipients = list(to_emails) + list(cc_emails or [])
 
     try:
@@ -1606,6 +1625,19 @@ def send_registration_notification(request_data: dict) -> bool:
         'comite':         'Comité',
     }
     tipo_label = tipo_labels.get(tipo_admin, tipo_admin)
+    prop_labels = {
+        'propietario':  'Propietario',
+        'inmobiliaria': 'Inmobiliaria o administrador',
+        'operador':     'Equipo de operación y mantenimiento',
+        'corporativo':  'Fondo, desarrolladora o corporativo',
+    }
+    prop_tipo = request_data.get('propiedades_tipo_admin', '')
+    prop_label = prop_labels.get(prop_tipo, prop_tipo)
+    # El tipo de administración de condominio solo aplica si se pidió ese servicio.
+    if prop_label and 'Condominios' not in str(mensaje) and 'Rentas inmobiliarias' in str(mensaje):
+        tipo_label = prop_label
+    elif prop_label:
+        tipo_label = f'{tipo_label} · Propiedades: {prop_label}'
 
     ubicacion_parts = [p for p in [ciudad, estado, pais] if p]
     ubicacion       = ', '.join(ubicacion_parts) or '—'

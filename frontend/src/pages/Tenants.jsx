@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useWorkspaceConfig } from '../context/WorkspaceConfigContext';
 import { tenantsAPI, tenantSubscriptionsAPI, subscriptionPlansAPI } from '../api/client';
 import { fmtCurrency, CURRENCIES, COUNTRIES, getStatesForCountry } from '../utils/helpers';
 import {
@@ -695,6 +696,7 @@ const STATUS_FILTERS = [
 
 export default function Tenants() {
   const { isSuperAdmin, switchTenant, tenantId: activeTenantId } = useAuth();
+  const { configs: wsConfigs, wsShort, wsColor } = useWorkspaceConfig();
   const navigate = useNavigate();
 
   const [tenants,       setTenants]       = useState([]);
@@ -945,8 +947,7 @@ export default function Tenants() {
       <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
         {[
           { id: 'all', label: 'Todos los espacios' },
-          { id: 'condominio', label: 'Condominios' },
-          { id: 'rentas', label: 'Rentas' },
+          ...wsConfigs.map(c => ({ id: c.workspace_type, label: c.short_label || c.label })),
         ].map(f => (
           <button key={f.id} onClick={() => setWorkspaceFilter(f.id)} className={`tab ${workspaceFilter === f.id ? 'active' : ''}`} style={{ fontSize: 12 }}>
             {f.label}
@@ -1040,7 +1041,7 @@ export default function Tenants() {
               >
                 <Users size={15} /> Asignar espacios
               </button>
-              <button className="btn btn-primary" onClick={() => { setForm({ workspace_type: 'condominio' }); setShowModal(true); }}>
+              <button className="btn btn-primary" onClick={() => { setForm({ workspace_type: (wsConfigs.find(c => c.is_enabled) || {}).workspace_type || 'condominio' }); setShowModal(true); }}>
                 <Plus size={16} /> Nuevo espacio
               </button>
             </>
@@ -1178,12 +1179,12 @@ export default function Tenants() {
                       )}
                       <span style={{
                         flexShrink: 0, fontSize: 9, fontWeight: 700,
-                        color: (t.workspace_type || 'condominio') === 'rentas' ? '#1d4ed8' : 'var(--teal-700)',
-                        background: (t.workspace_type || 'condominio') === 'rentas' ? '#eff6ff' : 'var(--teal-50)',
-                        border: `1px solid ${(t.workspace_type || 'condominio') === 'rentas' ? '#bfdbfe' : 'var(--teal-200)'}`,
+                        color: wsColor(t.workspace_type || 'condominio'),
+                        background: `${wsColor(t.workspace_type || 'condominio')}14`,
+                        border: `1px solid ${wsColor(t.workspace_type || 'condominio')}55`,
                         borderRadius: 10, padding: '1px 7px', textTransform: 'uppercase', letterSpacing: '0.04em',
                       }}>
-                        {(t.workspace_type || 'condominio') === 'rentas' ? 'Rentas' : 'Condominio'}
+                        {wsShort(t.workspace_type || 'condominio')}
                       </span>
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 1, display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -1337,8 +1338,12 @@ export default function Tenants() {
                     disabled={!!form.id}
                     onChange={e => setForm({ ...form, workspace_type: e.target.value, initial_plan: '' })}
                   >
-                    <option value="condominio">Administración de condominios</option>
-                    <option value="rentas">Gestión de rentas (inmobiliaria)</option>
+                    {wsConfigs.map(c => (
+                      <option key={c.workspace_type} value={c.workspace_type}
+                        disabled={!c.is_enabled && c.workspace_type !== form.workspace_type}>
+                        {c.label}{c.is_enabled ? '' : ' (desactivado)'}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div className="field field-full">
@@ -1472,6 +1477,7 @@ export default function Tenants() {
 }
 
 function AssignWorkspacesModal({ tenants, onClose, onSaved }) {
+  const { wsLabel } = useWorkspaceConfig();
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
   const [selected, setSelected] = useState({});
@@ -1552,8 +1558,8 @@ function AssignWorkspacesModal({ tenants, onClose, onSaved }) {
             {loading ? 'Buscando…' : 'Buscar membresías'}
           </button>
 
-          <Group title="Condominios" items={condos} selected={selected} toggle={toggle} />
-          <Group title="Rentas · Inmobiliaria" items={rentas} selected={selected} toggle={toggle} />
+          <Group title={wsLabel('condominio')} items={condos} selected={selected} toggle={toggle} />
+          <Group title={wsLabel('rentas')} items={rentas} selected={selected} toggle={toggle} />
         </div>
         <div className="modal-foot">
           <button className="btn btn-outline" onClick={onClose}>Cancelar</button>

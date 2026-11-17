@@ -98,7 +98,7 @@ export const authAPI = {
   getTenantsForEmail:  (email)    => api.post('/auth/tenants-for-email/', { email }),
   checkEmail:          (email)    => api.get('/auth/check-email/', { params: { email } }),
   getMyTenants:        ()         => api.get('/auth/my-tenants/'),
-  switchTenant:        (tenantId) => api.post('/auth/switch-tenant/', { tenant_id: tenantId }),
+  switchTenant:        (tenantId) => api.post('/auth/switch-tenant/', { tenant_id: tenantId ?? null }),
   // M-06: refresh desde HttpOnly cookie (no body) + logout que borra la cookie
   refreshToken:        ()         => axios.post(
     `${API_URL}/auth/token/refresh/`,
@@ -109,6 +109,13 @@ export const authAPI = {
 };
 
 // ─── Tenants ────────────────────────────────────
+// Catálogos geográficos (países, estados/regiones y búsqueda por código postal)
+export const geoAPI = {
+  countries: () => api.get('/geo/countries/'),
+  regions: (country) => api.get('/geo/regions/', { params: { country } }),
+  postal: (country, code) => api.get('/geo/postal/', { params: { country, code } }),
+};
+
 export const tenantsAPI = {
   list: (params) => api.get('/tenants/', { params: { page_size: 1000, ...params } }),
   get: (id) => api.get(`/tenants/${id}/`),
@@ -136,6 +143,7 @@ export const tenantsAPI = {
 export const rentalAPI = {
   dashboard: (tenantId, params) => api.get(`/tenants/${tenantId}/rental-dashboard/`, { params }),
   calendar:  (tenantId, params) => api.get(`/tenants/${tenantId}/rental-calendar/`, { params }),
+  map:       (tenantId) => api.get(`/tenants/${tenantId}/rental-map/`),
   rentroll:  (tenantId, params) => api.get(`/tenants/${tenantId}/rental-rentroll/`, { params }),
   rentrollCsv:(tenantId, params) => api.get(`/tenants/${tenantId}/rental-rentroll/`, { params: { ...(params || {}), format: 'csv' }, responseType: 'blob' }),
   properties: {
@@ -144,6 +152,13 @@ export const rentalAPI = {
     create: (tenantId, data) => api.post(`/tenants/${tenantId}/rental-properties/`, data),
     update: (tenantId, id, data) => api.patch(`/tenants/${tenantId}/rental-properties/${id}/`, data),
     delete: (tenantId, id) => api.delete(`/tenants/${tenantId}/rental-properties/${id}/`),
+  },
+  spaces: {
+    list:   (tenantId, params) => api.get(`/tenants/${tenantId}/rental-spaces/`, { params }),
+    create: (tenantId, data) => api.post(`/tenants/${tenantId}/rental-spaces/`, data),
+    update: (tenantId, id, data) => api.patch(`/tenants/${tenantId}/rental-spaces/${id}/`, data),
+    delete: (tenantId, id) => api.delete(`/tenants/${tenantId}/rental-spaces/${id}/`),
+    bulk:   (tenantId, data) => api.post(`/tenants/${tenantId}/rental-spaces/bulk/`, data),
   },
   parties: {
     list:   (tenantId, params) => api.get(`/tenants/${tenantId}/rental-parties/`, { params }),
@@ -164,11 +179,21 @@ export const rentalAPI = {
     update:   (tenantId, id, data) => api.patch(`/tenants/${tenantId}/rental-contracts/${id}/`, data),
     activate: (tenantId, id) => api.post(`/tenants/${tenantId}/rental-contracts/${id}/activate/`),
     finish:   (tenantId, id, data) => api.post(`/tenants/${tenantId}/rental-contracts/${id}/finish/`, data || {}),
+    draft:    (tenantId, id, data) => api.post(`/tenants/${tenantId}/rental-contracts/${id}/draft/`, data || {}),
+    present:  (tenantId, id) => api.get(`/tenants/${tenantId}/rental-contracts/${id}/present/`),
+    publish:  (tenantId, id, data) => api.post(`/tenants/${tenantId}/rental-contracts/${id}/publish/`, data || {}),
+    signatures: (tenantId, id) => api.get(`/tenants/${tenantId}/rental-contracts/${id}/signatures/`),
+    addSigner: (tenantId, id, data) => api.post(`/tenants/${tenantId}/rental-contracts/${id}/signatures/`, data),
+    sign:     (tenantId, id, sigId, data) => api.post(`/tenants/${tenantId}/rental-contracts/${id}/signatures/${sigId}/sign/`, data),
+    removeSigner: (tenantId, id, sigId) => api.delete(`/tenants/${tenantId}/rental-contracts/${id}/signatures/${sigId}/`),
   },
   charges: {
-    list:     (tenantId, params) => api.get(`/tenants/${tenantId}/rental-charges/`, { params }),
-    create:   (tenantId, data) => api.post(`/tenants/${tenantId}/rental-charges/`, data),
-    generate: (tenantId, period) => api.post(`/tenants/${tenantId}/rental-charges/generate-period/`, { period }),
+    list:        (tenantId, params) => api.get(`/tenants/${tenantId}/rental-charges/`, { params }),
+    create:      (tenantId, data) => api.post(`/tenants/${tenantId}/rental-charges/`, data),
+    generate:    (tenantId, period) => api.post(`/tenants/${tenantId}/rental-charges/generate-period/`, { period }),
+    recalculate: (tenantId, period) => api.post(`/tenants/${tenantId}/rental-charges/recalculate-period/`, { period }),
+    lateFee:     (tenantId, id) => api.post(`/tenants/${tenantId}/rental-charges/${id}/late-fee/`),
+    cancel:      (tenantId, id) => api.post(`/tenants/${tenantId}/rental-charges/${id}/cancel/`),
   },
   payments: {
     list:   (tenantId, params) => api.get(`/tenants/${tenantId}/rental-payments/`, { params }),
@@ -189,6 +214,124 @@ export const rentalAPI = {
         update: (tenantId, id, data) => api.patch(`/tenants/${tenantId}/airbnb-listings/${id}/`, data),
         remove: (tenantId, id) => api.delete(`/tenants/${tenantId}/airbnb-listings/${id}/`),
         sync: (tenantId, id) => api.post(`/tenants/${tenantId}/airbnb-listings/${id}/sync/`),
+      },
+    },
+    ops: {
+      settings:   (tenantId) => api.get(`/tenants/${tenantId}/rental-ops-settings/`),
+      saveSettings: (tenantId, data) => api.patch(`/tenants/${tenantId}/rental-ops-settings/`, data),
+      regeneratePortal: (tenantId) => api.post(`/tenants/${tenantId}/rental-ops-settings/`),
+      indicators: (tenantId, params) => api.get(`/tenants/${tenantId}/rental-ops-indicators/`, { params }),
+      reports: {
+        catalog:     (tenantId) => api.get(`/tenants/${tenantId}/rental-report-catalog/`),
+        run:         (tenantId, key, params) => api.get(`/tenants/${tenantId}/rental-report/${key}/`, { params }),
+        annual:      (tenantId, params) => api.get(`/tenants/${tenantId}/rental-report-annual/`, { params }),
+        providerSla: (tenantId, params) => api.get(`/tenants/${tenantId}/rental-report-provider-sla/`, { params }),
+        overview:    (tenantId) => api.get(`/tenants/${tenantId}/rental-report-overview/`),
+        agenda:      (tenantId, params) => api.get(`/tenants/${tenantId}/rental-agenda/`, { params }),
+      },
+      assets: {
+        list:    (tenantId, params) => api.get(`/tenants/${tenantId}/rental-assets/`, { params }),
+        summary: (tenantId) => api.get(`/tenants/${tenantId}/rental-assets/summary/`),
+        history: (tenantId, id) => api.get(`/tenants/${tenantId}/rental-assets/${id}/history/`),
+        create:  (tenantId, data) => api.post(`/tenants/${tenantId}/rental-assets/`, data),
+        update:  (tenantId, id, data) => api.patch(`/tenants/${tenantId}/rental-assets/${id}/`, data),
+        remove:  (tenantId, id) => api.delete(`/tenants/${tenantId}/rental-assets/${id}/`),
+      },
+      finance: {
+        summary: (tenantId, params) => api.get(`/tenants/${tenantId}/rental-finance-summary/`, { params }),
+        ledger:  (tenantId, params) => api.get(`/tenants/${tenantId}/rental-finance-ledger/`, { params }),
+        projects: {
+          list:   (tenantId, params) => api.get(`/tenants/${tenantId}/rental-capex-projects/`, { params }),
+          detail: (tenantId, id) => api.get(`/tenants/${tenantId}/rental-capex-projects/${id}/detail/`),
+          create: (tenantId, data) => api.post(`/tenants/${tenantId}/rental-capex-projects/`, data),
+          update: (tenantId, id, data) => api.patch(`/tenants/${tenantId}/rental-capex-projects/${id}/`, data),
+          remove: (tenantId, id) => api.delete(`/tenants/${tenantId}/rental-capex-projects/${id}/`),
+        },
+        expenses: {
+          get:    (tenantId, id) => api.get(`/tenants/${tenantId}/rental-expenses/${id}/`),
+          create: (tenantId, data) => api.post(`/tenants/${tenantId}/rental-expenses/`, data),
+          update: (tenantId, id, data) => api.patch(`/tenants/${tenantId}/rental-expenses/${id}/`, data),
+          remove: (tenantId, id) => api.delete(`/tenants/${tenantId}/rental-expenses/${id}/`),
+        },
+        budget: {
+          list:   (tenantId, params) => api.get(`/tenants/${tenantId}/rental-budget-lines/`, { params }),
+          create: (tenantId, data) => api.post(`/tenants/${tenantId}/rental-budget-lines/`, data),
+          update: (tenantId, id, data) => api.patch(`/tenants/${tenantId}/rental-budget-lines/${id}/`, data),
+          remove: (tenantId, id) => api.delete(`/tenants/${tenantId}/rental-budget-lines/${id}/`),
+          copyYear: (tenantId, data) => api.post(`/tenants/${tenantId}/rental-budget-lines/copy-year/`, data),
+        },
+      },
+      plans: {
+        list:     (tenantId, params) => api.get(`/tenants/${tenantId}/rental-plans/`, { params }),
+        summary:  (tenantId) => api.get(`/tenants/${tenantId}/rental-plans/summary/`),
+        create:   (tenantId, data) => api.post(`/tenants/${tenantId}/rental-plans/`, data),
+        update:   (tenantId, id, data) => api.patch(`/tenants/${tenantId}/rental-plans/${id}/`, data),
+        remove:   (tenantId, id) => api.delete(`/tenants/${tenantId}/rental-plans/${id}/`),
+        generateDue: (tenantId) => api.post(`/tenants/${tenantId}/rental-plans/generate-due/`),
+        generate: (tenantId, id) => api.post(`/tenants/${tenantId}/rental-plans/${id}/generate/`),
+      },
+      requests: {
+        list:     (tenantId, params) => api.get(`/tenants/${tenantId}/rental-requests/`, { params }),
+        summary:  (tenantId) => api.get(`/tenants/${tenantId}/rental-requests/summary/`),
+        create:   (tenantId, data) => api.post(`/tenants/${tenantId}/rental-requests/`, data),
+        update:   (tenantId, id, data) => api.patch(`/tenants/${tenantId}/rental-requests/${id}/`, data),
+        remove:   (tenantId, id) => api.delete(`/tenants/${tenantId}/rental-requests/${id}/`),
+        createOrder: (tenantId, id, data) => api.post(`/tenants/${tenantId}/rental-requests/${id}/create-order/`, data || {}),
+        setStatus: (tenantId, id, data) => api.post(`/tenants/${tenantId}/rental-requests/${id}/set-status/`, data),
+      },
+      templates: {
+        list:   (tenantId) => api.get(`/tenants/${tenantId}/rental-inspection-templates/`),
+        create: (tenantId, data) => api.post(`/tenants/${tenantId}/rental-inspection-templates/`, data),
+        update: (tenantId, id, data) => api.patch(`/tenants/${tenantId}/rental-inspection-templates/${id}/`, data),
+        remove: (tenantId, id) => api.delete(`/tenants/${tenantId}/rental-inspection-templates/${id}/`),
+        addFile:    (tenantId, id, formData) => api.post(`/tenants/${tenantId}/rental-inspection-templates/${id}/files/`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
+        removeFile: (tenantId, id, fileId) => api.delete(`/tenants/${tenantId}/rental-inspection-templates/${id}/files/${fileId}/`),
+      },
+      inspections: {
+        list:     (tenantId, params) => api.get(`/tenants/${tenantId}/rental-inspections/`, { params }),
+        create:   (tenantId, data) => api.post(`/tenants/${tenantId}/rental-inspections/`, data),
+        update:   (tenantId, id, data) => api.patch(`/tenants/${tenantId}/rental-inspections/${id}/`, data),
+        remove:   (tenantId, id) => api.delete(`/tenants/${tenantId}/rental-inspections/${id}/`),
+        complete: (tenantId, id, data) => api.post(`/tenants/${tenantId}/rental-inspections/${id}/complete/`, data || {}),
+        addEvidence:    (tenantId, id, formData) => api.post(`/tenants/${tenantId}/rental-inspections/${id}/evidences/`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
+        removeEvidence: (tenantId, id, fileId) => api.delete(`/tenants/${tenantId}/rental-inspections/${id}/evidences/${fileId}/`),
+      },
+    },
+    maintenance: {
+      summary:   (tenantId) => api.get(`/tenants/${tenantId}/rental-maint-works/summary/`),
+      list:      (tenantId, params) => api.get(`/tenants/${tenantId}/rental-maint-works/`, { params }),
+      get:       (tenantId, id) => api.get(`/tenants/${tenantId}/rental-maint-works/${id}/`),
+      create:    (tenantId, data) => api.post(`/tenants/${tenantId}/rental-maint-works/`, data),
+      update:    (tenantId, id, data) => api.patch(`/tenants/${tenantId}/rental-maint-works/${id}/`, data),
+      remove:    (tenantId, id) => api.delete(`/tenants/${tenantId}/rental-maint-works/${id}/`),
+      addEvidence: (tenantId, id, formData) => api.post(`/tenants/${tenantId}/rental-maint-works/${id}/evidences/`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
+      removeEvidence: (tenantId, id, fileId) => api.delete(`/tenants/${tenantId}/rental-maint-works/${id}/evidences/${fileId}/`),
+      categories: {
+        list:   (tenantId) => api.get(`/tenants/${tenantId}/rental-maint-categories/`),
+        create: (tenantId, data) => api.post(`/tenants/${tenantId}/rental-maint-categories/`, data),
+        update: (tenantId, id, data) => api.patch(`/tenants/${tenantId}/rental-maint-categories/${id}/`, data),
+        remove: (tenantId, id) => api.delete(`/tenants/${tenantId}/rental-maint-categories/${id}/`),
+      },
+      workTypes: {
+        list:   (tenantId, params) => api.get(`/tenants/${tenantId}/rental-maint-work-types/`, { params }),
+        create: (tenantId, data) => api.post(`/tenants/${tenantId}/rental-maint-work-types/`, data),
+        update: (tenantId, id, data) => api.patch(`/tenants/${tenantId}/rental-maint-work-types/${id}/`, data),
+        remove: (tenantId, id) => api.delete(`/tenants/${tenantId}/rental-maint-work-types/${id}/`),
+      },
+      providers: {
+        list:   (tenantId) => api.get(`/tenants/${tenantId}/rental-maint-providers/`),
+        get:    (tenantId, id) => api.get(`/tenants/${tenantId}/rental-maint-providers/${id}/`),
+        create: (tenantId, data) => api.post(`/tenants/${tenantId}/rental-maint-providers/`, data),
+        update: (tenantId, id, data) => api.patch(`/tenants/${tenantId}/rental-maint-providers/${id}/`, data),
+        remove: (tenantId, id) => api.delete(`/tenants/${tenantId}/rental-maint-providers/${id}/`),
+        openExpediente: (tenantId, id) => api.post(`/tenants/${tenantId}/rental-maint-providers/${id}/open-expediente/`),
+        expediente: (tenantId, id) => api.get(`/tenants/${tenantId}/rental-maint-providers/${id}/expediente/`),
+        saveExpediente: (tenantId, id, data) => api.patch(`/tenants/${tenantId}/rental-maint-providers/${id}/expediente/`, data),
+        addContact: (tenantId, id, data) => api.post(`/tenants/${tenantId}/rental-maint-providers/${id}/contacts/`, data),
+        updateContact: (tenantId, id, contactId, data) => api.patch(`/tenants/${tenantId}/rental-maint-providers/${id}/contacts/${contactId}/`, data),
+        removeContact: (tenantId, id, contactId) => api.delete(`/tenants/${tenantId}/rental-maint-providers/${id}/contacts/${contactId}/`),
+        addDocument: (tenantId, id, formData) => api.post(`/tenants/${tenantId}/rental-maint-providers/${id}/documents/`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
+        removeDocument: (tenantId, id, docId) => api.delete(`/tenants/${tenantId}/rental-maint-providers/${id}/documents/${docId}/`),
       },
     },
     leads: {
@@ -354,6 +497,29 @@ export const bankAPI = {
   list: (tenantId, params) => api.get(`/tenants/${tenantId}/bank-statements/`, { params: params || {} }),
   upload: (tenantId, data) => api.post(`/tenants/${tenantId}/bank-statements/`, data),
   deleteStatement: (tenantId, id) => api.delete(`/tenants/${tenantId}/bank-statements/${id}/`),
+  /** PDF binario para el visor (evita embeber Base64 de varios MB). */
+  file: (tenantId, id, { download = false } = {}) =>
+    api.get(`/tenants/${tenantId}/bank-statements/${id}/file/`, {
+      params: download ? { download: 1 } : undefined,
+      responseType: 'blob',
+    }),
+};
+
+/** Rita — asistente estados de cuenta → cobranza / gastos */
+export const ritaAPI = {
+  profiles: (tenantId) => api.get(`/tenants/${tenantId}/rita/bank-profiles/`),
+  settings: (tenantId) => api.get(`/tenants/${tenantId}/rita/settings/`),
+  updateSettings: (tenantId, data) => api.patch(`/tenants/${tenantId}/rita/settings/`, data),
+  periodStatus: (tenantId, params) => api.get(`/tenants/${tenantId}/rita/period-status/`, { params }),
+  parse: (tenantId, formData) => api.post(`/tenants/${tenantId}/rita/parse/`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
+  parseFromStatement: (tenantId, data) =>
+    api.post(`/tenants/${tenantId}/rita/parse-from-statement/`, data),
+  session: (tenantId, sessionId, params) =>
+    api.get(`/tenants/${tenantId}/rita/sessions/${sessionId}/`, { params }),
+  movementAction: (tenantId, sessionId, data) =>
+    api.post(`/tenants/${tenantId}/rita/sessions/${sessionId}/movement/`, data),
 };
 
 // ─── Assembly ───────────────────────────────────
@@ -511,6 +677,12 @@ export const subscriptionPlansAPI = {
   destroy: (id)     => api.delete(`/subscription-plans/${id}/`),
 };
 
+// ─── Workspace configs (espacios de trabajo y módulos) ─────────────────
+export const workspaceConfigsAPI = {
+  list:   ()            => api.get('/workspace-configs/'),
+  update: (ws, data)    => api.patch(`/workspace-configs/${ws}/`, data),
+};
+
 // ─── Trial Requests (superadmin) ─────────────────
 export const trialRequestsAPI = {
   list:    (params) => api.get('/trial-requests/', { params: params || {} }),
@@ -586,6 +758,14 @@ export const reportsAPI = {
   closingReport: (tenantId, period) =>
     api.get(`/tenants/${tenantId}/closing-report/`, {
       params: { period },
+      responseType: 'blob',
+      timeout: 120000,
+    }),
+  periodExpediente: (tenantId, period) =>
+    api.get(`/tenants/${tenantId}/period-expediente/`, { params: { period } }),
+  periodExpedienteDoc: (tenantId, period, doc) =>
+    api.get(`/tenants/${tenantId}/period-expediente-doc/`, {
+      params: { period, doc },
       responseType: 'blob',
       timeout: 120000,
     }),
@@ -676,3 +856,9 @@ export const blogAPI = {
 };
 
 export default api;
+
+export const rentalPortalAPI = {
+  info:   (token) => api.get(`/public/rental-portal/${token}/`),
+  status: (token, params) => api.get(`/public/rental-portal/${token}/`, { params }),
+  submit: (token, data) => api.post(`/public/rental-portal/${token}/`, data),
+};

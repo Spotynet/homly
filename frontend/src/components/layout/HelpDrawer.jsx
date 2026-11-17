@@ -4,7 +4,7 @@ import {
   Home, Receipt, ShoppingBag, Wallet, FileText, TrendingDown,
   Lock, Settings, Newspaper, Calendar, Bell, Building2, Send,
   DollarSign, HelpCircle, BookOpen, CreditCard, BarChart2, Package, UserCheck,
-  Wrench, Vote, ClipboardCheck,
+  Wrench, Vote, PiggyBank, ClipboardCheck, LifeBuoy, Cpu, CalendarClock, GraduationCap, FileBarChart,
 } from 'lucide-react';
 
 // ─── Contenido de ayuda ────────────────────────────────────────────────────────
@@ -179,24 +179,28 @@ const HELP_SECTIONS = [
     id: 'cierre',
     icon: Lock,
     color: '#8b5cf6',
-    title: 'Cierre de Período',
-    subtitle: 'Cierre y aprobación contable',
+    title: 'Periodos',
+    subtitle: 'Gestión del mes, cierre y expediente',
     articles: [
       {
         q: '¿Cómo cerrar un período contable?',
-        a: 'Ve a Cierre de Período → selecciona el mes a cerrar → revisa el resumen (ingresos, egresos, saldo final) → si todo está correcto, haz clic en "Solicitar cierre". Si hay un flujo de aprobaciones configurado, el sistema notificará a los firmantes. Si no hay flujo, el cierre se procesa de inmediato.',
+        a: 'Ve a Periodos → pestaña Gestión → selecciona el mes → revisa el resumen (ingresos, egresos, saldo) → "Solicitar cierre". Si hay flujo de firmas, se notifica al comité; si no, el cierre se aplica de inmediato.',
+      },
+      {
+        q: '¿Qué es el Expediente de Periodos?',
+        a: 'En Periodos → Expediente eliges año/mes (desde el inicio de operaciones del condominio) y ves documentos de Finanzas (cobranza, gastos, adeudos, cierre…) y de Operación (reservas, paquetería, visitas, mantenimientos). Puedes consultarlos, descargarlos o imprimirlos como respaldo del mes.',
       },
       {
         q: '¿Qué significa que un período está cerrado?',
-        a: 'Todos los movimientos de ese mes (pagos, gastos, caja chica) quedan en modo de solo lectura. No se pueden agregar, editar ni eliminar registros. Esto garantiza la integridad del histórico financiero para auditoría.',
+        a: 'Los movimientos de ese mes (pagos, gastos, caja chica) quedan en solo lectura. No se agregan ni editan. Así se protege el histórico para auditoría y el expediente del mes.',
       },
       {
         q: '¿Cómo reabrir un período cerrado?',
-        a: 'Solo el administrador puede reabrir un período. Ve a Cierre de Período → selecciona el período cerrado → haz clic en "Reabrir período" → confirma. La acción queda registrada en la bitácora de auditoría. Úsalo solo cuando sea estrictamente necesario corregir un error.',
+        a: 'Solo el administrador. En Periodos → Gestión → período cerrado → "Reabrir período" → confirma. Queda en la bitácora. Úsalo solo para corregir un error real.',
       },
       {
         q: '¿Qué es el flujo de aprobaciones?',
-        a: 'Es una cadena de firmas obligatorias antes de cerrar el período. Se configura en Configuración → Flujos → Flujo de Cierre de Período. Por ejemplo, puedes requerir que el tesorero y el presidente aprueben antes de cerrar. Cada aprobador recibe una notificación y puede firmar o rechazar desde su sesión.',
+        a: 'Cadena de firmas antes de cerrar. Se configura en Configuración (flujo de cierre). Por ejemplo, tesorero y presidente. Cada firmante recibe notificación y puede aprobar o rechazar.',
       },
     ],
   },
@@ -392,6 +396,312 @@ const HELP_SECTIONS = [
       {
         q: '¿Cómo sigo un proyecto de obra?',
         a: 'En la misma pantalla registras el proyecto (fachada, cisterna, techumbre…) con monto y avance. Los gastos reales se contrastan con lo autorizado para reportar en asamblea.',
+      },
+    ],
+  },
+  {
+    id: 'rentas_guias',
+    icon: GraduationCap,
+    color: '#0f766e',
+    title: 'Guías de uso',
+    subtitle: 'Aprende cada módulo con tutoriales interactivos',
+    articles: [
+      {
+        q: '¿Cómo funcionan las guías?',
+        a: 'Guías de uso → elige un módulo. Cada guía tiene pasos con una demo animada, texto y consejos. Puedes avanzar a tu ritmo o pulsar “Ver demo automática” para verla como un video corto.',
+      },
+      {
+        q: '¿Puedo practicar mientras aprendo?',
+        a: 'Sí. En cada paso, “Hazlo ahora” abre la pantalla real y “Guiarme en pantalla” abre una ventanita flotante que puedes arrastrar mientras usas el módulo. Al final hay un mini quiz y tu progreso se guarda.',
+      },
+    ],
+  },
+  {
+    id: 'rentas_dashboard',
+    icon: BarChart2,
+    color: '#0f766e',
+    title: 'Dashboard de propiedades',
+    subtitle: 'Un vistazo a todo tu portafolio',
+    articles: [
+      {
+        q: '¿Qué muestra el dashboard?',
+        a: 'Arriba ves cuatro indicadores: ocupación, renta mensual en operación, cobranza del mes y cartera vencida. Debajo, “Requiere tu atención” lista lo urgente (cobranza vencida, contratos por vencer, mantenimiento atrasado, REPSE, rentas variables por confirmar) con un botón que te lleva directo al módulo.',
+      },
+      {
+        q: '¿Cómo leo las pestañas?',
+        a: 'Panel global es un tablero de widgets personalizable: calendario de operación, cobranza, órdenes nuevas, estado de órdenes, órdenes por m², presupuesto, proveedores y SLA. Panel de FM trae un tablero para mover órdenes entre Planeadas, En curso y Realizadas. Portafolio muestra ocupación por tipo, renta fija vs variable y unidades sin renta. Cobranza trae facturado vs cobrado, antigüedad de la deuda y quién debe más. Contratos, Mantenimiento y Comercial (CRM y Airbnb) detallan cada módulo con gráficas simples.',
+      },
+      {
+        q: '¿Cómo uso el mapa de propiedades?',
+        a: 'En el Panel global, la tarjeta “Mapa de propiedades” muestra cada propiedad con un pin de color (por estado, ocupación o tipo; la insignia roja cuenta sus pendientes). Filtra por alertas, vacantes, órdenes, solicitudes, adeudos o equipos fuera de operación, busca por nombre o ciudad y cambia entre mapa y satélite. Haz clic en un pin o en la lista para ver sus indicadores y abrir órdenes, solicitudes, activos, inspecciones, preventivo, OPEX/CAPEX o contratos ya filtrados por esa propiedad, y “Cómo llegar” abre la ruta. Las propiedades sin ubicación aparecen en la lista: “Ubicar automáticamente por dirección” las busca por su dirección, o márcalas con un clic y afina con “Mover pin”. También puedes fijar la ubicación en la ficha de la propiedad, con el mapa del formulario.',
+      },
+      {
+        q: '¿Cómo personalizo el Panel global?',
+        a: 'Pulsa “Personalizar”: arrastra las tarjetas para reordenarlas, usa el botón de tamaño para hacerlas más grandes o chicas y el ojo para ocultarlas (se recuperan desde “Widgets ocultos”). Tu diseño se guarda en este navegador. “Restablecer” regresa al original.',
+      },
+      {
+        q: '¿Cómo oculto el menú izquierdo?',
+        a: 'Con el botón de panel en el encabezado, o con Ctrl/Cmd + B. Así ganas espacio en cualquier módulo; vuelve a pulsarlo para mostrar el menú.',
+      },
+      {
+        q: '¿Puedo ver otro mes?',
+        a: 'Sí. Cambia el mes arriba a la derecha: cobranza, gasto de mantenimiento y KPIs se recalculan. La ocupación se mide al corte de ese mes (hoy si es el mes en curso).',
+      },
+    ],
+  },
+  {
+    id: 'rentas_reportes',
+    icon: FileBarChart,
+    color: '#6d28d9',
+    title: 'Reportes',
+    subtitle: 'Informes a pedido, informe anual y SLA',
+    articles: [
+      {
+        q: '¿Qué informes puedo generar?',
+        a: 'Órdenes de trabajo, solicitudes, activos, contratos, cargos, pagos, gastos, inspecciones y proveedores. Filtra por fechas, propiedad o estado, elige columnas, ordena y exporta a Excel, CSV o PDF. Puedes guardar tus configuraciones favoritas (en este navegador).',
+      },
+      {
+        q: '¿Cómo leo el informe anual?',
+        a: 'Cada fila es un plan de preventivo y cada columna una semana del año. Azul: programado. Verde: realizado. Naranja: en curso. Rojo: atrasado. La semana actual se resalta y arriba ves el cumplimiento.',
+      },
+      {
+        q: '¿Qué mide Proveedores y SLA?',
+        a: 'Para cada proveedor, cuántas órdenes cerró a tiempo, cuántas se pasaron de su fecha límite y cuántas siguen vencidas, con un nivel de riesgo. Expande la fila para ver el detalle de cada orden tardía.',
+      },
+    ],
+  },
+  {
+    id: 'rentas_propiedades',
+    icon: Building2,
+    color: '#1d4ed8',
+    title: 'Inventario de propiedades',
+    subtitle: 'Tipos rentables y especificaciones',
+    articles: [
+      {
+        q: '¿Qué tipos de propiedad puedo registrar?',
+        a: 'En Administrar Propiedades → Inventario eliges el tipo: residencial (casa, departamento, studio, habitación), Airbnb / corta estancia, comercial (local, oficina, consultorio, kiosco, centro o plaza comercial, edificio de oficinas), hospedaje (Airbnb, hotel), industrial (bodega, nave, patio, parque industrial) u otros (terreno, estacionamiento, salón). Cada tipo abre su propia ficha de especificaciones.',
+      },
+      {
+        q: '¿Puedo operar una propiedad sin contrato de renta?',
+        a: 'Sí. En la ficha, “Uso de la propiedad” puede ser “En renta” o “Solo operación”. Una propiedad solo operación tiene órdenes de trabajo, activos, inspecciones, preventivo y CAPEX/OPEX, pero no contratos de renta ni aparece en el Rent Roll. Si todo tu espacio opera sin rentas, actívalo en Configuración → Modo de operación.',
+      },
+      {
+        q: '¿Qué es Multi Tenant y cómo creo espacios?',
+        a: 'En la ficha de la propiedad, “Modelo de inquilinos” puede ser Single Tenant (un inquilino renta todo) o Multi Tenant (la propiedad se divide en espacios, cada uno con su inquilino). Captura Park, # Building, Submercado y Total GLA SQM; luego, desde el botón Multi de la lista, crea los espacios (local, ancla, isla, temporal, bodega, oficina, piso, bay, habitación…) uno por uno o en lote. Cada espacio tiene M², ubicación, especificaciones, contactos y el inquilino que le asignas con un contrato de renta. La ocupación se mide también en m² de GLA. Las órdenes de trabajo, solicitudes (también las del portal), equipos, planes preventivos e inspecciones se pueden ligar a un espacio con el selector “Espacio” que aparece al elegir una propiedad Multi Tenant. Cada listado tiene también un filtro por espacio, y los botones del panel del espacio abren el módulo ya filtrado. Los proyectos CAPEX, gastos OPEX y partidas de presupuesto admiten además un espacio; el Resumen de CAPEX/OPEX muestra el resultado por espacio (ingresos, OPEX, CAPEX, NOI y OPEX por m²).',
+      },
+      {
+        q: '¿En qué se diferencian las especificaciones?',
+        a: 'Una casa pide recámaras, niveles, jardín y alberca. Un Airbnb pide huéspedes, camas, noches mínimas y check-in. Un local pide frente, uso de suelo y cortina. Una bodega o nave pide altura libre, andenes, carga de piso y acceso de tráiler. Así el inventario no trata todo como un departamento.',
+      },
+    ],
+  },
+  {
+    id: 'rentas_mantenimiento',
+    icon: Wrench,
+    color: '#0f766e',
+    title: 'Órdenes de trabajo',
+    subtitle: 'Preventivos, correctivos, SLA, costos y proveedores del portafolio',
+    articles: [
+      {
+        q: '¿Cómo registro un mantenimiento de una propiedad?',
+        a: 'En Administrar Propiedades → Operación → Órdenes de trabajo elige Todas, Preventivos o Correctivos → "Nuevo trabajo" → selecciona la propiedad, la categoría de servicio (plomería, eléctrico, etc.) y el tipo de trabajo. Indica fechas, prioridad, quién reportó y el proveedor. Al guardar se asigna el folio del año (AAAA-####).',
+      },
+      {
+        q: '¿Qué diferencia hay entre preventivo y correctivo?',
+        a: 'Preventivo es una revisión o servicio programado (filtros, fumigación, poda) con frecuencia y próxima fecha. Correctivo documenta una falla ya ocurrida (fuga, corto, cerradura). Ambos llevan evidencia y costo.',
+      },
+      {
+        q: '¿Cómo administro categorías, tipos de trabajo y proveedores?',
+        a: 'En Mantenimiento → Catálogos das de alta categorías de servicio y tipos de trabajo. En Proveedores registras contratistas (persona física o moral), su contacto y qué servicios cubren. Luego los asignas al crear un trabajo.',
+      },
+      {
+        q: '¿Qué es el expediente digital del proveedor?',
+        a: 'Al crear un proveedor Homly pregunta si quieres dar de alta su expediente. Si aceptas, se abre una ficha con la información general ya capturada más contactos, ubicación, datos bancarios para pagos y documentos según sea persona física o moral (identificación, CSF, acta constitutiva, etc.). Puedes crearlo después desde el ícono de carpeta.',
+      },
+      {
+        q: '¿Cuándo se pide el expediente REPSE?',
+        a: 'Dentro del expediente, activa “Servicios especializados (REPSE)” si el proveedor prestará ese tipo de servicios. Homly solicita registro, folio, vigencia, actividades y documentos (constancia REPSE, ICSOE, SISUB, opiniones IMSS/INFONAVIT y contrato especializado).',
+      },
+      {
+        q: '¿Cómo cargo evidencias?',
+        a: 'Abre la ficha del trabajo → elige si la foto es Antes, Durante o Después → Cargar evidencia. Las fotos quedan en la bitácora de esa propiedad.',
+      },
+    ],
+  },
+  {
+    id: 'rentas_solicitudes',
+    icon: LifeBuoy,
+    color: '#0f766e',
+    title: 'Solicitudes de servicio',
+    subtitle: 'Helpdesk con SLA y portal para inquilinos',
+    articles: [
+      {
+        q: '¿Cómo recibo solicitudes de mis inquilinos?',
+        a: 'En Configuración → Operación y SLA activa el portal y copia el enlace. Compártelo por WhatsApp o correo: el inquilino elige el inmueble, describe el problema y recibe un folio (SOL-AAAA-####). Sin crear cuenta. También puedes registrar solicitudes tú mismo desde Solicitudes → Nueva solicitud (teléfono, WhatsApp, presencial).',
+      },
+      {
+        q: '¿Qué es el SLA?',
+        a: 'Es el tiempo máximo que te comprometes a responder y a resolver según la prioridad. Cada solicitud nace con fecha límite de respuesta y de solución; verás si va en tiempo, por vencer o vencida. Puedes cambiar las horas en Configuración → Operación y SLA.',
+      },
+      {
+        q: '¿Cómo convierto una solicitud en trabajo?',
+        a: 'Abre la solicitud → “Crear orden de trabajo”, elige proveedor o responsable y listo: la orden hereda inmueble, equipo, prioridad y fecha límite. Cuando la orden se realiza, la solicitud pasa a resuelta; después la cierras con la calificación del cliente.',
+      },
+    ],
+  },
+  {
+    id: 'rentas_preventivo',
+    icon: CalendarClock,
+    color: '#0f766e',
+    title: 'Mantenimiento preventivo',
+    subtitle: 'Planes recurrentes que generan órdenes solos',
+    articles: [
+      {
+        q: '¿Cómo automatizo las rutinas?',
+        a: 'En Preventivo crea un plan (puedes partir de plantillas: aire acondicionado, extintores, cisterna, fumigación…), define frecuencia, fecha de inicio, anticipación y lista de verificación. Cada día a las 6:00 Homly genera la orden de trabajo cuando se acerca la fecha y avanza el plan al siguiente periodo.',
+      },
+      {
+        q: '¿Puedo generar una orden sin esperar?',
+        a: 'Sí. Usa el rayo del plan para generar ahora, o “Generar órdenes pendientes” para todos los planes vencidos o próximos. Pausar un plan detiene la generación sin borrar su historial.',
+      },
+    ],
+  },
+  {
+    id: 'rentas_activos',
+    icon: Cpu,
+    color: '#0f766e',
+    title: 'Activos y equipos',
+    subtitle: 'Inventario con garantía, vida útil e historial',
+    articles: [
+      {
+        q: '¿Para qué registrar equipos?',
+        a: 'Cada equipo (clima, bomba, elevador, planta, extintores…) tiene criticidad, garantía, vida útil y costo acumulado. Al ligarlo a solicitudes, órdenes y planes, ves su historial completo y detectas qué equipos fallan más o están por cumplir su vida útil.',
+      },
+      {
+        q: '¿Cómo cambia el estado del equipo?',
+        a: 'Se actualiza solo: una orden correctiva abierta lo marca en falla o mantenimiento y, al realizarse, vuelve a operativo. Puedes ajustarlo manualmente si lo necesitas.',
+      },
+    ],
+  },
+  {
+    id: 'rentas_inspecciones',
+    icon: ClipboardCheck,
+    color: '#0f766e',
+    title: 'Inspecciones',
+    subtitle: 'Listas de verificación con órdenes automáticas',
+    articles: [
+      {
+        q: '¿Cómo hago una inspección?',
+        a: 'Inspecciones → Nueva inspección: elige plantilla (entrega, seguridad, áreas comunes…) e inmueble. Marca cada punto como Bien, Falla o N/A y agrega notas. Guarda el avance las veces que quieras y al completar se calcula la calificación.',
+      },
+      {
+        q: '¿Cómo agrego fotos o archivos a una inspección?',
+        a: 'En cada punto de la lista usa "Foto" (abre la cámara en el celular) o "Archivo" (PDF, Word, Excel, imágenes de hasta 20 MB); también hay evidencias generales al final. Si la plantilla marca un punto con evidencia obligatoria, debes adjuntarla para completar. Las evidencias de una falla viajan a la orden correctiva como fotos "Antes". En Plantillas puedes anexar material de referencia para el inspector.',
+      },
+      {
+        q: '¿Qué pasa con las fallas?',
+        a: 'Al completar, Homly crea una orden correctiva por cada falla, con la prioridad que marcaste y su fecha límite. Puedes desmarcar esa opción si prefieres revisarlas antes. Las plantillas se editan en la pestaña Plantillas.',
+      },
+    ],
+  },
+  {
+    id: 'rentas_indicadores',
+    icon: BarChart2,
+    color: '#0f766e',
+    title: 'Indicadores de operación',
+    subtitle: 'MTTR, SLA, preventivo y costos',
+    articles: [
+      {
+        q: '¿Qué mide el tablero?',
+        a: 'Tiempo medio de reparación (MTTR), cumplimiento de SLA, cumplimiento del preventivo, proporción preventivo vs correctivo, costo de mantenimiento por categoría e inmueble, desempeño de proveedores, equipos con más fallas y ciclo de vida de activos. Cambia el periodo arriba a la derecha.',
+      },
+      {
+        q: '¿Cómo mejoro los números?',
+        a: 'Registra costos y fechas reales en cada orden, asigna proveedor y marca las órdenes como realizadas cuando terminen. Más preventivo y planes al día reducen correctivos y costos.',
+      },
+    ],
+  },
+  {
+    id: 'rentas_contratos',
+    icon: FileText,
+    color: '#1d4ed8',
+    title: 'Contratos de propiedades',
+    subtitle: 'Tipos de contrato y asistente legal',
+    articles: [
+      {
+        q: '¿Qué tipos de contrato puedo crear?',
+        a: 'En Administrar Propiedades → Contratos eliges el tipo: renta de propiedad, proveedor de servicios, servicios generales, mantenimiento de inmueble, comodato, promesa de arrendamiento u otro. Cada tipo se liga a lo que corresponde: inmueble, cliente, proveedor, categoría u orden de mantenimiento.',
+      },
+      {
+        q: '¿Cómo funciona el asistente legal?',
+        a: 'Al crear un contrato Homly pregunta si quieres abrirlo. El asistente entrevista (objeto, ciudad, pagos y cláusulas), redacta el texto con los datos del espacio, te deja editarlo, lo presenta para revisión, registra firmas con acuse de nombre y lo publica. La publicación congela la versión oficial. No sustituye la revisión de un abogado.',
+      },
+      {
+        q: '¿Los contratos de renta siguen generando cobranza?',
+        a: 'Sí. Solo los de tipo “Renta de propiedad” entran al rent roll y a la generación de cargos del mes. Los de proveedor o servicios quedan en el mismo módulo, pero no mezclan la cobranza de inquilinos.',
+      },
+      {
+        q: '¿Qué diferencia hay entre renta fija y renta variable?',
+        a: 'Fija es un monto mensual pactado, con incremento anual y mora opcionales. Variable se administra con condiciones: % de ventas, INPC, tramos, ocupación (Airbnb), tarifa por m² o temporada. Homly calcula la renta vigente al corte y genera el cargo del mes con esa cifra (o el mínimo garantizado si aún no hay ventas reportadas).',
+      },
+    ],
+  },
+  {
+    id: 'rentas_rentroll',
+    icon: ClipboardCheck,
+    color: '#0f766e',
+    title: 'Rent Roll',
+    subtitle: 'Detalle del portafolio al corte',
+    articles: [
+      {
+        q: '¿Qué veo en el Rent Roll?',
+        a: 'Unidad, tipo (casa, Airbnb, local, bodega…), especificaciones, inquilino, vigencia, esquema de renta (fija o variable), condiciones especiales, depósito, mercado, ocupación y cobranza. Clic en una fila abre la ficha completa. Puedes filtrar por grupo, tipo o esquema y agrupar por propietario, tipo o renta fija/variable.',
+      },
+      {
+        q: '¿Cómo se calcula la renta variable en el corte?',
+        a: 'Según las condiciones del contrato: mínimo más % de ventas, índice INPC con tope, tramo vigente, noches × ocupación, m² o temporada. Si falta el reporte (ventas o índice), Homly usa la renta base y la marca como estimada. Esa misma cifra se usa al generar el cargo del mes.',
+      },
+    ],
+  },
+  {
+    id: 'rentas_capex',
+    icon: PiggyBank,
+    color: '#6d28d9',
+    title: 'CAPEX y OPEX',
+    subtitle: 'Inversión y gasto operativo del portafolio',
+    articles: [
+      {
+        q: '¿Qué diferencia hay entre CAPEX y OPEX?',
+        a: 'OPEX es el gasto de operar (mantenimiento, servicios, limpieza, seguros, predial…). CAPEX es inversión que mejora o repone el activo (remodelación, cambio de elevador, paneles solares). Homly los separa para calcular el NOI y evaluar el retorno de cada proyecto.',
+      },
+      {
+        q: '¿Cómo ligo el mantenimiento a un proyecto CAPEX?',
+        a: 'En Mantenimiento, al crear o editar una orden de trabajo, elige el "Proyecto CAPEX". Su costo se suma a la inversión del proyecto. Sin proyecto, el costo cuenta como OPEX por categoría.',
+      },
+      {
+        q: '¿Cómo funciona el presupuesto?',
+        a: 'En la pestaña Presupuesto capturas el OPEX por categoría y mes (o copias otro año). El CAPEX se presupuesta por proyecto, con un techo anual opcional. Homly muestra acumulado, real y porcentaje de uso, y avisa si te pasas.',
+      },
+    ],
+  },
+  {
+    id: 'rentas_cobranza',
+    icon: Receipt,
+    color: '#0f766e',
+    title: 'Cobranza de propiedades',
+    subtitle: 'Cargos, renta variable y mora',
+    articles: [
+      {
+        q: '¿Cómo se generan los cargos del mes?',
+        a: 'En Administrar Propiedades → Cobranza pulsa “Generar mes”. Homly crea la renta de cada contrato vigente según su esquema: fija (con incremento anual si ya corrió) o variable (ventas, INPC, tramos, ocupación, m² o temporada). También agrega los conceptos recurrentes con monto. Los cargos muestran tipo de inmueble, specs y condiciones.',
+      },
+      {
+        q: '¿Qué hago si cambia una renta variable?',
+        a: 'Actualiza las condiciones en el contrato (ventas reportadas, índice, tramo, ocupación) y en Cobranza usa “Recalcular variables”. Solo toca cargos de renta pendientes o parciales. También puedes cargar un ajuste manual (complemento de ventas, depósito, servicios).',
+      },
+      {
+        q: '¿Cómo se cobra la mora?',
+        a: 'Si el contrato tiene % de mora y el cargo ya venció, aparece el botón con el monto sugerido. Homly crea un cargo aparte de mora de ese período; no se duplica si ya existe.',
       },
     ],
   },

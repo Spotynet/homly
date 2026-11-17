@@ -182,7 +182,7 @@ function printKardexPDF({ cycles, sub, tenantData, adminName, adminEmail }) {
   };
 
   // Homly logo — absolute URL for the print window
-  const logoUrl = window.location.origin + '/img/homly-full.png';
+  const logoUrl = window.location.origin + '/img/homly-full-r.png';
 
   // Build address
   const addrParts = [
@@ -970,7 +970,7 @@ export default function MiMembresia() {
             Sin membresía configurada
           </p>
           <p style={{ fontSize: 14, color: 'var(--ink-400)' }}>
-            Este {workspaceType === 'rentas' ? 'espacio de rentas' : 'condominio'} aún no tiene una membresía asignada. Comunícate con el equipo de Homly para activar tu plan.
+            Este {workspaceType === 'rentas' ? 'espacio de Administrar Propiedades' : 'condominio'} aún no tiene una membresía asignada. Comunícate con el equipo de Homly para activar tu plan.
           </p>
         </div>
       </div>

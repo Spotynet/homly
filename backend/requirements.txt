@@ -11,3 +11,5 @@ gunicorn>=22.0
 certifi>=2024.0
 whitenoise>=6.5
 reportlab>=4.0
+pdfplumber>=0.11
+pypdf>=5.0

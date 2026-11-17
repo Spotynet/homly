@@ -16,7 +16,10 @@ module.exports = {
       // 0.0.0.0 exponía el puerto 8000 directamente a internet si el Security Group lo permitía.
       args: 'homly_project.wsgi:application --bind 127.0.0.1:8000 --workers 2 --timeout 120',
       interpreter: 'none',
-      env: { DJANGO_SETTINGS_MODULE: 'homly_project.settings' },
+      env: {
+        DJANGO_SETTINGS_MODULE: 'homly_project.settings',
+        DEBUG: 'False',
+      },
       autorestart: true,
       watch: false,
     },
@@ -27,6 +30,16 @@ module.exports = {
       args: 'manage.py send_package_reminders',
       interpreter: 'none',
       cron_restart: '15 * * * *',
+      autorestart: false,
+      watch: false,
+    },
+    {
+      name: 'homly-pm-orders',
+      cwd: './backend',
+      script: './venv/bin/python',
+      args: 'manage.py generate_pm_orders',
+      interpreter: 'none',
+      cron_restart: '0 6 * * *',
       autorestart: false,
       watch: false,
     },

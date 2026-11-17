@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { useTenantAccess } from '../../context/TenantAccessContext';
 import { rentalAPI, tenantsAPI } from '../../api/client';
 import { Plus, Search, Target } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -31,6 +32,8 @@ function todayISO() {
 
 export default function RentalCRM() {
   const { tenantId } = useAuth();
+  const { can } = useTenantAccess();
+  const canWrite = can('rentas_crm');
   const navigate = useNavigate();
   const [leads, setLeads] = useState([]);
   const [properties, setProperties] = useState([]);
@@ -44,6 +47,15 @@ export default function RentalCRM() {
   const [activities, setActivities] = useState([]);
   const [note, setNote] = useState({ kind: 'note', body: '' });
   const [convert, setConvert] = useState(null);
+  const [convertSpaces, setConvertSpaces] = useState([]);
+  const convertProp = properties.find(x => x.id === convert?.property);
+  const convertMulti = convertProp?.tenancy_model === 'multi';
+  useEffect(() => {
+    if (!convert || !convertMulti) { setConvertSpaces([]); return; }
+    rentalAPI.spaces.list(tenantId, { property: convert.property, active: '1' })
+      .then(r => setConvertSpaces([].concat(r.data?.results || r.data || []).filter(x => x && x.id && x.is_leasable && x.status === 'disponible')))
+      .catch(() => setConvertSpaces([]));
+  }, [tenantId, convert?.property, convertMulti]);
   const [busy, setBusy] = useState(false);
 
   const load = () => {
@@ -51,7 +63,7 @@ export default function RentalCRM() {
     setLoading(true);
     Promise.all([
       rentalAPI.leads.list(tenantId, { search, property: propertyFilter || undefined }),
-      rentalAPI.properties.list(tenantId, { page_size: 500 }),
+      rentalAPI.properties.list(tenantId, { page_size: 500, usage: 'renta' }),
       tenantsAPI.get(tenantId).catch(() => ({ data: {} })),
     ]).then(([l, p, t]) => {
       setLeads(l.data.results || l.data || []);
@@ -120,6 +132,7 @@ export default function RentalCRM() {
     setConvert({
       lead,
       property: lead.property || '',
+      space: '',
       start_date: start,
       end_date: addYear(start),
       rent_amount: lead.interested_rent || prop?.suggested_rent || 0,
@@ -136,10 +149,15 @@ export default function RentalCRM() {
       toast.error('Unidad y vigencia del contrato son obligatorias');
       return;
     }
+    if (convertMulti && !convert.space) {
+      toast.error('La propiedad es Multi Tenant: elige el espacio que se va a rentar');
+      return;
+    }
     setBusy(true);
     try {
       const res = await rentalAPI.leads.convert(tenantId, convert.lead.id, {
         property: convert.property,
+        ...(convertMulti ? { space: convert.space } : {}),
         start_date: convert.start_date,
         end_date: convert.end_date,
         rent_amount: Number(convert.rent_amount) || 0,
@@ -208,7 +226,7 @@ export default function RentalCRM() {
             <button className={`tab ${view === 'pipeline' ? 'active' : ''}`} onClick={() => setView('pipeline')}>Pipeline</button>
             <button className={`tab ${view === 'list' ? 'active' : ''}`} onClick={() => setView('list')}>Lista</button>
           </div>
-          <button className="btn btn-primary" onClick={() => setForm({ ...EMPTY_LEAD })}><Plus size={15} /> Nuevo lead</button>
+          {canWrite && <button className="btn btn-primary" onClick={() => setForm({ ...EMPTY_LEAD })}><Plus size={15} /> Nuevo lead</button>}
         </div>
       </div>
 
@@ -292,7 +310,7 @@ export default function RentalCRM() {
                       <td>{fmtMoney(l.interested_rent, currency)}</td>
                       <td><StatusPill map={LEAD_STAGE_MAP} value={l.stage} /></td>
                       <td>
-                        {l.stage !== 'ganado' && l.stage !== 'perdido' && (
+                        {canWrite && l.stage !== 'ganado' && l.stage !== 'perdido' && (
                           <button className="btn btn-primary btn-sm" onClick={e => { e.stopPropagation(); openConvert(l); }}>Ganar</button>
                         )}
                       </td>
@@ -390,7 +408,7 @@ export default function RentalCRM() {
                 </div>
               )}
 
-              {!detail.contract && (
+              {canWrite && !detail.contract && (
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
                   {OPEN.map(st => (
                     <button key={st} className="btn btn-outline btn-sm" disabled={detail.stage === st} onClick={() => moveLead(detail, st)}>
@@ -403,7 +421,7 @@ export default function RentalCRM() {
               )}
 
               <h4 style={{ fontSize: 13, margin: '8px 0' }}>Seguimiento</h4>
-              <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+              {canWrite && <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
                 <select className="field-select" value={note.kind} onChange={e => setNote(n => ({ ...n, kind: e.target.value }))} style={{ width: 130 }}>
                   <option value="note">Nota</option>
                   <option value="call">Llamada</option>
@@ -413,7 +431,7 @@ export default function RentalCRM() {
                 </select>
                 <input className="field-input" placeholder="Qué se habló…" value={note.body} onChange={e => setNote(n => ({ ...n, body: e.target.value }))} onKeyDown={e => e.key === 'Enter' && addNote()} />
                 <button className="btn btn-outline btn-sm" onClick={addNote}>Agregar</button>
-              </div>
+              </div>}
               <div style={{ display: 'grid', gap: 8 }}>
                 {activities.length === 0 && <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>Sin notas aún.</div>}
                 {activities.map(a => (
@@ -427,7 +445,7 @@ export default function RentalCRM() {
               </div>
             </div>
             <div className="modal-foot">
-              <button className="btn btn-outline" onClick={() => { setForm({ ...EMPTY_LEAD, ...detail, property: detail.property || '' }); setDetail(null); }}>Editar</button>
+              {canWrite && <button className="btn btn-outline" onClick={() => { setForm({ ...EMPTY_LEAD, ...detail, property: detail.property || '' }); setDetail(null); }}>Editar</button>}
               <button className="btn btn-secondary" onClick={() => setDetail(null)}>Cerrar</button>
             </div>
           </div>
@@ -454,14 +472,32 @@ export default function RentalCRM() {
                     setConvert(c => ({
                       ...c,
                       property: id,
+                      space: '',
                       rent_amount: c.lead.interested_rent || p?.suggested_rent || c.rent_amount,
                       deposit_amount: c.lead.interested_rent || p?.suggested_rent || c.deposit_amount,
                     }));
                   }}>
                     <option value="">Selecciona…</option>
-                    {properties.map(p => <option key={p.id} value={p.id}>{p.code} — {p.name} ({p.status})</option>)}
+                    {properties.map(p => <option key={p.id} value={p.id}>{p.code} — {p.name} ({p.tenancy_model === 'multi' ? 'Multi Tenant' : p.status})</option>)}
                   </select>
                 </div>
+                {convertMulti && (
+                  <div className="field field-full">
+                    <label className="field-label">Espacio *</label>
+                    <select className="field-select" value={convert.space || ''} onChange={e => {
+                      const sp = convertSpaces.find(x => x.id === e.target.value);
+                      setConvert(c => ({
+                        ...c, space: e.target.value,
+                        rent_amount: c.lead.interested_rent || sp?.suggested_rent || c.rent_amount,
+                        deposit_amount: c.lead.interested_rent || sp?.suggested_rent || c.deposit_amount,
+                      }));
+                    }}>
+                      <option value="">Selecciona…</option>
+                      {convertSpaces.map(x => <option key={x.id} value={x.id}>{x.code}{x.name ? ` — ${x.name}` : ''} · {Number(x.area_m2 || 0).toLocaleString('es-MX')} m²</option>)}
+                    </select>
+                    {convertSpaces.length === 0 && <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 4 }}>Esta propiedad no tiene espacios disponibles.</div>}
+                  </div>
+                )}
                 <div className="field">
                   <label className="field-label">Código de contrato</label>
                   <input className="field-input" placeholder="Automático" value={convert.code} onChange={e => setConvert({ ...convert, code: e.target.value })} />

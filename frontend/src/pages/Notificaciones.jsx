@@ -43,6 +43,8 @@ const NOTIF_MODULE_MAP = {
   rental_airbnb_imported:    'rentas_propiedades',
   rental_airbnb_synced:      'rentas_propiedades',
   rental_airbnb_error:       'rentas_propiedades',
+  rental_request_new:        'rentas_solicitudes',
+  rental_work_overdue:       'rentas_mantenimiento',
   package_received:          'paqueteria',
   package_delivered:         'paqueteria',
   package_reminder:          'paqueteria',
@@ -88,6 +90,8 @@ const TYPE_CFG = {
   rental_airbnb_imported:    { icon: '🔗', label: 'Airbnb importado',     color: 'var(--blue-700)',  bg: 'var(--blue-50)'  },
   rental_airbnb_synced:      { icon: '🔄', label: 'Airbnb sincronizado',  color: 'var(--blue-700)',  bg: 'var(--blue-50)'  },
   rental_airbnb_error:       { icon: '⚠️', label: 'Error de Airbnb',      color: 'var(--coral-600)', bg: 'var(--coral-50)' },
+  rental_request_new:        { icon: '🛟', label: 'Nueva solicitud',      color: 'var(--blue-600)',  bg: 'var(--blue-50)'  },
+  rental_work_overdue:       { icon: '⏰', label: 'Orden vencida',        color: 'var(--coral-600)', bg: 'var(--coral-50)' },
   general:               { icon: 'ℹ️', label: 'General',               color: 'var(--amber-600)',  bg: 'var(--amber-50)'  },
   package_received:      { icon: '📦', label: 'Paquete recibido',      color: 'var(--teal-700)',   bg: 'var(--teal-50)'   },
   package_delivered:     { icon: '✍️', label: 'Paquete entregado',     color: 'var(--teal-600)',   bg: 'var(--teal-50)'   },
@@ -165,7 +169,9 @@ export default function Notificaciones() {
     }
     else if (['period_closed','period_reopened'].includes(n.notif_type)) navigate('/app/cobranza');
     else if ((n.notif_type || '').startsWith('rental_lead')) navigate('/app/rentas/crm');
-    else if (['rental_contract_expiring','rental_contract_expired'].includes(n.notif_type)) navigate('/app/rentas/calendario');
+    else if (n.notif_type === 'rental_request_new') navigate('/app/rentas/solicitudes');
+    else if (n.notif_type === 'rental_work_overdue') navigate('/app/rentas/mantenimiento');
+    else if (['rental_contract_expiring','rental_contract_expired'].includes(n.notif_type)) navigate('/app/rentas/contratos?tab=vigencias');
     else if ((n.notif_type || '').startsWith('rental_contract')) navigate('/app/rentas/contratos');
     else if ((n.notif_type || '').startsWith('rental_charge') || (n.notif_type || '').startsWith('rental_payment')) navigate('/app/rentas/cobranza');
     else if ((n.notif_type || '').startsWith('rental_')) navigate('/app/rentas/propiedades');
@@ -199,6 +205,7 @@ export default function Notificaciones() {
     { value: 'rental_lead_moved',        label: '📌 Lead actualizado' },
     { value: 'rental_lead_converted',    label: '🤝 Lead convertido' },
     { value: 'rental_lead_lost',         label: '↩️ Lead perdido' },
+    { value: 'rental_request_new',       label: '🛟 Nueva solicitud' },
     { value: 'rental_airbnb_imported',   label: '🔗 Airbnb importado' },
     { value: 'rental_airbnb_synced',     label: '🔄 Airbnb sincronizado' },
     { value: 'rental_airbnb_error',      label: '⚠️ Error de Airbnb' },

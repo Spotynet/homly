@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { COUNTRIES, getStatesForCountry, HomlyBrand } from '../utils/helpers';
 
@@ -94,10 +94,17 @@ const STEPS = [
   { id: 3, label: 'Confirmar', icon: <IconStar /> },
 ];
 
+// Tipo de administración: cada espacio de trabajo tiene sus propias opciones.
 const ADMIN_TYPES = [
-  { value: 'mesa_directiva', label: 'Mesa Directiva' },
-  { value: 'administrador',  label: 'Administrador Externo' },
-  { value: 'comite',         label: 'Comité' },
+  { value: 'mesa_directiva', label: 'Mesa Directiva',        hint: 'Los propios condóminos administran' },
+  { value: 'administrador',  label: 'Administrador Externo', hint: 'Una empresa o persona contratada' },
+  { value: 'comite',         label: 'Comité',                hint: 'Un grupo de vecinos coordina la administración' },
+];
+const PROP_ADMIN_TYPES = [
+  { value: 'propietario',  label: 'Propietario',                         hint: 'Administras tus propias propiedades' },
+  { value: 'inmobiliaria', label: 'Inmobiliaria o administrador',        hint: 'Gestionas inmuebles de terceros' },
+  { value: 'operador',     label: 'Equipo de operación y mantenimiento', hint: 'Operas inmuebles de tu empresa o grupo, con o sin renta' },
+  { value: 'corporativo',  label: 'Fondo, desarrolladora o corporativo', hint: 'Portafolio institucional con varios inmuebles' },
 ];
 const CURRENCIES = [
   { value: 'MXN', label: 'MXN — Peso Mexicano' },
@@ -105,6 +112,44 @@ const CURRENCIES = [
   { value: 'COP', label: 'COP — Peso Colombiano' },
   { value: 'EUR', label: 'EUR — Euro' },
 ];
+
+/* ─── Opciones de tipo de administración de un espacio de trabajo ─── */
+function AdminTypeGroup({ title, badge, options, value, onChange, error }) {
+  return (
+    <FormField label={title} error={error}>
+      {badge && (
+        <div style={{ display: 'inline-block', fontSize: 11, fontWeight: 800, letterSpacing: '0.04em', textTransform: 'uppercase', color: C.greenMid, background: C.greenBg, borderRadius: 999, padding: '3px 10px', marginBottom: 8 }}>
+          {badge}
+        </div>
+      )}
+      <div role="radiogroup" aria-label={title} style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 4 }}>
+        {options.map((t) => {
+          const on = value === t.value;
+          return (
+            <label key={t.value} style={{
+              display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', borderRadius: 10,
+              border: `1.5px solid ${on ? C.coral : C.sandBd}`, background: on ? C.coralBg : '#fff',
+              cursor: 'pointer', transition: 'all 0.15s',
+            }}>
+              <div style={{
+                width: 18, height: 18, borderRadius: '50%', border: `2px solid ${on ? C.coral : C.sandBd}`,
+                background: on ? C.coral : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                flexShrink: 0, transition: 'all 0.15s',
+              }}>
+                {on && <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#fff' }} />}
+              </div>
+              <input type="radio" style={{ display: 'none' }} checked={on} onChange={() => onChange(t.value)} />
+              <span style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                <span style={{ fontSize: 14, fontWeight: 600, color: on ? C.coralDark : C.ink7 }}>{t.label}</span>
+                {t.hint && <span style={{ fontSize: 12, color: C.ink4, fontWeight: 500 }}>{t.hint}</span>}
+              </span>
+            </label>
+          );
+        })}
+      </div>
+    </FormField>
+  );
+}
 
 /* ═══════════════════════════════════════
    MAIN COMPONENT
@@ -115,6 +160,11 @@ export default function Registro() {
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
 
+  // /registro?servicio=condominio|rentas|ambos preselecciona el interés (viene de las páginas del sitio).
+  const [searchParams] = useSearchParams();
+  const servicioInicial = ['condominio', 'rentas', 'ambos'].includes(searchParams.get('servicio'))
+    ? searchParams.get('servicio') : 'condominio';
+
   const [form, setForm] = useState({
     // Step 1 — Condominio
     condominio_nombre:     '',
@@ -123,8 +173,9 @@ export default function Registro() {
     condominio_ciudad:     '',
     condominio_unidades:   '',
     condominio_tipo_admin: 'mesa_directiva',
+    propiedades_tipo_admin: 'inmobiliaria',
     condominio_currency:   'MXN',
-    interes:              'condominio',
+    interes:              servicioInicial,
     // Step 2 — Admin
     admin_nombre:    '',
     admin_apellido:  '',
@@ -182,6 +233,11 @@ export default function Registro() {
     setLoading(true);
     try {
       const { interes, ...rest } = form;
+      const incluyeCondo = interes !== 'rentas';
+      const incluyeRentas = interes !== 'condominio';
+      // Solo se envía el tipo de administración de los espacios que el interesado eligió.
+      rest.condominio_tipo_admin = incluyeCondo ? form.condominio_tipo_admin : 'administrador';
+      rest.propiedades_tipo_admin = incluyeRentas ? form.propiedades_tipo_admin : '';
       const interesLabel = {
         condominio: 'Condominios',
         rentas: 'Rentas inmobiliarias',
@@ -207,7 +263,7 @@ export default function Registro() {
         });
         setErrors(flat);
         // Return to step where error belongs
-        const step1Keys = ['condominio_nombre','condominio_pais','condominio_unidades','condominio_tipo_admin','condominio_currency'];
+        const step1Keys = ['condominio_nombre','condominio_pais','condominio_unidades','condominio_tipo_admin','propiedades_tipo_admin','condominio_currency'];
         const hasStep1 = step1Keys.some(k => flat[k]);
         setStep(hasStep1 ? 1 : 2);
       } else {
@@ -359,42 +415,26 @@ export default function Registro() {
               </FormField>
             </div>
 
-            <FormField label="Tipo de administración">
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 4 }}>
-                {ADMIN_TYPES.map(t => (
-                  <label key={t.value} style={{
-                    display: 'flex', alignItems: 'center', gap: 12,
-                    padding: '12px 14px',
-                    borderRadius: 10,
-                    border: `1.5px solid ${form.condominio_tipo_admin === t.value ? C.coral : C.sandBd}`,
-                    background: form.condominio_tipo_admin === t.value ? C.coralBg : '#fff',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s',
-                  }}>
-                    <div style={{
-                      width: 18, height: 18, borderRadius: '50%',
-                      border: `2px solid ${form.condominio_tipo_admin === t.value ? C.coral : C.sandBd}`,
-                      background: form.condominio_tipo_admin === t.value ? C.coral : 'transparent',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      flexShrink: 0, transition: 'all 0.15s',
-                    }}>
-                      {form.condominio_tipo_admin === t.value && (
-                        <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#fff' }} />
-                      )}
-                    </div>
-                    <input
-                      type="radio"
-                      style={{ display: 'none' }}
-                      checked={form.condominio_tipo_admin === t.value}
-                      onChange={() => set('condominio_tipo_admin', t.value)}
-                    />
-                    <span style={{ fontSize: 14, fontWeight: 600, color: form.condominio_tipo_admin === t.value ? C.coralDark : C.ink7 }}>
-                      {t.label}
-                    </span>
-                  </label>
-                ))}
-              </div>
-            </FormField>
+            {form.interes !== 'rentas' && (
+              <AdminTypeGroup
+                title={form.interes === 'ambos' ? 'Tipo de administración · Condominios' : 'Tipo de administración'}
+                badge={form.interes === 'ambos' ? 'Homly Residencial' : null}
+                options={ADMIN_TYPES}
+                value={form.condominio_tipo_admin}
+                error={errors.condominio_tipo_admin}
+                onChange={(v) => set('condominio_tipo_admin', v)}
+              />
+            )}
+            {form.interes !== 'condominio' && (
+              <AdminTypeGroup
+                title={form.interes === 'ambos' ? 'Tipo de administración · Propiedades' : 'Tipo de administración'}
+                badge={form.interes === 'ambos' ? 'Homly Propiedades' : null}
+                options={PROP_ADMIN_TYPES}
+                value={form.propiedades_tipo_admin}
+                error={errors.propiedades_tipo_admin}
+                onChange={(v) => set('propiedades_tipo_admin', v)}
+              />
+            )}
 
             <NavButtons onNext={goNext} />
           </StepCard>
@@ -486,7 +526,12 @@ export default function Registro() {
               {form.condominio_ciudad && <SummaryRow label="Ciudad" value={form.condominio_ciudad} />}
               <SummaryRow label="Unidades" value={form.condominio_unidades} />
               <SummaryRow label="Moneda" value={form.condominio_currency} />
-              <SummaryRow label="Administración" value={ADMIN_TYPES.find(t => t.value === form.condominio_tipo_admin)?.label} />
+              {form.interes !== 'rentas' && (
+                <SummaryRow label={form.interes === 'ambos' ? 'Administración · Condominios' : 'Administración'} value={ADMIN_TYPES.find(t => t.value === form.condominio_tipo_admin)?.label} />
+              )}
+              {form.interes !== 'condominio' && (
+                <SummaryRow label={form.interes === 'ambos' ? 'Administración · Propiedades' : 'Administración'} value={PROP_ADMIN_TYPES.find(t => t.value === form.propiedades_tipo_admin)?.label} />
+              )}
             </SummarySection>
 
             <SummarySection title="Administrador responsable">

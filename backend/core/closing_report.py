@@ -182,7 +182,7 @@ def _logo_reader(tenant):
 
 def _homly_logo_reader():
     from reportlab.lib.utils import ImageReader
-    path = os.path.join(os.path.dirname(__file__), 'email_assets', 'homly-full.png')
+    path = os.path.join(os.path.dirname(__file__), 'email_assets', 'homly-full-r.png')
     if not os.path.isfile(path):
         return None
     try:
@@ -296,7 +296,7 @@ def _dashboard_slice(tenant, period) -> dict:
 
 
 def _adeudos_slice(tenant, period) -> dict:
-    from .views import _compute_statement, _covering_plans_by_unit
+    from .views import _compute_statement, _covering_plans_by_unit, row_period_deficit
 
     start_period = tenant.operation_start_date or '2024-01'
     units = Unit.objects.filter(tenant=tenant).order_by('unit_id_code')
@@ -323,11 +323,8 @@ def _adeudos_slice(tenant, period) -> dict:
         )
         period_debts = []
         for row in rows:
-            paid_bal = Decimal(str(row.get('paid_balance', row['paid'])))
-            adeudo_for_period = Decimal(str(row.get('adeudo_received_for_period', 0)))
-            effective_paid = paid_bal + adeudo_for_period
-            deficit = Decimal(str(row['charge'])) - effective_paid
-            if deficit > Decimal('0'):
+            deficit = row_period_deficit(row)
+            if deficit > Decimal('0.005'):
                 period_debts.append({
                     'period': row['period'],
                     'deficit': float(deficit),
@@ -1261,23 +1258,36 @@ def generate_closing_report_pdf(tenant, period, closed_period=None, generated_by
     story.append(Spacer(1, 10))
 
     # Composición + estatus
+    # Unificar conceptos de captura "…centavos…" con el ajuste automático de centavos.
+    def _is_centavos_ref_label(lab):
+        import unicodedata
+        n = unicodedata.normalize('NFD', str(lab or '').lower())
+        n = ''.join(c for c in n if unicodedata.category(c) != 'Mn')
+        return ('centavo' in n) and ('referenciad' in n or 'ajuste' in n)
+
     concept_segs = []
+    cents_from_concepts = 0.0
     for idx, (key, obj) in enumerate((data['conceptos'] or {}).items()):
         lab = (obj or {}).get('label') or key
         if lab in ('prevDebt', 'prev_debt'):
             lab = 'Cobranza de adeudo'
+        val = _f((obj or {}).get('total'))
+        if _is_centavos_ref_label(lab):
+            cents_from_concepts += val
+            continue
         concept_segs.append({
             'label': lab,
-            'value': _f((obj or {}).get('total')),
+            'value': val,
             'color': CONCEPT_PALETTE[idx % len(CONCEPT_PALETTE)],
         })
+    ing_centavos_total = _f(data['ing_ref']) + cents_from_concepts
     income_segs = [
         {'label': 'Mantenimiento', 'value': data['cobranza'], 'color': TEAL},
         {'label': 'Adelantos', 'value': data['ing_adelanto'], 'color': '#2dd4bf'},
         {'label': 'Cobranza de adeudo', 'value': data['ing_adeudo'], 'color': AMBER},
         *concept_segs,
         {'label': 'No identificados', 'value': data['ing_noid'], 'color': '#f59e0b'},
-        {'label': 'Ajustes de centavos', 'value': data['ing_ref'], 'color': '#64748b'},
+        {'label': 'Ingresos referenciados por centavos', 'value': ing_centavos_total, 'color': '#64748b'},
     ]
     dash = data['dash']
     paid = int(dash.get('paid_count') or 0)
@@ -1447,7 +1457,7 @@ def generate_closing_report_pdf(tenant, period, closed_period=None, generated_by
         ('Mantenimiento', rd.get('ingreso_mantenimiento')),
         ('Mantenimiento adelantado', rd.get('ingreso_maint_adelanto')),
         ('Cobranza de adeudo', rd.get('ingreso_adeudo')),
-        ('Ajustes de centavos / referenciados', rd.get('ingresos_referenciados')),
+        ('Ingresos referenciados por centavos', rd.get('ingresos_referenciados')),
     ]
     for _k, obj in (rd.get('ingresos_conceptos') or {}).items():
         ing_pairs.append(((obj or {}).get('label') or _k, (obj or {}).get('total')))

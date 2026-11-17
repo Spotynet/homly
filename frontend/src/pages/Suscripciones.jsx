@@ -12,6 +12,8 @@ import toast from 'react-hot-toast';
 import SubscriptionReceiptModal from '../components/SubscriptionReceiptModal';
 import MembershipBillingNoteModal from '../components/MembershipBillingNote';
 import { APP_VERSION } from '../utils/helpers.jsx';
+import { useWorkspaceConfig } from '../context/WorkspaceConfigContext';
+import { groupModules } from '../constants/modulePermissions';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -76,44 +78,6 @@ function Modal({ title, onClose, children, wide = false }) {
 
 // ─── Plan Form ───────────────────────────────────────────────────────────────
 
-// All modules available in Homly. Key must match PATH_TO_MODULE in AppLayout.jsx.
-// NOTE: mi_membresia is always exempt from plan restrictions — not listed here.
-const SYSTEM_MODULES = [
-  { key: 'dashboard',       label: 'Dashboard',              desc: 'Vista general del condominio' },
-  { key: 'reservas',        label: 'Reservas',               desc: 'Reservas de áreas comunes' },
-  { key: 'notificaciones',  label: 'Notificaciones',         desc: 'Avisos y alertas internos' },
-  { key: 'onboarding',      label: 'Guías de uso',           desc: 'Tutoriales y guía de inicio' },
-  { key: 'cobranza',        label: 'Cobranza',               desc: 'Registro y seguimiento de cuotas' },
-  { key: 'gastos',          label: 'Gastos',                 desc: 'Control de egresos conciliados y en tránsito' },
-  { key: 'caja_chica',      label: 'Caja Chica',             desc: 'Registro de gastos menores de caja chica' },
-  { key: 'estado_cuenta',   label: 'Estado de Cuenta',       desc: 'Resumen financiero por unidad' },
-  { key: 'plan_pagos',      label: 'Plan de Pagos',          desc: 'Acuerdos de pago diferido' },
-  { key: 'cierre_periodo',  label: 'Cierre de Período',      desc: 'Cierre y reapertura de períodos' },
-  { key: 'planeacion',      label: 'Planeación',             desc: 'Presupuesto anual y proyectos del condominio' },
-  { key: 'asambleas',       label: 'Asambleas',               desc: 'Convocatorias, quórum, minutas e historial' },
-  { key: 'mantenimientos',  label: 'Mantenimientos',          desc: 'Preventivos, correctivos, evidencias e historial' },
-  { key: 'paqueteria',      label: 'Paquetería / Mensajería', desc: 'Recepción y entrega de paquetes en vigilancia' },
-  { key: 'visitas',         label: 'Visitas Autorizadas',     desc: 'Autorizaciones de visitas, QR e ingreso en caseta' },
-  { key: 'blog',            label: 'Comunicación',            desc: 'Publicaciones y comunicados para la comunidad' },
-  { key: 'config',          label: 'Configuración',          desc: 'Ajustes generales del condominio' },
-  { key: 'my_unit',         label: 'Mi Unidad',              desc: 'Vista individual para residentes' },
-];
-
-const RENTAS_MODULES = [
-  { key: 'rentas_dashboard',    label: 'Dashboard',     desc: 'Vista general de la inmobiliaria' },
-  { key: 'rentas_propiedades',  label: 'Propiedades',   desc: 'Catálogo de inmuebles en renta' },
-  { key: 'rentas_crm',          label: 'CRM de rentas', desc: 'Leads, pipeline y conversión a contrato' },
-  { key: 'rentas_contratos',    label: 'Contratos',     desc: 'Contratos y partes' },
-  { key: 'rentas_cobranza',     label: 'Cobranza',      desc: 'Cargos y pagos de rentas' },
-  { key: 'rentas_rentroll',     label: 'Rent Roll',     desc: 'Ocupación, renta in-place y vacancia' },
-  { key: 'rentas_calendario',   label: 'Calendario',      desc: 'Vencimientos y ocupación' },
-  { key: 'notificaciones',      label: 'Notificaciones',  desc: 'Avisos por correo y en la app' },
-  { key: 'rentas_config',       label: 'Configuración',   desc: 'Ajustes del espacio de rentas' },
-];
-
-const ALL_PLAN_MODULES = [...SYSTEM_MODULES, ...RENTAS_MODULES];
-const MODULES_BY_WS = { condominio: SYSTEM_MODULES, rentas: RENTAS_MODULES };
-
 const EMPTY_PLAN = {
   name: '', workspace_type: 'condominio', description: '', price_per_unit: '', currency: 'MXN',
   billing_cycle: 'monthly', annual_discount_percent: 0,
@@ -129,8 +93,13 @@ function PlanForm({ initial, onSave, onClose, saving }) {
     // Ensure allowed_modules is always an array (older plans may not have it)
     allowed_modules: Array.isArray(initial?.allowed_modules) ? initial.allowed_modules : [],
   }));
-  const planModules = MODULES_BY_WS[form.workspace_type] || SYSTEM_MODULES;
-  const unitNoun = form.workspace_type === 'rentas' ? 'propiedad' : 'unidad';
+  const { configs, byType, getCatalog, unitNoun: wsUnitNoun } = useWorkspaceConfig();
+  // Catálogo con los nombres personalizados; los módulos desactivados no se ofrecen
+  const planModules = getCatalog(form.workspace_type || 'condominio', { includeDisabled: false })
+    .filter(m => m.key !== 'mi_membresia' && m.key !== 'enviar_pago');
+  const planGroups = groupModules(planModules);
+  const unitNoun = wsUnitNoun(form.workspace_type || 'condominio');
+  const bundles = byType[form.workspace_type || 'condominio']?.module_bundles || [];
   const [newFeature, setNewFeature] = useState('');
   const [newTier, setNewTier] = useState({ min_units: '', max_units: '', price_per_unit: '' });
 
@@ -157,8 +126,10 @@ function PlanForm({ initial, onSave, onClose, saving }) {
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    const offered = new Set(planModules.map(m => m.key));
     const payload = {
       ...form,
+      allowed_modules: (form.allowed_modules || []).filter(k => offered.has(k)),
       price_per_unit: Number(form.price_per_unit) || 0,
       annual_discount_percent: Number(form.annual_discount_percent) || 0,
       trial_days: Number(form.trial_days) || 7,
@@ -182,7 +153,7 @@ function PlanForm({ initial, onSave, onClose, saving }) {
             value={form.workspace_type || 'condominio'}
             onChange={e => {
               const ws = e.target.value;
-              const allowed = new Set((MODULES_BY_WS[ws] || []).map(m => m.key));
+              const allowed = new Set(getCatalog(ws, { includeDisabled: false }).map(m => m.key));
               setForm(p => ({
                 ...p,
                 workspace_type: ws,
@@ -191,11 +162,15 @@ function PlanForm({ initial, onSave, onClose, saving }) {
             }}
             className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
           >
-            <option value="condominio">Administración de condominios</option>
-            <option value="rentas">Gestión de rentas</option>
+            {configs.map(c => (
+              <option key={c.workspace_type} value={c.workspace_type}
+                disabled={!c.is_enabled && c.workspace_type !== (initial?.workspace_type || 'condominio')}>
+                {c.label}{c.is_enabled ? '' : ' (desactivado)'}
+              </option>
+            ))}
           </select>
           <p className="text-xs text-slate-400 mt-1">
-            Los planes de condominios y de rentas se crean y asignan por separado.
+            Los planes de cada espacio de trabajo se crean y asignan por separado.
           </p>
         </div>
         <div className="col-span-2">
@@ -206,7 +181,7 @@ function PlanForm({ initial, onSave, onClose, saving }) {
         </div>
         <div>
           <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">
-            Precio por {form.workspace_type === 'rentas' ? 'Propiedad' : 'Unidad'}
+            Precio por <span className="capitalize">{unitNoun}</span>
           </label>
           <input type="number" min="0" step="0.01" value={form.price_per_unit} onChange={f('price_per_unit')} required
             className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" />
@@ -300,7 +275,7 @@ function PlanForm({ initial, onSave, onClose, saving }) {
           Tiers de Volumen (opcional)
         </label>
         <div className="grid grid-cols-3 gap-2 mb-2">
-          <input type="number" min="0" placeholder={form.workspace_type === 'rentas' ? 'Mín propiedades' : 'Mín unidades'} value={newTier.min_units}
+          <input type="number" min="0" placeholder={`Mín ${unitNoun}s`} value={newTier.min_units}
             onChange={e => setNewTier(p => ({ ...p, min_units: e.target.value }))}
             className="border border-slate-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-teal-500" />
           <input type="number" min="0" placeholder="Máx (vacío=∞)" value={newTier.max_units}
@@ -355,35 +330,70 @@ function PlanForm({ initial, onSave, onClose, saving }) {
         <p className="text-xs text-slate-400 mb-3">
           Deja todo sin marcar para incluir todos los módulos. Selecciona sólo los que quieres habilitar en este plan.
         </p>
+        {bundles.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 mb-3">
+            <span className="text-xs font-semibold text-slate-500">Aplicar paquete:</span>
+            {bundles.map(b => (
+              <button key={b.id} type="button"
+                onClick={() => setForm(p => ({
+                  ...p,
+                  allowed_modules: b.modules.filter(k => planModules.some(m => m.key === k)),
+                }))}
+                className="px-2.5 py-1 text-xs font-semibold rounded-full border border-teal-200 bg-teal-50 text-teal-800 hover:bg-teal-100">
+                {b.name} · {b.modules.filter(k => planModules.some(m => m.key === k)).length}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="grid grid-cols-1 gap-1.5">
-          {planModules.map(mod => {
-            const checked = form.allowed_modules.includes(mod.key);
-            const toggle  = () => setForm(p => ({
+          {planGroups.map(group => {
+            const keys = group.items.map(m => m.key);
+            const allOn = keys.every(k => form.allowed_modules.includes(k));
+            const toggleGroup = () => setForm(p => ({
               ...p,
-              allowed_modules: checked
-                ? p.allowed_modules.filter(k => k !== mod.key)
-                : [...p.allowed_modules, mod.key],
+              allowed_modules: allOn
+                ? p.allowed_modules.filter(k => !keys.includes(k))
+                : [...new Set([...p.allowed_modules, ...keys])],
             }));
             return (
-              <label
-                key={mod.key}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border cursor-pointer transition-colors ${
-                  checked
-                    ? 'border-teal-300 bg-teal-50'
-                    : 'border-slate-200 bg-white hover:bg-slate-50'
-                }`}
-              >
-                <input
-                  type="checkbox" checked={checked} onChange={toggle}
-                  className="w-4 h-4 accent-teal-600 flex-shrink-0"
-                />
-                <div className="min-w-0">
-                  <span className={`text-sm font-semibold ${checked ? 'text-teal-800' : 'text-slate-700'}`}>
-                    {mod.label}
-                  </span>
-                  <span className="text-xs text-slate-400 ml-2">{mod.desc}</span>
+              <div key={group.id}>
+                <div className="flex items-center justify-between mt-3 mb-1 px-1">
+                  <span className="text-[11px] font-extrabold uppercase tracking-wider text-teal-700">{group.label}</span>
+                  <button type="button" onClick={toggleGroup} className="text-[11px] text-slate-400 hover:text-teal-700">
+                    {allOn ? 'Quitar grupo' : 'Marcar grupo'}
+                  </button>
                 </div>
-              </label>
+                {group.items.map(mod => {
+                  const checked = form.allowed_modules.includes(mod.key);
+                  const toggle  = () => setForm(p => ({
+                    ...p,
+                    allowed_modules: checked
+                      ? p.allowed_modules.filter(k => k !== mod.key)
+                      : [...p.allowed_modules, mod.key],
+                  }));
+                  return (
+                    <label
+                      key={mod.key}
+                      className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border cursor-pointer transition-colors mb-1.5 ${
+                        checked
+                          ? 'border-teal-300 bg-teal-50'
+                          : 'border-slate-200 bg-white hover:bg-slate-50'
+                      }`}
+                    >
+                      <input
+                        type="checkbox" checked={checked} onChange={toggle}
+                        className="w-4 h-4 accent-teal-600 flex-shrink-0"
+                      />
+                      <div className="min-w-0">
+                        <span className={`text-sm font-semibold ${checked ? 'text-teal-800' : 'text-slate-700'}`}>
+                          {mod.label}
+                        </span>
+                        <span className="text-xs text-slate-400 ml-2">{mod.desc}</span>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
             );
           })}
         </div>
@@ -415,6 +425,7 @@ function PlanForm({ initial, onSave, onClose, saving }) {
 // ─── Tab: Planes ─────────────────────────────────────────────────────────────
 
 function TabPlanes() {
+  const { wsShort, getCatalog } = useWorkspaceConfig();
   const [plans, setPlans] = useState([]);
   const [wsFilter, setWsFilter] = useState('all');
   const [loading, setLoading] = useState(true);
@@ -529,7 +540,7 @@ function TabPlanes() {
                       ? 'bg-blue-100 text-blue-700'
                       : 'bg-teal-50 text-teal-700'
                   }`}>
-                    {(plan.workspace_type || 'condominio') === 'rentas' ? 'Rentas' : 'Condominio'}
+                    {wsShort(plan.workspace_type || 'condominio')}
                   </span>
                   <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${plan.is_active ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
                     {plan.is_active ? 'Activo' : 'Inactivo'}
@@ -591,7 +602,7 @@ function TabPlanes() {
                     <p className="text-xs font-semibold text-slate-500 mb-1.5">Módulos:</p>
                     <div className="flex flex-wrap gap-1">
                       {plan.allowed_modules.map(key => {
-                        const mod = ALL_PLAN_MODULES.find(m => m.key === key);
+                        const mod = getCatalog(plan.workspace_type || 'condominio').find(m => m.key === key);
                         return (
                           <span key={key}
                             className="px-2 py-0.5 bg-teal-50 text-teal-700 text-xs font-medium rounded-full border border-teal-200">
@@ -893,7 +904,15 @@ function TabSolicitudes() {
                     <div>
                       <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Condominio</p>
                       <p className="text-slate-700">{req.condominio_nombre}</p>
-                      <p className="text-xs text-slate-500">{req.condominio_tipo_admin} · {req.condominio_currency}</p>
+                      <p className="text-xs text-slate-500">
+                        {[
+                          !/^Interés: Rentas inmobiliarias/.test(req.mensaje || '') &&
+                            ({ mesa_directiva: 'Mesa Directiva', administrador: 'Administrador Externo', comite: 'Comité' }[req.condominio_tipo_admin] || req.condominio_tipo_admin),
+                          req.propiedades_tipo_admin &&
+                            `Propiedades: ${({ propietario: 'Propietario', inmobiliaria: 'Inmobiliaria o administrador', operador: 'Operación y mantenimiento', corporativo: 'Fondo, desarrolladora o corporativo' }[req.propiedades_tipo_admin] || req.propiedades_tipo_admin)}`,
+                          req.condominio_currency,
+                        ].filter(Boolean).join(' · ')}
+                      </p>
                     </div>
                     <div>
                       <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Responsable</p>
@@ -1077,7 +1096,7 @@ function printKardexPDF({ cycles, sub, tenantData, adminName, adminEmail }) {
     try { return new Date(d + 'T00:00:00').toLocaleDateString('es-MX', { day:'2-digit', month:'short', year:'numeric' }); }
     catch { return d; }
   };
-  const logoUrl = window.location.origin + '/img/homly-full.png';
+  const logoUrl = window.location.origin + '/img/homly-full-r.png';
   const addrParts = [
     tenantData?.info_calle && [tenantData.info_calle, tenantData.info_num_externo].filter(Boolean).join(' #'),
     tenantData?.info_colonia,
@@ -1233,7 +1252,7 @@ function printKardexPDF({ cycles, sub, tenantData, adminName, adminEmail }) {
   </div>
   <div class="footer">
     <span>Generado: ${generatedAt}</span>
-    <span>Homly v${APP_VERSION} — Administración de condominios y gestión de rentas</span>
+    <span>Homly® v${APP_VERSION} — Administración de condominios y Administrar Propiedades</span>
   </div>
 </div></body></html>`;
   const w = window.open('', '_blank', 'width=1100,height=800');
@@ -2321,6 +2340,7 @@ function RowPanel({ sub, plans, onRefresh }) {
 // ─── New Subscription Modal ───────────────────────────────────────────────────
 
 function NewSubModal({ plans, onClose, onDone }) {
+  const { wsShort } = useWorkspaceConfig();
   const [allTenants,    setAllTenants]    = useState([]);
   const [existingIds,   setExistingIds]   = useState(new Set());
   const [loading,       setLoading]       = useState(true);
@@ -2468,7 +2488,7 @@ function NewSubModal({ plans, onClose, onDone }) {
                     <option value="">Selecciona un tenant…</option>
                     {available.map(t => (
                       <option key={t.id} value={t.id}>
-                        {t.name} · {(t.workspace_type || 'condominio') === 'rentas' ? 'Rentas' : 'Condominio'}{isResubscribe(t.id) ? ' — Reactivar suscripción' : ''}
+                        {t.name} · {wsShort(t.workspace_type || 'condominio')}{isResubscribe(t.id) ? ' — Reactivar suscripción' : ''}
                       </option>
                     ))}
                   </select>
@@ -2492,7 +2512,7 @@ function NewSubModal({ plans, onClose, onDone }) {
                       const t = allTenants.find(tn => String(tn.id) === String(form.tenant));
                       return (p.workspace_type || 'condominio') === (t?.workspace_type || 'condominio');
                     })
-                    .map(p => <option key={p.id} value={p.id}>{p.name}{(p.workspace_type || 'condominio') === 'rentas' ? ' · Rentas' : ''}</option>)}
+                    .map(p => <option key={p.id} value={p.id}>{p.name}{(p.workspace_type || 'condominio') === 'rentas' ? ` · ${wsShort('rentas')}` : ''}</option>)}
                 </select>
               </div>
               {/* Estado */}
@@ -2607,6 +2627,7 @@ function NewSubModal({ plans, onClose, onDone }) {
 // ─── Tab: Suscripciones ───────────────────────────────────────────────────────
 
 function TabSuscripciones() {
+  const { wsShort } = useWorkspaceConfig();
   const [subs,              setSubs]              = useState([]);
   const [plans,             setPlans]             = useState([]);
   const [loading,           setLoading]           = useState(true);
@@ -2773,7 +2794,7 @@ function TabSuscripciones() {
                         <p className={`text-xs font-semibold mt-0.5 ${
                           (sub.tenant_workspace_type || 'condominio') === 'rentas' ? 'text-blue-600' : 'text-teal-700'
                         }`}>
-                          {(sub.tenant_workspace_type || 'condominio') === 'rentas' ? 'Rentas' : 'Condominio'}
+                          {wsShort(sub.tenant_workspace_type || 'condominio')}
                         </p>
                       </td>
                       <td className="px-4 py-3 text-slate-600">{sub.plan_name || '—'}</td>

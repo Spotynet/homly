@@ -10,7 +10,7 @@ from rest_framework.response import Response
 from rest_framework import viewsets
 
 from .models import RentalLead, RentalLeadActivity, RentalParty, RentalContract, RentalProperty
-from .permissions import IsAdminTesOrContador
+from .rental_access import RentalAccess
 from .rental_serializers import (
     RentalLeadSerializer, RentalLeadActivitySerializer, RentalContractSerializer,
 )
@@ -57,7 +57,7 @@ class RentalLeadViewSet(_RentalTenantMixin, viewsets.ModelViewSet):
         'rental_property', 'party', 'contract', 'assigned_to', 'created_by',
     )
     serializer_class = RentalLeadSerializer
-    permission_classes = [IsAdminTesOrContador]
+    permission_classes = [RentalAccess('rentas_crm')]
 
     def get_queryset(self):
         qs = super().get_queryset().annotate(activities_count=Count('activities'))
@@ -171,10 +171,27 @@ class RentalLeadViewSet(_RentalTenantMixin, viewsets.ModelViewSet):
             return Response({'detail': 'La unidad no existe en este inventario.'}, status=400)
         if prop.status == 'inactiva':
             return Response({'detail': 'La unidad está inactiva.'}, status=400)
+        from .rental_mode import lease_block_reason
+        reason = lease_block_reason(prop, tenant)
+        if reason:
+            return Response({'detail': reason}, status=400)
 
-        busy = prop.contracts.exclude(status__in=('cancelado', 'finalizado', 'borrador')).exists()
-        if busy:
-            return Response({'detail': 'La unidad ya tiene un contrato vigente.'}, status=400)
+        space = None
+        if prop.tenancy_model == 'multi':
+            from .models import RentalSpace
+            from .rental_spaces import live_contracts
+            try:
+                space = RentalSpace.objects.get(id=request.data.get('space'), property=prop)
+            except Exception:
+                return Response({'detail': f'{prop.code} es Multi Tenant: elige el espacio que se va a rentar.'}, status=400)
+            if not space.is_active or not space.is_leasable:
+                return Response({'detail': 'Este espacio no está disponible para renta.'}, status=400)
+            if live_contracts(space):
+                return Response({'detail': 'El espacio ya tiene un contrato vigente.'}, status=400)
+        else:
+            busy = prop.contracts.exclude(status__in=('cancelado', 'finalizado', 'borrador')).exists()
+            if busy:
+                return Response({'detail': 'La unidad ya tiene un contrato vigente.'}, status=400)
 
         start = request.data.get('start_date') or (
             str(lead.expected_start) if lead.expected_start else str(date.today())
@@ -196,7 +213,7 @@ class RentalLeadViewSet(_RentalTenantMixin, viewsets.ModelViewSet):
 
         rent = _as_decimal(
             request.data.get('rent_amount'),
-            str(lead.interested_rent or prop.suggested_rent or 0),
+            str(lead.interested_rent or (space.suggested_rent if space else prop.suggested_rent) or 0),
         )
         deposit = _as_decimal(request.data.get('deposit_amount'), str(rent))
         payment_day = int(request.data.get('payment_day') or 1)
@@ -239,7 +256,10 @@ class RentalLeadViewSet(_RentalTenantMixin, viewsets.ModelViewSet):
 
             contract = RentalContract.objects.create(
                 tenant=tenant,
+                kind='renta',
+                title='Contrato de arrendamiento de inmueble',
                 property=prop,
+                space=space,
                 tenant_party=party,
                 code=code,
                 start_date=start_d,
@@ -255,7 +275,7 @@ class RentalLeadViewSet(_RentalTenantMixin, viewsets.ModelViewSet):
                 contract.save(update_fields=['status', 'updated_at'])
                 contract.refresh_lifecycle_status()
             _sync_property_occupancy(prop)
-            if not activate and prop.status == 'disponible':
+            if not activate and prop.status == 'disponible' and not space:
                 prop.status = 'reservada'
                 prop.save(update_fields=['status', 'updated_at'])
 

@@ -106,6 +106,8 @@ _NOTIF_MODULE_MAP = {
     'rental_airbnb_imported':     'rentas_propiedades',
     'rental_airbnb_synced':       'rentas_propiedades',
     'rental_airbnb_error':        'rentas_propiedades',
+    'rental_request_new':         'rentas_solicitudes',
+    'rental_work_overdue':        'rentas_mantenimiento',
     'assembly_notice':            'asambleas',
     'assembly_started':           'asambleas',
     'assembly_minute':            'asambleas',
@@ -127,6 +129,11 @@ def _role_has_module(module_perms, role, module_key):
     - Old format: { role: ['module1', 'module2', ...] }  (list of allowed modules)
     - New format: { role: { module_key: 'write'|'read'|'hidden' } }
     """
+    if module_key and module_key.startswith('rentas_'):
+        # Administrar Propiedades: cada perfil tiene su propia matriz de módulos
+        from .rental_access import RENTAL_ROLES, role_has_module
+        if role in RENTAL_ROLES:
+            return role_has_module(role, module_key, module_perms)
     if not module_perms:
         return True
     role_modules = module_perms.get(role)
@@ -173,7 +180,7 @@ def _notify_roles(tenant_id, roles, notif_type, title, message='', **extra_field
         Notification.objects.bulk_create(notifs)
     if recipients:
         tenant_name = tenant.name
-        workspace_label = 'Inmobiliaria' if getattr(tenant, 'workspace_type', '') == 'rentas' else 'Condominio'
+        workspace_label = 'Administrar Propiedades' if getattr(tenant, 'workspace_type', '') == 'rentas' else 'Condominio'
         def _send_all():
             for email, user_name in recipients:
                 send_notification_email(
@@ -431,7 +438,7 @@ class LoginView(APIView):
             'role': role,
             'tenant_id': str(tenant.id) if tenant else None,
             'tenant_name': tenant.name if tenant else None,
-            'workspace_type': tenant.workspace_type if tenant else None,
+            'workspace_type': (tenant.workspace_type if tenant else ('sistema' if user.is_super_admin else None)),
             'must_change_password': user.must_change_password,
             'profile_id': profile_id or '',
             # System staff fields — null for regular tenant users
@@ -529,7 +536,7 @@ class LoginWithCodeView(APIView):
             'role': role,
             'tenant_id': str(tenant.id) if tenant else None,
             'tenant_name': tenant.name if tenant else None,
-            'workspace_type': tenant.workspace_type if tenant else None,
+            'workspace_type': (tenant.workspace_type if tenant else ('sistema' if user.is_super_admin else None)),
             'must_change_password': False,  # Code-only: never prompt for password
             'profile_id': profile_id or '',
             'system_role': user.system_role,
@@ -559,17 +566,56 @@ class CheckEmailView(APIView):
         return Response({'exists': True})
 
 
+def _tenant_switcher_payload(tenant):
+    """Payload compacto del selector de espacio de trabajo."""
+    return {
+        'id': str(tenant.id),
+        'name': tenant.name,
+        'workspace_type': tenant.workspace_type or 'condominio',
+        'is_active': bool(tenant.is_active),
+        'hibernated': bool(tenant.hibernated),
+        'logo': tenant.logo or '',
+    }
+
+
 class SwitchTenantView(APIView):
-    """POST /api/auth/switch-tenant/ — Issue a new JWT for a different tenant."""
+    """POST /api/auth/switch-tenant/ — Issue a new JWT for a different tenant.
+
+    Superadmin: también acepta tenant_id vacío / null / '__sistema__' para entrar
+    al espacio virtual «Súper Admin» (sin tenant; solo módulos de Sistema).
+    """
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
         tenant_id = request.data.get('tenant_id')
-        if not tenant_id:
-            return Response({'detail': 'tenant_id requerido.'}, status=400)
         user = request.user
         profile_id = ''
+
+        # ── Espacio virtual Súper Admin (sin tenant) ─────────────────────────
+        if tenant_id in (None, '', '__sistema__', 'sistema'):
+            if not user.is_super_admin:
+                return Response({'detail': 'tenant_id requerido.'}, status=400)
+            refresh = RefreshToken.for_user(user)
+            refresh['role'] = 'superadmin'
+            # Sin claim tenant_id → sesión de sistema
+            response = Response({
+                'access':               str(refresh.access_token),
+                'user':                 UserSerializer(user).data,
+                'role':                 'superadmin',
+                'tenant_id':            None,
+                'tenant_name':          None,
+                'workspace_type':       'sistema',
+                'must_change_password': user.must_change_password,
+                'profile_id':           '',
+                'system_role':          user.system_role,
+                'system_permissions':   user.system_permissions if user.system_role else {},
+                'allowed_tenant_ids':   user.allowed_tenant_ids if user.system_role else [],
+            })
+            _set_refresh_cookie(response, refresh)
+            return response
+
         if user.is_super_admin:
+            # Superadmin navega a cualquier tenant (activo, inactivo o hibernado).
             try:
                 tenant = Tenant.objects.get(id=tenant_id)
             except Tenant.DoesNotExist:
@@ -583,6 +629,11 @@ class SwitchTenantView(APIView):
             except TenantUser.DoesNotExist:
                 return Response({'detail': 'No tienes acceso a este condominio.'}, status=403)
             tenant     = tu.tenant
+            if not tenant.is_active or tenant.hibernated:
+                return Response(
+                    {'detail': 'Este espacio no está activo. Contacta al administrador.'},
+                    status=403,
+                )
             role       = tu.role
             profile_id = tu.profile_id or ''
         refresh = RefreshToken.for_user(user)
@@ -608,26 +659,25 @@ class SwitchTenantView(APIView):
 
 
 class UserTenantsView(APIView):
-    """GET /api/auth/my-tenants/ — Return all tenants the authenticated user belongs to."""
+    """GET /api/auth/my-tenants/ — Tenants del selector de espacio de trabajo.
+
+    - Superadmin: todos los tenants (cualquier espacio) + usará el ítem virtual
+      «Súper Admin» en el frontend.
+    - Usuario normal: solo tenants de su membresía que estén activos y no hibernados.
+    """
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
         user = request.user
         if user.is_super_admin:
-            tenants = Tenant.objects.all().values('id', 'name', 'workspace_type')
-            return Response([
-                {'id': str(t['id']), 'name': t['name'], 'workspace_type': t['workspace_type']}
-                for t in tenants
-            ])
-        qs = TenantUser.objects.filter(user=user).select_related('tenant')
-        return Response([
-            {
-                'id': str(tu.tenant.id),
-                'name': tu.tenant.name,
-                'workspace_type': tu.tenant.workspace_type,
-            }
-            for tu in qs
-        ])
+            tenants = Tenant.objects.all().order_by('workspace_type', 'name')
+            return Response([_tenant_switcher_payload(t) for t in tenants])
+        qs = (
+            TenantUser.objects.filter(user=user, tenant__is_active=True, tenant__hibernated=False)
+            .select_related('tenant')
+            .order_by('tenant__workspace_type', 'tenant__name')
+        )
+        return Response([_tenant_switcher_payload(tu.tenant) for tu in qs])
 
 
 class ProtectedMediaView(APIView):
@@ -839,6 +889,11 @@ class TenantViewSet(viewsets.ModelViewSet):
         return qs
 
     def perform_create(self, serializer):
+        from .models import WorkspaceConfig
+        ws = serializer.validated_data.get('workspace_type', 'condominio')
+        if not WorkspaceConfig.is_workspace_enabled(ws):
+            from rest_framework.exceptions import ValidationError
+            raise ValidationError({'workspace_type': 'Este espacio de trabajo está desactivado en la configuración del sistema.'})
         obj = serializer.save()
         if obj.workspace_type == 'rentas':
             from .rental_views import _ensure_default_concepts
@@ -1645,6 +1700,7 @@ class TenantUserViewSet(viewsets.ModelViewSet):
             tenant_name=tenant.name,
             role=tenant_user.role,
             unit_name=unit_name,
+            workspace_type=tenant.workspace_type,
         )
         if success:
             return Response({'detail': 'Invitación enviada correctamente.'}, status=status.HTTP_200_OK)
@@ -1652,9 +1708,23 @@ class TenantUserViewSet(viewsets.ModelViewSet):
 
 
 class UserCreateView(generics.CreateAPIView):
-    """POST /api/users/"""
+    """POST /api/users/ — solo superadmin o administrador del espacio destino."""
     serializer_class = UserCreateSerializer
     permission_classes = [permissions.IsAuthenticated]
+
+    def create(self, request, *args, **kwargs):
+        user = request.user
+        if not getattr(user, 'is_super_admin', False):
+            tenant_id = request.data.get('tenant_id')
+            allowed = False
+            if tenant_id:
+                try:
+                    allowed = TenantUser.objects.filter(user=user, tenant_id=tenant_id, role='admin').exists()
+                except Exception:
+                    allowed = False
+            if not allowed:
+                return Response({'detail': 'Solo el administrador puede agregar usuarios a este espacio.'}, status=status.HTTP_403_FORBIDDEN)
+        return super().create(request, *args, **kwargs)
 
 
 # ═══════════════════════════════════════════════════════════
@@ -2516,15 +2586,69 @@ class BankStatementViewSet(viewsets.ModelViewSet):
 
     @staticmethod
     def _is_pdf_upload(name, content_type, raw):
-        n = (name or '').lower()
-        ctype = (content_type or '').lower()
+        n = (name or '').lower().strip()
+        ctype = (content_type or '').lower().strip()
         if n.endswith('.pdf'):
             return True
-        if 'pdf' in ctype:
+        if 'pdf' in ctype or ctype in (
+            'application/acrobat',
+            'application/vnd.adobe.pdf',
+            'application/octet-stream',
+            'application/force-download',
+            'application/x-download',
+            'binary/octet-stream',
+        ):
+            # octet-stream / force-download: aceptar solo si el contenido es PDF real
+            if ctype in (
+                'application/octet-stream',
+                'application/force-download',
+                'application/x-download',
+                'binary/octet-stream',
+            ):
+                return bool(raw and raw[:5] == b'%PDF-')
             return True
         if raw and raw[:5] == b'%PDF-':
             return True
         return False
+
+    @staticmethod
+    def _pdf_bytes(obj):
+        """Lee el PDF desde statement_file o, en legado, desde file_data Base64."""
+        sf = getattr(obj, 'statement_file', None)
+        if sf and getattr(sf, 'name', ''):
+            try:
+                sf.open('rb')
+                try:
+                    return sf.read()
+                finally:
+                    sf.close()
+            except Exception:
+                logger.exception('No se pudo leer statement_file %s', obj.id)
+        raw_b64 = (obj.file_data or '').strip()
+        if not raw_b64:
+            return None
+        try:
+            if ',' in raw_b64 and raw_b64.lower().startswith('data:'):
+                raw_b64 = raw_b64.split(',', 1)[1]
+            return base64.b64decode(raw_b64)
+        except Exception:
+            logger.exception('file_data inválido bank statement %s', obj.id)
+            return None
+
+    @action(detail=True, methods=['get'], url_path='file')
+    def download_file(self, request, tenant_id=None, pk=None):
+        """GET .../bank-statements/{id}/file/ — PDF binario para el visor."""
+        obj = self.get_object()
+        pdf_bytes = self._pdf_bytes(obj)
+        if not pdf_bytes:
+            return Response({'detail': 'No hay archivo para este estado bancario.'}, status=404)
+        filename = f'estado-bancario-{obj.period}.pdf'
+        response = HttpResponse(pdf_bytes, content_type='application/pdf')
+        disposition = 'inline' if request.query_params.get('download') != '1' else 'attachment'
+        response['Content-Disposition'] = f'{disposition}; filename="{filename}"'
+        response['Content-Length'] = str(len(pdf_bytes))
+        response['Cache-Control'] = 'private, max-age=120'
+        return response
 
     def create(self, request, *args, **kwargs):
         """Upsert: if a statement already exists for this period, replace it."""
@@ -2541,16 +2665,21 @@ class BankStatementViewSet(viewsets.ModelViewSet):
             raw = upload.read()
             if not self._is_pdf_upload(getattr(upload, 'name', ''), getattr(upload, 'content_type', ''), raw):
                 return Response({'detail': 'Solo se permiten archivos PDF.'}, status=status.HTTP_400_BAD_REQUEST)
+            # Mantener file_data solo como respaldo legado (el visor usa /file/)
             file_data = base64.b64encode(raw).decode('ascii')
             upload.seek(0)
 
-        if not file_data:
+        if not file_data and not upload:
             return Response({'detail': 'Adjunta un archivo PDF.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        defaults = {}
+        if file_data:
+            defaults['file_data'] = file_data
 
         obj, created = BankStatement.objects.update_or_create(
             tenant_id=tenant_id,
             period=period,
-            defaults={'file_data': file_data},
+            defaults=defaults,
         )
         if upload:
             try:
@@ -4433,7 +4562,7 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
         try:
             page     = max(1, int(request.query_params.get('page', 1)))
             per_page = max(10, min(200, int(request.query_params.get('per_page', 50))))
-        except (ValueError, TypeError):
+        except Exception:
             page, per_page = 1, 50
         offset  = (page - 1) * per_page
         sliced  = qs[offset: offset + per_page]
@@ -4939,6 +5068,20 @@ def _has_admin_exempt(tenant, unit_id, period):
 _NO_PREFETCH = object()
 
 
+def row_period_deficit(row):
+    """Déficit real de un período del estado de cuenta (ver _compute_statement).
+
+    Única forma correcta de saber cuánto falta por pagar de un mes: no usar charge - paid,
+    porque 'paid' incluye abonos que el recibo del mes aplicó a períodos anteriores.
+    Cae al cálculo anterior solo si la fila no trae el campo (datos en caché antiguos).
+    """
+    if row.get('period_deficit') is not None:
+        return Decimal(str(row['period_deficit']))
+    paid_bal = Decimal(str(row.get('paid_balance', row.get('paid', 0))))
+    credit = Decimal(str(row.get('adeudo_received_for_period', 0)))
+    return max(Decimal('0'), Decimal(str(row.get('charge', 0))) - paid_bal - credit)
+
+
 def _compute_statement(tenant, unit_id, start_period, cutoff_period, _prefetched_plan=_NO_PREFETCH):
     """
     Replicate HTML computeStatement logic.
@@ -5363,8 +5506,19 @@ def _compute_statement(tenant, unit_id, start_period, cutoff_period, _prefetched
                     _is_late_payment = True
                     eff_status = 'pagado_despues'
 
+        # Déficit REAL del período (fuente única para toda la cobranza):
+        # lo que le falta cubrir al cargo de ESTE período, sin contar el dinero que su recibo
+        # aplicó a períodos anteriores (adeudo_recv_spec) y sumando los abonos de adeudo que
+        # otros recibos posteriores destinaron a este período (_adeudo_credit).
+        # charge-paid NO sirve: 'paid' incluye lo aplicado a otros meses, por lo que un mes
+        # sin pagar puede verse "cubierto" (p. ej. recibo de septiembre que solo abonó a agosto).
+        _period_deficit = max(Decimal('0'), saldo_periodo + adeudo_recv_spec - _adeudo_credit)
+        if eff_status in ('exento', 'liquidado'):
+            _period_deficit = Decimal('0')
+
         rows.append({
             'period': period,
+            'period_deficit': float(_period_deficit),
             'charge': float(cargo_total),
             'paid': float(abono_display),   # Muestra todos los pagos recibidos en la columna Abonos
             'paid_balance': float(abono_balance),  # Solo para cálculo de balance (no expuesto al frontend)
@@ -5553,6 +5707,7 @@ class EstadoCuentaView(APIView):
                 'payment_type': r.get('payment_type'),
                 'payment_date': r.get('payment_date'),
                 'saldo_accum': str(r['saldo_accum']),
+                'period_deficit': r.get('period_deficit'),
                 'pay': r.get('pay'),
                 'field_detail': r.get('field_detail', []),
                 'cross_unit_payment': r.get('cross_unit_payment'),
@@ -5617,7 +5772,7 @@ def _build_unit_analysis(tenant, unit, start_period, cutoff):
     for r in relevant:
         charge = float(r.get('charge') or 0)
         paid_amt = float(r.get('paid') or 0)
-        deficit = max(0.0, charge - paid_amt)
+        deficit = float(row_period_deficit(r))
         if deficit > 0.01:
             overdue_items.append({
                 'period': r.get('period'),
@@ -6166,16 +6321,14 @@ class ReporteAdeudosView(APIView):
             # fue marcado como destino a ESTE período.
             period_debts = []
             for row in rows:
-                paid_bal = Decimal(str(row.get('paid_balance', row['paid'])))
-                adeudo_for_period = Decimal(str(row.get('adeudo_received_for_period', 0)))
-                effective_paid = paid_bal + adeudo_for_period
-                deficit = Decimal(str(row['charge'])) - effective_paid
-                if deficit > Decimal('0'):
+                deficit = row_period_deficit(row)
+                effective_paid = Decimal(str(row['charge'])) - deficit
+                if deficit > Decimal('0.005'):
                     period_debts.append({
                         'period': row['period'],
                         'charge': float(row['charge']),
                         'paid': float(row['paid']),               # display (incluye neutros)
-                        'paid_balance': float(effective_paid),    # para cálculo: paid + adeudo dirigido
+                        'paid_balance': float(effective_paid),    # cargo - déficit real del período
                         'deficit': float(deficit),
                         'status': row['status'],
                         'maintenance': float(row['maintenance']),
@@ -8127,9 +8280,9 @@ class TenantSubscriptionViewSet(viewsets.ModelViewSet):
         plan_name    = plan.name if plan else '—'
         tenant_name  = tenant.name or '—'
         is_rentas    = (getattr(tenant, 'workspace_type', 'condominio') or 'condominio') == 'rentas'
-        space_noun   = 'inmobiliaria' if is_rentas else 'condominio'
-        brand_line   = 'Sistema de gestión de rentas' if is_rentas else 'Sistema de administración de condominios'
-        client_label = 'Cliente / Inmobiliaria' if is_rentas else 'Cliente / Condominio'
+        space_noun   = 'portafolio' if is_rentas else 'condominio'
+        brand_line   = 'Administrar Propiedades' if is_rentas else 'Sistema de administración de condominios'
+        client_label = 'Cliente / Propiedades' if is_rentas else 'Cliente / Condominio'
         tenant_rfc   = getattr(tenant, 'rfc', '') or ''
         tenant_addr_parts = [
             getattr(tenant, 'info_calle', '') or '',
@@ -9518,6 +9671,90 @@ class ClosingReportView(APIView):
 
         safe = (tenant.name or 'condominio')[:40].replace(' ', '_')
         filename = f'Cierre_{period}_{safe}.pdf'
+        response = HttpResponse(pdf_bytes, content_type='application/pdf')
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        return response
+
+
+
+# ═══════════════════════════════════════════════════════════
+#  EXPEDIENTE DE PERÍODOS — catálogo y documentos de respaldo
+# ═══════════════════════════════════════════════════════════
+
+class PeriodExpedienteView(APIView):
+    """GET /api/tenants/{tenant_id}/period-expediente/?period=YYYY-MM
+
+    Catálogo de documentos financieros del período (grupo Finanzas).
+    Lectura: admin, tesorero, contador, auditor y superadmin.
+    """
+    permission_classes = [IsAdminTesOrContador]
+
+    def get(self, request, tenant_id):
+        period = request.query_params.get('period') or _today_period()
+        try:
+            tenant = Tenant.objects.get(id=tenant_id)
+        except Tenant.DoesNotExist:
+            return Response({'detail': 'Condominio no encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+        start = (tenant.operation_start_date or '').strip()
+        if start and period < start:
+            return Response(
+                {'detail': f'El período es anterior al inicio de operaciones ({start}).'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        from .period_expediente import build_expediente_catalog
+        try:
+            return Response(build_expediente_catalog(tenant, period))
+        except Exception:
+            logger.exception('Error armando expediente %s tenant %s', period, tenant_id)
+            return Response({'detail': 'No se pudo armar el expediente del período.'}, status=500)
+
+
+class PeriodExpedienteDocView(APIView):
+    """GET /api/tenants/{tenant_id}/period-expediente-doc/?period=YYYY-MM&doc=<key>
+
+    Descarga PDF (o el estado bancario cargado) de un documento del expediente.
+    """
+    permission_classes = [IsAdminTesOrContador]
+
+    def get(self, request, tenant_id):
+        period = request.query_params.get('period') or _today_period()
+        doc_key = (request.query_params.get('doc') or '').strip()
+        if not doc_key:
+            return Response({'detail': 'Indica el documento (doc=...).'}, status=400)
+        try:
+            tenant = Tenant.objects.get(id=tenant_id)
+        except Tenant.DoesNotExist:
+            return Response({'detail': 'Condominio no encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+        start = (tenant.operation_start_date or '').strip()
+        if start and period < start:
+            return Response(
+                {'detail': f'El período es anterior al inicio de operaciones ({start}).'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        generated_by = (
+            (getattr(request.user, 'name', None) or '').strip()
+            or (getattr(request.user, 'email', None) or '').strip()
+            or '—'
+        )
+        from .period_expediente import generate_expediente_doc_pdf, DOC_DEFS
+        try:
+            pdf_bytes = generate_expediente_doc_pdf(
+                tenant, period, doc_key, generated_by=generated_by,
+            )
+        except ValueError as e:
+            return Response({'detail': str(e)}, status=400)
+        except Exception:
+            logger.exception('Error generando doc expediente %s %s', doc_key, period)
+            return Response({'detail': 'No se pudo generar el documento.'}, status=500)
+
+        if not pdf_bytes:
+            return Response({'detail': 'ReportLab no está instalado en el servidor.'}, status=500)
+
+        title = next((d['title'] for d in DOC_DEFS if d['key'] == doc_key), doc_key)
+        safe_t = (tenant.name or 'condominio')[:36].replace(' ', '_')
+        safe_title = ''.join(c if c.isalnum() or c in '-_' else '_' for c in title)[:40]
+        filename = f'{safe_title}_{period}_{safe_t}.pdf'
         response = HttpResponse(pdf_bytes, content_type='application/pdf')
         response['Content-Disposition'] = f'attachment; filename="{filename}"'
         return response

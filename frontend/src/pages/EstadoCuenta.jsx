@@ -6,7 +6,7 @@ import PaginationBar from '../components/PaginationBar';
 import PaymentReceiptModal from '../components/PaymentReceiptModal';
 import SendEmailModal from '../components/SendEmailModal';
 import UnitStatementAnalysisModal from '../components/UnitStatementAnalysisModal';
-import { statusClass, statusLabel, fmtDate, periodLabel, todayPeriod, prevPeriod, nextPeriod, ROLES, isPdfFile } from '../utils/helpers';
+import { statusClass, statusLabel, fmtDate, periodLabel, todayPeriod, prevPeriod, nextPeriod, ROLES, isPdfFile, PDF_FILE_ACCEPT } from '../utils/helpers';
 import { Search, ChevronLeft, ChevronRight, Building, Globe, DollarSign, ArrowDown, TrendingDown, AlertCircle, Calendar, Printer, ShoppingBag, FileText, Mail, X, Send, Download, Paperclip, Eye, Upload, BarChart3, Ban } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useQueryClient } from '@tanstack/react-query';
@@ -1608,7 +1608,8 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
 
   // ── Estados bancarios ──
   const [bankStatements, setBankStatements] = useState([]);
-  const [bankStmtViewer, setBankStmtViewer] = useState(null); // { period, dataUrl, uploadedAt }
+  // { period, id, blobUrl, uploadedAt, loading?, error? }
+  const [bankStmtViewer, setBankStmtViewer] = useState(null);
   const [bankUploading, setBankUploading] = useState(null);   // period en proceso de subida
 
   const bankStmtMap = useMemo(() => {
@@ -1617,12 +1618,63 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
     return m;
   }, [bankStatements]);
 
+  const closeBankStmtViewer = useCallback(() => {
+    setBankStmtViewer(prev => {
+      if (prev?.blobUrl) URL.revokeObjectURL(prev.blobUrl);
+      return null;
+    });
+  }, []);
+
+  const openBankStmtViewer = useCallback(async (stmt) => {
+    if (!stmt?.id || !tenantId) return;
+    // Revoca URL previa si había otra abierta
+    setBankStmtViewer(prev => {
+      if (prev?.blobUrl) URL.revokeObjectURL(prev.blobUrl);
+      return {
+        period: stmt.period,
+        id: stmt.id,
+        uploadedAt: stmt.uploaded_at,
+        blobUrl: null,
+        loading: true,
+        error: null,
+      };
+    });
+    try {
+      const res = await bankAPI.file(tenantId, stmt.id);
+      const blob = res.data instanceof Blob
+        ? res.data
+        : new Blob([res.data], { type: 'application/pdf' });
+      // Asegura MIME PDF aunque el proxy no lo marque
+      const pdfBlob = blob.type === 'application/pdf'
+        ? blob
+        : new Blob([blob], { type: 'application/pdf' });
+      const blobUrl = URL.createObjectURL(pdfBlob);
+      setBankStmtViewer(prev => {
+        if (!prev || prev.id !== stmt.id) {
+          URL.revokeObjectURL(blobUrl);
+          return prev;
+        }
+        return { ...prev, blobUrl, loading: false, error: null };
+      });
+    } catch (err) {
+      setBankStmtViewer(prev => {
+        if (!prev || prev.id !== stmt.id) return prev;
+        return {
+          ...prev,
+          loading: false,
+          error: err?.response?.data?.detail || 'No se pudo abrir el estado bancario',
+        };
+      });
+      toast.error('No se pudo abrir el estado bancario');
+    }
+  }, [tenantId]);
+
   const handleBankFileSelect = async (e, period) => {
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
     if (!isPdfFile(file)) {
-      toast.error('Solo se permiten archivos PDF');
+      toast.error('Solo se permiten archivos PDF (incluye estados de cuenta bancarios en PDF)');
       return;
     }
     if (file.size > 20 * 1024 * 1024) {
@@ -1635,10 +1687,16 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
       form.append('period', period);
       form.append('statement_file', file, file.name || `estado-bancario-${period}.pdf`);
       const res = await bankAPI.upload(tenantId, form);
-      setBankStatements(prev => [...prev.filter(s => s.period !== period), res.data]);
-      toast.success(`Estado bancario de ${periodLabel(period)} guardado`);
+      setBankStatements(prev => [...prev.filter(s => s.period !== period), { ...res.data, has_file: true }]);
+      toast.success(`Estado bancario de ${periodLabel(period)} guardado · disponible para Rita en Cobranza y Gastos`);
     } catch (err) {
-      toast.error(err?.response?.data?.detail || 'Error al subir el estado bancario');
+      const status = err?.response?.status;
+      const detail = err?.response?.data?.detail;
+      if (status === 413) {
+        toast.error('El archivo es demasiado grande para el servidor (máx. 25 MB).');
+      } else {
+        toast.error(typeof detail === 'string' ? detail : 'Error al subir el estado bancario');
+      }
     } finally {
       setBankUploading(null);
     }
@@ -1798,17 +1856,16 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
   return (
     <div className="content-fade">
 
-      {/* ── Modal visor de estado bancario ── */}
+      {/* ── Modal visor de estado bancario (blob URL, no Base64) ── */}
       {bankStmtViewer && (
         <div
           style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-          onClick={() => setBankStmtViewer(null)}
+          onClick={closeBankStmtViewer}
         >
           <div
             style={{ background: 'white', borderRadius: 14, width: '88vw', height: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.35)' }}
             onClick={e => e.stopPropagation()}
           >
-            {/* Header */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 18px', borderBottom: '1px solid var(--sand-100)', flexShrink: 0 }}>
               <FileText size={16} style={{ color: 'var(--teal-500)' }} />
               <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--ink-700)' }}>
@@ -1820,27 +1877,40 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
                 </span>
               )}
               <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-                <a
-                  href={bankStmtViewer.dataUrl}
-                  download={`estado-bancario-${bankStmtViewer.period}.pdf`}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--teal-600)', padding: '4px 10px', borderRadius: 6, border: '1px solid var(--teal-200)', textDecoration: 'none' }}
-                >
-                  <Download size={13} /> Descargar
-                </a>
+                {bankStmtViewer.blobUrl && (
+                  <a
+                    href={bankStmtViewer.blobUrl}
+                    download={`estado-bancario-${bankStmtViewer.period}.pdf`}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--teal-600)', padding: '4px 10px', borderRadius: 6, border: '1px solid var(--teal-200)', textDecoration: 'none' }}
+                  >
+                    <Download size={13} /> Descargar
+                  </a>
+                )}
                 <button
-                  onClick={() => setBankStmtViewer(null)}
+                  onClick={closeBankStmtViewer}
                   style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30, border: 'none', borderRadius: 8, background: 'var(--sand-100)', cursor: 'pointer', color: 'var(--ink-500)' }}
                 >
                   <X size={15} />
                 </button>
               </div>
             </div>
-            {/* PDF viewer */}
-            <iframe
-              src={bankStmtViewer.dataUrl}
-              title={`Estado Bancario ${bankStmtViewer.period}`}
-              style={{ flex: 1, border: 'none', borderRadius: '0 0 14px 14px' }}
-            />
+            {bankStmtViewer.loading && (
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--ink-400)', fontSize: 13 }}>
+                Cargando PDF…
+              </div>
+            )}
+            {bankStmtViewer.error && !bankStmtViewer.loading && (
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--coral-600)', fontSize: 13, padding: 24, textAlign: 'center' }}>
+                {bankStmtViewer.error}
+              </div>
+            )}
+            {bankStmtViewer.blobUrl && !bankStmtViewer.loading && (
+              <iframe
+                src={bankStmtViewer.blobUrl}
+                title={`Estado Bancario ${bankStmtViewer.period}`}
+                style={{ flex: 1, border: 'none', borderRadius: '0 0 14px 14px' }}
+              />
+            )}
           </div>
         </div>
       )}
@@ -2051,6 +2121,9 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
               {allPeriods.length} período(s) · {numUnits} unidades
             </span>
           </div>
+          <div style={{ padding: '8px 16px', fontSize: 12, color: 'var(--ink-500)', background: 'var(--teal-50)', borderBottom: '1px solid var(--teal-100)' }}>
+            El PDF de <b>Edo. Banco</b> se guarda una vez por período. Rita lo reutiliza en <b>Cobranza</b> (ingresos) y <b>Gastos</b> (egresos); también puedes subirlo desde Rita.
+          </div>
           <div className="table-wrap">
             <table>
               <thead>
@@ -2065,7 +2138,7 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
                   <th style={{ textAlign: 'right' }}>Gastos 🏦</th>
                   <th style={{ textAlign: 'right' }}>Gastos ⏳</th>
                   <th style={{ textAlign: 'right' }}>Balance</th>
-                  <th style={{ textAlign: 'center', width: 76 }}>Edo. Banco</th>
+                  <th style={{ textAlign: 'center', width: 90 }} title="PDF único del período · Rita lo usa en Cobranza y Gastos">Edo. Banco</th>
                 </tr>
                 <tr style={{ background: 'var(--sand-50)', fontSize: 10, color: 'var(--ink-400)' }}>
                   <td colSpan={1}></td>
@@ -2076,7 +2149,7 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
                   <td style={{ textAlign: 'right', paddingBottom: 4, color: 'var(--amber-700)' }}>Conciliados</td>
                   <td style={{ textAlign: 'right', paddingBottom: 4, color: 'var(--ink-400)' }}>En tránsito</td>
                   <td></td>
-                  <td></td>
+                  <td style={{ textAlign: 'center', paddingBottom: 4, fontSize: 9 }}>Rita</td>
                 </tr>
               </thead>
               <tbody>
@@ -2125,11 +2198,7 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
                             {bankStmtMap[row.period] && (
                               <button
                                 title="Ver estado bancario"
-                                onClick={() => setBankStmtViewer({
-                                  period: row.period,
-                                  dataUrl: `data:application/pdf;base64,${bankStmtMap[row.period].file_data}`,
-                                  uploadedAt: bankStmtMap[row.period].uploaded_at,
-                                })}
+                                onClick={() => openBankStmtViewer(bankStmtMap[row.period])}
                                 style={{
                                   display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                                   width: 28, height: 28, border: 'none', borderRadius: 6,
@@ -2160,7 +2229,7 @@ function EstadoGeneralView({ tenantId, tenantData, generalData, genLoading, cuto
                               }
                               <input
                                 type="file"
-                                accept=".pdf,.PDF,application/pdf,application/x-pdf"
+                                accept={PDF_FILE_ACCEPT}
                                 style={{ display: 'none' }}
                                 onChange={e => handleBankFileSelect(e, row.period)}
                               />

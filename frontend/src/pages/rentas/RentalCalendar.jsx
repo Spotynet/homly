@@ -3,7 +3,7 @@ import { useAuth } from '../../context/AuthContext';
 import { rentalAPI } from '../../api/client';
 import { CONTRACT_STATUS, fmtDate, fmtMoney, StatusPill } from './rentalUtils';
 
-export default function RentalCalendar() {
+export default function RentalCalendar({ embedded = false }) {
   const { tenantId } = useAuth();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -27,13 +27,13 @@ export default function RentalCalendar() {
 
   return (
     <div className="content-fade">
-      <div style={{ marginBottom: 16 }}>
+      {!embedded && <div style={{ marginBottom: 16 }}>
         <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', color: 'var(--teal-600)', textTransform: 'uppercase' }}>Supervisión</div>
         <h2 style={{ margin: '4px 0 0', fontSize: 22 }}>Vigencias de contratos</h2>
         <p style={{ color: 'var(--ink-400)', fontSize: 13, marginTop: 4 }}>
           Calendario de vida de los contratos y reservas sincronizadas de Airbnb.
         </p>
-      </div>
+      </div>}
 
       {loading ? (
         <div style={{ padding: 40, textAlign: 'center', color: 'var(--ink-400)' }}>Cargando vigencias…</div>

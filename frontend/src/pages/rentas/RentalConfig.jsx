@@ -1,27 +1,37 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { rentalAPI, tenantsAPI, usersAPI } from '../../api/client';
+import { rentalAPI, tenantsAPI } from '../../api/client';
 import { CURRENCIES, COUNTRIES, getStatesForCountry } from '../../utils/helpers';
 import toast from 'react-hot-toast';
 import AirbnbPanel from './AirbnbPanel';
+import RentalOpsSettings from './RentalOpsSettings';
+import RentalModeSettings from './RentalModeSettings';
+import RentalTeam from './RentalTeam';
+import { rentalOffModules } from '../../constants/modulePermissions';
 
 export default function RentalConfig() {
   const { tenantId } = useAuth();
   const [tab, setTab] = useState('general');
   const [form, setForm] = useState({});
   const [concepts, setConcepts] = useState([]);
-  const [users, setUsers] = useState([]);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (window.location.hash === '#airbnb') setTab('airbnb');
   }, []);
 
+  // Cuando cambia el modo de operación, refresca solo esos ajustes (sin perder lo que estés editando)
+  useEffect(() => {
+    if (!tenantId) return undefined;
+    const onChange = () => tenantsAPI.get(tenantId).then(r => setForm(f => ({ ...f, rental_settings: r.data?.rental_settings || {} }))).catch(() => {});
+    window.addEventListener('homly:tenant-settings-changed', onChange);
+    return () => window.removeEventListener('homly:tenant-settings-changed', onChange);
+  }, [tenantId]);
+
   useEffect(() => {
     if (!tenantId) return;
     tenantsAPI.get(tenantId).then(r => setForm(r.data || {}));
     rentalAPI.concepts.list(tenantId).then(r => setConcepts(r.data.results || r.data || []));
-    usersAPI.list(tenantId).then(r => setUsers(r.data.results || r.data || [])).catch(() => {});
   }, [tenantId]);
 
   const saveGeneral = async () => {
@@ -37,11 +47,12 @@ export default function RentalConfig() {
         info_calle: form.info_calle,
         info_ciudad: form.info_ciudad,
         rental_settings: {
+          ...(form.rental_settings || {}),
           payment_day: Number(form.rental_settings?.payment_day) || 1,
           expiry_alert_days: Number(form.rental_settings?.expiry_alert_days) || 45,
         },
       });
-      toast.success('Configuración de rentas guardada');
+      toast.success('Configuración guardada');
     } catch (e) {
       toast.error(e.response?.data?.detail || 'No se pudo guardar');
     } finally { setSaving(false); }
@@ -59,24 +70,28 @@ export default function RentalConfig() {
   };
 
   const countryStates = getStatesForCountry(form.country || '');
+  const offMods = rentalOffModules(form.rental_settings);
+  const leasingOn = form.rental_settings?.leasing_enabled !== false;
 
   return (
     <div className="content-fade">
       <div style={{ marginBottom: 16 }}>
         <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', color: 'var(--teal-600)', textTransform: 'uppercase' }}>Ajustes</div>
-        <h2 style={{ margin: '4px 0 0', fontSize: 22 }}>Configuración de rentas</h2>
+        <h2 style={{ margin: '4px 0 0', fontSize: 22 }}>Configuración</h2>
         <p style={{ color: 'var(--ink-400)', fontSize: 13, marginTop: 4 }}>
-          Independiente del espacio de condominios. Solo aplica a esta inmobiliaria.
+          Independiente del espacio de condominios. Solo aplica a Administrar Propiedades.
         </p>
       </div>
 
       <div className="tabs" style={{ marginBottom: 16 }}>
         {[
           ['general', 'General'],
+          ['modo', 'Modo de operación'],
+          ['operacion', 'Operación y SLA'],
           ['airbnb', 'Airbnb'],
           ['concepts', 'Conceptos de cobro'],
-          ['users', 'Usuarios'],
-        ].map(([k, label]) => (
+          ['users', 'Equipo y perfiles'],
+        ].filter(([k]) => (k === 'airbnb' ? leasingOn : k === 'concepts' ? !offMods.includes('rentas_cobranza') : true)).map(([k, label]) => (
           <button key={k} className={`tab ${tab === k ? 'active' : ''}`} onClick={() => setTab(k)}>{label}</button>
         ))}
       </div>
@@ -120,10 +135,12 @@ export default function RentalConfig() {
               <label className="field-label">RFC</label>
               <input className="field-input" value={form.rfc || ''} onChange={e => setForm({ ...form, rfc: e.target.value })} />
             </div>
+            {!offMods.includes('rentas_cobranza') && (
             <div className="field">
               <label className="field-label">Día de cobro por defecto</label>
               <input type="number" min={1} max={28} className="field-input" value={form.rental_settings?.payment_day || 1} onChange={e => setForm({ ...form, rental_settings: { ...(form.rental_settings || {}), payment_day: e.target.value } })} />
             </div>
+            )}
             <div className="field">
               <label className="field-label">Aviso de vencimiento (días)</label>
               <input type="number" className="field-input" value={form.rental_settings?.expiry_alert_days || 45} onChange={e => setForm({ ...form, rental_settings: { ...(form.rental_settings || {}), expiry_alert_days: e.target.value } })} />
@@ -134,6 +151,10 @@ export default function RentalConfig() {
           </div>
         </div>
       )}
+
+      {tab === 'modo' && <RentalModeSettings />}
+
+      {tab === 'operacion' && <RentalOpsSettings />}
 
       {tab === 'airbnb' && (
         <AirbnbPanel tenantId={tenantId} />
@@ -165,32 +186,7 @@ export default function RentalConfig() {
         </div>
       )}
 
-      {tab === 'users' && (
-        <div className="card">
-          <div className="card-head">
-            <h3>Usuarios de este espacio</h3>
-          </div>
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr><th>Nombre</th><th>Email</th><th>Rol</th></tr>
-              </thead>
-              <tbody>
-                {users.map(u => (
-                  <tr key={u.id}>
-                    <td>{u.user_name}</td>
-                    <td>{u.user_email}</td>
-                    <td>{u.role}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div style={{ padding: 14, fontSize: 12, color: 'var(--ink-400)' }}>
-            El superadmin asigna qué espacios (condominios y/o rentas) tiene cada administrador.
-          </div>
-        </div>
-      )}
+      {tab === 'users' && <RentalTeam />}
     </div>
   );
 }

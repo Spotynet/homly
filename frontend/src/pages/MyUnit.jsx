@@ -757,7 +757,8 @@ export default function MyUnit() {
                 </thead>
                 <tbody>
                   {periods.map((p, i) => {
-                    const rowBal = parseFloat(p.charge || 0) - parseFloat(p.paid || 0);
+                    // period_deficit (backend): faltante real del mes; charge - paid se infla con abonos a otros meses
+                    const rowBal = p.period_deficit != null ? parseFloat(p.period_deficit) : parseFloat(p.charge || 0) - parseFloat(p.paid || 0);
                     return (
                       <tr key={i} className={rowBal > 0.5 ? 'period-row-debt' : 'period-row-ok'}>
                         <td style={{ fontWeight: 700, fontSize: 13 }}>{periodLabel(p.period)}</td>

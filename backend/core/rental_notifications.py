@@ -12,7 +12,10 @@ from decimal import Decimal
 from .email_service import send_notification_email
 from .models import RentalLead, RentalPayment
 
-STAFF_ROLES = ('admin', 'tesorero', 'contador', 'auditor')
+from .rental_access import RENTAL_ROLES
+
+# Cada aviso llega solo a los perfiles que tienen el módulo correspondiente (ver `_NOTIF_MODULE_MAP`).
+STAFF_ROLES = RENTAL_ROLES
 
 STAGE_LABELS = dict(RentalLead.STAGE_CHOICES)
 PAY_TYPE_LABELS = dict(RentalPayment.PAYMENT_TYPE_CHOICES)
@@ -22,6 +25,7 @@ STATUS_LABELS = {
     'ocupada': 'Ocupada',
     'reservada': 'Reservada',
     'mantenimiento': 'En mantenimiento',
+    'operativa': 'En operación',
     'inactiva': 'Inactiva',
     'borrador': 'Borrador',
     'activo': 'Activo',
@@ -177,7 +181,8 @@ def _contract_details(contract):
         ('Inmueble', _prop_label(contract.property)),
         ('Inquilino', _party_name(contract.tenant_party)),
         ('Vigencia', f'{_date(contract.start_date)} — {_date(contract.end_date)}'),
-        ('Renta', _money(contract.rent_amount)),
+        ('Renta', _money(contract.effective_rent())),
+        ('Esquema', 'Variable' if contract.rent_scheme == 'variable' else 'Fija'),
         ('Estado', STATUS_LABELS.get(contract.status, contract.status)),
     ]
 
@@ -185,7 +190,7 @@ def _contract_details(contract):
 def _reload_contract(contract):
     from .models import RentalContract
     return RentalContract.objects.select_related(
-        'property', 'tenant_party', 'tenant',
+        'property', 'tenant_party', 'tenant', 'provider',
     ).get(pk=contract.pk)
 
 

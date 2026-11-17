@@ -1,45 +1,247 @@
 /**
  * guideCatalog.jsx
  * ─────────────────────────────────────────────────────────────────
- * Catálogo de capítulos de la Guía de Uso, agrupados por rol.
- * Cada capítulo tiene:
- *   - id, title, subtitle (descripción corta)
- *   - color, bg (acento visual)
- *   - icon (lucide component)
- *   - steps[] (pasos del modal GuideModal)
+ * Catálogo de la Guía de Uso — Homly Residencial (condominios).
  *
- * El rol 'admin' incluye además un capítulo especial tipo 'interactive'
- * que NO usa GuideModal sino el AdminConfigTour (tour interactivo
- * estilo Scribe que se lanza dentro de Configuración).
+ * Secciones:
+ *   mapa      → cómo se conectan los módulos (financiero + operativo)
+ *   admin     → configuración, operación, comunidad
+ *   tesorero  → cobranza, egresos, periodos y expediente
+ *   contador  → reportes, auditoría y cierre
+ *   vecino    → portal del residente
+ *   vigilante → caseta (paquetes y visitas)
+ *
+ * Cada capítulo (kind: 'modal' | 'interactive') alimenta GuideModal
+ * o el AdminConfigTour.
  */
-import React from 'react';
 import {
-  // Admin
   Settings, Sparkles, Users, Shield, Layers,
-  // Tesorero
   Receipt, DollarSign, Wallet, TrendingDown, FileText, Send,
-  // Contador
   ShoppingBag, BookOpen, Lock, ClipboardCheck, Vote,
-  // Residente
   Home, Calendar, Bell, UserCheck,
-  // Operación
   Package, Wrench, Newspaper, Camera, QrCode,
-  // Comunes
-  Building2, Globe, Mail, CheckCircle2,
+  Building2, Globe, Mail, CheckCircle2, FolderArchive,
+  LayoutDashboard, ArrowRightLeft, Link2,
 } from 'lucide-react';
 
+const tipConnect = (text) => text;
+
 // ═══════════════════════════════════════════════════════════════
-//  ADMIN — 4 capítulos
+//  MAPA — Cómo se conecta el condominio
+// ═══════════════════════════════════════════════════════════════
+const mapaChapters = [
+  {
+    id: 'mapa-overview',
+    kind: 'modal',
+    icon: LayoutDashboard,
+    color: 'var(--teal-500)',
+    bg: 'var(--teal-50)',
+    title: 'Vista rápida del menú',
+    subtitle: 'General · Operación · Comunidad · Finanzas · Ajustes',
+    length: '4 pasos',
+    steps: [
+      {
+        icon: LayoutDashboard, color: 'var(--teal-500)', bg: 'var(--teal-50)',
+        title: 'Los 5 grupos del menú',
+        subtitle: 'Todo tiene un lugar',
+        body:
+          'Homly Residencial organiza el trabajo en cinco grupos: General (Dashboard, Notificaciones y Guías), Operación (Reservas, Paquetería, Visitas y Mantenimientos), Comunidad (Comunicación y Asambleas), Finanzas (Cobranza, Gastos, Caja Chica, Estado de Cuenta, Plan de Pagos, Periodos y Planeación) y Ajustes (Membresía y Configuración). Solo ves lo que tu rol y el plan permiten.',
+        tips: [
+          'Si un módulo no aparece, puede estar apagado en Configuración → Permisos o fuera de tu rol.',
+          'Empieza por Configuración (unidades y cuotas) y luego Operación + Finanzas.',
+        ],
+        route: '/app/dashboard',
+      },
+      {
+        icon: ArrowRightLeft, color: 'var(--teal-500)', bg: 'var(--teal-50)',
+        title: 'Dos motores que trabajan juntos',
+        subtitle: 'Finanzas + Operación',
+        body:
+          'La parte financiera mueve dinero (cobrar cuotas, pagar gastos, cerrar el mes). La parte operativa cuida el día a día (visitas, paquetes, reservas, mantenimientos). Al final del mes, Periodos → Expediente junta ambos mundos en documentos listos para el comité.',
+        tips: [
+          tipConnect('Ejemplo: un mantenimiento puede generar un gasto; ese gasto aparece en el cierre y en el expediente.'),
+        ],
+      },
+      {
+        icon: Link2, color: 'var(--teal-500)', bg: 'var(--teal-50)',
+        title: 'Quién hace qué',
+        subtitle: 'Roles sin complicaciones',
+        body:
+          'Administrador configura y coordina. Tesorero cobra y registra egresos. Contador/auditor revisa y firma. Vigilante opera caseta (paquetes y visitas). Residente usa Mi Unidad, paga, reserva y autoriza visitas. Todos comparten la misma información; cambian los permisos.',
+      },
+      {
+        icon: CheckCircle2, color: 'var(--teal-500)', bg: 'var(--teal-50)',
+        title: 'Orden recomendado para empezar',
+        subtitle: 'De cero a operar',
+        body:
+          '1) Configuración: datos del condominio, unidades y cuotas. 2) Usuarios del equipo. 3) Cobranza del mes actual. 4) Paquetería y Visitas en caseta. 5) Comunicación a la comunidad. 6) Al terminar el mes: Periodos (cerrar + expediente).',
+        tips: ['Si el condominio ya opera, salta al capítulo de tu rol y practica con datos reales.'],
+        route: '/app/config',
+      },
+    ],
+  },
+  {
+    id: 'mapa-finanzas',
+    kind: 'modal',
+    icon: Wallet,
+    color: '#22c55e',
+    bg: '#dcfce7',
+    title: 'Ciclo financiero del mes',
+    subtitle: 'Cómo se conectan Cobranza, Gastos y Periodos',
+    length: '5 pasos',
+    steps: [
+      {
+        icon: Receipt, color: '#22c55e', bg: '#dcfce7',
+        title: '1. Entra el dinero — Cobranza',
+        subtitle: 'Pagos de mantenimiento y extras',
+        body:
+          'En Cobranza capturas cada pago por unidad y período. También llegan comprobantes desde Enviar pago (residentes). Cada folio alimenta el Estado de cuenta de la unidad y el resumen del mes en Periodos.',
+        tips: [
+          tipConnect('Se conecta con: Estado de Cuenta, Plan de Pagos, Enviar pago, Periodos → Expediente (ingresos).'),
+        ],
+        route: '/app/cobranza',
+      },
+      {
+        icon: TrendingDown, color: '#22c55e', bg: '#dcfce7',
+        title: '2. Adeudos — Plan de Pagos',
+        subtitle: 'Cuando una unidad se atrasa',
+        body:
+          'Si hay saldo pendiente, en Plan de Pagos propones mensualidades. Al aceptar el plan, los abonos de Cobranza se aplican a esas cuotas. El residente ve el mismo plan en su portal.',
+        tips: [tipConnect('Se conecta con: Cobranza (abonos), Estado de Cuenta (saldo), Notificaciones (propuesta).')],
+        route: '/app/plan-pagos',
+      },
+      {
+        icon: ShoppingBag, color: '#22c55e', bg: '#dcfce7',
+        title: '3. Sale el dinero — Gastos y Caja Chica',
+        subtitle: 'Egresos con evidencia',
+        body:
+          'Gastos registra egresos de cuenta bancaria (o vinculados a mantenimientos). Caja Chica es el fondo chico en efectivo. Ambos usan categorías contables y, al cerrar el mes, quedan congelados.',
+        tips: [tipConnect('Se conecta con: Mantenimientos (costos), Planeación (presupuesto), Periodos (egresos del expediente).')],
+        route: '/app/gastos',
+      },
+      {
+        icon: ClipboardCheck, color: '#22c55e', bg: '#dcfce7',
+        title: '4. Planeación',
+        subtitle: 'Lo presupuestado vs lo real',
+        body:
+          'En Planeación armas el presupuesto anual y proyectos. Conforme se registran gastos, ves cuánto llevas ejecutado. Sirve para asamblea y para no pasarte de rubro.',
+        tips: [tipConnect('Se conecta con: Gastos (ejecutado) y Asambleas (reportar avance).')],
+        route: '/app/planeacion',
+      },
+      {
+        icon: FolderArchive, color: '#22c55e', bg: '#dcfce7',
+        title: '5. Periodos y Expediente',
+        subtitle: 'Cerrar el mes y respaldar',
+        body:
+          'En Periodos revisas ingresos vs egresos, cierras el mes (con firmas del comité si aplica) y en el tab Expediente descargas o imprimes el respaldo: documentos de Finanzas (cobranza, gastos, adeudos…) y de Operación (reservas, paquetes, visitas, mantenimientos).',
+        tips: [
+          'Solo aparecen períodos desde el inicio de operaciones del condominio (Configuración).',
+          tipConnect('El expediente une Finanzas + Operación del mismo mes.'),
+        ],
+        route: '/app/cierre-periodo',
+      },
+    ],
+  },
+  {
+    id: 'mapa-operacion',
+    kind: 'modal',
+    icon: Package,
+    color: '#0f766e',
+    bg: '#ccfbf1',
+    title: 'Ciclo operativo del día a día',
+    subtitle: 'Caseta, áreas comunes y mantenimientos',
+    length: '4 pasos',
+    steps: [
+      {
+        icon: UserCheck, color: '#0f766e', bg: '#ccfbf1',
+        title: 'Visitas Autorizadas',
+        subtitle: 'Del residente a la caseta',
+        body:
+          'El residente (o administración) autoriza visitas con QR. Vigilancia registra ingreso y salida con QR o identificación + foto. Los contactos de la unidad reciben aviso. El reporte del período alimenta el Expediente.',
+        tips: [tipConnect('Se conecta con: Notificaciones, Configuración (cajones/gafetes), Periodos → Expediente.')],
+        route: '/app/visitas',
+      },
+      {
+        icon: Package, color: '#0f766e', bg: '#ccfbf1',
+        title: 'Paquetería',
+        subtitle: 'Recibir → avisar → entregar',
+        body:
+          'Caseta recibe el paquete con foto y folio. El vecino recibe correo con QR. Al entregar, se escanea ese QR (o se firma). Todo queda en bitácora y en el reporte del mes.',
+        tips: [tipConnect('Se conecta con: Notificaciones del residente y Expediente de Periodos.')],
+        route: '/app/paqueteria',
+      },
+      {
+        icon: Calendar, color: '#0f766e', bg: '#ccfbf1',
+        title: 'Reservas',
+        subtitle: 'Áreas comunes con control',
+        body:
+          'El residente solicita salón, alberca, gym, etc. Administración aprueba o rechaza. Evitas dobles reservas y dejas evidencia del uso del mes para el expediente.',
+        tips: [tipConnect('Se conecta con: Notificaciones (aprobación) y Periodos → Expediente (reporte de reservas).')],
+        route: '/app/reservas',
+      },
+      {
+        icon: Wrench, color: '#0f766e', bg: '#ccfbf1',
+        title: 'Mantenimientos',
+        subtitle: 'Trabajo + evidencia + costo',
+        body:
+          'Planeas preventivos o abres correctivos, subes evidencias con fecha real y, si hubo gasto, lo vinculas. El historial sirve al comité y al Expediente del período.',
+        tips: [tipConnect('Se conecta con: Gastos (dinero), Comunicación (avisar a vecinos) y Periodos → Expediente.')],
+        route: '/app/mantenimientos',
+      },
+    ],
+  },
+  {
+    id: 'mapa-comunidad',
+    kind: 'modal',
+    icon: Newspaper,
+    color: '#0d9488',
+    bg: '#ccfbf1',
+    title: 'Comunidad y gobierno',
+    subtitle: 'Avisos, asambleas y transparencia',
+    length: '3 pasos',
+    steps: [
+      {
+        icon: Newspaper, color: '#0d9488', bg: '#ccfbf1',
+        title: 'Comunicación',
+        subtitle: 'Avisos a quien corresponde',
+        body:
+          'Publica avisos, eventos o mantenimientos con audiencia (todos, por rol o personas). El Directorio te da contactos de unidades activas para localizar rápido a alguien.',
+        tips: [tipConnect('Se conecta con: Notificaciones y Mantenimientos (avisar cortes o trabajos).')],
+        route: '/app/blog',
+      },
+      {
+        icon: Vote, color: '#0d9488', bg: '#ccfbf1',
+        title: 'Asambleas',
+        subtitle: 'Convocatoria → quórum → acta',
+        body:
+          'Creas la asamblea con plazos según la entidad del condominio, pasas lista, votas y protocolizas. Los vecinos ven convocatoria y documentos desde su menú.',
+        tips: [tipConnect('Se conecta con: Planeación y Estado de Cuenta (información para acuerdos).')],
+        route: '/app/asambleas',
+      },
+      {
+        icon: Bell, color: '#0d9488', bg: '#ccfbf1',
+        title: 'Notificaciones',
+        subtitle: 'El hilo que une todo',
+        body:
+          'Pagos, paquetes, visitas, reservas, asambleas y firmas de cierre llegan al centro de notificaciones (y muchos también por correo). Es el “timbre” interno del condominio.',
+        route: '/app/notificaciones',
+      },
+    ],
+  },
+];
+
+// ═══════════════════════════════════════════════════════════════
+//  ADMIN
 // ═══════════════════════════════════════════════════════════════
 const adminChapters = [
   {
     id: 'admin-setup',
-    kind: 'interactive',         // usa AdminConfigTour
+    kind: 'interactive',
     icon: Sparkles,
     color: 'var(--teal-500)',
     bg: 'var(--teal-50)',
     title: 'Tour interactivo de Configuración',
-    subtitle: 'Guía paso a paso estilo Scribe sobre la pantalla real',
+    subtitle: 'Guía paso a paso sobre la pantalla real',
     length: '~10 min',
     launchRoute: '/app/config?tour=1',
   },
@@ -49,47 +251,43 @@ const adminChapters = [
     icon: Building2,
     color: '#0ea5e9',
     bg: '#e0f2fe',
-    title: 'Gestión de Unidades',
-    subtitle: 'Dar de alta y mantener las unidades del condominio',
+    title: 'Unidades del condominio',
+    subtitle: 'Alta, contactos y usuarios residentes',
     length: '4 pasos',
     steps: [
       {
         icon: Building2, color: '#0ea5e9', bg: '#e0f2fe',
         title: 'Dar de alta una unidad',
-        subtitle: 'Alta individual o por lote',
+        subtitle: 'Una por una o por lote',
         body:
-          'Ve a Configuración → Unidades y usa "Agregar unidad" para capturar una a una, o "Importar" para subir un archivo con varias unidades a la vez. Cada unidad debe tener un número interno único.',
+          'Ve a Configuración → Unidades. Usa "Agregar unidad" o "Importar" para varias. Cada unidad necesita un número/código interno único (ej. A-101): aparece en cobranza, reportes, paquetes y visitas.',
         tips: [
-          'Captura el número interno de la unidad (p.ej. A-101) — aparece en reportes y en los correos.',
-          'Si el propietario no tiene correo, déjalo vacío y agrégalo después.',
+          'Si aún no tienes el correo del propietario, déjalo vacío y complétalo después.',
+          tipConnect('Sin unidades bien dadas de alta, Cobranza y caseta no pueden operar.'),
         ],
         route: '/app/config',
       },
       {
         icon: Mail, color: '#0ea5e9', bg: '#e0f2fe',
         title: 'Propietario, copropietario e inquilino',
-        subtitle: 'Los 3 tipos de contacto por unidad',
+        subtitle: 'Tres contactos por unidad',
         body:
-          'Cada unidad acepta hasta 3 contactos: propietario (dueño), copropietario (segundo dueño o familiar) e inquilino (arrendatario). Los estados de cuenta y planes de pago se envían por default a propietario y copropietario.',
-        tips: [
-          'Los correos del propietario y copropietario reciben los cobros y recordatorios.',
-          'El inquilino solo tiene acceso a su unidad desde el portal de residente.',
-        ],
+          'Captura hasta tres contactos. Cobros, planes de pago y muchos avisos van por default a propietario y copropietario. El inquilino usa el portal de residente de su unidad.',
+        tips: ['Mantén correos al día: de ahí salen recibos, QR de paquetes y avisos de visitas.'],
       },
       {
         icon: Users, color: '#0ea5e9', bg: '#e0f2fe',
         title: 'Crear usuario desde la unidad',
-        subtitle: 'Alta automática de residente',
+        subtitle: 'Acceso al portal',
         body:
-          'Desde cada unidad puedes crear un usuario residente con un solo clic. Homly enviará un correo con credenciales provisionales y el residente podrá entrar al portal para ver su unidad, pagar y reservar áreas comunes.',
+          'Desde la ficha de la unidad puedes crear el usuario residente. Homly envía credenciales provisionales; el vecino entra a Mi Unidad, ve su saldo, reserva y autoriza visitas.',
       },
       {
         icon: CheckCircle2, color: '#0ea5e9', bg: '#e0f2fe',
         title: 'Inactivar sin borrar',
         subtitle: 'Conserva el historial',
         body:
-          'Si una unidad cambia de dueño o deja de operar, usa "Inactivar" en lugar de eliminar. Mantienes el historial de pagos y reportes para auditoría, y la unidad queda en solo lectura.',
-        tips: ['Las unidades con pagos registrados no se pueden eliminar — solo inactivar.'],
+          'Si cambia el dueño o la unidad deja de operar, usa Inactivar. Conservas pagos y reportes para auditoría. Las unidades con historial de pagos no se eliminan.',
       },
     ],
   },
@@ -99,133 +297,96 @@ const adminChapters = [
     icon: Users,
     color: '#f59e0b',
     bg: '#fef3c7',
-    title: 'Usuarios y Permisos',
-    subtitle: 'Invitar al equipo y controlar accesos',
+    title: 'Usuarios y permisos',
+    subtitle: 'Equipo, roles y módulos activos',
     length: '3 pasos',
     steps: [
       {
         icon: Users, color: '#f59e0b', bg: '#fef3c7',
-        title: 'Invitar usuarios al equipo',
-        subtitle: 'Admin, tesorero, contador, auditor',
+        title: 'Invitar al equipo',
+        subtitle: 'Admin, tesorero, contador, vigilante…',
         body:
-          'En Configuración → Usuarios, haz clic en "Invitar" para agregar a tu equipo. Cada invitación envía un correo con la contraseña provisional. El usuario deberá cambiarla en su primer ingreso.',
+          'En Configuración → Usuarios pulsa Invitar. Cada persona recibe correo con contraseña provisional y debe cambiarla al entrar. Así separas quien configura, quien cobra y quien atiende caseta.',
         route: '/app/config',
       },
       {
         icon: Shield, color: '#f59e0b', bg: '#fef3c7',
-        title: 'Roles estándar vs perfiles personalizados',
-        subtitle: 'Permisos a tu medida',
+        title: 'Roles y perfiles a la medida',
+        subtitle: 'Qué ve y qué edita cada quien',
         body:
-          'Homly trae 6 roles predefinidos. Si ninguno encaja, crea un perfil personalizado en "Roles y Perfiles" eligiendo exactamente qué módulos son visibles, de solo lectura o editables.',
-        tips: [
-          'Los cambios de permisos aplican al instante — no hace falta cerrar sesión.',
-          'Desactiva usuarios en vez de borrarlos para conservar la auditoría.',
-        ],
+          'Usa roles estándar o crea un perfil personalizado en Roles y Perfiles: módulo visible, solo lectura o editable. Los cambios aplican al instante.',
+        tips: ['Desactiva usuarios en vez de borrarlos para conservar auditoría.'],
       },
       {
         icon: Layers, color: '#f59e0b', bg: '#fef3c7',
-        title: 'Módulos del sistema',
-        subtitle: 'Prende/apaga funciones completas',
+        title: 'Encender o apagar módulos',
+        subtitle: 'Solo lo que usa tu condominio',
         body:
-          'Si tu condominio no usa Reservas, Paquetería, Visitas u otro módulo, puedes desactivarlo en Configuración → Permisos. Desaparece del menú para todos los usuarios.',
+          'Si no usan Reservas o Paquetería, desactívalos en Permisos. Desaparecen del menú para todos y las guías de esos módulos también se ocultan.',
       },
     ],
   },
   {
-    id: 'admin-committee',
+    id: 'admin-dashboard',
     kind: 'modal',
-    icon: Globe,
-    color: '#8b5cf6',
-    bg: '#ede9fe',
-    title: 'Comité y Cierre de Período',
-    subtitle: 'Flujo de aprobación contable',
+    icon: LayoutDashboard,
+    color: '#6366f1',
+    bg: '#eef2ff',
+    title: 'Dashboard',
+    subtitle: 'El pulso del condominio',
     length: '2 pasos',
     steps: [
       {
-        icon: Globe, color: '#8b5cf6', bg: '#ede9fe',
-        title: 'Registrar el comité actual',
-        subtitle: 'Presidente, tesorero, secretario',
+        icon: LayoutDashboard, color: '#6366f1', bg: '#eef2ff',
+        title: 'Lee el mes de un vistazo',
+        subtitle: 'Cobranza, gastos y operación',
         body:
-          'En Configuración → Organización registra a los integrantes del comité (presidente, tesorero, secretario). Su nombre aparece en los reportes firmados y en el flujo de cierre.',
+          'El Dashboard resume cuotas cobradas, pendientes, gastos y actividad reciente. Usa el selector de período para cambiar de mes. Desde aquí saltas a Cobranza, Gastos o Periodos cuando algo no cuadra.',
+        tips: [tipConnect('Si el indicador de adeudos sube, abre Plan de Pagos o Estado de Cuenta.')],
+        route: '/app/dashboard',
       },
       {
-        icon: Lock, color: '#8b5cf6', bg: '#ede9fe',
-        title: 'Flujo de cierre de período',
-        subtitle: 'Quién firma antes de cerrar',
+        icon: FileText, color: '#6366f1', bg: '#eef2ff',
+        title: 'Reportes y conciliación',
+        subtitle: 'Antes de cerrar el mes',
         body:
-          'Activa el flujo de aprobación si quieres que el tesorero y/o presidente firmen antes de cerrar un mes contable. Si lo dejas inactivo, el admin puede cerrar directamente.',
+          'Desde la vista económica revisas el panorama que después formalizas en Periodos. Úsalo como checklist diario o semanal del tesorero y del administrador.',
       },
     ],
   },
   {
-    id: 'admin-asambleas',
+    id: 'admin-reservas',
     kind: 'modal',
-    icon: Vote,
-    color: '#0d9488',
-    bg: '#ccfbf1',
-    title: 'Asambleas del condominio',
-    subtitle: 'Convocatoria, quórum, votación y acta',
-    length: '4 pasos',
-    steps: [
-      {
-        icon: Vote, color: '#0d9488', bg: '#ccfbf1',
-        title: 'Convocatoria con plazo legal',
-        subtitle: 'Según el estado del tenant',
-        body:
-          'En Asambleas crea una ordinaria o extraordinaria. Homly aplica los días de anticipación y el quórum de la entidad configurada en el condominio. Completa lugar, orden del día y emite la convocatoria; se notifica a la comunidad.',
-        route: '/app/asambleas',
-      },
-      {
-        icon: Users, color: '#0d9488', bg: '#ccfbf1',
-        title: 'Reunión y quórum',
-        subtitle: 'Primera y segunda convocatoria',
-        body:
-          'Pasa lista, registra cartas poder e instala la mesa solo si hay quórum. Si no se reúne, abre la segunda convocatoria con el receso que marca la normativa.',
-        route: '/app/asambleas',
-      },
-      {
-        icon: FileText, color: '#0d9488', bg: '#ccfbf1',
-        title: 'Minuta y protocolización',
-        subtitle: 'Acuerdos y firmas',
-        body:
-          'Registra votaciones (simple, calificada o unanimidad), redacta el acta, fírmala con presidente y secretario y, si el acuerdo lo requiere, márcala como protocolizada ante notario.',
-        route: '/app/asambleas',
-      },
-    ],
-  },
-  {
-    id: 'admin-mantenimientos',
-    kind: 'modal',
-    icon: Wrench,
-    color: '#b45309',
-    bg: '#fffbeb',
-    title: 'Mantenimientos',
-    subtitle: 'Preventivos, correctivos y evidencias',
+    icon: Calendar,
+    color: '#f59e0b',
+    bg: '#fef3c7',
+    title: 'Reservas de áreas comunes',
+    subtitle: 'Solicitudes, aprobación y calendario',
     length: '3 pasos',
     steps: [
       {
-        icon: Wrench, color: '#b45309', bg: '#fffbeb',
-        title: 'Crear un trabajo',
-        subtitle: 'Preventivo o correctivo',
+        icon: Calendar, color: '#f59e0b', bg: '#fef3c7',
+        title: 'Ver y gestionar solicitudes',
+        subtitle: 'Pendientes, aprobadas, rechazadas',
         body:
-          'En Mantenimientos abre una planeación preventiva (revisiones programadas) o un correctivo (falla ya ocurrida). Indica el área, quién lo realiza y el estatus. Al concluir, cambia a Realizado.',
-        route: '/app/mantenimientos',
+          'En Reservas ves el calendario y la lista. El residente solicita; tú apruebas o rechazas. Evita choques de horario en salón, alberca u otras áreas.',
+        tips: [tipConnect('Se conecta con: Notificaciones al residente y Expediente del período.')],
+        route: '/app/reservas',
       },
       {
-        icon: Camera, color: '#b45309', bg: '#fffbeb',
-        title: 'Cargar evidencias',
-        subtitle: 'Fecha real de la foto',
+        icon: Settings, color: '#f59e0b', bg: '#fef3c7',
+        title: 'Configura las áreas',
+        subtitle: 'En Configuración',
         body:
-          'Con el trabajo En curso o Realizado, sube fotos o archivos y elige la fecha en que se tomó la evidencia (puede ser distinta al día en que la cargas). Quedan en la línea de tiempo de la ficha.',
-        tips: ['Si las fotos se tomaron un día y se suben después, usa la fecha real de la evidencia.'],
+          'Define qué áreas se pueden reservar, horarios y reglas básicas en Configuración. Sin áreas activas, el residente no puede solicitar.',
+        route: '/app/config',
       },
       {
-        icon: FileText, color: '#b45309', bg: '#fffbeb',
-        title: 'Reporte e historial',
-        subtitle: 'Para el comité y la bitácora',
+        icon: FileText, color: '#f59e0b', bg: '#fef3c7',
+        title: 'Reporte del mes',
+        subtitle: 'Para el expediente',
         body:
-          'Desde la ficha puedes ver el reporte del trabajo. El historial conserva planeación, evidencias y fechas aunque el período financiero ya esté cerrado.',
-        route: '/app/mantenimientos',
+          'Al cerrar el mes, el reporte de reservas queda disponible en Periodos → Expediente → Operación, junto con paquetes, visitas y mantenimientos.',
       },
     ],
   },
@@ -244,7 +405,8 @@ const adminChapters = [
         title: 'Recibir un paquete',
         subtitle: 'Foto, unidad y folio del año',
         body:
-          'En Paquetería pulsa "Recibir paquete", elige la unidad (el nombre se ve primero, el ID después), toma la foto de evidencia y guarda. Homly asigna el folio AAAA-####. Luego eliges a qué contactos de la unidad se envía el aviso.',
+          'En Paquetería pulsa Recibir paquete, elige la unidad (nombre primero, ID después), toma la foto y guarda. Homly asigna el folio AAAA-####. Luego eliges a qué contactos avisar.',
+        tips: ['Practica con vigilancia: el flujo es el mismo desde su rol.'],
         route: '/app/paqueteria',
       },
       {
@@ -252,14 +414,14 @@ const adminChapters = [
         title: 'Aviso con QR y foto',
         subtitle: 'Lo que recibe el vecino',
         body:
-          'El correo incluye folio, unidad, foto, código QR de entrega y, si lo configuraste, el reglamento. El vecino muestra ese QR en caseta; no se escribe a mano.',
+          'El correo lleva folio, unidad, foto, QR de entrega y, si lo configuraste, el reglamento. El vecino muestra ese QR en caseta; no se escribe a mano.',
       },
       {
         icon: QrCode, color: '#0f766e', bg: '#ccfbf1',
         title: 'Entregar con QR o firma',
         subtitle: 'El código debe coincidir',
         body:
-          'Abre el paquete en "En vigilancia" → Entregar. Con QR, escanea con la cámara: si no es el de ese paquete, Homly avisa "El QR no corresponde a la validación del registro escaneado". Con firma, el destinatario firma en pantalla. También puedes usar "Escanear QR" en el tablero.',
+          'En En vigilancia → Entregar (o Escanear QR). Si el código no es de ese paquete, Homly avisa. Con firma, el destinatario firma en pantalla.',
         tips: ['El texto del QR es de solo lectura: solo se reemplaza al escanear de nuevo.'],
       },
       {
@@ -267,7 +429,8 @@ const adminChapters = [
         title: 'Personalizar y reportar',
         subtitle: 'Reglamento, recordatorios y PDF',
         body:
-          'En Personalizar editas el reglamento del correo y los recordatorios automáticos si el paquete sigue en vigilancia. En Reporte eliges un periodo, ves el resumen y descargas el PDF. Solo el administrador puede eliminar un paquete, con comentario para el log.',
+          'En Personalizar editas reglamento y recordatorios si el paquete sigue en caseta. En Reporte eliges periodo y descargas PDF. Ese mismo reporte alimenta el Expediente de Periodos.',
+        tips: [tipConnect('Se conecta con: Notificaciones y Periodos → Expediente → Operación.')],
         route: '/app/paqueteria',
       },
     ],
@@ -287,7 +450,7 @@ const adminChapters = [
         title: 'Autorizar una visita',
         subtitle: 'Anfitrión, vigencia y QR',
         body:
-          'Registra nombres, apellidos, correo y celular. Elige ocasional (llegada estimada) o permanente (cantidad de visitas o indefinido, siempre con vigencia). Indica quién recibe: alguien del registro de la unidad u otro nombre. El visitante recibe el QR y las normas por correo.',
+          'Registra nombre, correo y celular. Elige ocasional (llegada estimada) o permanente (cantidad de visitas o indefinido, con vigencia). Indica quién recibe. El visitante recibe el QR por correo.',
         route: '/app/visitas',
       },
       {
@@ -295,7 +458,7 @@ const adminChapters = [
         title: 'Cajones y gafetes',
         subtitle: 'Configuración del condominio',
         body:
-          'En Configuración → Visitas das de alta cajones de visita y gafetes, y activas si se usan. En el ingreso, vigilancia asigna el que corresponda. Un cajón o gafete ocupado se marca, pero se puede elegir si hace falta.',
+          'En Configuración → Visitas das de alta cajones y gafetes. En el ingreso, vigilancia asigna el que corresponda.',
         route: '/app/config',
       },
       {
@@ -303,16 +466,61 @@ const adminChapters = [
         title: 'Ingreso y salida en caseta',
         subtitle: 'QR o identificación + foto',
         body:
-          'El vigilante abre la bitácora o usa "Escanear QR". El código debe ser el de esa autorización. Si no trae QR, presenta identificación con el mismo nombre; se toma foto de evidencia y no se guarda el documento. Si llega en vehículo: foto, placa y cajón o gafete.',
-        tips: ['Al confirmar ingreso o salida se eligen los contactos de la unidad; reciben correo con detalles y fotos.'],
+          'El vigilante escanea el QR de esa autorización. Sin QR: identificación con el mismo nombre + foto de evidencia (no se guarda el documento). Vehículo: foto, placa y cajón/gafete.',
+        tips: ['Al confirmar se eligen contactos de la unidad; reciben correo con fotos.'],
       },
       {
         icon: FileText, color: '#0d9488', bg: '#ccfbf1',
         title: 'Reporte del periodo',
         subtitle: 'Resumen y PDF',
         body:
-          'En Visitas → Reporte eliges el periodo. Ves autorizaciones, ingresos, salidas y la lista. Desde el mismo popup descargas el PDF. El folio de cada visita es ID-unidad + año + consecutivo de 3 dígitos.',
+          'En Visitas → Reporte eliges el periodo, ves ingresos/salidas y descargas PDF. También queda en Periodos → Expediente.',
+        tips: [tipConnect('Se conecta con: Notificaciones, Configuración y Expediente.')],
         route: '/app/visitas',
+      },
+    ],
+  },
+  {
+    id: 'admin-mantenimientos',
+    kind: 'modal',
+    icon: Wrench,
+    color: '#b45309',
+    bg: '#fffbeb',
+    title: 'Mantenimientos',
+    subtitle: 'Preventivos, correctivos, evidencias y costos',
+    length: '4 pasos',
+    steps: [
+      {
+        icon: Wrench, color: '#b45309', bg: '#fffbeb',
+        title: 'Crear un trabajo',
+        subtitle: 'Preventivo o correctivo',
+        body:
+          'Abre una planeación preventiva (revisiones programadas) o un correctivo (falla). Indica área, responsable y estatus. Al terminar, márcalo Realizado.',
+        route: '/app/mantenimientos',
+      },
+      {
+        icon: Camera, color: '#b45309', bg: '#fffbeb',
+        title: 'Cargar evidencias',
+        subtitle: 'Fecha real de la foto',
+        body:
+          'Con el trabajo En curso o Realizado, sube fotos o archivos y elige la fecha en que se tomó la evidencia (puede diferir del día en que la cargas).',
+        tips: ['Si las fotos son de otro día, usa la fecha real de la evidencia.'],
+      },
+      {
+        icon: ShoppingBag, color: '#b45309', bg: '#fffbeb',
+        title: 'Vincular el costo',
+        subtitle: 'Del trabajo al gasto',
+        body:
+          'Si el trabajo tuvo costo, regístralo o vincula el gasto. Así Planeación y el cierre del mes reflejan el dinero real de la operación.',
+        tips: [tipConnect('Se conecta con: Gastos, Planeación y Expediente.')],
+      },
+      {
+        icon: FileText, color: '#b45309', bg: '#fffbeb',
+        title: 'Reporte e historial',
+        subtitle: 'Comité y bitácora',
+        body:
+          'Desde la ficha ves el reporte. El historial se conserva aunque el período financiero ya esté cerrado, y el PDF del mes entra al Expediente.',
+        route: '/app/mantenimientos',
       },
     ],
   },
@@ -329,7 +537,7 @@ const adminChapters = [
       {
         icon: Newspaper, color: '#0d9488', bg: '#ccfbf1',
         title: 'Publicar un aviso',
-        subtitle: 'Artículo, audiencia y portada',
+        subtitle: 'Audiencia y portada',
         body:
           'En Comunicación crea un artículo (aviso, mantenimiento, evento…). Elige audiencia: todos, por rol o personas. Puedes poner imagen de portada o un color. Los vecinos reaccionan y comentan.',
         route: '/app/blog',
@@ -339,7 +547,7 @@ const adminChapters = [
         title: 'Directorio de la comunidad',
         subtitle: 'Propietarios e inquilinos',
         body:
-          'El botón Directorio lista propietarios, copropietarios e inquilinos de las unidades activas (nombre, correo y teléfono). Sirve para buscar, filtrar, imprimir o bajar CSV.',
+          'El botón Directorio lista contactos de unidades activas (nombre, correo, teléfono). Busca, filtra, imprime o baja CSV.',
         route: '/app/blog',
       },
       {
@@ -347,15 +555,123 @@ const adminChapters = [
         title: 'Notificaciones',
         subtitle: 'En la app y por correo',
         body:
-          'Los avisos de paquetes, visitas, pagos y asambleas también llegan al centro de notificaciones. El vecino marca como leído lo que ya revisó.',
+          'Paquetes, visitas, pagos y asambleas también llegan al centro de notificaciones. Pide a los vecinos revisar la campana con frecuencia.',
         route: '/app/notificaciones',
+      },
+    ],
+  },
+  {
+    id: 'admin-asambleas',
+    kind: 'modal',
+    icon: Vote,
+    color: '#0d9488',
+    bg: '#ccfbf1',
+    title: 'Asambleas del condominio',
+    subtitle: 'Convocatoria, quórum, votación y acta',
+    length: '3 pasos',
+    steps: [
+      {
+        icon: Vote, color: '#0d9488', bg: '#ccfbf1',
+        title: 'Convocatoria con plazo legal',
+        subtitle: 'Según la entidad del tenant',
+        body:
+          'Crea ordinaria o extraordinaria. Homly aplica días de anticipación y quórum según la entidad configurada. Completa lugar, orden del día y emite; se notifica a la comunidad.',
+        route: '/app/asambleas',
+      },
+      {
+        icon: Users, color: '#0d9488', bg: '#ccfbf1',
+        title: 'Reunión y quórum',
+        subtitle: 'Primera y segunda convocatoria',
+        body:
+          'Pasa lista, registra cartas poder e instala la mesa solo con quórum. Si no se reúne, abre la segunda convocatoria con el receso normativo.',
+      },
+      {
+        icon: FileText, color: '#0d9488', bg: '#ccfbf1',
+        title: 'Minuta y protocolización',
+        subtitle: 'Acuerdos y firmas',
+        body:
+          'Registra votaciones, redacta el acta, fírmala con presidente y secretario y, si aplica, márcala protocolizada ante notario.',
+        tips: [tipConnect('Lleva a la asamblea datos de Planeación, Estado de Cuenta y Expediente del período.')],
+      },
+    ],
+  },
+  {
+    id: 'admin-notificaciones',
+    kind: 'modal',
+    icon: Bell,
+    color: 'var(--coral-500)',
+    bg: 'var(--coral-50)',
+    title: 'Notificaciones',
+    subtitle: 'El centro de avisos del equipo',
+    length: '2 pasos',
+    steps: [
+      {
+        icon: Bell, color: 'var(--coral-500)', bg: 'var(--coral-50)',
+        title: 'Qué llega aquí',
+        subtitle: 'Operación + finanzas',
+        body:
+          'Firmas de cierre, comprobantes de pago, avisos de comunidad y alertas operativas aparecen en la campana. Márcalas leídas cuando ya las atendiste.',
+        route: '/app/notificaciones',
+      },
+      {
+        icon: CheckCircle2, color: 'var(--coral-500)', bg: 'var(--coral-50)',
+        title: 'Buen hábito',
+        subtitle: 'Revisa al inicio del día',
+        body:
+          'Empieza el día en Notificaciones: ahí detectas pagos por validar, firmas pendientes y mensajes de caseta sin salir a cada módulo.',
+      },
+    ],
+  },
+  {
+    id: 'admin-committee',
+    kind: 'modal',
+    icon: Globe,
+    color: '#8b5cf6',
+    bg: '#ede9fe',
+    title: 'Comité, Periodos y Expediente',
+    subtitle: 'Gobierno del mes y respaldo documental',
+    length: '4 pasos',
+    steps: [
+      {
+        icon: Globe, color: '#8b5cf6', bg: '#ede9fe',
+        title: 'Registrar el comité',
+        subtitle: 'Presidente, tesorero, secretario',
+        body:
+          'En Configuración → Organización registra al comité. Sus nombres aparecen en reportes firmados y en el flujo de cierre.',
+        route: '/app/config',
+      },
+      {
+        icon: Lock, color: '#8b5cf6', bg: '#ede9fe',
+        title: 'Flujo de cierre',
+        subtitle: 'Quién firma antes de cerrar',
+        body:
+          'Activa firmas del comité si quieres que tesorero/presidente aprueben antes de cerrar. Si está inactivo, el admin puede cerrar directo.',
+      },
+      {
+        icon: Lock, color: '#8b5cf6', bg: '#ede9fe',
+        title: 'Cerrar el período',
+        subtitle: 'Congela movimientos del mes',
+        body:
+          'En Periodos → Gestión revisas el resumen y cierras. Cobranza, gastos y caja chica del mes quedan en solo lectura. Para corregir, reabre (queda en bitácora).',
+        route: '/app/cierre-periodo',
+      },
+      {
+        icon: FolderArchive, color: '#8b5cf6', bg: '#ede9fe',
+        title: 'Expediente de Periodos',
+        subtitle: 'Finanzas + Operación en un solo lugar',
+        body:
+          'En el tab Expediente elige año/mes (desde el inicio de operaciones). Verás documentos de Finanzas y de Operación: consulta, descarga o imprime. Es el respaldo del mes para el comité y la auditoría.',
+        tips: [
+          'Define el inicio de operaciones en Configuración para limitar períodos válidos.',
+          tipConnect('Une Cobranza, Gastos, Reservas, Paquetería, Visitas y Mantenimientos del mismo mes.'),
+        ],
       },
     ],
   },
 ];
 
 // ═══════════════════════════════════════════════════════════════
-//  TESORERO — 5 capítulos
+//  TESORERO
 // ═══════════════════════════════════════════════════════════════
 const tesoreroChapters = [
   {
@@ -364,42 +680,42 @@ const tesoreroChapters = [
     icon: Receipt,
     color: '#22c55e',
     bg: '#dcfce7',
-    title: 'Cobranza Mensual',
+    title: 'Cobranza',
     subtitle: 'Registrar pagos de mantenimiento',
     length: '4 pasos',
     steps: [
       {
         icon: Receipt, color: '#22c55e', bg: '#dcfce7',
         title: 'Capturar un pago',
-        subtitle: 'Abonos por unidad',
+        subtitle: 'Unidad, período y monto',
         body:
-          'En Cobranza Mensual selecciona la unidad, elige el período (mes) al que se aplica y captura el monto. Puedes marcarlo como Efectivo, Transferencia o Cheque. Al guardar se genera un folio único.',
+          'En Cobranza elige la unidad, el mes al que aplica y el monto. Marca forma de pago (efectivo, transferencia, etc.). Al guardar se genera un folio único.',
+        tips: [
+          'Revisa también Enviar pago: ahí llegan comprobantes del residente listos para validar.',
+          tipConnect('Se conecta con: Estado de Cuenta, Plan de Pagos y Expediente.'),
+        ],
         route: '/app/cobranza',
       },
       {
         icon: DollarSign, color: '#22c55e', bg: '#dcfce7',
-        title: 'Pagos parciales y excedentes',
+        title: 'Parciales y excedentes',
         subtitle: 'Homly lleva el saldo',
         body:
-          'Si la unidad abona menos de la cuota, queda pendiente. Si abona de más, el excedente se aplica automáticamente al siguiente mes. No tienes que hacer ajustes manuales.',
-        tips: [
-          'Un residente con adeudo previo lo paga desde el módulo de Plan de Pagos.',
-          'Puedes abonar a varios meses en una sola captura.',
-        ],
+          'Si abona de menos, queda pendiente. Si abona de más, el excedente puede aplicarse al siguiente mes. Puedes cubrir varios meses en una captura.',
       },
       {
         icon: FileText, color: '#22c55e', bg: '#dcfce7',
         title: 'Cargos adicionales',
         subtitle: 'Multas, recargos, extras',
         body:
-          'A cada pago puedes agregarle conceptos adicionales (multa por atraso, cuota especial, recargo). Aparecen en el recibo y en el estado de cuenta del residente.',
+          'Agrega conceptos extra al pago (multa, cuota especial). Aparecen en el recibo y en el estado de cuenta del residente.',
       },
       {
         icon: Mail, color: '#22c55e', bg: '#dcfce7',
-        title: 'Enviar recibo al residente',
-        subtitle: 'Al propietario y copropietario',
+        title: 'Enviar el recibo',
+        subtitle: 'Propietario y copropietario',
         body:
-          'Después de capturar el pago, desde el folio puedes enviar el recibo por correo al propietario y copropietario. Se adjunta el PDF y queda registrado en el historial.',
+          'Desde el folio envía el recibo PDF por correo. Queda en el historial de la unidad.',
       },
     ],
   },
@@ -410,38 +726,39 @@ const tesoreroChapters = [
     color: '#f59e0b',
     bg: '#fef3c7',
     title: 'Plan de Pagos',
-    subtitle: 'Gestionar adeudos de unidades',
+    subtitle: 'Adeudos con mensualidades pactadas',
     length: '4 pasos',
     steps: [
       {
         icon: TrendingDown, color: '#f59e0b', bg: '#fef3c7',
         title: 'Ver unidades con adeudo',
-        subtitle: 'Lista paginada',
+        subtitle: 'Lista y búsqueda',
         body:
-          'El módulo muestra todas las unidades con saldo pendiente. Puedes paginar de 10, 25 o 50 en 50 y buscar por número de unidad o propietario para llegar más rápido.',
+          'El módulo lista unidades con saldo pendiente. Busca por número o propietario. Usa Estado de Cuenta si necesitas el detalle mes a mes.',
         route: '/app/plan-pagos',
       },
       {
         icon: ClipboardCheck, color: '#f59e0b', bg: '#fef3c7',
-        title: 'Proponer un plan de pagos',
-        subtitle: 'Mensualidades pactadas',
+        title: 'Proponer el plan',
+        subtitle: 'Mensualidades y fechas',
         body:
-          'Selecciona la unidad y elige número de mensualidades, fecha de inicio y monto por mes. Homly calcula el resto. El plan queda en estado "Propuesto" hasta que el residente lo acepte.',
+          'Elige número de mensualidades, fecha de inicio y monto. Homly calcula el resto. Queda Propuesto hasta que el residente acepte.',
       },
       {
         icon: Send, color: '#f59e0b', bg: '#fef3c7',
-        title: 'Enviar la propuesta por correo',
-        subtitle: 'Selecciona destinatarios',
+        title: 'Enviar la propuesta',
+        subtitle: 'Propietario / copropietario',
         body:
-          'Antes de enviar, marca si el correo va al propietario, copropietario o a ambos. La confirmación muestra exactamente a qué direcciones se envió.',
-        tips: ['El inquilino NO recibe la propuesta — solo propietario/copropietario.'],
+          'Marca destinatarios antes de enviar. El inquilino no recibe la propuesta de adeudo del propietario.',
+        tips: ['La confirmación muestra a qué correos salió.'],
       },
       {
         icon: CheckCircle2, color: '#f59e0b', bg: '#fef3c7',
-        title: 'Aceptar, rechazar o cancelar',
-        subtitle: 'Ciclo de vida del plan',
+        title: 'Aceptar y cobrar',
+        subtitle: 'Ciclo de vida',
         body:
-          'Cuando el residente responde, marcas el plan como Aceptado. A partir de ese momento, los abonos que capturas en Cobranza se aplican al plan automáticamente. Si se incumple, se puede cancelar.',
+          'Al aceptar, los abonos de Cobranza se aplican al plan. Si se incumple, puedes cancelar. Las cuotas del plan también aparecen en el Expediente del período.',
+        tips: [tipConnect('Se conecta con: Cobranza (abonos) y Estado de Cuenta (saldo).')],
       },
     ],
   },
@@ -458,85 +775,25 @@ const tesoreroChapters = [
       {
         icon: ShoppingBag, color: '#ec4899', bg: '#fce7f3',
         title: 'Capturar un gasto',
-        subtitle: 'Fecha, categoría, proveedor',
+        subtitle: 'Fecha, categoría, proveedor, evidencia',
         body:
-          'En Gastos usa "Registrar gasto" e indica la fecha, la categoría (definida por el admin), el proveedor, el monto y un concepto descriptivo. Puedes adjuntar la foto o PDF del comprobante. En la lista, el ojo se ve verde si hay archivo y gris si no hay nada que abrir.',
+          'Pulsa Registrar gasto: fecha, categoría, proveedor, monto y concepto. Adjunta foto o PDF del comprobante. El ojo verde indica que hay archivo.',
+        tips: [tipConnect('Se conecta con: Mantenimientos, Planeación y Periodos.')],
         route: '/app/gastos',
       },
       {
         icon: Wallet, color: '#ec4899', bg: '#fce7f3',
-        title: 'Caja chica vs cuenta bancaria',
-        subtitle: 'De dónde se paga',
+        title: 'Cuenta bancaria vs caja chica',
+        subtitle: 'De dónde salió el dinero',
         body:
-          'Indica si el gasto salió de la cuenta bancaria o de la caja chica. Esto mantiene separados ambos saldos para reportes y conciliación.',
+          'Indica la fuente del pago. Así los saldos y el expediente del mes cuadran con la realidad.',
       },
       {
         icon: FileText, color: '#ec4899', bg: '#fce7f3',
-        title: 'Editar o eliminar',
-        subtitle: 'Solo en períodos abiertos',
+        title: 'Editar solo en período abierto',
+        subtitle: 'Auditoría',
         body:
-          'Puedes corregir o eliminar un gasto siempre que su período no esté cerrado. Una vez cerrado el mes, los movimientos quedan congelados para auditoría.',
-      },
-    ],
-  },
-  {
-    id: 'tes-estado-cuenta',
-    kind: 'modal',
-    icon: FileText,
-    color: '#6366f1',
-    bg: '#eef2ff',
-    title: 'Estado de Cuenta',
-    subtitle: 'Reportes por unidad',
-    length: '2 pasos',
-    steps: [
-      {
-        icon: FileText, color: '#6366f1', bg: '#eef2ff',
-        title: 'Consultar por unidad',
-        subtitle: 'Selector y filtros',
-        body:
-          'Elige una unidad y el rango de fechas para ver todos los movimientos: cuotas, pagos, cargos adicionales, saldo inicial y saldo actual. Puedes descargar el reporte en PDF.',
-        route: '/app/estado-cuenta',
-      },
-      {
-        icon: Send, color: '#6366f1', bg: '#eef2ff',
-        title: 'Enviar estado de cuenta general',
-        subtitle: 'A todas las unidades',
-        body:
-          'Con un solo clic puedes enviar el estado de cuenta del período a todas las unidades con adeudo. Cada propietario/copropietario recibe el suyo por correo.',
-      },
-    ],
-  },
-  {
-    id: 'tes-cierre',
-    kind: 'modal',
-    icon: Lock,
-    color: '#8b5cf6',
-    bg: '#ede9fe',
-    title: 'Cierre de Período',
-    subtitle: 'Cerrar el mes contable',
-    length: '3 pasos',
-    steps: [
-      {
-        icon: Lock, color: '#8b5cf6', bg: '#ede9fe',
-        title: 'Revisar antes de cerrar',
-        subtitle: 'Ingresos vs egresos',
-        body:
-          'En Cierre de Período verás el resumen del mes: total ingresos, total egresos, saldo final. Revisa que no falten pagos por capturar antes de continuar.',
-        route: '/app/cierre-periodo',
-      },
-      {
-        icon: ClipboardCheck, color: '#8b5cf6', bg: '#ede9fe',
-        title: 'Solicitar firma / aprobación',
-        subtitle: 'Flujo del comité',
-        body:
-          'Si el admin activó el flujo de aprobación, al solicitar el cierre Homly notifica a los firmantes (por ejemplo, presidente y secretario). Cada uno firma o rechaza desde su sesión.',
-      },
-      {
-        icon: CheckCircle2, color: '#8b5cf6', bg: '#ede9fe',
-        title: 'Cerrar el período',
-        subtitle: 'Queda en solo lectura',
-        body:
-          'Cuando todas las firmas estén en orden, cierras el período. A partir de ese momento los movimientos son solo lectura. Si se necesita corregir algo, debes reabrirlo explícitamente.',
+          'Puedes corregir o eliminar mientras el mes esté abierto. Al cerrar Periodos, el gasto queda congelado.',
       },
     ],
   },
@@ -553,9 +810,9 @@ const tesoreroChapters = [
       {
         icon: Wallet, color: '#8b5cf6', bg: '#ede9fe',
         title: 'Para qué sirve',
-        subtitle: 'Separada de Gastos',
+        subtitle: 'Separada de Gastos bancarios',
         body:
-          'La caja chica es el fondo de gastos chicos del día a día (papelería, limpieza, una reparación menor) que se pagan en efectivo. No se mezcla con los gastos que salen de la cuenta bancaria.',
+          'Fondo para gastos chicos del día a día (papelería, limpieza menor) en efectivo. No se mezcla con egresos de cuenta bancaria.',
         route: '/app/caja-chica',
       },
       {
@@ -563,14 +820,49 @@ const tesoreroChapters = [
         title: 'Registrar un movimiento',
         subtitle: 'Descripción, monto y evidencia',
         body:
-          'Elige el período, pulsa "Nuevo registro" e indica descripción, monto, forma de pago y fecha. Adjunta el comprobante si lo tienes. El ícono de ojo se ve verde cuando hay archivo y gris si no hay nada que abrir.',
+          'Elige el período, Nuevo registro: descripción, monto, forma de pago y fecha. Adjunta comprobante si lo tienes.',
       },
       {
         icon: Lock, color: '#8b5cf6', bg: '#ede9fe',
-        title: 'Periodo cerrado',
+        title: 'Al cerrar el mes',
         subtitle: 'Solo lectura',
         body:
-          'Cuando el mes se cierra, caja chica queda en solo lectura, igual que Gastos. Para corregir hay que reabrir el período (queda en la bitácora).',
+          'Con el período cerrado, caja chica queda solo lectura. Para corregir hay que reabrir (queda en bitácora). El reporte entra al Expediente.',
+      },
+    ],
+  },
+  {
+    id: 'tes-estado-cuenta',
+    kind: 'modal',
+    icon: FileText,
+    color: '#6366f1',
+    bg: '#eef2ff',
+    title: 'Estado de Cuenta',
+    subtitle: 'Movimientos por unidad y cartera',
+    length: '3 pasos',
+    steps: [
+      {
+        icon: FileText, color: '#6366f1', bg: '#eef2ff',
+        title: 'Consultar una unidad',
+        subtitle: 'Cuotas, pagos y saldo',
+        body:
+          'Elige unidad y rango. Ves cuotas, pagos, cargos y saldo. Descarga PDF para el propietario o para el comité.',
+        route: '/app/estado-cuenta',
+      },
+      {
+        icon: TrendingDown, color: '#6366f1', bg: '#eef2ff',
+        title: 'Cartera de adeudos',
+        subtitle: 'Quién debe y desde cuándo',
+        body:
+          'Usa el reporte de adeudos para priorizar cobranza o proponer Plan de Pagos. Es la misma base que verás en el Expediente del mes.',
+      },
+      {
+        icon: Send, color: '#6366f1', bg: '#eef2ff',
+        title: 'Enviar estados de cuenta',
+        subtitle: 'Masivo o individual',
+        body:
+          'Puedes enviar el estado del período a unidades con adeudo. Cada propietario/copropietario recibe el suyo.',
+        tips: [tipConnect('Se conecta con: Cobranza, Plan de Pagos y Expediente.')],
       },
     ],
   },
@@ -587,24 +879,70 @@ const tesoreroChapters = [
       {
         icon: ClipboardCheck, color: '#b45309', bg: '#fffbeb',
         title: 'Presupuesto del año',
-        subtitle: 'Lo planeado vs lo real',
+        subtitle: 'Planeado vs ejecutado',
         body:
-          'En Planeación armas el presupuesto anual por rubro. Conforme se registran gastos, ves lo ejecutado contra lo autorizado. Así el comité sabe si un rubro ya se pasó.',
+          'Arma el presupuesto por rubro. Conforme se registran gastos, ves lo ejecutado. Detecta a tiempo si un rubro ya se pasó.',
+        tips: [tipConnect('Se conecta con: Gastos y Asambleas.')],
         route: '/app/planeacion',
       },
       {
         icon: Wrench, color: '#b45309', bg: '#fffbeb',
         title: 'Proyectos de obra',
-        subtitle: 'Seguimiento de avances',
+        subtitle: 'Avance y montos',
         body:
-          'Registra proyectos (fachada, cisterna, techumbre…) con montos y avance. Los gastos reales se contrastan con lo planeado para reportar en asamblea.',
+          'Registra proyectos (fachada, cisterna…) con montos y avance. Contrasta con gastos reales para reportar en asamblea.',
+      },
+    ],
+  },
+  {
+    id: 'tes-cierre',
+    kind: 'modal',
+    icon: Lock,
+    color: '#8b5cf6',
+    bg: '#ede9fe',
+    title: 'Periodos y Expediente',
+    subtitle: 'Cerrar el mes y respaldar documentos',
+    length: '4 pasos',
+    steps: [
+      {
+        icon: Lock, color: '#8b5cf6', bg: '#ede9fe',
+        title: 'Revisar antes de cerrar',
+        subtitle: 'Ingresos vs egresos',
+        body:
+          'En Periodos → Gestión ves el resumen del mes. Confirma que no falten pagos ni gastos por capturar.',
+        route: '/app/cierre-periodo',
+      },
+      {
+        icon: ClipboardCheck, color: '#8b5cf6', bg: '#ede9fe',
+        title: 'Firmas del comité',
+        subtitle: 'Si el flujo está activo',
+        body:
+          'Al solicitar cierre, Homly notifica a los firmantes. Cada uno aprueba o rechaza desde su sesión (les llega notificación).',
+      },
+      {
+        icon: CheckCircle2, color: '#8b5cf6', bg: '#ede9fe',
+        title: 'Cerrar el período',
+        subtitle: 'Queda en solo lectura',
+        body:
+          'Con las firmas en orden (o sin flujo), cierras el mes. Los movimientos quedan congelados. Reabrir deja huella en auditoría.',
+      },
+      {
+        icon: FolderArchive, color: '#8b5cf6', bg: '#ede9fe',
+        title: 'Expediente de Periodos',
+        subtitle: 'Ver, descargar e imprimir',
+        body:
+          'En el tab Expediente elige el mes. Hay dos grupos: Finanzas (cierre, cobranza, gastos, caja chica, adeudos, planes, estado bancario…) y Operación (reservas, paquetería, visitas, mantenimientos). Consulta, descarga o imprime lo disponible.',
+        tips: [
+          'Los períodos listados empiezan en la fecha de inicio de operaciones del condominio.',
+          tipConnect('Es el empaque final del mes: dinero + operación en un solo lugar.'),
+        ],
       },
     ],
   },
 ];
 
 // ═══════════════════════════════════════════════════════════════
-//  CONTADOR — 4 capítulos
+//  CONTADOR / AUDITOR
 // ═══════════════════════════════════════════════════════════════
 const contadorChapters = [
   {
@@ -613,24 +951,25 @@ const contadorChapters = [
     icon: BookOpen,
     color: '#6366f1',
     bg: '#eef2ff',
-    title: 'Panel Financiero',
+    title: 'Panel financiero',
     subtitle: 'Lectura rápida del condominio',
     length: '2 pasos',
     steps: [
       {
         icon: BookOpen, color: '#6366f1', bg: '#eef2ff',
         title: 'Dashboard económico',
-        subtitle: 'KPIs en vivo',
+        subtitle: 'KPIs del período',
         body:
-          'En Dashboard → pestaña Económicos tienes los indicadores principales: cuotas cobradas, cuotas pendientes, gastos por categoría y saldo bancario. Cambia el período con el selector superior.',
+          'En Dashboard ves cuotas cobradas, pendientes, gastos por categoría y panorama del mes. Cambia el período con el selector.',
         route: '/app/dashboard',
       },
       {
         icon: FileText, color: '#6366f1', bg: '#eef2ff',
-        title: 'Reporte general',
-        subtitle: 'Informe mensual completo',
+        title: 'Antes del cierre',
+        subtitle: 'Qué revisar',
         body:
-          'El Reporte General consolida todo el mes: ingresos por concepto, egresos por categoría, saldo inicial/final y conciliación de caja. Útil para la asamblea y auditoría.',
+          'Usa el dashboard como checklist: si algo no cuadra, baja a Cobranza, Gastos o Estado de Cuenta antes de firmar el cierre.',
+        tips: [tipConnect('Se conecta con: Periodos (cierre) y Expediente (respaldo).')],
       },
     ],
   },
@@ -640,8 +979,8 @@ const contadorChapters = [
     icon: FileText,
     color: '#22c55e',
     bg: '#dcfce7',
-    title: 'Reportes por Unidad',
-    subtitle: 'Estados de cuenta y adeudos',
+    title: 'Reportes y estados de cuenta',
+    subtitle: 'Unidades, adeudos y gastos',
     length: '3 pasos',
     steps: [
       {
@@ -649,22 +988,22 @@ const contadorChapters = [
         title: 'Estado de cuenta por unidad',
         subtitle: 'Movimientos detallados',
         body:
-          'Revisa todos los movimientos de una unidad: qué cobró, qué no, fechas, folios, cargos adicionales. Puedes descargar en PDF o Excel para análisis externo.',
+          'Revisa cobros, pagos, cargos y saldo. Descarga PDF o exporta para análisis externo.',
         route: '/app/estado-cuenta',
       },
       {
         icon: TrendingDown, color: '#22c55e', bg: '#dcfce7',
-        title: 'Reporte de adeudos',
-        subtitle: 'Unidades con saldo pendiente',
+        title: 'Cartera de adeudos',
+        subtitle: 'Priorizar cobranza',
         body:
-          'Obtienes la lista de todas las unidades con saldo, ordenadas por antigüedad del adeudo. Es la base para decidir a quién proponer plan de pagos o enviar recordatorio.',
+          'Lista unidades con saldo por antigüedad. Base para recordatorios o planes de pago.',
       },
       {
         icon: ShoppingBag, color: '#22c55e', bg: '#dcfce7',
-        title: 'Reportes de gastos',
-        subtitle: 'Por categoría y por proveedor',
+        title: 'Gastos por categoría',
+        subtitle: 'Dónde se fue el dinero',
         body:
-          'Analiza en qué se fue el dinero: agrupado por categoría (luz, agua, jardinería…) o por proveedor. Identifica tendencias y gastos fuera de control.',
+          'Analiza egresos por categoría o proveedor. Contrasta con Planeación si hay presupuesto anual.',
         route: '/app/gastos',
       },
     ],
@@ -675,16 +1014,16 @@ const contadorChapters = [
     icon: Layers,
     color: '#f59e0b',
     bg: '#fef3c7',
-    title: 'Categorías Contables',
-    subtitle: 'Plan de cuentas del condominio',
+    title: 'Categorías y conceptos',
+    subtitle: 'Que los reportes salgan limpios',
     length: '2 pasos',
     steps: [
       {
         icon: Layers, color: '#f59e0b', bg: '#fef3c7',
         title: 'Categorías de gastos',
-        subtitle: 'Define el plan de cuentas',
+        subtitle: 'Plan de cuentas práctico',
         body:
-          'Las categorías de gastos (luz, agua, limpieza, jardinería, mantenimiento, seguridad…) las define el admin en Configuración. Como contador, apóyate en que reflejen la realidad del condominio — así los reportes salen limpios.',
+          'Las define el admin en Configuración (luz, agua, limpieza…). Pide que reflejen la realidad del condominio para reportes claros.',
         route: '/app/config',
       },
       {
@@ -692,7 +1031,7 @@ const contadorChapters = [
         title: 'Conceptos de cobranza',
         subtitle: 'Mantenimiento, reserva, multas',
         body:
-          'Los conceptos de cobranza separan los ingresos: mantenimiento regular, fondo de reserva, multas, aportaciones extraordinarias. Esto permite ver cuánto entra por cada concepto.',
+          'Separar ingresos por concepto permite ver cuánto entra por mantenimiento, fondo de reserva o extraordinarias.',
       },
     ],
   },
@@ -702,39 +1041,39 @@ const contadorChapters = [
     icon: Lock,
     color: '#8b5cf6',
     bg: '#ede9fe',
-    title: 'Auditoría y Cierre',
-    subtitle: 'Congelar el período contable',
+    title: 'Auditoría, cierre y expediente',
+    subtitle: 'Congelar el mes con evidencia',
     length: '3 pasos',
     steps: [
       {
         icon: ClipboardCheck, color: '#8b5cf6', bg: '#ede9fe',
-        title: 'Revisión previa al cierre',
-        subtitle: 'Checklist contable',
+        title: 'Checklist antes de firmar',
+        subtitle: '4 puntos clave',
         body:
-          'Antes de recomendar el cierre, revisa: (1) todos los pagos del mes capturados; (2) todos los gastos con comprobante; (3) saldo bancario conciliado; (4) no hay folios duplicados o faltantes.',
+          '1) Pagos del mes capturados. 2) Gastos con comprobante. 3) Saldo/estado bancario conciliado. 4) Sin folios duplicados o faltantes.',
       },
       {
         icon: Lock, color: '#8b5cf6', bg: '#ede9fe',
         title: 'Firmar el cierre',
-        subtitle: 'Como parte del flujo',
+        subtitle: 'Desde Periodos',
         body:
-          'Si estás listado como firmante en el flujo de aprobación, recibirás una notificación cuando el tesorero solicite cerrar. Puedes firmar o rechazar con comentario desde tu sesión.',
+          'Si eres firmante, te llega notificación. Firma o rechaza con comentario. El mes queda congelado al completar el flujo.',
         route: '/app/cierre-periodo',
       },
       {
-        icon: BookOpen, color: '#8b5cf6', bg: '#ede9fe',
-        title: 'Después del cierre',
-        subtitle: 'Integridad del histórico',
+        icon: FolderArchive, color: '#8b5cf6', bg: '#ede9fe',
+        title: 'Expediente del período',
+        subtitle: 'Respaldo financiero y operativo',
         body:
-          'Una vez cerrado el mes, todos los movimientos quedan congelados. Si descubres un error posterior, habla con el admin para reabrir el período — queda registrado en la bitácora de auditoría.',
-        route: '/app/sistema/logs',
+          'En Expediente descarga o imprime los PDFs del mes (finanzas y operación). Guárdalos junto con el estado bancario cargado. Si hay que reabrir, queda en bitácora.',
+        tips: [tipConnect('El expediente es tu carpeta del mes para el comité y la auditoría.')],
       },
     ],
   },
 ];
 
 // ═══════════════════════════════════════════════════════════════
-//  VECINO / RESIDENTE — 4 capítulos
+//  RESIDENTE
 // ═══════════════════════════════════════════════════════════════
 const residenteChapters = [
   {
@@ -744,23 +1083,23 @@ const residenteChapters = [
     color: 'var(--teal-500)',
     bg: 'var(--teal-50)',
     title: 'Mi Unidad',
-    subtitle: 'Tu espacio personal',
+    subtitle: 'Tu espacio personal en Homly',
     length: '2 pasos',
     steps: [
       {
         icon: Home, color: 'var(--teal-500)', bg: 'var(--teal-50)',
-        title: 'Panel principal',
-        subtitle: 'Tu casa en Homly',
+        title: 'Tu panel',
+        subtitle: 'Cuota, datos y avisos',
         body:
-          'En Mi Unidad ves el estatus de tu cuota del mes, los datos de tu unidad (número interno, propietario, inquilino), tu cuota de mantenimiento y avisos relevantes del condominio.',
+          'En Mi Unidad ves el estatus de tu cuota, datos de la unidad y avisos. Desde aquí también autorizas visitas y das seguimiento a lo tuyo.',
         route: '/app/my-unit',
       },
       {
         icon: Mail, color: 'var(--teal-500)', bg: 'var(--teal-50)',
-        title: 'Actualizar mis datos',
-        subtitle: 'Teléfono, correo, contactos',
+        title: 'Actualiza tus datos',
+        subtitle: 'Teléfono y contactos',
         body:
-          'Puedes actualizar tu teléfono, correos de contacto y datos de copropietarios. Los cambios se reflejan al instante para la administración.',
+          'Mantén correo y teléfono al día: ahí llegan recibos, QR de paquetes y avisos de visitas.',
       },
     ],
   },
@@ -776,19 +1115,48 @@ const residenteChapters = [
     steps: [
       {
         icon: FileText, color: '#6366f1', bg: '#eef2ff',
-        title: 'Ver mis movimientos',
-        subtitle: 'Cuotas, pagos, cargos',
+        title: 'Ver tus movimientos',
+        subtitle: 'Cuotas, pagos y cargos',
         body:
-          'Consulta todos tus movimientos: cuotas mensuales, pagos realizados, cargos adicionales (si los hay) y tu saldo actual. Puedes descargar el reporte en PDF.',
+          'Consulta cuotas, pagos, cargos adicionales y saldo. Descarga PDF cuando lo necesites.',
         route: '/app/estado-cuenta',
       },
       {
         icon: TrendingDown, color: '#6366f1', bg: '#eef2ff',
-        title: 'Si tengo adeudo',
+        title: 'Si tienes adeudo',
         subtitle: 'Plan de pagos',
         body:
-          'Si acumulas saldo pendiente, la administración puede proponerte un plan de pagos. Lo verás en el módulo Plan de Pagos con el detalle de cada mensualidad.',
+          'Administración puede proponerte un plan. Lo ves en Plan de Pagos con cada mensualidad. Mientras tanto, puedes Enviar pago con tu comprobante.',
+        tips: [tipConnect('Se conecta con: Enviar pago y Plan de Pagos.')],
         route: '/app/plan-pagos',
+      },
+    ],
+  },
+  {
+    id: 'vec-enviar-pago',
+    kind: 'modal',
+    icon: Send,
+    color: '#0d9488',
+    bg: '#ccfbf1',
+    title: 'Enviar comprobante de pago',
+    subtitle: 'Para que registren tu cuota',
+    length: '2 pasos',
+    steps: [
+      {
+        icon: Send, color: '#0d9488', bg: '#ccfbf1',
+        title: 'Subir el comprobante',
+        subtitle: 'Mes, archivo y nota',
+        body:
+          'En Enviar pago elige el mes, adjunta foto o PDF de la transferencia y, si quieres, una nota. Administración lo valida y lo captura en Cobranza.',
+        route: '/app/enviar-pago',
+      },
+      {
+        icon: CheckCircle2, color: '#0d9488', bg: '#ccfbf1',
+        title: 'Estatus del envío',
+        subtitle: 'Pendiente, recibido o rechazado',
+        body:
+          'Pendiente: en cola. Recibido: ya está en tu estado de cuenta. Rechazado: verás el motivo y puedes enviar otro.',
+        tips: [tipConnect('Se conecta con: Cobranza (admin) y Estado de Cuenta (tu saldo).')],
       },
     ],
   },
@@ -804,38 +1172,18 @@ const residenteChapters = [
     steps: [
       {
         icon: Calendar, color: '#f59e0b', bg: '#fef3c7',
-        title: 'Reservar una área común',
-        subtitle: 'Alberca, salón, gym…',
+        title: 'Reservar un área',
+        subtitle: 'Fecha y horario',
         body:
-          'Elige la fecha y el horario en el calendario. Si el horario está libre, confirmas y queda en estado pendiente de aprobación por la administración.',
+          'Elige área, fecha y horario libres. Confirmas y queda pendiente de aprobación. Te avisamos cuando la acepten o rechacen.',
         route: '/app/reservas',
       },
       {
         icon: CheckCircle2, color: '#f59e0b', bg: '#fef3c7',
-        title: 'Cancelar una reserva',
-        subtitle: 'Con anticipación',
+        title: 'Cancelar a tiempo',
+        subtitle: 'Si cambian tus planes',
         body:
-          'Puedes cancelar tus reservas pendientes o aprobadas. Revisa si el condominio tiene políticas de cancelación con anticipación mínima.',
-      },
-    ],
-  },
-  {
-    id: 'vec-notificaciones',
-    kind: 'modal',
-    icon: Bell,
-    color: 'var(--coral-500)',
-    bg: 'var(--coral-50)',
-    title: 'Notificaciones',
-    subtitle: 'Avisos del condominio',
-    length: '1 paso',
-    steps: [
-      {
-        icon: Bell, color: 'var(--coral-500)', bg: 'var(--coral-50)',
-        title: 'Centro de avisos',
-        subtitle: 'Todo lo importante',
-        body:
-          'Recibe avisos de la administración: recordatorios de pago, aprobación/rechazo de reservas, mantenimientos programados, convocatorias a asamblea y más. Marca como leído lo que ya revisaste.',
-        route: '/app/notificaciones',
+          'Puedes cancelar pendientes o aprobadas según las reglas del condominio. Revisa si piden anticipación mínima.',
       },
     ],
   },
@@ -846,7 +1194,7 @@ const residenteChapters = [
     color: '#0d9488',
     bg: '#ccfbf1',
     title: 'Visitas Autorizadas',
-    subtitle: 'Familiares, personal y visitas temporales',
+    subtitle: 'Familiares, personal y visitas',
     length: '3 pasos',
     steps: [
       {
@@ -854,22 +1202,22 @@ const residenteChapters = [
         title: 'Autorizar desde tu unidad',
         subtitle: 'Permanente u ocasional',
         body:
-          'En Mi Unidad o Visitas Autorizadas registra a la persona (nombre, apellidos, correo y celular). Si es ocasional indica la llegada estimada. Si es permanente elige cantidad de visitas o indefinido, siempre con vigencia. El visitante recibe el QR por correo.',
+          'Registra a la persona con correo y celular. Ocasional: llegada estimada. Permanente: cantidad de visitas o indefinido, con vigencia. Recibe el QR por correo.',
         route: '/app/visitas',
       },
       {
-        icon: Mail, color: '#0d9488', bg: '#ccfbf1',
-        title: 'Cómo entra y sale tu visita',
+        icon: QrCode, color: '#0d9488', bg: '#ccfbf1',
+        title: 'Cómo entra y sale',
         subtitle: 'QR o identificación',
         body:
-          'En caseta se escanea el QR. Si no lo trae, presenta una identificación con el mismo nombre; vigilancia toma una foto de evidencia y no se queda con el documento. La salida se registra igual. Si llega en auto, se toma foto del vehículo, placa y cajón o gafete.',
+          'En caseta escanean el QR. Sin QR: identificación con el mismo nombre + foto de evidencia. Vehículo: foto, placa y cajón/gafete.',
       },
       {
-        icon: Mail, color: '#0d9488', bg: '#ccfbf1',
-        title: 'Aviso de ingreso y salida',
+        icon: Bell, color: '#0d9488', bg: '#ccfbf1',
+        title: 'Avisos de ingreso y salida',
         subtitle: 'A los contactos de tu unidad',
         body:
-          'Al confirmar el ingreso o la salida, vigilancia elige a quién avisar (propietario, copropietario, inquilino). El correo trae folio, visitante, anfitrión, hora, método y las fotos de evidencia.',
+          'Al confirmar, vigilancia elige a quién avisar. El correo trae folio, visitante, hora y fotos.',
       },
     ],
   },
@@ -888,7 +1236,7 @@ const residenteChapters = [
         title: 'Cuando llega tu paquete',
         subtitle: 'Correo y notificación',
         body:
-          'Vigilancia registra el paquete con foto. Te llega un correo (y aviso en Homly) con el folio, la foto y un QR. Si configuraron reglamento, también lo ves en el mismo mensaje.',
+          'Caseta registra con foto. Te llega correo (y aviso en Homly) con folio, foto y QR.',
         route: '/app/paqueteria',
       },
       {
@@ -896,34 +1244,7 @@ const residenteChapters = [
         title: 'Recoger en caseta',
         subtitle: 'Muestra el QR o firma',
         body:
-          'En caseta muestran el QR del correo (o de la pantalla). Debe ser el de ese paquete; no se escribe a mano. Si no lo tienes, puedes firmar en la tablet de vigilancia.',
-      },
-    ],
-  },
-  {
-    id: 'vec-enviar-pago',
-    kind: 'modal',
-    icon: Send,
-    color: '#0d9488',
-    bg: '#ccfbf1',
-    title: 'Enviar comprobante de pago',
-    subtitle: 'Que administración registre tu cuota',
-    length: '2 pasos',
-    steps: [
-      {
-        icon: Send, color: '#0d9488', bg: '#ccfbf1',
-        title: 'Subir el comprobante',
-        subtitle: 'Periodo, archivo y nota',
-        body:
-          'En Enviar Pago elige el mes, adjunta la foto o PDF de la transferencia y, si quieres, una nota. Administración lo revisa y lo captura en Cobranza.',
-        route: '/app/enviar-pago',
-      },
-      {
-        icon: CheckCircle2, color: '#0d9488', bg: '#ccfbf1',
-        title: 'Estatus del envío',
-        subtitle: 'Pendiente, recibido o rechazado',
-        body:
-          'Pendiente: ya lo vieron o está en cola. Recibido: ya quedó registrado tu pago. Rechazado: verás el motivo y puedes enviar otro comprobante.',
+          'Muestra el QR del correo. Debe ser el de ese paquete. Si no lo tienes, puedes firmar en la tablet de vigilancia.',
       },
     ],
   },
@@ -942,7 +1263,7 @@ const residenteChapters = [
         title: 'Ver la convocatoria',
         subtitle: 'Fecha, lugar y orden del día',
         body:
-          'Cuando administración emite una asamblea, te llega aviso. En Asambleas ves tipo (ordinaria o extraordinaria), fecha, lugar, orden del día y los documentos (convocatoria, minuta, acta).',
+          'Cuando emiten una asamblea te llega aviso. En Asambleas ves tipo, fecha, lugar, orden del día y documentos.',
         route: '/app/asambleas',
       },
       {
@@ -950,14 +1271,34 @@ const residenteChapters = [
         title: 'Poderes y acuerdos',
         subtitle: 'Si no puedes asistir',
         body:
-          'Si el condominio usa cartas poder, se registran en la misma asamblea. Después puedes consultar la minuta y, si ya se protocolizó, el acta.',
+          'Si hay cartas poder, se registran en la misma asamblea. Después consultas minuta y acta.',
+      },
+    ],
+  },
+  {
+    id: 'vec-notificaciones',
+    kind: 'modal',
+    icon: Bell,
+    color: 'var(--coral-500)',
+    bg: 'var(--coral-50)',
+    title: 'Notificaciones',
+    subtitle: 'Avisos del condominio',
+    length: '1 paso',
+    steps: [
+      {
+        icon: Bell, color: 'var(--coral-500)', bg: 'var(--coral-50)',
+        title: 'Centro de avisos',
+        subtitle: 'Pagos, paquetes, visitas y más',
+        body:
+          'Aquí llegan recordatorios de pago, reservas, paquetes, visitas y convocatorias. Marca como leído lo que ya revisaste.',
+        route: '/app/notificaciones',
       },
     ],
   },
 ];
 
 // ═══════════════════════════════════════════════════════════════
-//  VIGILANTE — caseta
+//  VIGILANTE
 // ═══════════════════════════════════════════════════════════════
 const vigilanteChapters = [
   {
@@ -975,7 +1316,7 @@ const vigilanteChapters = [
         title: 'Recibir el paquete',
         subtitle: 'Unidad, foto y folio',
         body:
-          'En Paquetería → Recibir paquete elige la casa (primero el nombre, luego el ID), toma la foto y guarda. Se asigna el folio del año. Después eliges a quién avisar de esa unidad.',
+          'Paquetería → Recibir paquete: elige la casa, toma la foto y guarda. Se asigna folio del año. Después eliges a quién avisar.',
         route: '/app/paqueteria',
       },
       {
@@ -983,15 +1324,16 @@ const vigilanteChapters = [
         title: 'Entregar al destinatario',
         subtitle: 'Escanear o firmar',
         body:
-          'Abre el paquete en "En vigilancia" o usa "Escanear QR". El código del correo debe ser el de ese paquete. Si no coincide: "El QR no corresponde a la validación del registro escaneado". También puedes pedir firma en pantalla.',
-        tips: ['El campo del QR no se borra ni se teclea: solo se reemplaza al escanear.'],
+          'Abre el paquete en En vigilancia o usa Escanear QR. El código del correo debe ser el de ese paquete. También puedes pedir firma en pantalla.',
+        tips: ['El campo del QR no se teclea: solo se reemplaza al escanear.'],
       },
       {
         icon: FileText, color: '#0f766e', bg: '#ccfbf1',
         title: 'Reporte del turno',
         subtitle: 'Resumen y PDF',
         body:
-          'Con el botón Reporte eliges el periodo, ves cuántos paquetes llegaron y descargas el PDF para la bitácora del turno.',
+          'Con Reporte eliges el periodo y descargas PDF. Administración también lo usa en el Expediente del mes.',
+        tips: [tipConnect('Se conecta con: Notificaciones del vecino y Periodos → Expediente.')],
       },
     ],
   },
@@ -1010,7 +1352,7 @@ const vigilanteChapters = [
         title: 'Localizar la autorización',
         subtitle: 'Por unidad o por QR',
         body:
-          'En Visitas Autorizadas abre la bitácora de la unidad o pulsa "Escanear QR". Confirma que el visitante es el de esa autorización (nombre, folio, vigencia, anfitrión).',
+          'Abre la bitácora de la unidad o Escanear QR. Confirma nombre, folio, vigencia y anfitrión.',
         route: '/app/visitas',
       },
       {
@@ -1018,15 +1360,15 @@ const vigilanteChapters = [
         title: 'Registrar ingreso o salida',
         subtitle: 'QR, foto de ID y vehículo',
         body:
-          'Escanea el QR de la autorización. Si no lo trae, pide identificación con el mismo nombre, toma foto y no te quedes con el documento. Si entra en auto: foto, placa y cajón o gafete. Luego elige a qué contactos de la unidad se envía el aviso (con las fotos).',
+          'Escanea el QR de la autorización. Sin QR: ID con el mismo nombre + foto (no te quedes con el documento). Auto: foto, placa y cajón/gafete. Elige a quién avisar.',
         tips: ['El QR de un paquete no sirve para una visita, ni al revés.'],
       },
       {
         icon: FileText, color: '#0d9488', bg: '#ccfbf1',
         title: 'Reporte de visitas',
-        subtitle: 'Ingresos y salidas del periodo',
+        subtitle: 'Cierre de turno',
         body:
-          'En Reporte ves autorizaciones, ingresos y salidas del periodo y descargas el PDF. Sirve para el cierre de turno o para administración.',
+          'En Reporte ves ingresos y salidas del periodo y descargas PDF para bitácora o administración.',
       },
     ],
   },
@@ -1037,12 +1379,21 @@ const vigilanteChapters = [
 // ═══════════════════════════════════════════════════════════════
 export const GUIDE_ROLES = [
   {
+    key: 'mapa',
+    label: 'Mapa del condominio',
+    icon: Link2,
+    color: 'var(--teal-600)',
+    bg: 'var(--teal-50)',
+    description: 'Cómo se conectan Finanzas, Operación y Comunidad — empieza aquí',
+    chapters: mapaChapters,
+  },
+  {
     key: 'admin',
     label: 'Administrador',
     icon: Sparkles,
     color: 'var(--teal-500)',
     bg: 'var(--teal-50)',
-    description: 'Configurar el tenant, operación (paquetes, visitas, mantenimientos) y comité',
+    description: 'Configuración, operación, comunidad, periodos y expediente',
     chapters: adminChapters,
   },
   {
@@ -1051,16 +1402,16 @@ export const GUIDE_ROLES = [
     icon: Wallet,
     color: '#22c55e',
     bg: '#dcfce7',
-    description: 'Cobranza, gastos, caja chica, planeación y cierre mensual',
+    description: 'Cobranza, egresos, planeación, cierre y expediente del mes',
     chapters: tesoreroChapters,
   },
   {
     key: 'contador',
-    label: 'Contador',
+    label: 'Contador / Auditor',
     icon: BookOpen,
     color: '#6366f1',
     bg: '#eef2ff',
-    description: 'Reportes financieros, auditoría y cierre contable',
+    description: 'Reportes, conciliación, firmas de cierre y respaldo',
     chapters: contadorChapters,
   },
   {
@@ -1069,7 +1420,7 @@ export const GUIDE_ROLES = [
     icon: Home,
     color: 'var(--coral-500)',
     bg: 'var(--coral-50)',
-    description: 'Mi unidad, visitas, paquetes, reservas, pagos y asambleas',
+    description: 'Mi unidad, pagos, reservas, visitas, paquetes y asambleas',
     chapters: residenteChapters,
   },
   {
@@ -1078,7 +1429,7 @@ export const GUIDE_ROLES = [
     icon: Shield,
     color: '#0f766e',
     bg: '#ccfbf1',
-    description: 'Caseta: paquetes, visitas autorizadas y bitácora de ingresos',
+    description: 'Caseta: paquetes, visitas y bitácora de ingresos',
     chapters: vigilanteChapters,
   },
 ];

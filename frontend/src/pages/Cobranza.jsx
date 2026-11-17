@@ -10,8 +10,9 @@ import PaginationBar from '../components/PaginationBar';
 import PaymentReceiptModal from '../components/PaymentReceiptModal';
 import UnitStatementOverlay from '../components/UnitStatementOverlay';
 import EvidenceAttach from '../components/EvidenceAttach';
+import RitaAssistant from '../components/RitaAssistant';
 import { todayPeriod, periodLabel, prevPeriod, nextPeriod, tenantStartPeriod, fmtCurrency, statusClass, statusLabel, PAYMENT_TYPES, fmtDate, ROLES, CURRENCIES, APP_VERSION } from '../utils/helpers';
-import { ChevronLeft, ChevronRight, Search, Receipt, X, Users, CheckCircle, Clock, AlertCircle, DollarSign, Calendar, Building2, FileText, Check, Plus, Edit, Edit2, Trash2, Banknote, Mail, Lock, Send, XCircle, Eye, ChevronDown as ChevronDownIcon } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Search, Receipt, X, Users, CheckCircle, Clock, AlertCircle, DollarSign, Calendar, Building2, FileText, Check, Plus, Edit, Edit2, Trash2, Banknote, Mail, Lock, Send, XCircle, Eye, ChevronDown as ChevronDownIcon, Sparkles } from 'lucide-react';
 import toast from 'react-hot-toast';
 import ServicesSuspensionBadge from '../components/ServicesSuspensionBadge';
 
@@ -152,6 +153,8 @@ export default function Cobranza() {
   // Voucher ID que originó la captura actual; si existe, se marca como "received" al guardar
   const [pendingVoucherId, setPendingVoucherId]       = useState(null);
   const [statementOverlayUnit, setStatementOverlayUnit] = useState(null);
+  const [ritaOpen, setRitaOpen] = useState(false);
+  const [ritaAssignedMovementId, setRitaAssignedMovementId] = useState(null);
 
   // ── Datos del módulo vía React Query ────────────────────────────────────────
   const {
@@ -196,18 +199,32 @@ export default function Cobranza() {
         //   de otros periodos cobrados en la misma captura.
         // - "pendiente": sin pago registrado, se filtra por balance positivo.
         // - "pagado_despues": ya cubierto vía mecanismo de adeudo → excluir.
+        // - "period_deficit" (backend, fuente única): lo que realmente falta cubrir del cargo de ESE
+        //   período. NO usar charge - paid: 'paid' incluye abonos que el recibo del mes aplicó a
+        //   meses anteriores, así que un mes sin pagar podía verse "cubierto" y desaparecer de aquí
+        //   aunque el estado de cuenta lo mostrara vencido.
+        const deficitOf = (p) => (p.period_deficit !== undefined && p.period_deficit !== null
+          ? (parseFloat(p.period_deficit) || 0)
+          : Math.max(0, parseFloat(p.charge) - parseFloat(p.paid)));
         const withDebt = rawPeriods
           .filter(p => p.period < period && (
             p.status === 'parcial' ||
-            (p.status === 'pendiente' && (parseFloat(p.charge) - parseFloat(p.paid)) > 0.01)
+            (p.status === 'pendiente' && deficitOf(p) > 0.01)
           ))
-          .map(p => ({
-            period: p.period,
-            charge: parseFloat(p.charge),
-            paid: parseFloat(p.paid),
-            saldoPeriodo: Math.max(0, parseFloat(p.charge) - parseFloat(p.paid)),
-            status: p.status,
-          }))
+          .map(p => {
+            const charge = parseFloat(p.charge);
+            const deficit = deficitOf(p);
+            const naive = Math.max(0, charge - parseFloat(p.paid));
+            // Parcial: se conserva visible aunque el déficit calculado sea 0 (usa el saldo simple).
+            const saldoPeriodo = deficit > 0.01 ? deficit : (p.status === 'parcial' ? naive : 0);
+            return {
+              period: p.period,
+              charge,
+              paid: Math.max(0, charge - saldoPeriodo),
+              saldoPeriodo,
+              status: p.status,
+            };
+          })
           .sort((a, b) => a.period.localeCompare(b.period));
         setCaptureUnitPeriods(withDebt);
       })
@@ -261,7 +278,7 @@ export default function Cobranza() {
   const totalPages = Math.ceil(filtered.length / perPage);
   const paged = filtered.slice((page - 1) * perPage, page * perPage);
 
-  const openCapture = (unit, overridePeriod, preloadedEvidences) => {
+  const openCapture = (unit, overridePeriod, preloadedEvidences, ritaPrefill) => {
     const capPeriod = overridePeriod || period;
     const existing = paymentMap[unit.id];
     const fp = {};
@@ -292,6 +309,19 @@ export default function Cobranza() {
         fieldPayments[planKey] = fp[planKey] || { received: '', targetUnitId: null, adelantoTargets: {} };
       }
     }
+    // Prefill monto de Rita en mantenimiento (si no hay monto previo o viene de Rita)
+    if (ritaPrefill?.amount != null && ritaPrefill.amount !== '') {
+      const amt = String(ritaPrefill.amount);
+      const cur = parseFloat(fieldPayments.maintenance?.received) || 0;
+      if (!cur) {
+        fieldPayments.maintenance = {
+          ...(fieldPayments.maintenance || {}),
+          received: amt,
+          targetUnitId: fieldPayments.maintenance?.targetUnitId || null,
+          adelantoTargets: fieldPayments.maintenance?.adelantoTargets || {},
+        };
+      }
+    }
     // Normalize received to string for inputs
     Object.keys(fieldPayments).forEach(k => {
       const v = fieldPayments[k];
@@ -309,25 +339,34 @@ export default function Cobranza() {
     setCaptureForm({
       unit_id: unit.id,
       period: capPeriod,
-      payment_type: existing?.payment_type || (!!unit.admin_exempt ? 'excento' : ''),
-      payment_date: existing?.payment_date || new Date().toISOString().slice(0, 10),
-      notes: existing?.notes || '',
-      folio: existing?.folio || '',
+      payment_type: ritaPrefill?.payment_type
+        || existing?.payment_type
+        || (!!unit.admin_exempt ? 'excento' : ''),
+      payment_date: ritaPrefill?.payment_date
+        || existing?.payment_date
+        || new Date().toISOString().slice(0, 10),
+      notes: ritaPrefill?.notes || existing?.notes || '',
+      folio: ritaPrefill?.folio || existing?.folio || '',
       // La evidence no viene en el listado (se omite para ahorrar tráfico).
       // Se inicializa con evidencias pre-cargadas del comprobante (si las hay).
       evidences: preloadedEvidences || [],
-      bank_reconciled: !!existing?.bank_reconciled,
+      bank_reconciled: ritaPrefill?.bank_reconciled != null
+        ? !!ritaPrefill.bank_reconciled
+        : !!existing?.bank_reconciled,
       field_payments: fieldPayments,
       adeudo_payments: existingAp,
       adeudoSelections: restoredSelections,
       showAdelantoPanel: false,
       showAdeudoPanel: false,
       showPreview: false,
+      rita_movement_id: ritaPrefill?.movement_id || null,
+      rita_session_id: ritaPrefill?.session_id || null,
     });
     setShowCapture(unit);
 
     // Si hay un pago registrado, cargar su evidence en segundo plano
-    if (existing?.id) {
+    // (no sobrescribir prefill de Rita en folio/notas)
+    if (existing?.id && !ritaPrefill) {
       paymentsAPI.get(tenantId, existing.id)
         .then(({ data }) => {
           const evList = Array.isArray(data.evidence) ? data.evidence : [];
@@ -494,10 +533,15 @@ export default function Cobranza() {
     const capturedUnit = showCapture;
     const voucherId    = pendingVoucherId;
     try {
+      const ritaMovementId = captureForm.rita_movement_id;
       const res = await paymentsAPI.capture(tenantId, buildCapturePayload());
       toast.success('Pago registrado');
       setShowCapture(null);
       setPendingVoucherId(null);
+      if (ritaMovementId) {
+        setRitaAssignedMovementId(ritaMovementId);
+        setRitaOpen(true);
+      }
       queryClient.invalidateQueries({ queryKey: queryKeys.payments(tenantId, period) });
 
       // Si la captura vino de un comprobante, marcarlo como "recibido"
@@ -568,6 +612,17 @@ export default function Cobranza() {
             onChange={e => { setFilter(e.target.value); setPage(1); }}
           />
         </div>
+        {!isReadOnly && (role === 'admin' || role === 'tesorero' || role === 'contador' || user?.is_superuser) && (
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={() => setRitaOpen(true)}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}
+            title="Rita — leer estado de cuenta y capturar ingresos"
+          >
+            <Sparkles size={14} color="var(--teal-600)" /> Rita
+          </button>
+        )}
       </div>
 
       {/* ── Stat cards ── */}
@@ -2116,6 +2171,19 @@ export default function Cobranza() {
       {(role === 'admin' || role === 'tesorero') && (
         <VoucherReviewPanel tenantId={tenantId} period={period} onAccept={handleAcceptVoucher} />
       )}
+
+      <RitaAssistant
+        tenantId={tenantId}
+        period={period}
+        units={units}
+        mode="ingresos"
+        open={ritaOpen}
+        onClose={() => setRitaOpen(false)}
+        lastAssignedMovementId={ritaAssignedMovementId}
+        onAssignIngreso={(unit, prefill) => {
+          openCapture(unit, period, [], prefill);
+        }}
+      />
     </div>
   );
 }

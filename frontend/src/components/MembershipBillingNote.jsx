@@ -6,11 +6,11 @@ export function workspaceCopy(workspaceType) {
   return {
     isRentas,
     spaceNoun: isRentas ? 'inmobiliaria' : 'condominio',
-    spaceLabel: isRentas ? 'Inmobiliaria' : 'Condominio',
+    spaceLabel: isRentas ? 'Administrar Propiedades' : 'Condominio',
     brandLine: isRentas
       ? 'Sistema de gestión de rentas'
       : 'Sistema de administración de condominios',
-    clientLabel: isRentas ? 'Cliente / Inmobiliaria' : 'Cliente / Condominio',
+    clientLabel: isRentas ? 'Cliente / Propiedades' : 'Cliente / Condominio',
     unitNoun: isRentas ? 'propiedad' : 'unidad',
   };
 }
@@ -43,7 +43,7 @@ export function buildMembershipBillingNoteHTML({
   const noteDueDate = billingNoteDueDate(cycle);
   const now     = new Date().toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   const cycleNo = String(cycle.number).padStart(2, '0');
-  const logoUrl = (typeof window !== 'undefined' ? window.location.origin : '') + '/img/homly-full.png';
+  const logoUrl = (typeof window !== 'undefined' ? window.location.origin : '') + '/img/homly-full-r.png';
 
   return `<!DOCTYPE html>
 <html lang="es"><head><meta charset="UTF-8">

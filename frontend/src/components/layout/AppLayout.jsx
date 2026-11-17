@@ -1,10 +1,12 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useGuide } from '../../context/GuideContext';
+import { TenantAccessProvider } from '../../context/TenantAccessContext';
+import { useWorkspaceConfig } from '../../context/WorkspaceConfigContext';
 import { HomlyBrand, APP_VERSION, ROLES } from '../../utils/helpers';
 import { notificationsAPI, tenantsAPI, paymentPlansAPI } from '../../api/client';
-import { isModuleVisible } from '../../constants/modulePermissions';
+import { isModuleVisible, PATH_TO_MODULE, rentalAccessLevel, levelAtLeast, rentalOffModules, userCanAccessModule } from '../../constants/modulePermissions';
 import GuideModal from '../onboarding/GuideModal';
 import HelpDrawer from './HelpDrawer';
 import {
@@ -12,292 +14,144 @@ import {
   Users, Building, Shield, LogOut, Menu, X, Calendar,
   ChevronDown, Check, Building2, Bell, CheckCheck, Activity, Lock, TrendingDown,
   Sparkles, CreditCard, DollarSign, Target, Newspaper, Send, HelpCircle, ClipboardList, ClipboardCheck, Vote, Wrench, Package, UserCheck,
+  LifeBuoy, Cpu, CalendarClock, ScanSearch, Gauge, GraduationCap, LayoutGrid, PiggyBank,
+  PanelLeftClose, PanelLeftOpen, FileBarChart,
 } from 'lucide-react';
 
+const NAV_SISTEMA = [
+  { path: '/app/sistema/tenants',       icon: Globe,      label: 'Tenants' },
+  { path: '/app/sistema/suscripciones', icon: CreditCard, label: 'Suscripciones' },
+  { path: '/app/sistema/espacios',      icon: LayoutGrid, label: 'Espacios y módulos' },
+  { path: '/app/sistema/crm',           icon: Target,     label: 'CRM Comercial' },
+  { path: '/app/sistema/usuarios',      icon: Users,      label: 'Roles y Usuarios' },
+  { path: '/app/sistema/logs',          icon: Activity,   label: 'Logs del Sistema' },
+];
+
+const NAV_CONDO_GENERAL = [
+  { path: '/app/dashboard',      icon: Home,     label: 'Dashboard' },
+  { path: '/app/notificaciones', icon: Bell,     label: 'Notificaciones' },
+  { path: '/app/onboarding',     icon: Sparkles, label: 'Guías de uso' },
+];
+
+const NAV_CONDO_OPERACION = [
+  { path: '/app/reservas',        icon: Calendar,  label: 'Reservas' },
+  { path: '/app/paqueteria',      icon: Package,   label: 'Paquetería' },
+  { path: '/app/visitas',         icon: UserCheck, label: 'Visitas Autorizadas' },
+  { path: '/app/mantenimientos',  icon: Wrench,    label: 'Mantenimientos' },
+];
+
+const NAV_CONDO_COMUNIDAD = [
+  { path: '/app/blog',      icon: Newspaper, label: 'Comunicación' },
+  { path: '/app/asambleas', icon: Vote,      label: 'Asambleas' },
+];
+
+const NAV_CONDO_FINANZAS = [
+  { path: '/app/cobranza',       icon: Receipt,        label: 'Cobranza' },
+  { path: '/app/gastos',         icon: ShoppingBag,    label: 'Gastos' },
+  { path: '/app/caja-chica',     icon: DollarSign,     label: 'Caja Chica' },
+  { path: '/app/estado-cuenta',  icon: FileText,       label: 'Estado de Cuenta' },
+  { path: '/app/plan-pagos',     icon: TrendingDown,   label: 'Plan de Pagos' },
+  { path: '/app/cierre-periodo', icon: Lock,           label: 'Periodos' },
+  { path: '/app/planeacion',     icon: ClipboardCheck, label: 'Planeación' },
+];
+
+const NAV_CONDO_AJUSTES = [
+  { path: '/app/mi-membresia', icon: CreditCard, label: 'Mi Membresía' },
+  { path: '/app/config',       icon: Settings,   label: 'Configuración' },
+];
+
+function condoNav({ system = false, guides = true, finanzas = NAV_CONDO_FINANZAS, ajustes = false, home = null } = {}) {
+  const general = home
+    ? [home, ...NAV_CONDO_GENERAL.filter(i => i.path !== '/app/dashboard' && (guides || i.path !== '/app/onboarding'))]
+    : NAV_CONDO_GENERAL.filter(i => guides || i.path !== '/app/onboarding');
+  return [
+    ...(system ? [{ section: 'sistema', label: 'Sistema', items: NAV_SISTEMA }] : []),
+    { section: 'general', label: 'General', items: general },
+    { section: 'operacion', label: 'Operación', items: NAV_CONDO_OPERACION },
+    { section: 'comunidad', label: 'Comunidad', items: NAV_CONDO_COMUNIDAD },
+    ...(finanzas?.length ? [{ section: 'finanzas', label: 'Finanzas', items: finanzas }] : []),
+    ...(ajustes ? [{ section: 'ajustes', label: 'Ajustes', items: NAV_CONDO_AJUSTES }] : []),
+  ];
+}
+
 const NAV_ITEMS = {
-  superadmin: [
-    { section: 'system', label: 'Sistema', items: [
-      { path: '/app/sistema/tenants',          icon: Globe,      label: 'Tenants'           },
-      { path: '/app/sistema/suscripciones',    icon: CreditCard, label: 'Suscripciones'     },
-      { path: '/app/sistema/crm',              icon: Target,     label: 'CRM Comercial'     },
-      { path: '/app/sistema/usuarios',         icon: Users,      label: 'Roles y Usuarios'  },
-      { path: '/app/sistema/logs',             icon: Activity,   label: 'Logs del Sistema'  },
-    ]},
-    { section: 'tenant_general', label: 'General', items: [
-      { path: '/app/dashboard',      icon: Home,      label: 'Dashboard'      },
-      { path: '/app/notificaciones', icon: Bell,      label: 'Notificaciones' },
-      { path: '/app/onboarding',     icon: Sparkles,  label: 'Guías de uso'   },
-    ]},
-    { section: 'tenant_admin', label: 'Administración', items: [
-      { path: '/app/blog',           icon: Newspaper, label: 'Comunicación'   },
-      { path: '/app/reservas',       icon: Calendar,  label: 'Reservas'       },
-      { path: '/app/paqueteria',      icon: Package,   label: 'Paquetería'      },
-      { path: '/app/visitas',         icon: UserCheck, label: 'Visitas Autorizadas' },
-      { path: '/app/mantenimientos',  icon: Wrench,    label: 'Mantenimientos'  },
-      { path: '/app/asambleas',       icon: Vote,      label: 'Asambleas'       },
-    ]},
-    { section: 'tenant_finanzas', label: 'Finanzas', items: [
-      { path: '/app/cobranza',       icon: Receipt,      label: 'Cobranza'          },
-      { path: '/app/gastos',         icon: ShoppingBag,  label: 'Gastos'            },
-      { path: '/app/caja-chica',     icon: DollarSign,   label: 'Caja Chica'        },
-      { path: '/app/estado-cuenta',  icon: FileText,     label: 'Estado de Cuenta'  },
-      { path: '/app/plan-pagos',     icon: TrendingDown, label: 'Plan de Pagos'     },
-      { path: '/app/cierre-periodo', icon: Lock,         label: 'Cierre de Período' },
-      { path: '/app/planeacion',     icon: ClipboardCheck, label: 'Planeación' },
-    ]},
-    { section: 'tenant_ajustes', label: 'Ajustes', items: [
-      { path: '/app/mi-membresia', icon: CreditCard, label: 'Mi Membresía'  },
-      { path: '/app/config',       icon: Settings,   label: 'Configuración' },
-    ]},
-  ],
+  // Espacio virtual Súper Admin: solo Sistema. Al entrar a un tenant se usa admin/rentas.
+  superadmin: [{ section: 'sistema', label: 'Sistema', items: NAV_SISTEMA }],
+  admin:      condoNav({ ajustes: true }),
+  tesorero:   condoNav(),
+  contador:   condoNav(),
+  auditor:    condoNav(),
+  vigilante:  condoNav({ guides: true, finanzas: [] }),
+  vecino: condoNav({
+    home: { path: '/app/my-unit', icon: Home, label: 'Mi Unidad' },
+    finanzas: [
+      { path: '/app/enviar-pago',   icon: Send,         label: 'Enviar pago' },
+      { path: '/app/estado-cuenta', icon: FileText,     label: 'Estado de Cuenta' },
+      { path: '/app/plan-pagos',    icon: TrendingDown, label: 'Plan de Pagos' },
+    ],
+  }),
+};
 
-  admin: [
-    { section: 'general', label: 'General', items: [
-      { path: '/app/dashboard',      icon: Home,      label: 'Dashboard'      },
-      { path: '/app/notificaciones', icon: Bell,      label: 'Notificaciones' },
-      { path: '/app/onboarding',     icon: Sparkles,  label: 'Guías de uso'   },
-    ]},
-    { section: 'administracion', label: 'Administración', items: [
-      { path: '/app/blog',           icon: Newspaper, label: 'Comunicación'   },
-      { path: '/app/reservas',       icon: Calendar,  label: 'Reservas'       },
-      { path: '/app/paqueteria',      icon: Package,   label: 'Paquetería'      },
-      { path: '/app/visitas',         icon: UserCheck, label: 'Visitas Autorizadas' },
-      { path: '/app/mantenimientos',  icon: Wrench,    label: 'Mantenimientos'  },
-      { path: '/app/asambleas',       icon: Vote,      label: 'Asambleas'       },
-    ]},
-    { section: 'finanzas', label: 'Finanzas', items: [
-      { path: '/app/cobranza',       icon: Receipt,      label: 'Cobranza'          },
-      { path: '/app/gastos',         icon: ShoppingBag,  label: 'Gastos'            },
-      { path: '/app/caja-chica',     icon: DollarSign,   label: 'Caja Chica'        },
-      { path: '/app/estado-cuenta',  icon: FileText,     label: 'Estado de Cuenta'  },
-      { path: '/app/plan-pagos',     icon: TrendingDown, label: 'Plan de Pagos'     },
-      { path: '/app/cierre-periodo', icon: Lock,         label: 'Cierre de Período' },
-      { path: '/app/planeacion',     icon: ClipboardCheck, label: 'Planeación' },
-    ]},
-    { section: 'ajustes', label: 'Ajustes', items: [
-      { path: '/app/mi-membresia', icon: CreditCard, label: 'Mi Membresía'  },
-      { path: '/app/config',       icon: Settings,   label: 'Configuración' },
-    ]},
-  ],
+const RENTAL_NAV_CORE = [
+  { section: 'general', label: 'General', items: [
+    { path: '/app/rentas/dashboard', icon: Home, label: 'Dashboard' },
+    { path: '/app/rentas/reportes',  icon: FileBarChart, label: 'Reportes' },
+    { path: '/app/notificaciones',   icon: Bell, label: 'Notificaciones' },
+    { path: '/app/rentas/guias',     icon: GraduationCap, label: 'Guías de uso' },
+  ]},
+  { section: 'operacion', label: 'Operación', items: [
+    { path: '/app/rentas/propiedades',   icon: Building2,    label: 'Propiedades' },
+    { path: '/app/rentas/solicitudes',   icon: LifeBuoy,     label: 'Solicitudes' },
+    { path: '/app/rentas/mantenimiento', icon: Wrench,       label: 'Órdenes de trabajo' },
+    { path: '/app/rentas/preventivo',    icon: CalendarClock, label: 'Preventivo' },
+    { path: '/app/rentas/activos',       icon: Cpu,          label: 'Activos' },
+    { path: '/app/rentas/inspecciones',  icon: ScanSearch,   label: 'Inspecciones' },
+    { path: '/app/rentas/indicadores',   icon: Gauge,        label: 'Indicadores' },
+  ]},
+  { section: 'comercial', label: 'Comercial', items: [
+    { path: '/app/rentas/crm',       icon: Target,   label: 'CRM' },
+    { path: '/app/rentas/contratos', icon: FileText, label: 'Contratos' },
+  ]},
+  { section: 'finanzas', label: 'Finanzas', items: [
+    { path: '/app/rentas/cobranza', icon: Receipt,       label: 'Cobranza' },
+    { path: '/app/rentas/rentroll', icon: ClipboardList, label: 'Rent Roll' },
+    { path: '/app/rentas/capex',    icon: PiggyBank, label: 'CAPEX y OPEX' },
+  ]},
+];
 
-  tesorero: [
-    { section: 'general', label: 'General', items: [
-      { path: '/app/dashboard',      icon: Home,      label: 'Dashboard'      },
-      { path: '/app/notificaciones', icon: Bell,      label: 'Notificaciones' },
-      { path: '/app/onboarding',     icon: Sparkles,  label: 'Guías de uso'   },
-    ]},
-    { section: 'administracion', label: 'Administración', items: [
-      { path: '/app/blog',           icon: Newspaper, label: 'Comunicación'   },
-      { path: '/app/reservas',       icon: Calendar,  label: 'Reservas'       },
-      { path: '/app/paqueteria',      icon: Package,   label: 'Paquetería'      },
-      { path: '/app/visitas',         icon: UserCheck, label: 'Visitas Autorizadas' },
-      { path: '/app/mantenimientos',  icon: Wrench,    label: 'Mantenimientos'  },
-      { path: '/app/asambleas',       icon: Vote,      label: 'Asambleas'       },
-    ]},
-    { section: 'finanzas', label: 'Finanzas', items: [
-      { path: '/app/cobranza',       icon: Receipt,      label: 'Cobranza'          },
-      { path: '/app/gastos',         icon: ShoppingBag,  label: 'Gastos'            },
-      { path: '/app/caja-chica',     icon: DollarSign,   label: 'Caja Chica'        },
-      { path: '/app/estado-cuenta',  icon: FileText,     label: 'Estado de Cuenta'  },
-      { path: '/app/plan-pagos',     icon: TrendingDown, label: 'Plan de Pagos'     },
-      { path: '/app/cierre-periodo', icon: Lock,         label: 'Cierre de Período' },
-      { path: '/app/planeacion',     icon: ClipboardCheck, label: 'Planeación' },
-    ]},
-  ],
-
-  contador: [
-    { section: 'general', label: 'General', items: [
-      { path: '/app/dashboard',      icon: Home,      label: 'Dashboard'      },
-      { path: '/app/notificaciones', icon: Bell,      label: 'Notificaciones' },
-      { path: '/app/onboarding',     icon: Sparkles,  label: 'Guías de uso'   },
-    ]},
-    { section: 'administracion', label: 'Administración', items: [
-      { path: '/app/blog',           icon: Newspaper, label: 'Comunicación'   },
-      { path: '/app/reservas',       icon: Calendar,  label: 'Reservas'       },
-      { path: '/app/paqueteria',      icon: Package,   label: 'Paquetería'      },
-      { path: '/app/visitas',         icon: UserCheck, label: 'Visitas Autorizadas' },
-      { path: '/app/mantenimientos',  icon: Wrench,    label: 'Mantenimientos'  },
-      { path: '/app/asambleas',       icon: Vote,      label: 'Asambleas'       },
-    ]},
-    { section: 'finanzas', label: 'Finanzas', items: [
-      { path: '/app/cobranza',       icon: Receipt,      label: 'Cobranza'          },
-      { path: '/app/gastos',         icon: ShoppingBag,  label: 'Gastos'            },
-      { path: '/app/caja-chica',     icon: DollarSign,   label: 'Caja Chica'        },
-      { path: '/app/estado-cuenta',  icon: FileText,     label: 'Estado de Cuenta'  },
-      { path: '/app/plan-pagos',     icon: TrendingDown, label: 'Plan de Pagos'     },
-      { path: '/app/cierre-periodo', icon: Lock,         label: 'Cierre de Período' },
-      { path: '/app/planeacion',     icon: ClipboardCheck, label: 'Planeación' },
-    ]},
-  ],
-
-  auditor: [
-    { section: 'general', label: 'General', items: [
-      { path: '/app/dashboard',      icon: Home,      label: 'Dashboard'      },
-      { path: '/app/notificaciones', icon: Bell,      label: 'Notificaciones' },
-      { path: '/app/onboarding',     icon: Sparkles,  label: 'Guías de uso'   },
-    ]},
-    { section: 'administracion', label: 'Administración', items: [
-      { path: '/app/blog',           icon: Newspaper, label: 'Comunicación'   },
-      { path: '/app/reservas',       icon: Calendar,  label: 'Reservas'       },
-      { path: '/app/paqueteria',      icon: Package,   label: 'Paquetería'      },
-      { path: '/app/visitas',         icon: UserCheck, label: 'Visitas Autorizadas' },
-      { path: '/app/mantenimientos',  icon: Wrench,    label: 'Mantenimientos'  },
-      { path: '/app/asambleas',       icon: Vote,      label: 'Asambleas'       },
-    ]},
-    { section: 'finanzas', label: 'Finanzas', items: [
-      { path: '/app/cobranza',       icon: Receipt,      label: 'Cobranza'          },
-      { path: '/app/gastos',         icon: ShoppingBag,  label: 'Gastos'            },
-      { path: '/app/caja-chica',     icon: DollarSign,   label: 'Caja Chica'        },
-      { path: '/app/estado-cuenta',  icon: FileText,     label: 'Estado de Cuenta'  },
-      { path: '/app/plan-pagos',     icon: TrendingDown, label: 'Plan de Pagos'     },
-      { path: '/app/cierre-periodo', icon: Lock,         label: 'Cierre de Período' },
-      { path: '/app/planeacion',     icon: ClipboardCheck, label: 'Planeación' },
-    ]},
-  ],
-
-  vigilante: [
-    { section: 'general', label: 'General', items: [
-      { path: '/app/dashboard',      icon: Home,      label: 'Dashboard'      },
-      { path: '/app/notificaciones', icon: Bell,      label: 'Notificaciones' },
-    ]},
-    { section: 'administracion', label: 'Administración', items: [
-      { path: '/app/blog',           icon: Newspaper, label: 'Comunicación'   },
-      { path: '/app/reservas',       icon: Calendar,  label: 'Reservas'       },
-      { path: '/app/paqueteria',      icon: Package,   label: 'Paquetería'      },
-      { path: '/app/visitas',         icon: UserCheck, label: 'Visitas Autorizadas' },
-      { path: '/app/mantenimientos',  icon: Wrench,    label: 'Mantenimientos'  },
-      { path: '/app/asambleas',       icon: Vote,      label: 'Asambleas'       },
-    ]},
-  ],
-
-  vecino: [
-    { section: 'general', label: 'General', items: [
-      { path: '/app/my-unit',        icon: Home,      label: 'Mi Unidad'      },
-      { path: '/app/notificaciones', icon: Bell,      label: 'Notificaciones' },
-      { path: '/app/onboarding',     icon: Sparkles,  label: 'Guías de uso'   },
-    ]},
-    { section: 'administracion', label: 'Administración', items: [
-      { path: '/app/blog',           icon: Newspaper, label: 'Comunicación'   },
-      { path: '/app/reservas',       icon: Calendar,  label: 'Reservas'       },
-      { path: '/app/paqueteria',      icon: Package,   label: 'Paquetería'      },
-      { path: '/app/visitas',         icon: UserCheck, label: 'Visitas Autorizadas' },
-      { path: '/app/mantenimientos',  icon: Wrench,    label: 'Mantenimientos'  },
-      { path: '/app/asambleas',       icon: Vote,      label: 'Asambleas'       },
-    ]},
-    { section: 'finanzas', label: 'Finanzas', items: [
-      { path: '/app/enviar-pago',    icon: Send,         label: 'Enviar pago'      },
-      { path: '/app/estado-cuenta',  icon: FileText,     label: 'Estado de Cuenta' },
-      { path: '/app/plan-pagos',     icon: TrendingDown, label: 'Plan de Pagos'    },
-    ]},
+const RENTAL_NAV_AJUSTES = {
+  section: 'ajustes',
+  label: 'Ajustes',
+  items: [
+    { path: '/app/mi-membresia',  icon: CreditCard, label: 'Mi Membresía' },
+    { path: '/app/rentas/config', icon: Settings,   label: 'Configuración' },
   ],
 };
 
+// Cada perfil recibe el menú completo y se filtra por su matriz de módulos (ver modulePermissions.js).
 const RENTAL_NAV_ITEMS = {
-  admin: [
-    { section: 'general', label: 'Gestión', items: [
-      { path: '/app/rentas/dashboard',    icon: Home,      label: 'Dashboard'     },
-      { path: '/app/rentas/propiedades',  icon: Building2, label: 'Propiedades'   },
-      { path: '/app/rentas/crm',          icon: Target,    label: 'CRM'           },
-      { path: '/app/rentas/contratos',    icon: FileText,  label: 'Contratos'     },
-      { path: '/app/rentas/calendario',   icon: Calendar,  label: 'Vigencias'     },
-      { path: '/app/notificaciones',      icon: Bell,      label: 'Notificaciones' },
-    ]},
-    { section: 'finanzas', label: 'Finanzas', items: [
-      { path: '/app/rentas/cobranza',  icon: Receipt,       label: 'Cobranza' },
-      { path: '/app/rentas/rentroll',  icon: ClipboardList, label: 'Rent Roll' },
-    ]},
-    { section: 'ajustes', label: 'Ajustes', items: [
-      { path: '/app/mi-membresia',   icon: CreditCard, label: 'Mi Membresía'  },
-      { path: '/app/rentas/config',  icon: Settings,   label: 'Configuración' },
-    ]},
-  ],
-  tesorero: [
-    { section: 'general', label: 'Gestión', items: [
-      { path: '/app/rentas/dashboard',    icon: Home,      label: 'Dashboard'   },
-      { path: '/app/rentas/propiedades',  icon: Building2, label: 'Propiedades' },
-      { path: '/app/rentas/crm',          icon: Target,    label: 'CRM'         },
-      { path: '/app/rentas/contratos',    icon: FileText,  label: 'Contratos'   },
-      { path: '/app/rentas/calendario',   icon: Calendar,  label: 'Vigencias'   },
-      { path: '/app/notificaciones',      icon: Bell,      label: 'Notificaciones' },
-    ]},
-    { section: 'finanzas', label: 'Finanzas', items: [
-      { path: '/app/rentas/cobranza',  icon: Receipt,       label: 'Cobranza' },
-      { path: '/app/rentas/rentroll',  icon: ClipboardList, label: 'Rent Roll' },
-    ]},
-  ],
-  contador: [
-    { section: 'general', label: 'Gestión', items: [
-      { path: '/app/rentas/dashboard',    icon: Home,      label: 'Dashboard'   },
-      { path: '/app/rentas/propiedades',  icon: Building2, label: 'Propiedades' },
-      { path: '/app/rentas/crm',          icon: Target,    label: 'CRM'         },
-      { path: '/app/rentas/contratos',    icon: FileText,  label: 'Contratos'   },
-      { path: '/app/rentas/calendario',   icon: Calendar,  label: 'Vigencias'   },
-      { path: '/app/notificaciones',      icon: Bell,      label: 'Notificaciones' },
-    ]},
-    { section: 'finanzas', label: 'Finanzas', items: [
-      { path: '/app/rentas/cobranza',  icon: Receipt,       label: 'Cobranza' },
-      { path: '/app/rentas/rentroll',  icon: ClipboardList, label: 'Rent Roll' },
-    ]},
-  ],
-  auditor: [
-    { section: 'general', label: 'Gestión', items: [
-      { path: '/app/rentas/dashboard',    icon: Home,      label: 'Dashboard'   },
-      { path: '/app/rentas/propiedades',  icon: Building2, label: 'Propiedades' },
-      { path: '/app/rentas/crm',          icon: Target,    label: 'CRM'         },
-      { path: '/app/rentas/contratos',    icon: FileText,  label: 'Contratos'   },
-      { path: '/app/rentas/calendario',   icon: Calendar,  label: 'Vigencias'   },
-      { path: '/app/notificaciones',      icon: Bell,      label: 'Notificaciones' },
-    ]},
-    { section: 'finanzas', label: 'Finanzas', items: [
-      { path: '/app/rentas/cobranza',  icon: Receipt,       label: 'Cobranza' },
-      { path: '/app/rentas/rentroll',  icon: ClipboardList, label: 'Rent Roll' },
-    ]},
-  ],
-};
-
-// Maps each nav path to its module key (for permission filtering)
-const PATH_TO_MODULE = {
-  '/app/dashboard':       'dashboard',
-  '/app/reservas':        'reservas',
-  '/app/cobranza':        'cobranza',
-  '/app/gastos':          'gastos',
-  '/app/caja-chica':      'caja_chica',
-  '/app/estado-cuenta':   'estado_cuenta',
-  '/app/plan-pagos':      'plan_pagos',
-  '/app/cierre-periodo':  'cierre_periodo',
-  '/app/planeacion':      'planeacion',
-  '/app/asambleas':       'asambleas',
-  '/app/mantenimientos':  'mantenimientos',
-  '/app/paqueteria':      'paqueteria',
-  '/app/visitas':         'visitas',
-  '/app/notificaciones':  'notificaciones',
-  '/app/config':          'config',
-  '/app/my-unit':         'my_unit',
-  '/app/onboarding':      'onboarding',
-  '/app/mi-membresia':    'mi_membresia',
-  '/app/blog':            'blog',
-  '/app/enviar-pago':     'enviar_pago',
-  '/app/rentas/dashboard':    'rentas_dashboard',
-  '/app/rentas/propiedades':  'rentas_propiedades',
-  '/app/rentas/crm':          'rentas_crm',
-  '/app/rentas/contratos':    'rentas_contratos',
-  '/app/rentas/cobranza':     'rentas_cobranza',
-  '/app/rentas/rentroll':     'rentas_rentroll',
-  '/app/rentas/calendario':   'rentas_calendario',
-  '/app/rentas/config':       'rentas_config',
+  admin:         [...RENTAL_NAV_CORE, RENTAL_NAV_AJUSTES],
+  gerente:       RENTAL_NAV_CORE,
+  comercial:     RENTAL_NAV_CORE,
+  mantenimiento: RENTAL_NAV_CORE,
+  tecnico:       RENTAL_NAV_CORE,
+  tesorero:      RENTAL_NAV_CORE,
+  contador:      RENTAL_NAV_CORE,
+  auditor:       RENTAL_NAV_CORE,
 };
 
 const PAGE_TITLES = {
   dashboard: 'Dashboard',
   'sistema/tenants': 'Gestión de Tenants',
   'sistema/suscripciones': 'Suscripciones',
+  'sistema/espacios': 'Espacios de trabajo y módulos',
   'sistema/logs': 'Logs del Sistema',
   cobranza: 'Cobranza',
   gastos: 'Gastos del Condominio',
   'caja-chica': 'Caja Chica',
   'estado-cuenta': 'Estado de Cuenta',
   'plan-pagos': 'Plan de Pagos',
-  'cierre-periodo': 'Cierre de Período',
+  'cierre-periodo': 'Periodos',
   planeacion: 'Planeación',
   asambleas: 'Asambleas',
   mantenimientos: 'Mantenimientos',
@@ -316,11 +170,20 @@ const PAGE_TITLES = {
   'rentas/dashboard': 'Rentas',
   'rentas/propiedades': 'Propiedades en renta',
   'rentas/crm': 'CRM de rentas',
-  'rentas/contratos': 'Contratos de renta',
+  'rentas/contratos': 'Contratos',
   'rentas/cobranza': 'Cobranza de rentas',
   'rentas/rentroll': 'Rent Roll',
-  'rentas/calendario': 'Vigencias de contratos',
-  'rentas/config': 'Configuración de rentas',
+  'rentas/capex': 'CAPEX y OPEX',
+  'rentas/reportes': 'Reportes',
+  'rentas/calendario': 'Contratos · Vigencias',
+  'rentas/mantenimiento': 'Órdenes de trabajo',
+  'rentas/solicitudes': 'Solicitudes de servicio',
+  'rentas/preventivo': 'Mantenimiento preventivo',
+  'rentas/activos': 'Activos y equipos',
+  'rentas/inspecciones': 'Inspecciones',
+  'rentas/indicadores': 'Indicadores operativos',
+  'rentas/config': 'Configuración',
+  'rentas/guias': 'Guías de uso',
 };
 
 function getPageTitle(pathname) {
@@ -332,12 +195,15 @@ function getPageTitle(pathname) {
 }
 
 // ── Tenant Switcher ────────────────────────────────────────────────────────
-function TenantSwitcher({ tenantId, tenantName, userTenants, onSwitch }) {
+/** Id virtual del espacio Súper Admin (sin tenant; solo módulos de Sistema). */
+export const SISTEMA_WORKSPACE_ID = '__sistema__';
+
+function TenantSwitcher({ tenantId, tenantName, userTenants, onSwitch, isSuperAdmin, workspaceType }) {
+  const { wsShort, configs } = useWorkspaceConfig();
   const [open, setOpen] = useState(false);
   const [switching, setSwitching] = useState(false);
   const ref = useRef(null);
 
-  // Close on outside click
   useEffect(() => {
     if (!open) return;
     const handle = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
@@ -345,14 +211,18 @@ function TenantSwitcher({ tenantId, tenantName, userTenants, onSwitch }) {
     return () => document.removeEventListener('mousedown', handle);
   }, [open]);
 
-  // Dropdown only makes sense when there are 2+ tenants to choose from
-  const canSwitch = userTenants.length > 1;
+  const inSistema = isSuperAdmin && (!tenantId || workspaceType === 'sistema');
+  // Superadmin siempre puede abrir el selector (Súper Admin + tenants).
+  // Usuarios normales: solo si hay 2+ tenants activos.
+  const canSwitch = isSuperAdmin || userTenants.length > 1;
 
-  const handleSelect = async (t) => {
-    if (t.id === tenantId) { setOpen(false); return; }
+  const handleSelect = async (id) => {
+    const targetId = id === SISTEMA_WORKSPACE_ID ? null : id;
+    const already = (targetId === null && inSistema) || (targetId !== null && targetId === tenantId);
+    if (already) { setOpen(false); return; }
     setSwitching(true);
     try {
-      await onSwitch(t.id);
+      await onSwitch(targetId);
       setOpen(false);
     } catch {
       // error handled upstream
@@ -361,29 +231,71 @@ function TenantSwitcher({ tenantId, tenantName, userTenants, onSwitch }) {
     }
   };
 
-  // Helper: render avatar for a tenant (logo image or fallback icon)
-  const TenantAvatar = ({ logo, size = 32, active = false, radius = 8 }) => {
+  const TenantAvatar = ({ logo, size = 32, active = false, radius = 8, sistema = false }) => {
     const logoSrc = logo
       ? (logo.startsWith('data:') ? logo : `data:image/png;base64,${logo}`)
       : null;
     return (
       <div style={{
         width: size, height: size, borderRadius: radius, flexShrink: 0,
-        background: logoSrc ? 'white' : (active ? 'var(--teal-500)' : 'var(--sand-200)'),
+        background: logoSrc ? 'white' : (sistema ? 'var(--violet-600, #6D28D9)' : (active ? 'var(--teal-500)' : 'var(--sand-200)')),
         border: logoSrc ? '1px solid var(--sand-100)' : 'none',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         overflow: 'hidden',
       }}>
         {logoSrc
           ? <img src={logoSrc} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-          : <Building2 size={size * 0.5} color={active ? 'white' : 'var(--ink-400)'} />
+          : sistema
+            ? <Shield size={size * 0.5} color="white" />
+            : <Building2 size={size * 0.5} color={active ? 'white' : 'var(--ink-400)'} />
         }
       </div>
     );
   };
 
-  // Logo del tenant activo (buscado dentro de userTenants)
   const activeTenantLogo = userTenants.find(t => t.id === tenantId)?.logo || null;
+  const displayName = inSistema ? 'Súper Admin' : (tenantName || 'Seleccionar espacio…');
+  const spaceCount = (isSuperAdmin ? 1 : 0) + userTenants.length;
+
+  const Row = ({ id, name, logo, active, sistema = false, inactive = false, hibernated = false }) => (
+    <button
+      key={id}
+      onClick={() => handleSelect(id)}
+      style={{
+        width: '100%', display: 'flex', alignItems: 'center', gap: 10,
+        padding: '9px 12px',
+        background: active ? (sistema ? 'var(--violet-50, #F5F3FF)' : 'var(--teal-50)') : 'transparent',
+        border: 'none', cursor: 'pointer', textAlign: 'left',
+        transition: 'background 0.1s',
+        opacity: inactive || hibernated ? 0.75 : 1,
+      }}
+      onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'var(--sand-50)'; }}
+      onMouseLeave={e => {
+        e.currentTarget.style.background = active
+          ? (sistema ? 'var(--violet-50, #F5F3FF)' : 'var(--teal-50)')
+          : 'transparent';
+      }}
+    >
+      <TenantAvatar logo={logo} size={28} active={active} radius={6} sistema={sistema} />
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <span style={{
+          display: 'block', fontSize: 13, fontWeight: active ? 700 : 500,
+          color: active
+            ? (sistema ? 'var(--violet-700, #5B21B6)' : 'var(--teal-700)')
+            : 'var(--ink-700)',
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }}>
+          {name}
+        </span>
+        {(hibernated || inactive) && (
+          <span style={{ fontSize: 10, fontWeight: 700, color: hibernated ? 'var(--amber-700)' : 'var(--ink-400)' }}>
+            {hibernated ? 'Hibernado' : 'Inactivo'}
+          </span>
+        )}
+      </span>
+      {active && <Check size={13} color={sistema ? 'var(--violet-600, #6D28D9)' : 'var(--teal-500)'} style={{ flexShrink: 0 }} />}
+    </button>
+  );
 
   return (
     <div ref={ref} style={{ position: 'relative', margin: '8px 12px' }}>
@@ -398,27 +310,24 @@ function TenantSwitcher({ tenantId, tenantName, userTenants, onSwitch }) {
           transition: 'all 0.15s', textAlign: 'left',
         }}
       >
-        {/* Avatar — logo del tenant activo o icono de fallback */}
-        <TenantAvatar logo={activeTenantLogo} size={32} radius={8} />
-
-        {/* Name */}
+        <TenantAvatar logo={inSistema ? null : activeTenantLogo} size={32} radius={8} sistema={inSistema} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{
             fontSize: 13, fontWeight: 700,
-            color: tenantName ? 'var(--ink-800)' : 'var(--ink-400)',
+            color: displayName ? 'var(--ink-800)' : 'var(--ink-400)',
             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-            fontStyle: tenantName ? 'normal' : 'italic',
+            fontStyle: displayName ? 'normal' : 'italic',
           }}>
-            {switching ? 'Cambiando…' : (tenantName || 'Seleccionar espacio…')}
+            {switching ? 'Cambiando…' : displayName}
           </div>
-          {userTenants.length > 0 && (
+          {spaceCount > 0 && (
             <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 1 }}>
-              {userTenants.length} espacio{userTenants.length !== 1 ? 's' : ''} de trabajo
+              {inSistema
+                ? 'Espacio de sistema'
+                : `${spaceCount} espacio${spaceCount !== 1 ? 's' : ''} de trabajo`}
             </div>
           )}
         </div>
-
-        {/* Chevron */}
         {canSwitch && (
           <ChevronDown size={14} style={{
             color: 'var(--ink-400)', flexShrink: 0,
@@ -428,15 +337,27 @@ function TenantSwitcher({ tenantId, tenantName, userTenants, onSwitch }) {
         )}
       </button>
 
-      {/* Dropdown */}
       {open && canSwitch && (
         <div style={{
           position: 'absolute', top: 'calc(100% + 6px)', left: 0, right: 0, zIndex: 200,
           background: 'var(--white)', border: '1px solid var(--sand-100)',
           borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
-          overflow: 'hidden',
+          overflow: 'hidden', maxHeight: 360, overflowY: 'auto',
         }}>
-          {['condominio', 'rentas'].map(ws => {
+          {isSuperAdmin && (
+            <div>
+              <div style={{
+                padding: '8px 12px 6px',
+                fontSize: 10, fontWeight: 800, letterSpacing: '0.06em',
+                color: 'var(--ink-400)', textTransform: 'uppercase',
+              }}>
+                Sistema
+              </div>
+              <Row id={SISTEMA_WORKSPACE_ID} name="Súper Admin" active={inSistema} sistema />
+            </div>
+          )}
+          {configs.map(c => c.workspace_type).map(ws => {
+            if (ws === 'sistema') return null;
             const group = userTenants.filter(t => (t.workspace_type || 'condominio') === ws);
             if (!group.length) return null;
             return (
@@ -446,36 +367,19 @@ function TenantSwitcher({ tenantId, tenantName, userTenants, onSwitch }) {
                   fontSize: 10, fontWeight: 800, letterSpacing: '0.06em',
                   color: 'var(--ink-400)', textTransform: 'uppercase',
                 }}>
-                  {ws === 'rentas' ? 'Rentas · Inmobiliaria' : 'Condominios'}
+                  {wsShort(ws)}
                 </div>
-                {group.map(t => {
-                  const active = t.id === tenantId;
-                  return (
-                    <button
-                      key={t.id}
-                      onClick={() => handleSelect(t)}
-                      style={{
-                        width: '100%', display: 'flex', alignItems: 'center', gap: 10,
-                        padding: '9px 12px',
-                        background: active ? 'var(--teal-50)' : 'transparent',
-                        border: 'none', cursor: 'pointer', textAlign: 'left',
-                        transition: 'background 0.1s',
-                      }}
-                      onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'var(--sand-50)'; }}
-                      onMouseLeave={e => { e.currentTarget.style.background = active ? 'var(--teal-50)' : 'transparent'; }}
-                    >
-                      <TenantAvatar logo={t.logo} size={28} active={active} radius={6} />
-                      <span style={{
-                        flex: 1, fontSize: 13, fontWeight: active ? 700 : 500,
-                        color: active ? 'var(--teal-700)' : 'var(--ink-700)',
-                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                      }}>
-                        {t.name}
-                      </span>
-                      {active && <Check size={13} color="var(--teal-500)" style={{ flexShrink: 0 }} />}
-                    </button>
-                  );
-                })}
+                {group.map(t => (
+                  <Row
+                    key={t.id}
+                    id={t.id}
+                    name={t.name}
+                    logo={t.logo}
+                    active={!inSistema && t.id === tenantId}
+                    inactive={t.is_active === false}
+                    hibernated={!!t.hibernated}
+                  />
+                ))}
               </div>
             );
           })}
@@ -543,6 +447,8 @@ const NOTIF_MODULE_MAP = {
   rental_airbnb_imported:    'rentas_propiedades',
   rental_airbnb_synced:      'rentas_propiedades',
   rental_airbnb_error:       'rentas_propiedades',
+  rental_request_new:        'rentas_solicitudes',
+  rental_work_overdue:       'rentas_mantenimiento',
   assembly_notice:           'asambleas',
   assembly_started:          'asambleas',
   assembly_minute:           'asambleas',
@@ -633,7 +539,9 @@ function NotificationBell({ tenantId, role, tenantModulePerms, activeProfile }) 
     }
     else if (['period_closed','period_reopened'].includes(n.notif_type)) navigate('/app/cobranza');
     else if ((n.notif_type || '').startsWith('rental_lead')) navigate('/app/rentas/crm');
-    else if (['rental_contract_expiring','rental_contract_expired'].includes(n.notif_type)) navigate('/app/rentas/calendario');
+    else if (n.notif_type === 'rental_request_new') navigate('/app/rentas/solicitudes');
+    else if (n.notif_type === 'rental_work_overdue') navigate('/app/rentas/mantenimiento');
+    else if (['rental_contract_expiring','rental_contract_expired'].includes(n.notif_type)) navigate('/app/rentas/contratos?tab=vigencias');
     else if ((n.notif_type || '').startsWith('rental_contract')) navigate('/app/rentas/contratos');
     else if ((n.notif_type || '').startsWith('rental_charge') || (n.notif_type || '').startsWith('rental_payment')) navigate('/app/rentas/cobranza');
     else if ((n.notif_type || '').startsWith('rental_')) navigate('/app/rentas/propiedades');
@@ -679,6 +587,8 @@ function NotificationBell({ tenantId, role, tenantModulePerms, activeProfile }) 
     rental_airbnb_imported:    '🔗',
     rental_airbnb_synced:      '🔄',
     rental_airbnb_error:       '⚠️',
+    rental_request_new:        '🛟',
+    rental_work_overdue:       '⏰',
     // General
     general:               'ℹ️',
   };
@@ -814,6 +724,29 @@ export default function AppLayout() {
   const { activeChapter, closeGuide } = useGuide();
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  // Menú lateral oculto (escritorio): se recuerda entre sesiones para ganar espacio de trabajo
+  const [sidebarHidden, setSidebarHidden] = useState(() => {
+    try { return localStorage.getItem('homly_sidebar_hidden') === '1'; } catch { return false; }
+  });
+  const toggleSidebarHidden = useCallback(() => {
+    setSidebarHidden(v => {
+      const next = !v;
+      try { localStorage.setItem('homly_sidebar_hidden', next ? '1' : '0'); } catch { /* sin almacenamiento */ }
+      return next;
+    });
+  }, []);
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'b') {
+        const tag = (e.target?.tagName || '').toLowerCase();
+        if (tag === 'input' || tag === 'textarea' || e.target?.isContentEditable) return;
+        e.preventDefault();
+        toggleSidebarHidden();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [toggleSidebarHidden]);
   const [helpOpen,    setHelpOpen]    = useState(false);
   // Collapsible sidebar sections — default: all open
   const [collapsedSections, setCollapsedSections] = useState({});
@@ -823,6 +756,17 @@ export default function AppLayout() {
   const [customProfiles,             setCustomProfiles]             = useState([]);
   const [subscriptionAllowedModules, setSubscriptionAllowedModules] = useState([]);
   const [subscriptionStatus,         setSubscriptionStatus]         = useState(null);
+  const [rentalSettings,             setRentalSettings]             = useState({});
+  const [metaTick,                   setMetaTick]                   = useState(0);
+  const silentMetaRefresh = useRef(false);
+
+  // Configuración → Modo de operación avisa para refrescar el menú sin recargar la página
+  useEffect(() => {
+    const onChange = () => { silentMetaRefresh.current = true; setMetaTick(t => t + 1); };
+    window.addEventListener('homly:tenant-settings-changed', onChange);
+    return () => window.removeEventListener('homly:tenant-settings-changed', onChange);
+  }, []);
+  const [permsReady,                 setPermsReady]                 = useState(false);
   // Para residente: only show Plan de Pagos if they have at least one plan (any status)
   const [resHasPlan, setResHasPlan] = useState(false);
   const navigate  = useNavigate();
@@ -830,15 +774,20 @@ export default function AppLayout() {
 
   const isResidente = role === 'vecino' || role === 'vigilante';
 
-  // Fetch tenant data (module permissions + custom profiles) whenever the active tenant changes
+  // Fetch tenant data (module permissions + custom profiles) whenever the active tenant changes.
+  // Superadmin en espacio Súper Admin (sin tenant) no carga metadatos de tenant.
   useEffect(() => {
-    if (!tenantId || role === 'superadmin') {
+    if (!tenantId) {
       setTenantModulePerms({});
       setCustomProfiles([]);
       setSubscriptionAllowedModules([]);
       setSubscriptionStatus(null);
+      setRentalSettings({});
+      setPermsReady(true);
       return;
     }
+    if (!silentMetaRefresh.current) setPermsReady(false);
+    silentMetaRefresh.current = false;
     tenantsAPI.get(tenantId)
       .then(r => {
         setTenantModulePerms(r.data?.module_permissions || {});
@@ -847,14 +796,16 @@ export default function AppLayout() {
           Array.isArray(r.data?.subscription_allowed_modules) ? r.data.subscription_allowed_modules : []
         );
         setSubscriptionStatus(r.data?.subscription_status || null);
+        setRentalSettings(r.data?.rental_settings || {});
       })
       .catch(() => {
         setTenantModulePerms({});
         setCustomProfiles([]);
         setSubscriptionAllowedModules([]);
         setSubscriptionStatus(null);
-      });
-  }, [tenantId, role]);
+      })
+      .finally(() => setPermsReady(true));
+  }, [tenantId, role, metaTick]);
 
   // Fetch residente's plan de pagos — show the nav item only if at least one plan exists
   useEffect(() => {
@@ -862,7 +813,7 @@ export default function AppLayout() {
     paymentPlansAPI.list(tenantId, { page_size: 1 })
       .then(r => {
         const results = Array.isArray(r.data) ? r.data : (r.data?.results || []);
-        setVecHasPlan(results.length > 0);
+        setResHasPlan(results.length > 0);
       })
       .catch(() => setResHasPlan(false));
   }, [role, tenantId]);
@@ -871,6 +822,55 @@ export default function AppLayout() {
   const activeProfile = profileId
     ? customProfiles.find(p => String(p.id) === String(profileId)) || null
     : null;
+
+  // Personalización del superadmin: módulos desactivados y nombres propios
+  const { disabledFor, getCatalog } = useWorkspaceConfig();
+  const disabledModules = useMemo(() => {
+    const base = disabledFor(workspaceType);
+    if (workspaceType !== 'rentas') return base;
+    // Módulos de renta que este tenant decidió no usar (las propiedades se operan sin contrato)
+    return [...new Set([...(base || []), ...rentalOffModules(rentalSettings)])];
+  }, [disabledFor, workspaceType, rentalSettings]);
+  const customLabels = useMemo(() => Object.fromEntries(
+    getCatalog(workspaceType).filter(m => m.label !== m.baseLabel).map(m => [m.key, m.label]),
+  ), [getCatalog, workspaceType]);
+
+  // Solo se renombra la entrada principal del módulo (p. ej. no /units ni /users bajo "config")
+  const navLabel = (item) => {
+    const key = PATH_TO_MODULE[item.path];
+    const label = key && customLabels[key];
+    if (!label) return item.label;
+    return Object.keys(PATH_TO_MODULE).find(p => PATH_TO_MODULE[p] === key) === item.path ? label : item.label;
+  };
+
+  const canAccessModule = useCallback((moduleKey) => userCanAccessModule({
+    role,
+    isSuperAdmin,
+    moduleKey,
+    tenantPermsEntry: tenantModulePerms[role],
+    profileModules: activeProfile?.modules || null,
+    allowedModules: subscriptionAllowedModules,
+    disabledModules,
+  }), [role, isSuperAdmin, tenantModulePerms, activeProfile, subscriptionAllowedModules, disabledModules]);
+
+  // Nivel de acceso (none | read | operate | write) sobre un módulo de Administrar Propiedades.
+  const levelOf = useCallback((moduleKey) => {
+    if (isSuperAdmin || role === 'superadmin') return 'write';
+    if (!canAccessModule(moduleKey)) return 'none';
+    if (activeProfile) {
+      const v = activeProfile.modules && !Array.isArray(activeProfile.modules) ? activeProfile.modules[moduleKey] : (activeProfile.modules || []).includes(moduleKey) ? 'write' : 'hidden';
+      return v === 'write' ? 'write' : 'read';
+    }
+    const lvl = rentalAccessLevel(role, moduleKey, tenantModulePerms[role]);
+    return lvl === 'none' ? 'read' : lvl; // módulo visible por personalización antigua → consulta
+  }, [role, isSuperAdmin, canAccessModule, activeProfile, tenantModulePerms]);
+
+  const tenantAccess = useMemo(() => ({
+    canAccessModule,
+    levelOf,
+    can: (moduleKey, need = 'write') => levelAtLeast(levelOf(moduleKey), need),
+    accessReady: permsReady,
+  }), [canAccessModule, levelOf, permsReady]);
 
   // Determine effective role for nav selection:
   // Custom profile users use the 'admin' nav set (all modules), and the
@@ -883,24 +883,28 @@ export default function AppLayout() {
     : (ROLES[role] || ROLES.vecino);
 
   // Filter nav based on module permissions or custom profile modules
+  // Súper Admin (sin tenant): solo menú Sistema.
+  // Tenant seleccionado: menú del tenant (sin grupo Sistema).
+  const inSistemaWorkspace = isSuperAdmin && (!tenantId || workspaceType === 'sistema');
   const isRentalWorkspace = workspaceType === 'rentas';
   const rentalNav = RENTAL_NAV_ITEMS[navRole] || RENTAL_NAV_ITEMS.admin;
-  const condoNav = NAV_ITEMS[navRole] || NAV_ITEMS.vecino;
-  const rawNav = isRentalWorkspace
-    ? (isSuperAdmin
-        ? [
-            ...(NAV_ITEMS.superadmin?.filter(g => g.section === 'system') || []),
-            ...rentalNav,
-          ]
-        : rentalNav)
-    : condoNav;
-  const effectiveNav = role === 'superadmin'
+  const condoNavBase = NAV_ITEMS[navRole] || NAV_ITEMS.vecino;
+  const condoNav = isSuperAdmin && !inSistemaWorkspace
+    ? (NAV_ITEMS.admin || condoNavBase)  // superadmin dentro de un condominio usa menú admin
+    : condoNavBase;
+  const rawNav = inSistemaWorkspace
+    ? NAV_ITEMS.superadmin
+    : (isRentalWorkspace ? rentalNav : condoNav);
+  const effectiveNav = (role === 'superadmin' || inSistemaWorkspace)
     ? rawNav
     : rawNav.map(group => ({
         ...group,
         items: group.items.filter(item => {
           const moduleKey = PATH_TO_MODULE[item.path];
           if (!moduleKey) return true;
+
+          // Módulo retirado del sistema por el superadmin
+          if (moduleKey !== 'mi_membresia' && disabledModules.includes(moduleKey)) return false;
 
           // Residente: hide Plan de Pagos when no plan exists in any status
           if (role === 'vecino' && moduleKey === 'plan_pagos' && !resHasPlan) return false;
@@ -937,8 +941,15 @@ export default function AppLayout() {
   // Switch tenant + navigate to dashboard
   const handleSwitchTenant = async (newTenantId) => {
     const data = await switchTenant(newTenantId);
-    const ws = data?.workspace_type || userTenants.find(t => t.id === newTenantId)?.workspace_type;
-    navigate(ws === 'rentas' ? '/app/rentas/dashboard' : '/app/dashboard');
+    const ws = data?.workspace_type
+      || (newTenantId ? userTenants.find(t => t.id === newTenantId)?.workspace_type : 'sistema');
+    if (ws === 'sistema' || !newTenantId) {
+      navigate('/app/sistema/tenants');
+    } else if (ws === 'rentas') {
+      navigate(isSuperAdmin ? '/app/rentas/dashboard' : '/app');
+    } else {
+      navigate('/app/dashboard');
+    }
     setSidebarOpen(false);
   };
 
@@ -952,7 +963,8 @@ export default function AppLayout() {
   const showTenantSwitcher = isSuperAdmin || userTenants.length >= 1;
 
   return (
-    <div className="app">
+    <TenantAccessProvider value={tenantAccess}>
+    <div className={`app${sidebarHidden ? ' sidebar-hidden' : ''}`}>
       {/* Sidebar overlay (mobile) */}
       <div
         className={`sidebar-overlay${sidebarOpen ? ' show' : ''}`}
@@ -973,6 +985,8 @@ export default function AppLayout() {
               tenantName={tenantName}
               userTenants={userTenants}
               onSwitch={handleSwitchTenant}
+              isSuperAdmin={isSuperAdmin}
+              workspaceType={workspaceType}
             />
           : tenantName
             ? (() => {
@@ -1049,7 +1063,7 @@ export default function AppLayout() {
                       className={`nav-item${active ? ' active' : ''}`}
                     >
                       <Icon size={18} />
-                      {item.label}
+                      {navLabel(item)}
                     </button>
                   );
                 })}
@@ -1083,6 +1097,13 @@ export default function AppLayout() {
           <div className="header-left">
             <button className="mobile-toggle" onClick={() => setSidebarOpen(true)} aria-label="Abrir menú">
               <Menu size={22} />
+            </button>
+            <button
+              className="desktop-toggle" onClick={toggleSidebarHidden}
+              aria-label={sidebarHidden ? 'Mostrar menú lateral' : 'Ocultar menú lateral'}
+              title={`${sidebarHidden ? 'Mostrar' : 'Ocultar'} menú lateral (Ctrl+B)`}
+            >
+              {sidebarHidden ? <PanelLeftOpen size={20} /> : <PanelLeftClose size={20} />}
             </button>
             {/* Page title — módulo activo + nombre del tenant */}
             <div>
@@ -1213,5 +1234,6 @@ export default function AppLayout() {
       />
       <HelpDrawer open={helpOpen} onClose={() => setHelpOpen(false)} />
     </div>
+    </TenantAccessProvider>
   );
 }

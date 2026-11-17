@@ -9,23 +9,20 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { useGuide } from '../context/GuideContext';
 import { tenantsAPI } from '../api/client';
+import { useTenantAccess } from '../context/TenantAccessContext';
 import GUIDE_ROLES from '../constants/guideCatalog';
 
 /**
  * Onboarding.jsx
  * ─────────────────────────────────────────────────────────────────
- * Hub central de la Guía de Uso. Muestra las guías agrupadas por
- * rol en secciones colapsables (Administrador, Tesorero, Contador,
- * Residente, Vigilante). Cada sección expone los capítulos operativos
- * de ese rol.
+ * Hub central de Guías de uso (Homly Residencial).
+ * Secciones: Mapa del condominio (conexiones) + guías por rol.
  *
  * Tipos de capítulos:
- *   - kind: 'interactive'  → lanza el tour Scribe (AdminConfigTour)
- *     en la ruta `launchRoute` (p.ej. /app/config?tour=1).
- *   - kind: 'modal'        → abre GuideModal con los steps del capítulo.
+ *   - kind: 'interactive'  → AdminConfigTour en launchRoute
+ *   - kind: 'modal'        → GuideModal flotante con pasos
  */
 
-// Mapea el rol del usuario autenticado → key del catálogo
 function mapUserRoleToCatalog(role) {
   if (role === 'superadmin' || role === 'admin') return 'admin';
   if (role === 'tesorero')   return 'tesorero';
@@ -35,58 +32,71 @@ function mapUserRoleToCatalog(role) {
   return 'admin';
 }
 
-// Módulo requerido por chapter id (null = sin restricción de membresía)
+// null = visible si el usuario puede abrir Guías (sin módulo extra)
 const CHAPTER_MODULE = {
-  'admin-setup':          null,
-  'admin-units':          null,
-  'admin-users':          null,
-  'admin-committee':      null,
-  'admin-asambleas':      'asambleas',
-  'admin-mantenimientos': 'mantenimientos',
-  'admin-paqueteria':     'paqueteria',
-  'admin-visitas':        'visitas',
-  'admin-comunicacion':   'blog',
-  'tes-cobranza':         'cobranza',
-  'tes-plan-pagos':       'plan_pagos',
-  'tes-gastos':           'gastos',
-  'tes-estado-cuenta':    'estado_cuenta',
-  'tes-cierre':           'cierre_periodo',
-  'tes-caja-chica':       'caja_chica',
-  'tes-planeacion':       'planeacion',
-  'cont-dashboard':       'dashboard',
-  'cont-reportes':        'estado_cuenta',
-  'cont-categorias':      null,
-  'cont-cierre':          'cierre_periodo',
-  'vec-my-unit':          'my_unit',
-  'vec-estado-cuenta':    'estado_cuenta',
-  'vec-reservas':         'reservas',
-  'vec-notificaciones':   'notificaciones',
-  'vec-visitas':          'visitas',
-  'vec-paqueteria':       'paqueteria',
-  'vec-enviar-pago':      'enviar_pago',
-  'vec-asambleas':        'asambleas',
-  'vig-paquetes':         'paqueteria',
-  'vig-visitas':          'visitas',
+  'mapa-overview':        null,
+  'mapa-finanzas':        null,
+  'mapa-operacion':       null,
+  'mapa-comunidad':       null,
+  'admin-setup':           'config',
+  'admin-units':           'config',
+  'admin-users':           'config',
+  'admin-dashboard':       'dashboard',
+  'admin-reservas':        'reservas',
+  'admin-paqueteria':      'paqueteria',
+  'admin-visitas':         'visitas',
+  'admin-mantenimientos':  'mantenimientos',
+  'admin-comunicacion':    'blog',
+  'admin-asambleas':       'asambleas',
+  'admin-notificaciones':  'notificaciones',
+  'admin-committee':       'cierre_periodo',
+  'tes-cobranza':          'cobranza',
+  'tes-plan-pagos':        'plan_pagos',
+  'tes-gastos':            'gastos',
+  'tes-caja-chica':        'caja_chica',
+  'tes-estado-cuenta':     'estado_cuenta',
+  'tes-planeacion':        'planeacion',
+  'tes-cierre':            'cierre_periodo',
+  'cont-dashboard':        'dashboard',
+  'cont-reportes':         'estado_cuenta',
+  'cont-categorias':       'config',
+  'cont-cierre':           'cierre_periodo',
+  'vec-my-unit':           'my_unit',
+  'vec-estado-cuenta':     'estado_cuenta',
+  'vec-enviar-pago':       'enviar_pago',
+  'vec-reservas':          'reservas',
+  'vec-visitas':           'visitas',
+  'vec-paqueteria':        'paqueteria',
+  'vec-asambleas':         'asambleas',
+  'vec-notificaciones':    'notificaciones',
+  'vig-paquetes':          'paqueteria',
+  'vig-visitas':           'visitas',
 };
 
-// Admin and superadmin see all role sections; everyone else sees only their own.
-// allowedModules: list from subscription plan (empty = no restriction)
-function visibleSections(roleKey, isAdmin, isSuperAdmin, allowedModules) {
-  const sections = (isAdmin || isSuperAdmin) ? GUIDE_ROLES : GUIDE_ROLES.filter(s => s.key === roleKey);
-  if (!allowedModules || allowedModules.length === 0) return sections;
-  return sections.map(section => ({
+// Todos ven el Mapa. Admin/superadmin/custom ven todos los roles;
+// el resto ve Mapa + su rol. Capítulos filtrados por módulo del tenant.
+function visibleSections(roleKey, isAdmin, isSuperAdmin, isCustom, canAccessModule) {
+  const mapa = GUIDE_ROLES.filter(s => s.key === 'mapa');
+  const rest = GUIDE_ROLES.filter(s => s.key !== 'mapa');
+  const roleSections = (isAdmin || isSuperAdmin || isCustom)
+    ? rest
+    : rest.filter(s => s.key === roleKey);
+  return [...mapa, ...roleSections].map(section => ({
     ...section,
     chapters: section.chapters.filter(ch => {
       const mod = CHAPTER_MODULE[ch.id];
-      return !mod || allowedModules.includes(mod);
+      if (mod === undefined) return true;
+      return !mod || canAccessModule(mod);
     }),
   })).filter(section => section.chapters.length > 0);
 }
 
 export default function Onboarding() {
-  const { tenantId, role, isAdmin, isSuperAdmin } = useAuth();
+  const { tenantId, role, isAdmin, isSuperAdmin, profileId } = useAuth();
   const { launchGuide } = useGuide();
+  const { canAccessModule, accessReady } = useTenantAccess();
   const navigate = useNavigate();
+  const isCustom = role === 'custom' || !!profileId;
 
   const [tenant, setTenant] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -95,12 +105,11 @@ export default function Onboarding() {
   // Rol activo del usuario mapeado al catálogo
   const userRoleKey = useMemo(() => mapUserRoleToCatalog(role), [role]);
 
-  // Secciones colapsables por rol — autoexpandir la del usuario
-  const [expanded, setExpanded] = useState(() => ({ [userRoleKey]: true }));
+  // Mapa + sección del usuario abiertas por defecto
+  const [expanded, setExpanded] = useState(() => ({ mapa: true, [userRoleKey]: true }));
 
   useEffect(() => {
-    // Al cambiar el rol del usuario, abrir automáticamente su sección
-    setExpanded(prev => ({ ...prev, [userRoleKey]: true }));
+    setExpanded(prev => ({ ...prev, mapa: true, [userRoleKey]: true }));
   }, [userRoleKey]);
 
   useEffect(() => {
@@ -114,9 +123,13 @@ export default function Onboarding() {
 
   const completed = !!tenant?.onboarding_completed;
   const tenantName = tenant?.name || 'tu condominio';
-  const allowedModules = Array.isArray(tenant?.subscription_allowed_modules) ? tenant.subscription_allowed_modules : [];
-
-  const startAdminTour = () => navigate('/app/config?tour=1');
+  const startAdminTour = () => {
+    if (!canAccessModule('config')) {
+      toast.error('No tienes acceso a Configuración');
+      return;
+    }
+    navigate('/app/config?tour=1');
+  };
 
   const resetTour = async () => {
     if (!tenantId) return;
@@ -135,16 +148,23 @@ export default function Onboarding() {
   const toggle = (key) => setExpanded(prev => ({ ...prev, [key]: !prev[key] }));
 
   const launchChapter = (chapter) => {
+    const required = CHAPTER_MODULE[chapter.id];
+    if (required && !canAccessModule(required)) {
+      toast.error('No tienes permiso para este módulo');
+      return;
+    }
     if (chapter.kind === 'interactive') {
-      // Tour interactivo (AdminConfigTour) — navega a la ruta y lanza el tour en-página
+      if (!canAccessModule('config')) {
+        toast.error('No tienes acceso a Configuración');
+        return;
+      }
       navigate(chapter.launchRoute || '/app/config?tour=1');
       return;
     }
-    // Guía modal interactiva: el GuideModal vive en AppLayout y persiste durante la navegación
     launchGuide(chapter);
   };
 
-  if (loading) {
+  if (loading || !accessReady) {
     return <div style={{ padding: 40, textAlign: 'center', color: 'var(--ink-400)' }}>Cargando…</div>;
   }
 
@@ -174,27 +194,27 @@ export default function Onboarding() {
             fontSize: 11, fontWeight: 800, letterSpacing: '0.08em',
             color: 'var(--teal-600)', textTransform: 'uppercase', marginBottom: 4,
           }}>
-            Guía de uso por rol
+            Guías de uso · Homly Residencial
           </div>
           <h2 style={{
             margin: 0, fontSize: 24, fontWeight: 800,
             color: 'var(--ink-800)', lineHeight: 1.25,
           }}>
-            Aprende a operar {tenantName} paso a paso
+            Aprende a operar {tenantName} con claridad
           </h2>
           <p style={{
             margin: '8px 0 0', fontSize: 14, color: 'var(--ink-600)',
             lineHeight: 1.55,
           }}>
-            Encuentra la guía operativa de tu rol y repásala cuando quieras.
-            Cada capítulo explica qué hacer, dónde hacerlo y por qué — sin
-            bloquear tu pantalla.
+            Empieza por el <strong>Mapa del condominio</strong> para ver cómo se
+            conectan Finanzas y Operación. Luego abre los capítulos de tu rol:
+            cada uno te dice qué hacer, en qué pantalla y con qué módulo se enlaza.
           </p>
         </div>
       </div>
 
       {/* ── Status card solo para admins ─────────────────────────── */}
-      {isAdmin && (
+      {isAdmin && canAccessModule('config') && (
         <div
           className="card"
           style={{ padding: 20, marginBottom: 20, display: 'flex', alignItems: 'center', gap: 14 }}
@@ -247,7 +267,7 @@ export default function Onboarding() {
 
       {/* ── Secciones colapsables por rol ────────────────────────── */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 20 }}>
-        {visibleSections(userRoleKey, isAdmin, isSuperAdmin, allowedModules).map(section => (
+        {visibleSections(userRoleKey, isAdmin, isSuperAdmin, isCustom, canAccessModule).map(section => (
           <RoleSection
             key={section.key}
             section={section}
@@ -271,11 +291,12 @@ export default function Onboarding() {
       >
         <Sparkles size={20} color="var(--teal-500)" style={{ flexShrink: 0, marginTop: 2 }} />
         <div style={{ fontSize: 13, color: 'var(--ink-600)', lineHeight: 1.55 }}>
-          <strong>Tip:</strong> La guía flota sobre la pantalla real para que puedas
-          practicar mientras lees. Arrástrala, avanza paso a paso y trabaja con el
-          sistema al mismo tiempo — sin que te bloquee nada.
+          <strong>Tip:</strong> Al abrir un capítulo, la guía flota sobre la
+          pantalla real y te lleva al módulo. Arrástrala, practica y avanza a tu
+          ritmo. Busca las frases “Se conecta con…” para entender el flujo completo
+          del mes (cobranza → gastos → periodos/expediente, y caseta → avisos → reporte).
           {(isSuperAdmin || isAdmin)
-            ? ' Como administrador puedes ver las guías de todos los roles.'
+            ? ' Como administrador ves las guías de todos los roles.'
             : ''}
         </div>
       </div>

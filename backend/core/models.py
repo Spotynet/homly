@@ -19,9 +19,11 @@ Model hierarchy:
        └── Committee (committees)
 """
 
+import builtins
 import os
 import secrets
 import uuid
+from builtins import property as _py_property
 from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.core.validators import MinValueValidator, MaxValueValidator
@@ -134,7 +136,7 @@ class Tenant(models.Model):
     ]
     WORKSPACE_TYPE_CHOICES = [
         ('condominio', 'Administración de condominios'),
-        ('rentas', 'Gestión de rentas'),
+        ('rentas', 'Administrar Propiedades'),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -144,7 +146,7 @@ class Tenant(models.Model):
         choices=WORKSPACE_TYPE_CHOICES,
         default='condominio',
         db_index=True,
-        help_text='Espacio de trabajo: condominio o inmobiliaria de rentas.',
+        help_text='Espacio de trabajo: condominio o administrar propiedades.',
     )
     rental_settings = models.JSONField(
         default=dict,
@@ -282,6 +284,14 @@ class Tenant(models.Model):
         help_text='Flujo de aprobación de presupuesto y proyectos: enabled y pasos ordenados.',
     )
 
+    # Rita (asistente AI) — configuración por tenant.
+    # { bank_profile, auto_suggest_unit, default_payment_type, enabled }
+    rita_settings = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text='Configuración de Rita: bank_profile (santander/bbva/…), auto_suggest_unit, etc.',
+    )
+
     # Active / inactive flag — managed by TenantSubscription.sync_tenant_active().
     # When False, users of this tenant cannot log in (access is blocked).
     is_active = models.BooleanField(
@@ -337,6 +347,11 @@ class TenantUser(models.Model):
         ('auditor',    'Auditor'),
         ('vecino',     'Residente'),
         ('vigilante',  'Vigilante'),
+        # Perfiles exclusivos del espacio Administrar Propiedades (rentas)
+        ('gerente',       'Gerente de propiedades'),
+        ('comercial',     'Ejecutivo comercial'),
+        ('mantenimiento', 'Coordinador de mantenimiento'),
+        ('tecnico',       'Técnico de campo'),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -865,6 +880,47 @@ class BankStatement(models.Model):
         return f'Bank Statement {self.tenant.name} — {self.period}'
 
 
+class RitaBankSession(models.Model):
+    """Sesión de Rita: parseo del estado de cuenta (BankStatement) para ingresos y egresos."""
+    STATUS_CHOICES = (
+        ('open', 'Abierta'),
+        ('completed', 'Completada'),
+        ('cancelled', 'Cancelada'),
+    )
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='rita_sessions')
+    period = models.CharField(max_length=7, db_index=True)
+    bank_statement = models.ForeignKey(
+        'BankStatement', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='rita_sessions',
+        help_text='Estado bancario canónico del período (Estado General).',
+    )
+    bank_profile = models.CharField(max_length=40, default='generic')
+    source_filename = models.CharField(max_length=255, blank=True, default='')
+    summary = models.JSONField(default=dict, blank=True)
+    movements = models.JSONField(default=list, blank=True)
+    meta = models.JSONField(default=dict, blank=True)
+    status = models.CharField(max_length=12, choices=STATUS_CHOICES, default='open', db_index=True)
+    created_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name='rita_sessions',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'rita_bank_sessions'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'Rita {self.tenant.name} {self.period} ({self.status})'
+
+    def pending_ingresos(self):
+        return [m for m in (self.movements or []) if m.get('kind') == 'ingreso' and m.get('status') == 'pending']
+
+    def pending_egresos(self):
+        return [m for m in (self.movements or []) if m.get('kind') == 'egreso' and m.get('status') == 'pending']
+
+
 # ═══════════════════════════════════════════════════════════
 #  CLOSED PERIOD / REOPEN REQUEST
 # ═══════════════════════════════════════════════════════════
@@ -1166,6 +1222,8 @@ class Notification(models.Model):
         ('rental_airbnb_imported',     'Airbnb importado'),
         ('rental_airbnb_synced',       'Airbnb sincronizado'),
         ('rental_airbnb_error',        'Error de Airbnb'),
+        ('rental_request_new',         'Nueva solicitud de servicio'),
+        ('rental_work_overdue',        'Orden de trabajo vencida'),
         # Asambleas
         ('assembly_notice',       'Convocatoria de asamblea'),
         ('assembly_started',      'Asamblea en curso'),
@@ -1229,6 +1287,7 @@ class AuditLog(models.Model):
         ('sistema',    'Sistema'),
         ('paqueteria', 'Paquetería / Mensajería'),
         ('visitas',    'Visitas Autorizadas'),
+        ('rentas_mantenimiento', 'Mantenimiento de propiedades'),
     ]
 
     ACTION_CHOICES = [
@@ -1301,6 +1360,13 @@ class CondominioRequest(models.Model):
         ('administrador',    'Administrador Externo'),
         ('comite',           'Comité'),
     ]
+    # Tipo de administración del espacio «Administrar Propiedades» (distinto al del condominio).
+    PROPIEDADES_ADMIN_TYPE_CHOICES = [
+        ('propietario',  'Propietario'),
+        ('inmobiliaria', 'Inmobiliaria o administrador'),
+        ('operador',     'Equipo de operación y mantenimiento'),
+        ('corporativo',  'Fondo, desarrolladora o corporativo'),
+    ]
     CURRENCY_CHOICES = [
         ('MXN', 'Peso Mexicano'),
         ('USD', 'US Dollar'),
@@ -1317,6 +1383,10 @@ class CondominioRequest(models.Model):
     condominio_ciudad    = models.CharField(max_length=200, blank=True, default='')
     condominio_unidades  = models.PositiveIntegerField(default=0)
     condominio_tipo_admin = models.CharField(max_length=20, choices=ADMIN_TYPE_CHOICES, default='mesa_directiva')
+    propiedades_tipo_admin = models.CharField(
+        max_length=20, choices=PROPIEDADES_ADMIN_TYPE_CHOICES, blank=True, default='',
+        help_text='Solo si el interesado pidió Administrar Propiedades.',
+    )
     condominio_currency  = models.CharField(max_length=3, choices=CURRENCY_CHOICES, default='MXN')
 
     # Responsible admin info
@@ -1408,7 +1478,7 @@ class SubscriptionPlan(models.Model):
     ]
     WORKSPACE_TYPE_CHOICES = [
         ('condominio', 'Administración de condominios'),
-        ('rentas', 'Gestión de rentas'),
+        ('rentas', 'Administrar Propiedades'),
     ]
 
     id               = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -2126,38 +2196,96 @@ class RentalProperty(models.Model):
     PROPERTY_TYPE_CHOICES = [
         ('casa', 'Casa'),
         ('departamento', 'Departamento'),
+        ('studio', 'Studio / loft'),
+        ('cuarto', 'Habitación / cuarto'),
+        ('airbnb', 'Airbnb / corta estancia'),
         ('local', 'Local comercial'),
         ('oficina', 'Oficina'),
+        ('consultorio', 'Consultorio'),
+        ('kiosco', 'Kiosco / isla'),
         ('bodega', 'Bodega'),
+        ('nave', 'Nave industrial'),
+        ('patio', 'Patio / yard'),
         ('terreno', 'Terreno'),
+        ('estacionamiento', 'Estacionamiento'),
+        ('salon', 'Salón / espacio de eventos'),
+        ('centro_comercial', 'Centro / plaza comercial'),
+        ('edificio_oficinas', 'Edificio de oficinas'),
+        ('hotel', 'Hotel'),
+        ('parque_industrial', 'Parque industrial'),
         ('otro', 'Otro'),
+    ]
+    TYPE_GROUPS = {
+        'residencial': ('casa', 'departamento', 'studio', 'cuarto'),
+        'corta_estancia': ('airbnb', 'hotel'),
+        'comercial': ('local', 'oficina', 'consultorio', 'kiosco', 'centro_comercial', 'edificio_oficinas'),
+        'industrial': ('bodega', 'nave', 'patio', 'parque_industrial'),
+        'otros': ('terreno', 'estacionamiento', 'salon', 'otro'),
+    }
+    # Tipos que normalmente se subdividen en espacios con varios inquilinos (Multi Tenant)
+    MULTI_TENANT_TYPES = ('centro_comercial', 'edificio_oficinas', 'hotel', 'parque_industrial')
+    TENANCY_CHOICES = [
+        ('single', 'Single Tenant (un solo inquilino)'),
+        ('multi', 'Multi Tenant (espacios con varios inquilinos)'),
     ]
     STATUS_CHOICES = [
         ('disponible', 'Disponible'),
         ('ocupada', 'Ocupada'),
         ('reservada', 'Reservada'),
         ('mantenimiento', 'En mantenimiento'),
+        ('operativa', 'En operación'),
         ('inactiva', 'Inactiva'),
+    ]
+    USAGE_CHOICES = [
+        ('renta', 'En renta (puede tener contrato)'),
+        ('operacion', 'Solo operación (no se renta)'),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='rental_properties')
     code = models.CharField(max_length=40, db_index=True)
     name = models.CharField(max_length=300)
-    property_type = models.CharField(max_length=20, choices=PROPERTY_TYPE_CHOICES, default='departamento')
+    property_type = models.CharField(max_length=24, choices=PROPERTY_TYPE_CHOICES, default='departamento', db_index=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='disponible', db_index=True)
+    usage = models.CharField(
+        max_length=12, choices=USAGE_CHOICES, default='renta', db_index=True,
+        help_text='renta: puede relacionarse con contratos de renta. operacion: se administra y mantiene sin contrato de renta.',
+    )
+    tenancy_model = models.CharField(
+        max_length=8, choices=TENANCY_CHOICES, default='single', db_index=True,
+        help_text='single: se renta completa. multi: se subdivide en espacios (RentalSpace), cada uno con su inquilino.',
+    )
+    park_name = models.CharField(max_length=200, blank=True, default='', help_text='Parque industrial / desarrollo / complejo.')
+    building_number = models.CharField(max_length=60, blank=True, default='', help_text='# de edificio o nave dentro del parque.')
+    submarket = models.CharField(max_length=200, blank=True, default='', help_text='Mercado o submercado inmobiliario.')
+    gla_sqm = models.DecimalField(
+        max_digits=12, decimal_places=2, default=0, validators=[MinValueValidator(0)],
+        help_text='Total GLA (superficie rentable bruta) en m². Si es 0 se usa la suma de los espacios.',
+    )
+    country = models.CharField(max_length=100, blank=True, default='', help_text='País (nombre).')
+    country_code = models.CharField(max_length=2, blank=True, default='', db_index=True, help_text='País (ISO 3166-1 alfa-2).')
     street = models.CharField(max_length=300, blank=True, default='')
     ext_number = models.CharField(max_length=50, blank=True, default='')
     int_number = models.CharField(max_length=50, blank=True, default='')
-    neighborhood = models.CharField(max_length=200, blank=True, default='')
+    neighborhood = models.CharField(max_length=200, blank=True, default='', help_text='Colonia / barrio / localidad.')
+    municipality = models.CharField(max_length=200, blank=True, default='', help_text='Delegación / alcaldía / municipio / condado.')
     city = models.CharField(max_length=200, blank=True, default='')
     state = models.CharField(max_length=100, blank=True, default='')
     postal_code = models.CharField(max_length=12, blank=True, default='')
+    latitude = models.DecimalField(
+        max_digits=9, decimal_places=6, null=True, blank=True,
+        help_text='Latitud (WGS84) para el mapa del dashboard.',
+    )
+    longitude = models.DecimalField(
+        max_digits=9, decimal_places=6, null=True, blank=True,
+        help_text='Longitud (WGS84) para el mapa del dashboard.',
+    )
     bedrooms = models.PositiveSmallIntegerField(default=0)
     bathrooms = models.DecimalField(max_digits=4, decimal_places=1, default=0)
     area_m2 = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     suggested_rent = models.DecimalField(max_digits=12, decimal_places=2, default=0,
                                          validators=[MinValueValidator(0)])
+    specs = models.JSONField(default=dict, blank=True)
     owner_name = models.CharField(max_length=200, blank=True, default='')
     owner_email = models.EmailField(blank=True, default='')
     owner_phone = models.CharField(max_length=40, blank=True, default='')
@@ -2184,9 +2312,130 @@ class RentalProperty(models.Model):
         parts = [
             ' '.join(p for p in [self.street, self.ext_number] if p).strip(),
             self.int_number and f'Int. {self.int_number}',
-            self.neighborhood, self.city, self.state, self.postal_code,
+            self.neighborhood,
+            self.municipality if self.municipality and self.municipality != self.city else '',
+            self.city, self.state if self.state != self.city else '', self.postal_code,
+            self.country if self.country and (self.country_code or 'MX') != 'MX' else '',
         ]
         return ', '.join(p for p in parts if p)
+
+    @property
+    def type_group(self):
+        for group, types in self.TYPE_GROUPS.items():
+            if self.property_type in types:
+                return group
+        return 'otros'
+
+    @property
+    def specs_summary(self):
+        s = self.specs if isinstance(self.specs, dict) else {}
+        t = self.property_type
+        parts = []
+        if t in ('casa', 'departamento', 'studio', 'cuarto', 'airbnb'):
+            if self.bedrooms:
+                parts.append(f'{self.bedrooms} rec.')
+            if self.bathrooms:
+                parts.append(f'{self.bathrooms:g} baños')
+            if t == 'airbnb' and s.get('guests'):
+                parts.append(f"{s['guests']} huéspedes")
+        if t in ('local', 'oficina', 'consultorio', 'kiosco') and s.get('frontage_m'):
+            parts.append(f"{s['frontage_m']} m frente")
+        if t == 'oficina' and s.get('workstations'):
+            parts.append(f"{s['workstations']} puestos")
+        if t in ('bodega', 'nave') and s.get('clear_height'):
+            parts.append(f"{s['clear_height']} m altura")
+        if t in ('bodega', 'nave') and s.get('docks'):
+            parts.append(f"{s['docks']} andenes")
+        if t == 'terreno' and s.get('zoning'):
+            parts.append(s['zoning'])
+        if t == 'estacionamiento' and s.get('parking_kind'):
+            parts.append(s['parking_kind'])
+        if t == 'salon' and s.get('capacity'):
+            parts.append(f"aforo {s['capacity']}")
+        if self.area_m2:
+            parts.append(f'{self.area_m2:g} m²')
+        return ' · '.join(str(p) for p in parts if p)
+
+
+class RentalSpace(models.Model):
+    """Subnivel de una propiedad Multi Tenant: local, oficina, bay, habitación, espacio temporal…
+
+    Cada espacio tiene su identificación, ubicación, superficie (GLA), renta sugerida, contactos y,
+    a través de un contrato de renta, su inquilino asignado.
+    """
+    TYPE_CHOICES = [
+        ('local', 'Local comercial'),
+        ('ancla', 'Tienda ancla'),
+        ('isla', 'Isla / kiosco'),
+        ('temporal', 'Espacio temporal / pop-up'),
+        ('food', 'Comida / restaurante'),
+        ('bodega_com', 'Bodega del centro'),
+        ('amenidad', 'Amenidad / área de servicio'),
+        ('publicidad', 'Espacio publicitario'),
+        ('oficina', 'Oficina / suite'),
+        ('piso', 'Piso completo'),
+        ('coworking', 'Coworking / puesto'),
+        ('sala', 'Sala de juntas / auditorio'),
+        ('bay', 'Bodega / bay industrial'),
+        ('nave', 'Nave'),
+        ('oficina_nave', 'Oficinas de nave'),
+        ('patio', 'Patio / yard'),
+        ('mezzanine', 'Mezzanine'),
+        ('habitacion', 'Habitación / suite'),
+        ('salon', 'Salón de eventos'),
+        ('restaurante', 'Restaurante / bar'),
+        ('estacionamiento', 'Estacionamiento / cajones'),
+        ('otro', 'Otro'),
+    ]
+    STATUS_CHOICES = [
+        ('disponible', 'Disponible'),
+        ('ocupado', 'Ocupado'),
+        ('reservado', 'Reservado'),
+        ('mantenimiento', 'En mantenimiento'),
+        ('inactivo', 'Inactivo'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='rental_spaces')
+    property = models.ForeignKey(RentalProperty, on_delete=models.CASCADE, related_name='spaces')
+    parent = models.ForeignKey(
+        'self', on_delete=models.SET_NULL, null=True, blank=True, related_name='children',
+        help_text='Subnivel superior (p. ej. el piso que contiene una oficina).',
+    )
+    code = models.CharField(max_length=40, db_index=True)
+    name = models.CharField(max_length=300, blank=True, default='')
+    space_type = models.CharField(max_length=20, choices=TYPE_CHOICES, default='local', db_index=True)
+    status = models.CharField(max_length=14, choices=STATUS_CHOICES, default='disponible', db_index=True)
+    unit_number = models.CharField(max_length=60, blank=True, default='', help_text='# de local, suite u oficina.')
+    external_ref = models.CharField(max_length=80, blank=True, default='', help_text='ID externo, clave catastral o del cliente.')
+    building = models.CharField(max_length=80, blank=True, default='', help_text='Edificio / torre / nave.')
+    floor = models.CharField(max_length=40, blank=True, default='', help_text='Nivel o piso.')
+    zone = models.CharField(max_length=80, blank=True, default='', help_text='Ala, pasillo, corredor o zona.')
+    area_m2 = models.DecimalField(max_digits=12, decimal_places=2, default=0, validators=[MinValueValidator(0)],
+                                  help_text='Superficie rentable (GLA) en m².')
+    is_leasable = models.BooleanField(default=True, help_text='False para áreas comunes o no rentables.')
+    is_temporary = models.BooleanField(default=False, help_text='Espacio temporal (pop-up, evento, exhibición).')
+    available_from = models.DateField(null=True, blank=True)
+    available_to = models.DateField(null=True, blank=True)
+    suggested_rent = models.DecimalField(max_digits=12, decimal_places=2, default=0, validators=[MinValueValidator(0)])
+    specs = models.JSONField(default=dict, blank=True)
+    contacts = models.JSONField(default=list, blank=True, help_text='[{name, role, email, phone}]')
+    notes = models.TextField(blank=True, default='')
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'rental_spaces'
+        ordering = ['property__code', 'building', 'floor', 'code']
+        unique_together = ['property', 'code']
+
+    def __str__(self):
+        return f'{self.property.code}-{self.code}'
+
+    def _label(self):
+        return f'{self.code} · {self.name}' if self.name else self.code
+    label = builtins.property(_label)
 
 
 class RentalParty(models.Model):
@@ -2245,7 +2494,16 @@ class RentalChargeConcept(models.Model):
 
 
 class RentalContract(models.Model):
-    """Contrato de arrendamiento."""
+    """Contrato del espacio Administrar Propiedades (renta, proveedores, servicios, etc.)."""
+    KIND_CHOICES = [
+        ('renta', 'Renta de propiedad'),
+        ('proveedor', 'Proveedor de servicios'),
+        ('servicios_generales', 'Servicios generales'),
+        ('mantenimiento', 'Mantenimiento de inmueble'),
+        ('comodato', 'Comodato / préstamo de uso'),
+        ('promesa', 'Promesa de arrendamiento'),
+        ('otro', 'Otro'),
+    ]
     STATUS_CHOICES = [
         ('borrador', 'Borrador'),
         ('activo', 'Activo'),
@@ -2255,18 +2513,54 @@ class RentalContract(models.Model):
         ('finalizado', 'Finalizado'),
         ('cancelado', 'Cancelado'),
     ]
+    LEGAL_STAGE_CHOICES = [
+        ('none', 'Sin asistente'),
+        ('entrevista', 'Entrevista'),
+        ('redaccion', 'Redacción'),
+        ('firmas', 'Firmas'),
+        ('publicado', 'Publicado'),
+    ]
+    RENT_SCHEME_CHOICES = [
+        ('fija', 'Renta fija'),
+        ('variable', 'Renta variable'),
+    ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='rental_contracts')
-    property = models.ForeignKey(RentalProperty, on_delete=models.PROTECT, related_name='contracts')
+    kind = models.CharField(max_length=24, choices=KIND_CHOICES, default='renta', db_index=True)
+    title = models.CharField(max_length=240, blank=True, default='')
+    property = models.ForeignKey(
+        RentalProperty, on_delete=models.PROTECT, related_name='contracts',
+        null=True, blank=True,
+    )
+    space = models.ForeignKey(
+        RentalSpace, on_delete=models.PROTECT, related_name='contracts',
+        null=True, blank=True,
+        help_text='Espacio rentado dentro de una propiedad Multi Tenant.',
+    )
     tenant_party = models.ForeignKey(
         RentalParty, on_delete=models.PROTECT, related_name='contracts',
-        help_text='Inquilino titular del contrato.',
+        null=True, blank=True,
+        help_text='Cliente, inquilino u otra parte del espacio.',
     )
     guarantor = models.ForeignKey(
         RentalParty, on_delete=models.SET_NULL, null=True, blank=True,
         related_name='guaranteed_contracts',
     )
+    provider = models.ForeignKey(
+        'RentalMaintenanceProvider', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='contracts',
+    )
+    category = models.ForeignKey(
+        'RentalMaintenanceCategory', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='contracts',
+    )
+    work = models.ForeignKey(
+        'RentalMaintenanceWork', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='contracts',
+    )
+    counterparty_name = models.CharField(max_length=240, blank=True, default='')
+    service_description = models.TextField(blank=True, default='')
     code = models.CharField(max_length=40, db_index=True)
     start_date = models.DateField()
     end_date = models.DateField()
@@ -2277,8 +2571,24 @@ class RentalContract(models.Model):
     payment_day = models.PositiveSmallIntegerField(default=1)
     increment_pct = models.DecimalField(max_digits=5, decimal_places=2, default=0)
     late_fee_pct = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    rent_scheme = models.CharField(
+        max_length=12, choices=RENT_SCHEME_CHOICES, default='fija', db_index=True,
+        help_text='fija = monto mensual pactado; variable = según condiciones especiales.',
+    )
+    rent_conditions = models.JSONField(default=dict, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='borrador', db_index=True)
     notes = models.TextField(blank=True, default='')
+
+    legal_stage = models.CharField(max_length=16, choices=LEGAL_STAGE_CHOICES, default='none', db_index=True)
+    assistant_brief = models.JSONField(default=dict, blank=True)
+    body = models.TextField(blank=True, default='')
+    published_body = models.TextField(blank=True, default='')
+    published_at = models.DateTimeField(null=True, blank=True)
+    published_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='rental_contracts_published',
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -2288,11 +2598,34 @@ class RentalContract(models.Model):
         unique_together = ['tenant', 'code']
         indexes = [
             models.Index(fields=['tenant', 'status']),
+            models.Index(fields=['tenant', 'kind']),
             models.Index(fields=['tenant', 'end_date']),
         ]
 
     def __str__(self):
-        return f'{self.code} — {self.property.code}'
+        return f'{self.code} — {self.get_kind_display()}'
+
+    @_py_property
+    def counterpart_label(self):
+        if self.tenant_party_id:
+            return self.tenant_party.full_name
+        if self.provider_id:
+            return self.provider.trade_name or self.provider.name
+        return (self.counterparty_name or '').strip() or '—'
+
+    def effective_rent(self, as_of=None, prop=None):
+        from .rental_rent import compute_effective_rent
+        return compute_effective_rent(self, as_of, prop or self.property)
+
+    @_py_property
+    def rent_conditions_summary(self):
+        from .rental_rent import conditions_summary
+        return conditions_summary(self)
+
+    @_py_property
+    def rent_is_estimate(self):
+        from .rental_rent import is_rent_estimate
+        return is_rent_estimate(self)
 
     def refresh_lifecycle_status(self, today=None):
         """Actualiza status operativo según vigencia. No toca borrador/cancelado/finalizado/renovado."""
@@ -2311,6 +2644,54 @@ class RentalContract(models.Model):
             self.save(update_fields=['status', 'updated_at'])
             return True
         return False
+
+
+def rental_contract_sign_path(instance, filename):
+    ext = ''
+    if filename and '.' in filename:
+        ext = '.' + filename.rsplit('.', 1)[-1].lower()[:8]
+    return f'rental_contracts/{instance.contract_id}/firmas/{uuid.uuid4().hex}{ext}'
+
+
+class RentalContractSignature(models.Model):
+    """Firma o acuse de una parte sobre el contrato."""
+    STATUS_CHOICES = [
+        ('pendiente', 'Pendiente'),
+        ('firmado', 'Firmado'),
+        ('rechazado', 'Rechazado'),
+    ]
+    METHOD_CHOICES = [
+        ('acuse', 'Acuse con nombre'),
+        ('imagen', 'Imagen de firma'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    contract = models.ForeignKey(RentalContract, on_delete=models.CASCADE, related_name='signatures')
+    signer_name = models.CharField(max_length=200)
+    signer_role = models.CharField(max_length=120, blank=True, default='')
+    signer_email = models.EmailField(blank=True, default='')
+    party = models.ForeignKey(
+        RentalParty, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='contract_signatures',
+    )
+    provider = models.ForeignKey(
+        'RentalMaintenanceProvider', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='contract_signatures',
+    )
+    status = models.CharField(max_length=12, choices=STATUS_CHOICES, default='pendiente')
+    method = models.CharField(max_length=12, choices=METHOD_CHOICES, default='acuse')
+    signed_name = models.CharField(max_length=200, blank=True, default='')
+    file = models.FileField(upload_to=rental_contract_sign_path, blank=True, null=True)
+    notes = models.CharField(max_length=400, blank=True, default='')
+    signed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'rental_contract_signatures'
+        ordering = ['created_at']
+
+    def __str__(self):
+        return f'{self.signer_name} · {self.status}'
 
 
 class RentalCharge(models.Model):
@@ -3626,3 +4007,972 @@ class CondoVisitEvent(models.Model):
         return f'{self.visit.folio} · {self.event_type}'
 
 
+# ═══════════════════════════════════════════════════════════
+#  MANTENIMIENTO DE PROPIEDADES (espacio Administrar Propiedades)
+# ═══════════════════════════════════════════════════════════
+
+def rental_maintenance_file_path(instance, filename):
+    ext = ''
+    if filename and '.' in filename:
+        ext = '.' + filename.rsplit('.', 1)[-1].lower()[:8]
+    return f'rental_maintenance/{instance.work_id}/{uuid.uuid4().hex}{ext}'
+
+
+class RentalMaintenanceCategory(models.Model):
+    """Categoría de servicio: plomería, eléctrico, pintura, etc."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='rental_maint_categories')
+    name = models.CharField(max_length=120)
+    slug = models.CharField(max_length=40, blank=True, default='')
+    color = models.CharField(max_length=16, blank=True, default='#0f766e')
+    sort_order = models.PositiveSmallIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'rental_maintenance_categories'
+        ordering = ['sort_order', 'name']
+        unique_together = ['tenant', 'name']
+
+    def __str__(self):
+        return self.name
+
+
+class RentalMaintenanceWorkType(models.Model):
+    """Tipo de trabajo dentro de una categoría (preventivo, correctivo o ambos)."""
+    KIND_CHOICES = [
+        ('preventivo', 'Preventivo'),
+        ('correctivo', 'Correctivo'),
+        ('ambos', 'Ambos'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='rental_maint_work_types')
+    category = models.ForeignKey(
+        RentalMaintenanceCategory, on_delete=models.CASCADE, related_name='work_types',
+    )
+    name = models.CharField(max_length=200)
+    kind = models.CharField(max_length=16, choices=KIND_CHOICES, default='ambos')
+    default_frequency = models.CharField(max_length=16, blank=True, default='unica')
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'rental_maintenance_work_types'
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+
+class RentalMaintenanceProvider(models.Model):
+    """Proveedor o contratista para mantenimientos de propiedades."""
+    STATUS_CHOICES = [
+        ('activo', 'Activo'),
+        ('inactivo', 'Inactivo'),
+    ]
+    PERSON_CHOICES = [
+        ('fisica', 'Persona física'),
+        ('moral', 'Persona moral'),
+    ]
+    BANK_TYPE_CHOICES = [
+        ('clabe', 'CLABE interbancaria'),
+        ('cheques', 'Cuenta de cheques'),
+        ('ahorro', 'Cuenta de ahorro'),
+    ]
+    REPSE_STATUS_CHOICES = [
+        ('no_aplica', 'No aplica'),
+        ('pendiente', 'Pendiente de expediente'),
+        ('vigente', 'Vigente'),
+        ('vencido', 'Vencido'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='rental_maint_providers')
+    name = models.CharField(max_length=200)
+    trade_name = models.CharField(max_length=200, blank=True, default='')
+    person_type = models.CharField(max_length=12, choices=PERSON_CHOICES, default='moral')
+    contact_name = models.CharField(max_length=200, blank=True, default='')
+    email = models.EmailField(blank=True, default='')
+    phone = models.CharField(max_length=40, blank=True, default='')
+    mobile = models.CharField(max_length=40, blank=True, default='')
+    rfc = models.CharField(max_length=20, blank=True, default='')
+    curp = models.CharField(max_length=20, blank=True, default='')
+    tax_regime = models.CharField(max_length=200, blank=True, default='')
+    legal_rep_name = models.CharField(max_length=200, blank=True, default='')
+    legal_rep_rfc = models.CharField(max_length=20, blank=True, default='')
+    website = models.CharField(max_length=300, blank=True, default='')
+    notes = models.TextField(blank=True, default='')
+    category_ids = models.JSONField(default=list, blank=True)
+    status = models.CharField(max_length=12, choices=STATUS_CHOICES, default='activo')
+    is_active = models.BooleanField(default=True)
+
+    has_expediente = models.BooleanField(default=False)
+    expediente_opened_at = models.DateTimeField(null=True, blank=True)
+
+    street = models.CharField(max_length=300, blank=True, default='')
+    ext_number = models.CharField(max_length=40, blank=True, default='')
+    int_number = models.CharField(max_length=40, blank=True, default='')
+    colonia = models.CharField(max_length=200, blank=True, default='')
+    city = models.CharField(max_length=200, blank=True, default='')
+    state = models.CharField(max_length=100, blank=True, default='')
+    zip_code = models.CharField(max_length=12, blank=True, default='')
+    country = models.CharField(max_length=80, blank=True, default='México')
+
+    bank_name = models.CharField(max_length=120, blank=True, default='')
+    bank_clabe = models.CharField(max_length=20, blank=True, default='')
+    bank_account = models.CharField(max_length=30, blank=True, default='')
+    bank_beneficiary = models.CharField(max_length=200, blank=True, default='')
+    bank_account_type = models.CharField(max_length=16, choices=BANK_TYPE_CHOICES, default='clabe', blank=True)
+
+    is_repse = models.BooleanField(default=False)
+    repse_registro = models.CharField(max_length=40, blank=True, default='')
+    repse_folio = models.CharField(max_length=40, blank=True, default='')
+    repse_activity = models.TextField(blank=True, default='')
+    repse_registered_at = models.DateField(null=True, blank=True)
+    repse_expires_at = models.DateField(null=True, blank=True)
+    repse_status = models.CharField(max_length=16, choices=REPSE_STATUS_CHOICES, default='no_aplica')
+    repse_notes = models.TextField(blank=True, default='')
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'rental_maintenance_providers'
+        ordering = ['name']
+
+    def __str__(self):
+        return self.trade_name or self.name
+
+
+class RentalMaintenanceWork(models.Model):
+    """Orden de mantenimiento preventivo o correctivo de una propiedad."""
+    KIND_CHOICES = [
+        ('preventivo', 'Preventivo'),
+        ('correctivo', 'Correctivo'),
+    ]
+    STATUS_CHOICES = [
+        ('planeado', 'Planeado'),
+        ('en_curso', 'En curso'),
+        ('realizado', 'Realizado'),
+        ('cancelado', 'Cancelado'),
+    ]
+    PRIORITY_CHOICES = [
+        ('baja', 'Baja'),
+        ('media', 'Media'),
+        ('alta', 'Alta'),
+        ('urgente', 'Urgente'),
+    ]
+    FREQUENCY_CHOICES = [
+        ('unica', 'Única'),
+        ('semanal', 'Semanal'),
+        ('quincenal', 'Quincenal'),
+        ('mensual', 'Mensual'),
+        ('bimestral', 'Bimestral'),
+        ('trimestral', 'Trimestral'),
+        ('semestral', 'Semestral'),
+        ('anual', 'Anual'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='rental_maint_works')
+    property = models.ForeignKey(
+        RentalProperty, on_delete=models.PROTECT, related_name='maintenance_works',
+    )
+    space = models.ForeignKey(
+        'RentalSpace', on_delete=models.SET_NULL, null=True, blank=True, related_name='maintenance_works',
+        help_text='Espacio de una propiedad Multi Tenant (opcional).',
+    )
+    folio = models.CharField(max_length=40, db_index=True, default='')
+    kind = models.CharField(max_length=16, choices=KIND_CHOICES, default='correctivo', db_index=True)
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default='planeado', db_index=True)
+    priority = models.CharField(max_length=12, choices=PRIORITY_CHOICES, default='media')
+    category = models.ForeignKey(
+        RentalMaintenanceCategory, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='works',
+    )
+    work_type = models.ForeignKey(
+        RentalMaintenanceWorkType, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='works',
+    )
+    provider = models.ForeignKey(
+        RentalMaintenanceProvider, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='works',
+    )
+    title = models.CharField(max_length=240)
+    description = models.TextField(blank=True, default='')
+    work_notes = models.TextField(blank=True, default='')
+    vendor_name = models.CharField(max_length=200, blank=True, default='')
+    reported_by = models.CharField(max_length=200, blank=True, default='')
+    assigned_to = models.CharField(max_length=200, blank=True, default='')
+    scheduled_date = models.DateField(null=True, blank=True)
+    performed_date = models.DateField(null=True, blank=True)
+    next_due_date = models.DateField(null=True, blank=True)
+    frequency = models.CharField(max_length=16, choices=FREQUENCY_CHOICES, default='unica')
+    cost = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    # CAFM / CMMS: vínculos y SLA
+    asset = models.ForeignKey(
+        'RentalAsset', on_delete=models.SET_NULL, null=True, blank=True, related_name='works',
+    )
+    plan = models.ForeignKey(
+        'RentalMaintenancePlan', on_delete=models.SET_NULL, null=True, blank=True, related_name='works',
+    )
+    service_request = models.ForeignKey(
+        'RentalServiceRequest', on_delete=models.SET_NULL, null=True, blank=True, related_name='works',
+    )
+    inspection = models.ForeignKey(
+        'RentalInspection', on_delete=models.SET_NULL, null=True, blank=True, related_name='works',
+    )
+    due_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    estimated_cost = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    parts_cost = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    labor_cost = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    checklist = models.JSONField(default=list, blank=True)
+    capex_project = models.ForeignKey(
+        'RentalCapexProject', on_delete=models.SET_NULL, null=True, blank=True, related_name='works',
+        help_text='Si la orden pertenece a un proyecto CAPEX, su costo se contabiliza como CAPEX (no OPEX).',
+    )
+    created_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='rental_maint_created',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'rental_maintenance_works'
+        ordering = ['-scheduled_date', '-created_at']
+        indexes = [
+            models.Index(fields=['tenant', 'kind', 'status']),
+            models.Index(fields=['tenant', 'property']),
+        ]
+
+    def __str__(self):
+        return f'{self.folio or self.id} · {self.title}'
+
+
+class RentalMaintenanceEvidence(models.Model):
+    KIND_CHOICES = [
+        ('antes', 'Antes'),
+        ('durante', 'Durante'),
+        ('despues', 'Después'),
+        ('otro', 'Otro'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    work = models.ForeignKey(RentalMaintenanceWork, on_delete=models.CASCADE, related_name='evidences')
+    kind = models.CharField(max_length=12, choices=KIND_CHOICES, default='otro')
+    original_name = models.CharField(max_length=240, blank=True, default='')
+    notes = models.CharField(max_length=400, blank=True, default='')
+    captured_at = models.DateField(null=True, blank=True)
+    file = models.FileField(upload_to=rental_maintenance_file_path)
+    uploaded_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='rental_maint_files_uploaded',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'rental_maintenance_evidences'
+        ordering = ['captured_at', 'created_at']
+
+    def __str__(self):
+        return self.original_name or str(self.id)
+
+
+def rental_provider_file_path(instance, filename):
+    ext = ''
+    if filename and '.' in filename:
+        ext = '.' + filename.rsplit('.', 1)[-1].lower()[:8]
+    return f'rental_providers/{instance.provider_id}/{uuid.uuid4().hex}{ext}'
+
+
+class RentalMaintenanceProviderContact(models.Model):
+    """Contactos del expediente digital del proveedor."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    provider = models.ForeignKey(
+        RentalMaintenanceProvider, on_delete=models.CASCADE, related_name='contacts',
+    )
+    name = models.CharField(max_length=200)
+    role = models.CharField(max_length=120, blank=True, default='')
+    email = models.EmailField(blank=True, default='')
+    phone = models.CharField(max_length=40, blank=True, default='')
+    mobile = models.CharField(max_length=40, blank=True, default='')
+    is_primary = models.BooleanField(default=False)
+    notes = models.CharField(max_length=400, blank=True, default='')
+    sort_order = models.PositiveSmallIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'rental_maintenance_provider_contacts'
+        ordering = ['-is_primary', 'sort_order', 'name']
+
+    def __str__(self):
+        return self.name
+
+
+class RentalMaintenanceProviderDocument(models.Model):
+    """Documentos del expediente general o del expediente REPSE."""
+    SECTION_CHOICES = [
+        ('general', 'Expediente general'),
+        ('repse', 'Expediente REPSE'),
+    ]
+    KIND_CHOICES = [
+        ('identificacion', 'Identificación oficial'),
+        ('rfc_csf', 'Constancia de situación fiscal'),
+        ('curp', 'CURP'),
+        ('comprobante_domicilio', 'Comprobante de domicilio'),
+        ('opinion_sat', 'Opinión de cumplimiento SAT'),
+        ('estado_cuenta', 'Estado de cuenta'),
+        ('contrato', 'Contrato de servicios'),
+        ('acta_constitutiva', 'Acta constitutiva'),
+        ('poder_notarial', 'Poder notarial del representante'),
+        ('identificacion_rep', 'Identificación del representante'),
+        ('constancia_repse', 'Constancia de inscripción REPSE'),
+        ('icsoe', 'ICSOE'),
+        ('sisub', 'SISUB'),
+        ('opinion_imss', 'Opinión de cumplimiento IMSS'),
+        ('opinion_infonavit', 'Opinión de cumplimiento INFONAVIT'),
+        ('contrato_especializado', 'Contrato de servicios especializados'),
+        ('listado_trabajadores', 'Listado de trabajadores'),
+        ('otro', 'Otro'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    provider = models.ForeignKey(
+        RentalMaintenanceProvider, on_delete=models.CASCADE, related_name='documents',
+    )
+    section = models.CharField(max_length=12, choices=SECTION_CHOICES, default='general')
+    kind = models.CharField(max_length=32, choices=KIND_CHOICES, default='otro')
+    original_name = models.CharField(max_length=240, blank=True, default='')
+    notes = models.CharField(max_length=400, blank=True, default='')
+    expires_at = models.DateField(null=True, blank=True)
+    file = models.FileField(upload_to=rental_provider_file_path)
+    uploaded_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='rental_provider_files_uploaded',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'rental_maintenance_provider_documents'
+        ordering = ['section', 'kind', 'created_at']
+
+    def __str__(self):
+        return self.original_name or str(self.id)
+
+
+
+
+# ═══════════════════════════════════════════════════════════
+#  CAFM / CMMS — Administrar Propiedades (operación)
+# ═══════════════════════════════════════════════════════════
+
+def _rental_portal_token():
+    return uuid.uuid4().hex
+
+
+class RentalOpsSettings(models.Model):
+    """Ajustes operativos del espacio: SLA por prioridad y portal de solicitudes."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.OneToOneField(Tenant, on_delete=models.CASCADE, related_name='rental_ops_settings')
+    portal_enabled = models.BooleanField(default=False)
+    portal_token = models.CharField(max_length=40, unique=True, default=_rental_portal_token)
+    portal_welcome = models.CharField(max_length=300, blank=True, default='')
+    notify_email = models.EmailField(blank=True, default='')
+    sla = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'rental_ops_settings'
+
+    def __str__(self):
+        return f'Ops {self.tenant_id}'
+
+
+class RentalAsset(models.Model):
+    """Activo o equipo instalado en una propiedad (clima, bomba, elevador, extintores…)."""
+    STATUS_CHOICES = [
+        ('operativo', 'Operativo'),
+        ('en_falla', 'En falla'),
+        ('en_mantenimiento', 'En mantenimiento'),
+        ('fuera_servicio', 'Fuera de servicio'),
+        ('baja', 'Dado de baja'),
+    ]
+    CRITICALITY_CHOICES = [
+        ('baja', 'Baja'),
+        ('media', 'Media'),
+        ('alta', 'Alta'),
+        ('critica', 'Crítica'),
+    ]
+    KIND_CHOICES = [
+        ('hvac', 'Clima / HVAC'),
+        ('elevador', 'Elevador'),
+        ('bomba', 'Bomba / hidroneumático'),
+        ('electrico', 'Equipo eléctrico'),
+        ('planta', 'Planta de emergencia'),
+        ('seguridad', 'Seguridad / CCTV'),
+        ('incendio', 'Contra incendio'),
+        ('plomeria', 'Plomería / calentador'),
+        ('iluminacion', 'Iluminación'),
+        ('electrodomestico', 'Electrodoméstico'),
+        ('mobiliario', 'Mobiliario'),
+        ('vehiculo', 'Vehículo'),
+        ('estructura', 'Estructura / instalación'),
+        ('otro', 'Otro'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='rental_assets')
+    property = models.ForeignKey(RentalProperty, on_delete=models.PROTECT, related_name='assets')
+    space = models.ForeignKey(
+        'RentalSpace', on_delete=models.SET_NULL, null=True, blank=True, related_name='assets',
+        help_text='Espacio de una propiedad Multi Tenant (opcional).',
+    )
+    code = models.CharField(max_length=24, db_index=True, default='')
+    name = models.CharField(max_length=200)
+    kind = models.CharField(max_length=20, choices=KIND_CHOICES, default='otro', db_index=True)
+    category = models.ForeignKey(
+        'RentalMaintenanceCategory', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='assets',
+    )
+    brand = models.CharField(max_length=120, blank=True, default='')
+    model = models.CharField(max_length=120, blank=True, default='')
+    serial_number = models.CharField(max_length=120, blank=True, default='')
+    location = models.CharField(max_length=200, blank=True, default='')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='operativo', db_index=True)
+    criticality = models.CharField(max_length=10, choices=CRITICALITY_CHOICES, default='media')
+    install_date = models.DateField(null=True, blank=True)
+    warranty_until = models.DateField(null=True, blank=True)
+    useful_life_years = models.PositiveSmallIntegerField(null=True, blank=True)
+    purchase_cost = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    provider = models.ForeignKey(
+        'RentalMaintenanceProvider', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='assets',
+    )
+    capex_project = models.ForeignKey(
+        'RentalCapexProject', on_delete=models.SET_NULL, null=True, blank=True, related_name='assets',
+        help_text='Proyecto CAPEX que adquirió o instaló este activo.',
+    )
+    notes = models.TextField(blank=True, default='')
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'rental_assets'
+        ordering = ['property__code', 'name']
+        unique_together = ['tenant', 'code']
+        indexes = [models.Index(fields=['tenant', 'property'])]
+
+    def __str__(self):
+        return f'{self.code} · {self.name}'
+
+
+class RentalMaintenancePlan(models.Model):
+    """Plan de mantenimiento preventivo: genera órdenes de trabajo por frecuencia."""
+    FREQUENCY_CHOICES = [
+        ('semanal', 'Semanal'),
+        ('quincenal', 'Quincenal'),
+        ('mensual', 'Mensual'),
+        ('bimestral', 'Bimestral'),
+        ('trimestral', 'Trimestral'),
+        ('semestral', 'Semestral'),
+        ('anual', 'Anual'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='rental_maint_plans')
+    name = models.CharField(max_length=240)
+    property = models.ForeignKey(RentalProperty, on_delete=models.PROTECT, related_name='maintenance_plans')
+    space = models.ForeignKey(
+        'RentalSpace', on_delete=models.SET_NULL, null=True, blank=True, related_name='maintenance_plans',
+        help_text='Espacio de una propiedad Multi Tenant (opcional).',
+    )
+    asset = models.ForeignKey(
+        RentalAsset, on_delete=models.SET_NULL, null=True, blank=True, related_name='plans',
+    )
+    category = models.ForeignKey(
+        'RentalMaintenanceCategory', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='plans',
+    )
+    work_type = models.ForeignKey(
+        'RentalMaintenanceWorkType', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='plans',
+    )
+    provider = models.ForeignKey(
+        'RentalMaintenanceProvider', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='plans',
+    )
+    priority = models.CharField(max_length=12, default='media')
+    frequency = models.CharField(max_length=16, choices=FREQUENCY_CHOICES, default='mensual')
+    start_date = models.DateField()
+    next_due_date = models.DateField(db_index=True)
+    lead_days = models.PositiveSmallIntegerField(default=3)
+    estimated_cost = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    assigned_to = models.CharField(max_length=200, blank=True, default='')
+    description = models.TextField(blank=True, default='')
+    checklist = models.JSONField(default=list, blank=True)
+    auto_generate = models.BooleanField(default=True)
+    is_active = models.BooleanField(default=True)
+    last_generated_at = models.DateTimeField(null=True, blank=True)
+    created_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name='rental_plans_created',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'rental_maintenance_plans'
+        ordering = ['next_due_date', 'name']
+        indexes = [models.Index(fields=['tenant', 'is_active', 'next_due_date'])]
+
+    def __str__(self):
+        return self.name
+
+
+class RentalServiceRequest(models.Model):
+    """Solicitud de servicio (helpdesk): inquilino, propietario o personal reporta un problema."""
+    STATUS_CHOICES = [
+        ('nueva', 'Nueva'),
+        ('en_proceso', 'En proceso'),
+        ('resuelta', 'Resuelta'),
+        ('cerrada', 'Cerrada'),
+        ('rechazada', 'Rechazada'),
+    ]
+    CHANNEL_CHOICES = [
+        ('portal', 'Portal de solicitudes'),
+        ('telefono', 'Teléfono'),
+        ('whatsapp', 'WhatsApp'),
+        ('correo', 'Correo'),
+        ('presencial', 'Presencial'),
+        ('inspeccion', 'Inspección'),
+        ('otro', 'Otro'),
+    ]
+    PRIORITY_CHOICES = [
+        ('baja', 'Baja'),
+        ('media', 'Media'),
+        ('alta', 'Alta'),
+        ('urgente', 'Urgente'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='rental_requests')
+    folio = models.CharField(max_length=24, db_index=True, default='')
+    property = models.ForeignKey(RentalProperty, on_delete=models.PROTECT, related_name='service_requests')
+    space = models.ForeignKey(
+        'RentalSpace', on_delete=models.SET_NULL, null=True, blank=True, related_name='service_requests',
+        help_text='Espacio de una propiedad Multi Tenant (opcional).',
+    )
+    asset = models.ForeignKey(
+        RentalAsset, on_delete=models.SET_NULL, null=True, blank=True, related_name='requests',
+    )
+    requester_party = models.ForeignKey(
+        RentalParty, on_delete=models.SET_NULL, null=True, blank=True, related_name='service_requests',
+    )
+    requester_name = models.CharField(max_length=200, blank=True, default='')
+    requester_email = models.EmailField(blank=True, default='')
+    requester_phone = models.CharField(max_length=40, blank=True, default='')
+    channel = models.CharField(max_length=16, choices=CHANNEL_CHOICES, default='telefono')
+    category = models.ForeignKey(
+        'RentalMaintenanceCategory', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='requests',
+    )
+    title = models.CharField(max_length=240)
+    description = models.TextField(blank=True, default='')
+    priority = models.CharField(max_length=10, choices=PRIORITY_CHOICES, default='media')
+    status = models.CharField(max_length=12, choices=STATUS_CHOICES, default='nueva', db_index=True)
+    response_due_at = models.DateTimeField(null=True, blank=True)
+    resolution_due_at = models.DateTimeField(null=True, blank=True)
+    first_response_at = models.DateTimeField(null=True, blank=True)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    resolution_notes = models.TextField(blank=True, default='')
+    reject_reason = models.CharField(max_length=300, blank=True, default='')
+    satisfaction = models.PositiveSmallIntegerField(null=True, blank=True)
+    satisfaction_comment = models.CharField(max_length=400, blank=True, default='')
+    created_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name='rental_requests_created',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'rental_service_requests'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['tenant', 'status']),
+            models.Index(fields=['tenant', 'property']),
+        ]
+
+    def __str__(self):
+        return f'{self.folio} · {self.title}'
+
+
+class RentalInspectionTemplate(models.Model):
+    """Plantilla de inspección con lista de verificación."""
+    KIND_CHOICES = [
+        ('entrega', 'Entrega / recepción'),
+        ('seguridad', 'Seguridad y protección civil'),
+        ('areas_comunes', 'Áreas comunes'),
+        ('instalaciones', 'Instalaciones'),
+        ('limpieza', 'Limpieza y presentación'),
+        ('otro', 'Otra'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='rental_inspection_templates')
+    name = models.CharField(max_length=200)
+    kind = models.CharField(max_length=16, choices=KIND_CHOICES, default='otro')
+    description = models.CharField(max_length=300, blank=True, default='')
+    items = models.JSONField(default=list, blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'rental_inspection_templates'
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+
+class RentalInspection(models.Model):
+    """Inspección realizada a una propiedad o activo; las fallas generan órdenes de trabajo."""
+    STATUS_CHOICES = [
+        ('en_proceso', 'En proceso'),
+        ('completada', 'Completada'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='rental_inspections')
+    folio = models.CharField(max_length=24, db_index=True, default='')
+    template = models.ForeignKey(
+        RentalInspectionTemplate, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='inspections',
+    )
+    name = models.CharField(max_length=200)
+    property = models.ForeignKey(RentalProperty, on_delete=models.PROTECT, related_name='inspections')
+    space = models.ForeignKey(
+        'RentalSpace', on_delete=models.SET_NULL, null=True, blank=True, related_name='inspections',
+        help_text='Espacio de una propiedad Multi Tenant (opcional).',
+    )
+    asset = models.ForeignKey(
+        RentalAsset, on_delete=models.SET_NULL, null=True, blank=True, related_name='inspections',
+    )
+    inspector_name = models.CharField(max_length=200, blank=True, default='')
+    inspected_date = models.DateField()
+    status = models.CharField(max_length=12, choices=STATUS_CHOICES, default='en_proceso', db_index=True)
+    results = models.JSONField(default=list, blank=True)
+    score = models.DecimalField(max_digits=5, decimal_places=1, null=True, blank=True)
+    summary = models.TextField(blank=True, default='')
+    completed_at = models.DateTimeField(null=True, blank=True)
+    created_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name='rental_inspections_created',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'rental_inspections'
+        ordering = ['-inspected_date', '-created_at']
+        indexes = [models.Index(fields=['tenant', 'status'])]
+
+    def __str__(self):
+        return f'{self.folio} · {self.name}'
+
+
+def rental_inspection_file_path(instance, filename):
+    ext = ''
+    if filename and '.' in filename:
+        ext = '.' + filename.rsplit('.', 1)[-1].lower()[:8]
+    return f'rental_inspections/{instance.inspection_id}/{uuid.uuid4().hex}{ext}'
+
+
+def rental_inspection_template_file_path(instance, filename):
+    ext = ''
+    if filename and '.' in filename:
+        ext = '.' + filename.rsplit('.', 1)[-1].lower()[:8]
+    return f'rental_inspection_templates/{instance.template_id}/{uuid.uuid4().hex}{ext}'
+
+
+class RentalInspectionEvidence(models.Model):
+    """Fotografía o archivo de evidencia de una inspección (general o de un punto de la lista)."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    inspection = models.ForeignKey(RentalInspection, on_delete=models.CASCADE, related_name='evidences')
+    item_id = models.CharField(max_length=20, blank=True, default='', db_index=True)
+    item_label = models.CharField(max_length=200, blank=True, default='')
+    original_name = models.CharField(max_length=240, blank=True, default='')
+    notes = models.CharField(max_length=400, blank=True, default='')
+    captured_at = models.DateField(null=True, blank=True)
+    file = models.FileField(upload_to=rental_inspection_file_path)
+    uploaded_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name='rental_inspection_files_uploaded',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'rental_inspection_evidences'
+        ordering = ['created_at']
+
+    def __str__(self):
+        return self.original_name or str(self.id)
+
+
+class RentalInspectionTemplateFile(models.Model):
+    """Material de referencia de una plantilla: foto del estado esperado, instructivo, formato, etc."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    template = models.ForeignKey(RentalInspectionTemplate, on_delete=models.CASCADE, related_name='files')
+    original_name = models.CharField(max_length=240, blank=True, default='')
+    notes = models.CharField(max_length=400, blank=True, default='')
+    file = models.FileField(upload_to=rental_inspection_template_file_path)
+    uploaded_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name='rental_inspection_template_files_uploaded',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'rental_inspection_template_files'
+        ordering = ['created_at']
+
+    def __str__(self):
+        return self.original_name or str(self.id)
+
+
+# ═══════════════════════════════════════════════════════════
+#  CONFIGURACIÓN DE ESPACIOS DE TRABAJO (superadmin)
+# ═══════════════════════════════════════════════════════════
+
+WORKSPACE_DEFAULTS = {
+    'condominio': {
+        'label': 'Administración de condominios',
+        'short_label': 'Condominio',
+        'description': 'Cuotas, gastos, reservas, asambleas y comunicación para comunidades.',
+        'unit_noun': 'unidad',
+        'color': '#0f766e',
+        'sort_order': 0,
+    },
+    'rentas': {
+        'label': 'Administrar Propiedades',
+        'short_label': 'Propiedades',
+        'description': 'Inmuebles en renta: contratos, cobranza, mantenimiento (CAFM/CMMS) y rent roll.',
+        'unit_noun': 'propiedad',
+        'color': '#1d4ed8',
+        'sort_order': 1,
+    },
+}
+
+
+class WorkspaceConfig(models.Model):
+    """
+    Personalización, por espacio de trabajo, de cómo se presenta y qué módulos
+    ofrece el sistema para planes y asignación de tenants.
+
+    module_overrides: {"<module_key>": {"label": str, "desc": str, "enabled": bool}}
+        - enabled=False  → el módulo se retira del catálogo de planes y se oculta
+          a todos los tenants de este espacio.
+    module_bundles: [{"id": str, "name": str, "modules": [<module_key>, ...]}]
+        - Paquetes reutilizables para armar planes más rápido.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    workspace_type = models.CharField(max_length=20, unique=True)
+    label = models.CharField(max_length=80)
+    short_label = models.CharField(max_length=40, blank=True, default='')
+    description = models.CharField(max_length=240, blank=True, default='')
+    unit_noun = models.CharField(max_length=30, default='unidad')
+    color = models.CharField(max_length=9, default='#0f766e')
+    is_enabled = models.BooleanField(default=True)
+    sort_order = models.PositiveIntegerField(default=0)
+    module_overrides = models.JSONField(default=dict, blank=True)
+    module_bundles = models.JSONField(default=list, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'workspace_configs'
+        ordering = ['sort_order', 'workspace_type']
+
+    def __str__(self):
+        return f'{self.workspace_type}: {self.label}'
+
+    @classmethod
+    def ensure_defaults(cls):
+        for ws, d in WORKSPACE_DEFAULTS.items():
+            cls.objects.get_or_create(workspace_type=ws, defaults=d)
+
+    @classmethod
+    def is_workspace_enabled(cls, ws):
+        cfg = cls.objects.filter(workspace_type=ws).first()
+        return True if cfg is None else cfg.is_enabled
+
+
+# ═══════════════════════════════════════════════════════════
+#  CAPEX / OPEX — finanzas de Administrar Propiedades
+# ═══════════════════════════════════════════════════════════
+
+class RentalCapexProject(models.Model):
+    """Proyecto de inversión (CAPEX) con presupuesto, hitos, gasto y beneficio esperado."""
+    STATUS_CHOICES = [
+        ('propuesta', 'Propuesta'),
+        ('aprobado', 'Aprobado'),
+        ('en_ejecucion', 'En ejecución'),
+        ('en_pausa', 'En pausa'),
+        ('completado', 'Completado'),
+        ('cancelado', 'Cancelado'),
+    ]
+    CATEGORY_CHOICES = [
+        ('remodelacion', 'Remodelación'),
+        ('equipamiento', 'Equipamiento / reposición'),
+        ('estructura', 'Estructura e instalaciones'),
+        ('eficiencia', 'Eficiencia energética'),
+        ('seguridad', 'Seguridad y cumplimiento'),
+        ('ampliacion', 'Ampliación / nueva unidad'),
+        ('tecnologia', 'Tecnología'),
+        ('otro', 'Otro'),
+    ]
+    PRIORITY_CHOICES = [
+        ('baja', 'Baja'), ('media', 'Media'), ('alta', 'Alta'), ('critica', 'Crítica'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='rental_capex_projects')
+    code = models.CharField(max_length=24, db_index=True, default='')
+    name = models.CharField(max_length=240)
+    description = models.TextField(blank=True, default='')
+    category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default='otro', db_index=True)
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default='propuesta', db_index=True)
+    priority = models.CharField(max_length=10, choices=PRIORITY_CHOICES, default='media')
+    property = models.ForeignKey(
+        RentalProperty, on_delete=models.SET_NULL, null=True, blank=True, related_name='capex_projects',
+        help_text='Vacío = proyecto de toda la cartera.',
+    )
+    space = models.ForeignKey(
+        'RentalSpace', on_delete=models.SET_NULL, null=True, blank=True, related_name='capex_projects',
+        help_text='Espacio de una propiedad Multi Tenant (opcional).',
+    )
+    asset = models.ForeignKey(
+        'RentalAsset', on_delete=models.SET_NULL, null=True, blank=True, related_name='replacement_projects',
+        help_text='Equipo que el proyecto repone o mejora.',
+    )
+    owner_name = models.CharField(max_length=160, blank=True, default='')
+    approved_by = models.CharField(max_length=160, blank=True, default='')
+    approved_date = models.DateField(null=True, blank=True)
+    budget_amount = models.DecimalField(max_digits=14, decimal_places=2, default=0, validators=[MinValueValidator(0)])
+    start_date = models.DateField(null=True, blank=True)
+    end_date = models.DateField(null=True, blank=True)
+    actual_start = models.DateField(null=True, blank=True)
+    actual_end = models.DateField(null=True, blank=True)
+    justification = models.TextField(blank=True, default='')
+    expected_annual_benefit = models.DecimalField(
+        max_digits=14, decimal_places=2, null=True, blank=True,
+        help_text='Ahorro u otro beneficio económico anual esperado (para ROI y recuperación).',
+    )
+    milestones = models.JSONField(default=list, blank=True)
+    progress_manual = models.PositiveSmallIntegerField(null=True, blank=True)
+    created_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name='rental_capex_created',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'rental_capex_projects'
+        ordering = ['-created_at']
+        unique_together = ['tenant', 'code']
+        indexes = [models.Index(fields=['tenant', 'status'])]
+
+    def __str__(self):
+        return f'{self.code} · {self.name}'
+
+
+class RentalExpenseEntry(models.Model):
+    """Gasto registrado a mano: OPEX (operación) o CAPEX (ligado a un proyecto)."""
+    KIND_CHOICES = [('opex', 'OPEX'), ('capex', 'CAPEX')]
+    STATUS_CHOICES = [('pagado', 'Pagado'), ('comprometido', 'Comprometido')]
+    OPEX_CATEGORIES = [
+        ('servicios', 'Servicios (agua, luz, gas, internet)'),
+        ('limpieza', 'Limpieza'),
+        ('jardineria', 'Jardinería y áreas verdes'),
+        ('seguridad', 'Seguridad y vigilancia'),
+        ('seguros', 'Seguros'),
+        ('impuestos', 'Impuestos y derechos (predial)'),
+        ('administracion', 'Administración y honorarios'),
+        ('nomina', 'Nómina y personal'),
+        ('marketing', 'Mercadotecnia y comisiones'),
+        ('mant_preventivo', 'Mantenimiento preventivo'),
+        ('mant_correctivo', 'Reparaciones y correctivos'),
+        ('otros', 'Otros gastos operativos'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='rental_expense_entries')
+    kind = models.CharField(max_length=8, choices=KIND_CHOICES, default='opex', db_index=True)
+    status = models.CharField(max_length=14, choices=STATUS_CHOICES, default='pagado', db_index=True)
+    date = models.DateField(db_index=True)
+    amount = models.DecimalField(max_digits=14, decimal_places=2, validators=[MinValueValidator(0)])
+    category = models.CharField(max_length=24, blank=True, default='otros', db_index=True)
+    concept = models.CharField(max_length=240)
+    property = models.ForeignKey(
+        RentalProperty, on_delete=models.SET_NULL, null=True, blank=True, related_name='expense_entries',
+    )
+    space = models.ForeignKey(
+        'RentalSpace', on_delete=models.SET_NULL, null=True, blank=True, related_name='expense_entries',
+        help_text='Espacio de una propiedad Multi Tenant (opcional).',
+    )
+    project = models.ForeignKey(
+        RentalCapexProject, on_delete=models.CASCADE, null=True, blank=True, related_name='entries',
+    )
+    provider = models.ForeignKey(
+        'RentalMaintenanceProvider', on_delete=models.SET_NULL, null=True, blank=True, related_name='expense_entries',
+    )
+    vendor_name = models.CharField(max_length=200, blank=True, default='')
+    invoice_ref = models.CharField(max_length=80, blank=True, default='')
+    approved_by = models.CharField(max_length=160, blank=True, default='')
+    notes = models.TextField(blank=True, default='')
+    created_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name='rental_expenses_created',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'rental_expense_entries'
+        ordering = ['-date', '-created_at']
+        indexes = [
+            models.Index(fields=['tenant', 'kind', 'date']),
+            models.Index(fields=['tenant', 'project']),
+        ]
+
+    def __str__(self):
+        return f'{self.date} {self.kind} {self.amount}'
+
+
+class RentalBudgetLine(models.Model):
+    """Presupuesto anual por categoría (OPEX) o techo CAPEX, distribuido por mes."""
+    KIND_CHOICES = [('opex', 'OPEX'), ('capex', 'CAPEX')]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='rental_budget_lines')
+    year = models.PositiveSmallIntegerField(db_index=True)
+    kind = models.CharField(max_length=8, choices=KIND_CHOICES, default='opex')
+    category = models.CharField(max_length=24, default='otros')
+    property = models.ForeignKey(
+        RentalProperty, on_delete=models.CASCADE, null=True, blank=True, related_name='budget_lines',
+    )
+    space = models.ForeignKey(
+        'RentalSpace', on_delete=models.SET_NULL, null=True, blank=True, related_name='budget_lines',
+        help_text='Espacio de una propiedad Multi Tenant (opcional).',
+    )
+    months = models.JSONField(default=list, blank=True, help_text='12 montos, enero a diciembre.')
+    notes = models.CharField(max_length=240, blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'rental_budget_lines'
+        ordering = ['year', 'kind', 'category']
+        unique_together = ['tenant', 'year', 'kind', 'category', 'property', 'space']
+
+    def __str__(self):
+        return f'{self.year} {self.kind} {self.category}'

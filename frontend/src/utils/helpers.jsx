@@ -67,6 +67,11 @@ export const ROLES = {
   auditor:       { label: 'Auditor',              color: '#64748B', bg: '#F1F5F9' },
   vigilante:     { label: 'Vigilante',            color: '#7C3AED', bg: '#F5F3FF' },
   vecino:        { label: 'Residente',   color: '#E85D43', bg: '#FFF5F3' },
+  // Perfiles de Administrar Propiedades
+  gerente:       { label: 'Gerente de propiedades',       color: '#0E7490', bg: '#ECFEFF' },
+  comercial:     { label: 'Ejecutivo comercial',          color: '#C2410C', bg: '#FFF7ED' },
+  mantenimiento: { label: 'Coordinador de mantenimiento', color: '#7C3AED', bg: '#F5F3FF' },
+  tecnico:       { label: 'Técnico de campo',             color: '#B45309', bg: '#FFFBEB' },
 };
 
 // Payment type labels
@@ -193,8 +198,8 @@ export function getStatesForCountry(country) {
 
 // ── Homly brand assets (PNG) ──────────────────────────────────────────────────
 // homly-house.png → house/casita icon (coral-orange)
-// homly-name.png → "homly" text + dot (teal-green + coral dot)
-// homly-full.png → full logo (house + name + dot)
+// homly-name-r.png → "homly" + dot + ® (marca registrada IMPI)
+// homly-full-r.png → logo completo (casita + nombre + punto + ®)
 
 /** Icon only — house/casita from Homly_house.png */
 export const HOMLY_LOGO = (
@@ -231,7 +236,7 @@ export function HomlyBrand({ iconSize = 44, nameHeight = 32, style = {} }) {
         }}
       />
       <img
-        src="/img/homly-name.png"
+        src="/img/homly-name-r.png"
         alt="Homly"
         style={{
           height: nameHeight,
@@ -260,7 +265,7 @@ export function HomlyBrandDark({ iconSize = 44, fontSize = 26, style = {} }) {
         }}
       />
       <img
-        src="/img/homly-name.png"
+        src="/img/homly-name-r.png"
         alt="Homly"
         style={{
           height: fontSize,
@@ -276,13 +281,13 @@ export function HomlyBrandDark({ iconSize = 44, fontSize = 26, style = {} }) {
 /** Full logo — single image (house + name + dot) */
 export const HOMLY_LOGO_FULL = (
   <img
-    src="/img/homly-full.png"
+    src="/img/homly-full-r.png"
     alt="Homly"
     style={{ height: 52, width: 'auto', objectFit: 'contain', display: 'block' }}
   />
 );
 
-export const APP_VERSION = '10.5.0';
+export const APP_VERSION = '10.23.5';
 
 export function unitCodeOf(u = {}) {
   return String(u.unit_id_code || u.unit_code || u.unitIdCode || '').trim();
@@ -303,8 +308,31 @@ export function unitLabel(u, fallback = '—') {
 /** True for any PDF the OS may report with a non-standard MIME (empty, octet-stream, .PDF). */
 export function isPdfFile(file) {
   if (!file) return false;
-  const name = (file.name || '').toLowerCase();
-  if (name.endsWith('.pdf')) return true;
-  const type = (file.type || '').toLowerCase();
-  return type === 'application/pdf' || type === 'application/x-pdf' || type.includes('pdf');
+  const name = (file.name || '').toLowerCase().trim();
+  // Nombre con .pdf al final (incluye Edo.Cta.Oct26.pdf y .PDF)
+  if (/\.pdf$/i.test(name)) return true;
+  const type = (file.type || '').toLowerCase().trim();
+  if (!type) return false;
+  if (
+    type === 'application/pdf'
+    || type === 'application/x-pdf'
+    || type === 'application/acrobat'
+    || type === 'application/vnd.adobe.pdf'
+    || type === 'text/pdf'
+    || type === 'image/pdf'
+    || type.includes('pdf')
+  ) return true;
+  // Algunos bancos / SO mandan el PDF como descarga genérica
+  if (
+    (type === 'application/octet-stream'
+      || type === 'application/force-download'
+      || type === 'application/x-download'
+      || type === 'binary/octet-stream')
+    && /\.pdf($|\?)/i.test(name)
+  ) return true;
+  return false;
 }
+
+/** accept= para inputs de PDF (estados bancarios, comprobantes, etc.). */
+export const PDF_FILE_ACCEPT =
+  '.pdf,.PDF,application/pdf,application/x-pdf,application/acrobat,application/vnd.adobe.pdf,application/octet-stream';

@@ -3,10 +3,11 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
 import { gastosAPI, mantenimientosAPI } from '../api/client';
 import ProviderSelect from '../components/providers/ProviderSelect';
+import RitaAssistant from '../components/RitaAssistant';
 import { useGastosData } from '../hooks/useGastosData';
 import { queryKeys }     from '../hooks/queryKeys';
 import { todayPeriod, periodLabel, prevPeriod, nextPeriod, fmtDate, PAYMENT_TYPES, isPdfFile } from '../utils/helpers';
-import { ChevronLeft, ChevronRight, Plus, Edit, Trash2, X, ShoppingBag, Printer, Check, AlertCircle, Lock, Paperclip, Eye, FileText, Image } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Edit, Trash2, X, ShoppingBag, Printer, Check, AlertCircle, Lock, Paperclip, Eye, FileText, Image, Sparkles } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 // ── Evidence helpers ───────────────────────────────────────────────────────────
@@ -459,7 +460,7 @@ function GastosPrintLayout({ tenant, period, gastosConciliados, gastosNoConcilia
 }
 
 export default function Gastos() {
-  const { tenantId, isReadOnly } = useAuth();
+  const { tenantId, isReadOnly, role, user } = useAuth();
   const queryClient = useQueryClient();
 
   // ── Estado de UI ────────────────────────────────────────────────────────────
@@ -472,6 +473,9 @@ export default function Gastos() {
   const [viewerFiles, setViewerFiles]     = useState(null);
   const [workOptions, setWorkOptions]     = useState([]);
   const gastoFileInputRef                 = useRef(null);
+  const [ritaOpen, setRitaOpen]           = useState(false);
+  const [ritaAssignedMovementId, setRitaAssignedMovementId] = useState(null);
+  const canUseRita = !isReadOnly && (role === 'admin' || role === 'tesorero' || role === 'contador' || user?.is_superuser);
 
   // ── Datos del módulo vía React Query ────────────────────────────────────────
   const {
@@ -510,6 +514,27 @@ export default function Gastos() {
     }, 1500);
   };
 
+  const openGastoFromRita = (prefill) => {
+    setForm({
+      amount: prefill.amount != null ? String(prefill.amount) : '',
+      field: prefill.field || '',
+      payment_type: prefill.payment_type || 'transferencia',
+      doc_number: prefill.doc_number || prefill.folio || '',
+      gasto_date: prefill.gasto_date || prefill.payment_date || '',
+      provider: null,
+      provider_name: prefill.provider_name || '',
+      provider_rfc: '',
+      provider_invoice: '',
+      bank_reconciled: prefill.bank_reconciled !== false,
+      notes: prefill.notes || '',
+      maintenance_work: null,
+      rita_movement_id: prefill.movement_id || null,
+      rita_session_id: prefill.session_id || null,
+    });
+    setGastoEvidence([]);
+    setModal('gasto');
+  };
+
   const saveGasto = async () => {
     const amount = parseFloat(form.amount);
     if (isNaN(amount) || amount < 0) {
@@ -537,12 +562,17 @@ export default function Gastos() {
       maintenance_work: form.maintenance_work || null,
     };
     setSaving(true);
+    const ritaMovementId = form.rita_movement_id;
     try {
       if (form.id) await gastosAPI.update(tenantId, form.id, payload);
       else await gastosAPI.create(tenantId, payload);
       toast.success('Gasto guardado');
       setGastoEvidence([]);
       setModal(null);
+      if (ritaMovementId) {
+        setRitaAssignedMovementId(ritaMovementId);
+        setRitaOpen(true);
+      }
       queryClient.invalidateQueries({ queryKey: queryKeys.gastos(tenantId, period) });
     } catch (e) {
       const err = e.response?.data;
@@ -629,6 +659,17 @@ export default function Gastos() {
                 setModal('gasto');
               }}>
                 <Plus size={14} /> Nuevo Gasto
+              </button>
+            )}
+            {canUseRita && !isPeriodClosed && (
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => setRitaOpen(true)}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                title="Rita — relacionar egresos del estado de cuenta"
+              >
+                <Sparkles size={14} color="var(--teal-600)" /> Rita
               </button>
             )}
             <button className="btn btn-outline btn-sm" onClick={handlePrint}>
@@ -981,6 +1022,17 @@ export default function Gastos() {
       {viewerFiles && (
         <EvidenceViewer files={viewerFiles} onClose={() => setViewerFiles(null)} />
       )}
+
+      <RitaAssistant
+        tenantId={tenantId}
+        period={period}
+        mode="egresos"
+        gastoFields={fields}
+        open={ritaOpen}
+        onClose={() => setRitaOpen(false)}
+        lastAssignedMovementId={ritaAssignedMovementId}
+        onAssignEgreso={(prefill) => openGastoFromRita(prefill)}
+      />
 
     </div>
   );

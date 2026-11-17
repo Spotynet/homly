@@ -8,12 +8,20 @@ from . import rental_views
 from . import airbnb_views
 from . import rental_crm_views
 from . import rental_rentroll
+from . import rental_reports
 from . import planeacion
 from . import asambleas
 from . import mantenimientos
 from . import proveedores
 from . import paqueteria
 from . import visitas
+from . import rental_mantenimiento
+from . import rental_ops_views
+from . import workspace_views
+from . import rental_finance
+from . import geo_views
+from . import rental_map
+from . import rita_views
 
 router = DefaultRouter()
 router.register(r'tenants', views.TenantViewSet, basename='tenants')
@@ -24,6 +32,7 @@ router.register(r'trial-requests', views.TrialRequestViewSet, basename='trial-re
 router.register(r'tenant-subscriptions', views.TenantSubscriptionViewSet, basename='tenant-subscriptions')
 router.register(r'subscription-payments', views.SubscriptionPaymentViewSet, basename='subscription-payments')
 router.register(r'system-roles', views.SystemRoleViewSet, basename='system-roles')
+router.register(r'workspace-configs', workspace_views.WorkspaceConfigViewSet, basename='workspace-configs')
 
 # System staff users (superadmin only)
 router.register(r'system-users', views.SystemUserViewSet, basename='system-users')
@@ -56,6 +65,7 @@ tenant_router.register(r'payment-plans', views.PaymentPlanViewSet, basename='pay
 tenant_router.register(r'blog-posts',        views.BlogPostViewSet,                basename='blog-posts')
 tenant_router.register(r'payment-vouchers',  views.PaymentVoucherSubmissionViewSet, basename='payment-vouchers')
 tenant_router.register(r'rental-properties', rental_views.RentalPropertyViewSet, basename='rental-properties')
+tenant_router.register(r'rental-spaces', rental_views.RentalSpaceViewSet, basename='rental-spaces')
 tenant_router.register(r'rental-parties', rental_views.RentalPartyViewSet, basename='rental-parties')
 tenant_router.register(r'rental-concepts', rental_views.RentalChargeConceptViewSet, basename='rental-concepts')
 tenant_router.register(r'rental-contracts', rental_views.RentalContractViewSet, basename='rental-contracts')
@@ -71,6 +81,18 @@ tenant_router.register(r'condo-maintenance', mantenimientos.CondoMaintenanceWork
 tenant_router.register(r'condo-providers', proveedores.CondoProviderViewSet, basename='condo-providers')
 tenant_router.register(r'condo-packages', paqueteria.CondoPackageViewSet, basename='condo-packages')
 tenant_router.register(r'condo-visits', visitas.CondoVisitAuthViewSet, basename='condo-visits')
+tenant_router.register(r'rental-maint-categories', rental_mantenimiento.RentalMaintCategoryViewSet, basename='rental-maint-categories')
+tenant_router.register(r'rental-maint-work-types', rental_mantenimiento.RentalMaintWorkTypeViewSet, basename='rental-maint-work-types')
+tenant_router.register(r'rental-maint-providers', rental_mantenimiento.RentalMaintProviderViewSet, basename='rental-maint-providers')
+tenant_router.register(r'rental-maint-works', rental_mantenimiento.RentalMaintWorkViewSet, basename='rental-maint-works')
+tenant_router.register(r'rental-assets', rental_ops_views.AssetViewSet, basename='rental-assets')
+tenant_router.register(r'rental-plans', rental_ops_views.PlanViewSet, basename='rental-plans')
+tenant_router.register(r'rental-requests', rental_ops_views.RequestViewSet, basename='rental-requests')
+tenant_router.register(r'rental-inspection-templates', rental_ops_views.TemplateViewSet, basename='rental-inspection-templates')
+tenant_router.register(r'rental-inspections', rental_ops_views.InspectionViewSet, basename='rental-inspections')
+tenant_router.register(r'rental-capex-projects', rental_finance.CapexProjectViewSet, basename='rental-capex-projects')
+tenant_router.register(r'rental-expenses', rental_finance.ExpenseViewSet, basename='rental-expenses')
+tenant_router.register(r'rental-budget-lines', rental_finance.BudgetLineViewSet, basename='rental-budget-lines')
 
 urlpatterns = [
     # Auth
@@ -119,10 +141,56 @@ urlpatterns = [
          views.CartaNoAdeudoView.as_view(), name='carta-no-adeudo'),
     path('tenants/<uuid:tenant_id>/closing-report/',
          views.ClosingReportView.as_view(), name='closing-report'),
+    path('tenants/<uuid:tenant_id>/period-expediente/',
+         views.PeriodExpedienteView.as_view(), name='period-expediente'),
+    path('tenants/<uuid:tenant_id>/period-expediente-doc/',
+         views.PeriodExpedienteDocView.as_view(), name='period-expediente-doc'),
+    # Rita — asistente estados de cuenta → cobranza / gastos
+    path('tenants/<uuid:tenant_id>/rita/bank-profiles/',
+         rita_views.RitaBankProfilesView.as_view(), name='rita-bank-profiles'),
+    path('tenants/<uuid:tenant_id>/rita/settings/',
+         rita_views.RitaSettingsView.as_view(), name='rita-settings'),
+    path('tenants/<uuid:tenant_id>/rita/period-status/',
+         rita_views.RitaPeriodStatusView.as_view(), name='rita-period-status'),
+    path('tenants/<uuid:tenant_id>/rita/parse/',
+         rita_views.RitaParseView.as_view(), name='rita-parse'),
+    path('tenants/<uuid:tenant_id>/rita/parse-from-statement/',
+         rita_views.RitaParseFromStatementView.as_view(), name='rita-parse-from-statement'),
+    path('tenants/<uuid:tenant_id>/rita/sessions/<uuid:session_id>/',
+         rita_views.RitaSessionDetailView.as_view(), name='rita-session'),
+    path('tenants/<uuid:tenant_id>/rita/sessions/<uuid:session_id>/movement/',
+         rita_views.RitaMovementActionView.as_view(), name='rita-movement'),
     path('tenants/<uuid:tenant_id>/rental-dashboard/',
          rental_views.RentalDashboardView.as_view(), name='rental-dashboard'),
+    path('tenants/<uuid:tenant_id>/rental-map/',
+         rental_map.RentalMapView.as_view(), name='rental-map'),
+    path('geo/countries/', geo_views.GeoCountriesView.as_view(), name='geo-countries'),
+    path('geo/regions/', geo_views.GeoRegionsView.as_view(), name='geo-regions'),
+    path('geo/postal/', geo_views.GeoPostalView.as_view(), name='geo-postal'),
+    path('tenants/<uuid:tenant_id>/rental-ops-settings/',
+         rental_ops_views.OpsSettingsView.as_view(), name='rental-ops-settings'),
+    path('tenants/<uuid:tenant_id>/rental-finance-summary/',
+         rental_finance.SummaryView.as_view(), name='rental-finance-summary'),
+    path('tenants/<uuid:tenant_id>/rental-finance-ledger/',
+         rental_finance.LedgerView.as_view(), name='rental-finance-ledger'),
+    path('tenants/<uuid:tenant_id>/rental-ops-indicators/',
+         rental_ops_views.OpsIndicatorsView.as_view(), name='rental-ops-indicators'),
+    path('public/rental-portal/<str:token>/',
+         rental_ops_views.PublicPortalView.as_view(), name='rental-portal-public'),
     path('tenants/<uuid:tenant_id>/rental-calendar/',
          rental_views.RentalCalendarView.as_view(), name='rental-calendar'),
+    path('tenants/<uuid:tenant_id>/rental-report-catalog/',
+         rental_reports.ReportCatalogView.as_view(), name='rental-report-catalog'),
+    path('tenants/<uuid:tenant_id>/rental-report/<str:key>/',
+         rental_reports.ReportRunView.as_view(), name='rental-report-run'),
+    path('tenants/<uuid:tenant_id>/rental-report-annual/',
+         rental_reports.AnnualReportView.as_view(), name='rental-report-annual'),
+    path('tenants/<uuid:tenant_id>/rental-report-provider-sla/',
+         rental_reports.ProviderSlaView.as_view(), name='rental-report-provider-sla'),
+    path('tenants/<uuid:tenant_id>/rental-report-overview/',
+         rental_reports.OverviewView.as_view(), name='rental-report-overview'),
+    path('tenants/<uuid:tenant_id>/rental-agenda/',
+         rental_reports.AgendaView.as_view(), name='rental-agenda'),
     path('tenants/<uuid:tenant_id>/rental-rentroll/',
          rental_rentroll.RentalRentRollView.as_view(), name='rental-rentroll'),
     path('tenants/<uuid:tenant_id>/planeacion-context/',

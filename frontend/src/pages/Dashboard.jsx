@@ -729,8 +729,14 @@ export default function Dashboard() {
   // Mapa de labels internos → etiquetas legibles en español
   const CONCEPT_LABEL_MAP = { prevDebt: 'Cobranza de Adeudo', prev_debt: 'Cobranza de Adeudo' };
   const normConceptLabel = (raw) => CONCEPT_LABEL_MAP[raw] || raw || 'Concepto adicional';
+  // Conceptos de captura que son lo mismo que el ajuste automático de centavos
+  const isCentavosRefLabel = (label) => {
+    const n = String(label || '').toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    return /centavo/.test(n) && /(referenciad|ajuste)/.test(n);
+  };
   // Fix 2: expandir cada concepto adicional en segmento propio con color único
-  const conceptSegments = rd.ingresos_conceptos
+  const rawConceptSegments = rd.ingresos_conceptos
     ? Object.entries(rd.ingresos_conceptos)
         .map(([key, v], idx) => ({
           label: normConceptLabel(v.label) || normConceptLabel(key),
@@ -738,6 +744,17 @@ export default function Dashboard() {
           color: CONCEPT_PALETTE[idx % CONCEPT_PALETTE.length],
         }))
     : (ingConceptos !== 0 ? [{ label: 'Conceptos adicionales', value: ingConceptos, color: CONCEPT_PALETTE[0] }] : []);
+  // Unificar "Ingresos referenciados por centavos" + "Ajustes de centavos" en un solo total
+  let centsFromConcepts = 0;
+  const conceptSegments = [];
+  rawConceptSegments.forEach((seg) => {
+    if (isCentavosRefLabel(seg.label)) {
+      centsFromConcepts += seg.value || 0;
+    } else {
+      conceptSegments.push(seg);
+    }
+  });
+  const ingCentavosTotal = (ingReferenciados || 0) + centsFromConcepts;
 
   // Composición = desglose de ingresos conciliados (mismo total que Eficiencia de Cobranza)
   const incomeSegments = [
@@ -746,7 +763,7 @@ export default function Dashboard() {
     { label: 'Cobranza de adeudo',         value: ingAdeudo,        color: '#f59e0b' },
     ...conceptSegments,
     { label: 'No identificados',           value: ingNoId,          color: 'var(--amber-400)' },
-    { label: 'Ajustes de centavos',        value: ingReferenciados, color: '#64748b' },
+    { label: 'Ingresos referenciados por centavos', value: ingCentavosTotal, color: '#64748b' },
   ];
   const incomeSegsSum = incomeSegments.reduce((a, b) => a + (b.value || 0), 0);
   const incomeRemainder = Math.round((totalIngresos - incomeSegsSum) * 100) / 100;

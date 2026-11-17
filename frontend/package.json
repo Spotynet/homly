@@ -1,12 +1,13 @@
 {
   "name": "homly-frontend",
-  "version": "10.5.0",
+  "version": "10.23.5",
   "private": true,
   "dependencies": {
     "@tanstack/react-query": "^5.56.0",
     "axios": "^1.7.0",
     "clsx": "^2.1.0",
     "date-fns": "^3.6.0",
+    "leaflet": "^1.9.4",
     "lucide-react": "^0.400.0",
     "quill": "^2.0.3",
     "react": "^18.3.0",

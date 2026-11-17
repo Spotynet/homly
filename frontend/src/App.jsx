@@ -3,20 +3,33 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-route
 import { QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { WorkspaceConfigProvider } from './context/WorkspaceConfigContext';
 import { queryClient } from './lib/queryClient';
 import { GuideProvider } from './context/GuideContext';
-import { ROLE_BASE_MODULES, RENTAL_ROLE_BASE_MODULES, isCondoModuleAssignable } from './constants/modulePermissions';
+import { useTenantAccess } from './context/TenantAccessContext';
 import RentalDashboard from './pages/rentas/RentalDashboard';
 import RentalProperties from './pages/rentas/RentalProperties';
 import RentalContracts from './pages/rentas/RentalContracts';
 import RentalCobranza from './pages/rentas/RentalCobranza';
-import RentalCalendar from './pages/rentas/RentalCalendar';
 import RentalConfig from './pages/rentas/RentalConfig';
+import RentalGuias from './pages/rentas/RentalGuias';
+import WorkspaceSettings from './pages/WorkspaceSettings';
 import RentalCRM from './pages/rentas/RentalCRM';
 import RentalRentRoll from './pages/rentas/RentalRentRoll';
+import RentalCapex from './pages/rentas/RentalCapex';
+import RentalReportes from './pages/rentas/RentalReportes';
+import RentalMantenimiento from './pages/rentas/RentalMantenimiento';
+import RentalSolicitudes from './pages/rentas/RentalSolicitudes';
+import RentalActivos from './pages/rentas/RentalActivos';
+import RentalPreventivo from './pages/rentas/RentalPreventivo';
+import RentalInspecciones from './pages/rentas/RentalInspecciones';
+import RentalIndicadores from './pages/rentas/RentalIndicadores';
+import PublicSolicitud from './pages/PublicSolicitud';
 
 // Pages
 import Landing from './pages/Landing';
+import CondominiosPage from './pages/site/CondominiosPage';
+import PropiedadesPage from './pages/site/PropiedadesPage';
 import Login from './pages/Login';
 import AppLayout from './components/layout/AppLayout';
 import Dashboard from './pages/Dashboard';
@@ -71,43 +84,69 @@ function PrivateRoute({ children }) {
   return children;
 }
 
+
+/** Rutas de Sistema: solo en el espacio virtual Súper Admin (sin tenant). */
+function SistemaRoute({ children }) {
+  const { isSuperAdmin, tenantId, workspaceType, loading } = useAuth();
+  if (loading) return LOADER;
+  if (!isSuperAdmin) return <Navigate to="/app" replace />;
+  if (tenantId && workspaceType !== 'sistema') {
+    // Están operando un tenant: volver al dashboard de ese espacio
+    return <Navigate to={workspaceType === 'rentas' ? '/app/rentas/dashboard' : '/app/dashboard'} replace />;
+  }
+  return children;
+}
+
 // Role-based route guard — redirects to /app (index) if the current role
 // cannot receive the given module. Custom profiles are standalone (nav +
 // profile modules decide visibility). Superadmin bypasses all checks.
 function RoleRoute({ module: moduleKey, workspace, children }) {
-  const { role, isSuperAdmin, loading, workspaceType } = useAuth();
+  const { isSuperAdmin, loading, workspaceType, tenantId } = useAuth();
+  const { canAccessModule, accessReady } = useTenantAccess();
 
   if (loading) return LOADER;
+
+  // Espacio Súper Admin: no se operan módulos de tenants
+  if (isSuperAdmin && (!tenantId || workspaceType === 'sistema')) {
+    if (workspace === 'rentas' || workspace === 'condominio') {
+      return <Navigate to="/app/sistema/tenants" replace />;
+    }
+  }
 
   if (workspace === 'rentas' && workspaceType && workspaceType !== 'rentas') {
     return <Navigate to="/app/dashboard" replace />;
   }
   if (workspace === 'condominio' && workspaceType === 'rentas') {
-    return <Navigate to="/app/rentas/dashboard" replace />;
+    return <Navigate to={isSuperAdmin ? '/app/rentas/dashboard' : '/app'} replace />;
   }
 
-  // Superadmin has unrestricted access
   if (isSuperAdmin) return children;
-
-  // Custom profiles do not inherit a predefined role; the profile module list
-  // in AppLayout is the visibility source of truth.
-  if (role === 'custom') return children;
-
-  const isRental = workspace === 'rentas' || (!workspace && workspaceType === 'rentas');
-  if (isRental) {
-    const allowedModules = RENTAL_ROLE_BASE_MODULES[role] || [];
-    if (!allowedModules.includes(moduleKey)) {
-      return <Navigate to="/app" replace />;
-    }
-    return children;
+  if (!accessReady) return LOADER;
+  if (!canAccessModule(moduleKey)) {
+    return <Navigate to="/app" replace />;
   }
+  return children;
+}
 
-  const base = ROLE_BASE_MODULES[role] || [];
-  if (base.includes(moduleKey) || isCondoModuleAssignable(role, moduleKey)) {
-    return children;
-  }
+// Entrada de Administrar Propiedades: cada perfil aterriza en su primer módulo disponible
+// (p. ej. el técnico en Órdenes de trabajo, el ejecutivo comercial en el CRM).
+const RENTAL_HOME_ORDER = [
+  ['rentas_dashboard', '/app/rentas/dashboard'],
+  ['rentas_mantenimiento', '/app/rentas/mantenimiento'],
+  ['rentas_crm', '/app/rentas/crm'],
+  ['rentas_contratos', '/app/rentas/contratos'],
+  ['rentas_cobranza', '/app/rentas/cobranza'],
+  ['rentas_propiedades', '/app/rentas/propiedades'],
+  ['rentas_solicitudes', '/app/rentas/solicitudes'],
+  ['rentas_inspecciones', '/app/rentas/inspecciones'],
+  ['rentas_guias', '/app/rentas/guias'],
+];
 
-  return <Navigate to="/app" replace />;
+function RentalHome() {
+  const { canAccessModule, accessReady } = useTenantAccess();
+  if (!accessReady) return LOADER;
+  const hit = RENTAL_HOME_ORDER.find(([key]) => canAccessModule(key));
+  return <Navigate to={hit ? hit[1] : '/app/notificaciones'} replace />;
 }
 
 function AppRoutes() {
@@ -121,7 +160,10 @@ function AppRoutes() {
     <Routes>
       {/* Public */}
       <Route path="/" element={<Landing />} />
+      <Route path="/condominios" element={<CondominiosPage />} />
+      <Route path="/propiedades" element={<PropiedadesPage />} />
       <Route path="/registro" element={<Registro />} />
+      <Route path="/solicitud/:token" element={<PublicSolicitud />} />
       <Route
         path="/login"
         element={isAuthenticated ? <Navigate to="/app" replace /> : <Login />}
@@ -131,15 +173,18 @@ function AppRoutes() {
         <Route
           index
           element={
-            <Navigate
-              to={
-                isSuperAdmin ? '/app/sistema/tenants'
-                : isResidente   ? '/app/my-unit'
-                : workspaceType === 'rentas' ? '/app/rentas/dashboard'
-                :              '/app/dashboard'
-              }
-              replace
-            />
+            workspaceType === 'rentas' && !isSuperAdmin
+              ? <RentalHome />
+              : (
+                <Navigate
+                  to={
+                    isSuperAdmin ? '/app/sistema/tenants'
+                    : isResidente   ? '/app/my-unit'
+                    :              '/app/dashboard'
+                  }
+                  replace
+                />
+              )
           }
         />
         <Route path="dashboard"      element={<RoleRoute module="dashboard" workspace="condominio"><Dashboard /></RoleRoute>} />
@@ -148,16 +193,26 @@ function AppRoutes() {
         <Route path="rentas/crm"           element={<RoleRoute module="rentas_crm" workspace="rentas"><RentalCRM /></RoleRoute>} />
         <Route path="rentas/contratos"     element={<RoleRoute module="rentas_contratos" workspace="rentas"><RentalContracts /></RoleRoute>} />
         <Route path="rentas/cobranza"      element={<RoleRoute module="rentas_cobranza" workspace="rentas"><RentalCobranza /></RoleRoute>} />
+        <Route path="rentas/reportes"      element={<RoleRoute module="rentas_reportes" workspace="rentas"><RentalReportes /></RoleRoute>} />
+        <Route path="rentas/capex"         element={<RoleRoute module="rentas_capex" workspace="rentas"><RentalCapex /></RoleRoute>} />
         <Route path="rentas/rentroll"      element={<RoleRoute module="rentas_rentroll" workspace="rentas"><RentalRentRoll /></RoleRoute>} />
-        <Route path="rentas/calendario"    element={<RoleRoute module="rentas_calendario" workspace="rentas"><RentalCalendar /></RoleRoute>} />
+        <Route path="rentas/calendario"    element={<Navigate to="/app/rentas/contratos?tab=vigencias" replace />} />
+        <Route path="rentas/mantenimiento" element={<RoleRoute module="rentas_mantenimiento" workspace="rentas"><RentalMantenimiento /></RoleRoute>} />
+        <Route path="rentas/solicitudes" element={<RoleRoute module="rentas_solicitudes" workspace="rentas"><RentalSolicitudes /></RoleRoute>} />
+        <Route path="rentas/preventivo" element={<RoleRoute module="rentas_preventivo" workspace="rentas"><RentalPreventivo /></RoleRoute>} />
+        <Route path="rentas/activos" element={<RoleRoute module="rentas_activos" workspace="rentas"><RentalActivos /></RoleRoute>} />
+        <Route path="rentas/inspecciones" element={<RoleRoute module="rentas_inspecciones" workspace="rentas"><RentalInspecciones /></RoleRoute>} />
+        <Route path="rentas/indicadores" element={<RoleRoute module="rentas_indicadores" workspace="rentas"><RentalIndicadores /></RoleRoute>} />
+        <Route path="rentas/guias"         element={<RoleRoute module="rentas_guias" workspace="rentas"><RentalGuias /></RoleRoute>} />
         <Route path="rentas/config"        element={<RoleRoute module="rentas_config" workspace="rentas"><RentalConfig /></RoleRoute>} />
         {isSuperAdmin && (
           <Route path="sistema">
-            <Route path="tenants"       element={<Tenants />} />
-            <Route path="logs"          element={<Logs />} />
-            <Route path="suscripciones" element={<Suscripciones />} />
-            <Route path="crm"           element={<CRM />} />
-            <Route path="usuarios"      element={<SystemUsers currentUserRole={systemRole} />} />
+            <Route path="tenants"       element={<SistemaRoute><Tenants /></SistemaRoute>} />
+            <Route path="logs"          element={<SistemaRoute><Logs /></SistemaRoute>} />
+            <Route path="suscripciones" element={<SistemaRoute><Suscripciones /></SistemaRoute>} />
+            <Route path="espacios"      element={<SistemaRoute><WorkspaceSettings /></SistemaRoute>} />
+            <Route path="crm"           element={<SistemaRoute><CRM /></SistemaRoute>} />
+            <Route path="usuarios"      element={<SistemaRoute><SystemUsers currentUserRole={systemRole} /></SistemaRoute>} />
           </Route>
         )}
         <Route path="cobranza"      element={<RoleRoute module="cobranza" workspace="condominio"><Cobranza /></RoleRoute>} />
@@ -194,6 +249,7 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
     <BrowserRouter>
       <AuthProvider>
+        <WorkspaceConfigProvider>
         <GuideProvider>
           <AppRoutes />
           <Toaster
@@ -205,6 +261,7 @@ export default function App() {
             }}
           />
         </GuideProvider>
+        </WorkspaceConfigProvider>
       </AuthProvider>
     </BrowserRouter>
     </QueryClientProvider>

@@ -4,6 +4,9 @@ import {
   ChevronRight, ChevronLeft, X, Check, GripHorizontal,
   MapPin,
 } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
+import { useTenantAccess } from '../../context/TenantAccessContext';
+import { PATH_TO_MODULE } from '../../constants/modulePermissions';
 
 /**
  * GuideModal — Panel interactivo flotante
@@ -32,6 +35,8 @@ const MODAL_H_EST = 460;
 export default function GuideModal({ open, onClose, onFinish, chapter }) {
   const navigate  = useNavigate();
   const location  = useLocation();
+  const { isSuperAdmin } = useAuth();
+  const { canAccessModule } = useTenantAccess();
   const [step,    setStep]    = useState(0);
   const [exiting, setExiting] = useState(false);
 
@@ -54,15 +59,17 @@ export default function GuideModal({ open, onClose, onFinish, chapter }) {
     }
   }, [open, chapter, positionModal]);
 
-  // Auto-navegar al route del paso actual
+  // Auto-navegar al route del paso actual solo si el rol tiene el módulo
   useEffect(() => {
     if (!open || !chapter) return;
     const steps = chapter.steps || [];
     const safeStep = step < steps.length ? step : 0;
     const route = steps[safeStep]?.route;
-    if (route && location.pathname !== route) {
-      navigate(route);
-    }
+    if (!route || location.pathname === route) return;
+    const moduleKey = PATH_TO_MODULE[route];
+    if (moduleKey && !canAccessModule(moduleKey)) return;
+    if (!moduleKey && !isSuperAdmin) return;
+    navigate(route);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, chapter, step]);
 
@@ -247,7 +254,7 @@ export default function GuideModal({ open, onClose, onFinish, chapter }) {
         </div>
 
         {/* ── Indicador de pantalla actual ─────────────────────── */}
-        {current.route && (
+        {current.route && (!PATH_TO_MODULE[current.route] || canAccessModule(PATH_TO_MODULE[current.route])) && (
           <div style={{
             padding: '6px 14px',
             background: onCorrectScreen ? `${accentColor}12` : '#fef9c3',

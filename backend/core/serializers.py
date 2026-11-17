@@ -61,13 +61,14 @@ class LoginSerializer(serializers.Serializer):
             data['tenant'] = tenant
             return data
 
-        # Regular user — use the selected tenant_id, or fall back to first assigned
+        # Regular user — use the selected tenant_id, or fall back to first active
         user_tenants = TenantUser.objects.select_related('tenant').filter(user=user)
         if not user_tenants.exists():
             raise serializers.ValidationError(
                 'Este usuario no tiene acceso a ningún condominio.'
             )
 
+        active_tenants = user_tenants.filter(tenant__is_active=True, tenant__hibernated=False)
         if tenant_id:
             try:
                 tenant_user = user_tenants.get(tenant_id=str(tenant_id))
@@ -75,8 +76,16 @@ class LoginSerializer(serializers.Serializer):
                 raise serializers.ValidationError(
                     'No tienes acceso a este condominio.'
                 )
+            if not tenant_user.tenant.is_active or tenant_user.tenant.hibernated:
+                raise serializers.ValidationError(
+                    'Este espacio no está activo. Contacta al administrador.'
+                )
         else:
-            tenant_user = user_tenants.first()
+            tenant_user = active_tenants.first()
+            if not tenant_user:
+                raise serializers.ValidationError(
+                    'No tienes acceso a ningún espacio activo.'
+                )
 
         data['user']        = user
         data['role']        = tenant_user.role
@@ -174,6 +183,7 @@ class LoginWithCodeSerializer(serializers.Serializer):
                 'Este usuario no tiene acceso a ningún condominio.'
             )
 
+        active_tenants = user_tenants.filter(tenant__is_active=True, tenant__hibernated=False)
         if tenant_id:
             try:
                 tenant_user = user_tenants.get(tenant_id=str(tenant_id))
@@ -181,8 +191,16 @@ class LoginWithCodeSerializer(serializers.Serializer):
                 raise serializers.ValidationError(
                     {'tenant_id': 'No tienes acceso a este condominio.'}
                 )
+            if not tenant_user.tenant.is_active or tenant_user.tenant.hibernated:
+                raise serializers.ValidationError(
+                    'Este espacio no está activo. Contacta al administrador.'
+                )
         else:
-            tenant_user = user_tenants.first()
+            tenant_user = active_tenants.first()
+            if not tenant_user:
+                raise serializers.ValidationError(
+                    'No tienes acceso a ningún espacio activo.'
+                )
 
         data['user']        = user
         data['role']        = tenant_user.role
@@ -361,6 +379,17 @@ class UserCreateSerializer(serializers.ModelSerializer):
         read_only_fields = ['id']
         extra_kwargs = {'name': {'required': False, 'allow_blank': True}}
 
+    def validate(self, attrs):
+        # Cada espacio de trabajo tiene sus propios perfiles de usuario.
+        if not attrs.get('profile_id'):
+            from .rental_access import check_role_for_workspace
+            from .models import Tenant as _Tenant
+            ws = _Tenant.objects.filter(id=attrs.get('tenant_id')).values_list('workspace_type', flat=True).first()
+            err = check_role_for_workspace(attrs.get('role'), ws)
+            if err:
+                raise serializers.ValidationError({'role': err})
+        return attrs
+
     def create(self, validated_data):
         import secrets
         role       = validated_data.pop('role')
@@ -427,6 +456,7 @@ class UserCreateSerializer(serializers.ModelSerializer):
                 tenant_name=tenant.name,
                 role=role,
                 unit_name=unit_name,
+                workspace_type=tenant.workspace_type,
             )
         except Exception:
             pass  # El email es opcional — la creación del usuario no debe fallar
@@ -482,6 +512,19 @@ class TenantDetailSerializer(serializers.ModelSerializer):
         fields = '__all__'
         read_only_fields = ['id', 'created_at', 'updated_at']
 
+    def validate_rental_settings(self, value):
+        """El modo de operación (rentas sí/no, módulos apagados) solo cambia desde rental-ops-settings."""
+        if not isinstance(value, dict):
+            return value
+        merged = dict(value)
+        old = (self.instance.rental_settings if self.instance else None) or {}
+        for key in ('leasing_enabled', 'off_modules'):
+            if key in old:
+                merged[key] = old[key]
+            else:
+                merged.pop(key, None)
+        return merged
+
     def get_subscription_allowed_modules(self, obj):
         try:
             sub = obj.subscription
@@ -533,6 +576,15 @@ class TenantUserSerializer(serializers.ModelSerializer):
                   'unit_code', 'must_change_password', 'is_active',
                   'profile_id', 'profile_label', 'profile_color', 'created_at']
         read_only_fields = ['id', 'created_at']
+
+    def validate_role(self, value):
+        tenant = self.instance.tenant if self.instance is not None else None
+        if tenant is not None and value != getattr(self.instance, 'role', None):
+            from .rental_access import check_role_for_workspace
+            err = check_role_for_workspace(value, tenant.workspace_type)
+            if err:
+                raise serializers.ValidationError(err)
+        return value
 
 
 # ═══════════════════════════════════════════════════════════
@@ -836,10 +888,23 @@ class CajaChicaListSerializer(serializers.ModelSerializer):
 # ═══════════════════════════════════════════════════════════
 
 class BankStatementSerializer(serializers.ModelSerializer):
+    """Metadata del estado bancario.
+
+    No expone `file_data` (Base64 puede ser varios MB y congela el frontend
+    al listar o al abrir el visor). El PDF se descarga vía
+    GET .../bank-statements/{id}/file/.
+    """
+    has_file = serializers.SerializerMethodField()
+
     class Meta:
         model = BankStatement
-        fields = ['id', 'tenant', 'period', 'file_data', 'uploaded_at']
-        read_only_fields = ['id', 'tenant', 'uploaded_at']
+        fields = ['id', 'tenant', 'period', 'uploaded_at', 'has_file']
+        read_only_fields = ['id', 'tenant', 'uploaded_at', 'has_file']
+
+    def get_has_file(self, obj):
+        if getattr(obj, 'statement_file', None) and getattr(obj.statement_file, 'name', ''):
+            return True
+        return bool((obj.file_data or '').strip())
 
 
 class PaymentPlanSerializer(serializers.ModelSerializer):
@@ -1072,7 +1137,7 @@ class CondominioRequestSerializer(serializers.ModelSerializer):
             'id',
             'condominio_nombre', 'condominio_pais', 'condominio_estado',
             'condominio_ciudad', 'condominio_unidades', 'condominio_tipo_admin',
-            'condominio_currency',
+            'propiedades_tipo_admin', 'condominio_currency',
             'admin_nombre', 'admin_apellido', 'admin_email',
             'admin_telefono', 'admin_cargo',
             'mensaje',
@@ -1148,6 +1213,13 @@ class SubscriptionPlanSerializer(serializers.ModelSerializer):
 
     def get_subscriptions_count(self, obj):
         return obj.subscriptions.count()
+
+    def validate_workspace_type(self, value):
+        from .models import WorkspaceConfig
+        changed = (not self.instance) or self.instance.workspace_type != value
+        if changed and not WorkspaceConfig.is_workspace_enabled(value):
+            raise serializers.ValidationError('Este espacio de trabajo está desactivado en la configuración del sistema.')
+        return value
 
 
 class TenantSubscriptionSerializer(serializers.ModelSerializer):

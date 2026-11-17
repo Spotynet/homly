@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { tenantsAPI, extraFieldsAPI, assemblyAPI, usersAPI, unitsAPI, superAdminAPI, authAPI, periodsAPI } from '../api/client';
+import { tenantsAPI, extraFieldsAPI, assemblyAPI, usersAPI, unitsAPI, superAdminAPI, authAPI, periodsAPI, ritaAPI } from '../api/client';
 import ProvidersTab from '../components/config/ProvidersTab';
 import VisitasConfigTab from '../components/config/VisitasConfigTab';
 import {
   CONDO_MODULE_KEYS,
+  CONDO_MODULE_CATALOG,
+  groupModules,
   resolveModuleAccess,
   isCondoModuleAssignable,
   emptyProfileModules,
@@ -59,28 +61,21 @@ const DEFAULT_RESERVATION_ROLE_PERMS = {
 };
 
 // ── Módulos del menú principal ───────────────────────────────────────────────
-const MODULE_DEFINITIONS = [
-  { key: 'dashboard',       label: 'Dashboard',           icon: Home,         desc: 'Panel principal con métricas del condominio' },
-  { key: 'reservas',        label: 'Reservas',            icon: Calendar,     desc: 'Reserva de áreas comunes' },
-  { key: 'blog',            label: 'Comunicación',        icon: Newspaper,    desc: 'Publicaciones y comunicados para la comunidad' },
-  { key: 'asambleas',       label: 'Asambleas',           icon: Users,        desc: 'Convocatoria, desarrollo, minuta de trabajo y acta formal' },
-  { key: 'mantenimientos',  label: 'Mantenimientos',      icon: Wrench,       desc: 'Preventivos y correctivos: planeación, evidencias e historial' },
-  { key: 'paqueteria',      label: 'Paquetería',          icon: Package,      desc: 'Recepción y entrega de paquetes y mensajería en vigilancia' },
-  { key: 'visitas',         label: 'Visitas Autorizadas', icon: UserCheck,    desc: 'Autorización de visitas permanentes y ocasionales, QR e ingreso en caseta' },
-  { key: 'cobranza',        label: 'Cobranza Mensual',    icon: Receipt,      desc: 'Registro y cobro de mantenimiento' },
-  { key: 'gastos',          label: 'Gastos',              icon: ShoppingBag,  desc: 'Gestión de egresos conciliados y en tránsito' },
-  { key: 'caja_chica',      label: 'Caja Chica',          icon: DollarSign,   desc: 'Registro de gastos menores de caja chica' },
-  { key: 'estado_cuenta',   label: 'Estado de Cuenta',    icon: FileText,     desc: 'Reportes y movimientos financieros' },
-  { key: 'plan_pagos',      label: 'Plan de Pagos',       icon: TrendingUp,   desc: 'Gestión de planes de pago para adeudos de unidades' },
-  { key: 'cierre_periodo',  label: 'Cierre de Período',   icon: Lock,         desc: 'Cierre y flujo de aprobación de períodos contables' },
-  { key: 'planeacion',      label: 'Planeación',          icon: TrendingUp,   desc: 'Presupuesto anual y proyectos del condominio' },
-  { key: 'notificaciones',  label: 'Notificaciones',      icon: Bell,         desc: 'Centro de avisos y notificaciones' },
-  { key: 'onboarding',      label: 'Guía de Inicio',      icon: Sparkles,     desc: 'Tour interactivo para configurar el tenant paso a paso' },
-  { key: 'mi_membresia',    label: 'Mi Membresía',        icon: CreditCard,   desc: 'Plan, facturación y estado de la suscripción del condominio' },
-  { key: 'config',          label: 'Configuración',       icon: Settings,     desc: 'Configuración del condominio' },
-  { key: 'my_unit',         label: 'Mi Unidad',           icon: Home,         desc: 'Vista de la unidad del residente (solo Residente)' },
-  { key: 'enviar_pago',     label: 'Enviar pago',         icon: Send,         desc: 'Envío de comprobantes de pago por el residente' },
-];
+const MODULE_ICONS = {
+  dashboard: Home, notificaciones: Bell, onboarding: Sparkles, my_unit: Home,
+  reservas: Calendar, paqueteria: Package, visitas: UserCheck, mantenimientos: Wrench,
+  blog: Newspaper, asambleas: Users,
+  cobranza: Receipt, gastos: ShoppingBag, caja_chica: DollarSign, estado_cuenta: FileText,
+  plan_pagos: TrendingUp, cierre_periodo: Lock, planeacion: TrendingUp, enviar_pago: Send,
+  config: Settings, mi_membresia: CreditCard,
+};
+
+const MODULE_DEFINITIONS = CONDO_MODULE_CATALOG.map(m => ({
+  ...m,
+  icon: MODULE_ICONS[m.key] || Home,
+}));
+
+const MODULE_GROUPED = groupModules(MODULE_DEFINITIONS);
 
 // ── Generic read-only field ───────────────────────────────────────────────────
 function FieldView({ label, value, mono = false, children }) {
@@ -189,6 +184,12 @@ export default function Config() {
   const [moduleSaving,         setModuleSaving]         = useState(false);
   const [reservationSettings,  setReservationSettings]  = useState({ approval_mode: 'require_vecinos' });
   const [customProfiles,       setCustomProfiles]       = useState([]);
+  const [ritaSettings, setRitaSettings] = useState({
+    enabled: true, bank_profile: 'generic', auto_suggest_unit: true, default_payment_type: 'transferencia',
+  });
+  const [ritaProfiles, setRitaProfiles] = useState([]);
+  const [ritaSaving, setRitaSaving] = useState(false);
+  const [ritaCollapsed, setRitaCollapsed] = useState(false);
 
   // Period closure flow configuration
   const [closureFlow,       setClosureFlow]       = useState({ enabled: false, steps: [] });
@@ -285,8 +286,32 @@ export default function Config() {
       setCustomProfiles(Array.isArray(tenant.custom_profiles) ? tenant.custom_profiles : []);
       const cf = tenant.closure_flow || {};
       setClosureFlow({ enabled: cf.enabled || false, steps: Array.isArray(cf.steps) ? cf.steps : [] });
+      const rs = tenant.rita_settings || {};
+      setRitaSettings({
+        enabled: rs.enabled !== false,
+        bank_profile: rs.bank_profile || 'generic',
+        auto_suggest_unit: rs.auto_suggest_unit !== false,
+        default_payment_type: rs.default_payment_type || 'transferencia',
+      });
     }
   }, [tenant]);
+
+  useEffect(() => {
+    if (!tenantId) return;
+    ritaAPI.profiles(tenantId)
+      .then(({ data }) => {
+        setRitaProfiles(data.profiles || []);
+        if (data.settings) {
+          setRitaSettings(s => ({
+            enabled: data.settings.enabled !== false,
+            bank_profile: data.settings.bank_profile || s.bank_profile,
+            auto_suggest_unit: data.settings.auto_suggest_unit !== false,
+            default_payment_type: data.settings.default_payment_type || s.default_payment_type,
+          }));
+        }
+      })
+      .catch(() => {});
+  }, [tenantId]);
 
   // ── Auto-launch onboarding tour for admin if never completed ──────────────
   useEffect(() => {
@@ -598,6 +623,25 @@ export default function Config() {
     });
   };
 
+  const saveRitaSettings = async () => {
+    setRitaSaving(true);
+    try {
+      const { data } = await ritaAPI.updateSettings(tenantId, ritaSettings);
+      setRitaSettings({
+        enabled: data.enabled !== false,
+        bank_profile: data.bank_profile || 'generic',
+        auto_suggest_unit: data.auto_suggest_unit !== false,
+        default_payment_type: data.default_payment_type || 'transferencia',
+      });
+      toast.success('Configuración de Rita guardada');
+      loadTenant();
+    } catch {
+      toast.error('No se pudo guardar Rita');
+    } finally {
+      setRitaSaving(false);
+    }
+  };
+
   const saveModulePermissions = async () => {
     setModuleSaving(true);
     try {
@@ -851,6 +895,105 @@ export default function Config() {
                       {t.admin_type === 'administrador' ? 'Administración Externa' : 'Mesa Directiva Interna'}
                     </span>
                   </FieldView>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* ── Sección: Rita (asistente bancario) ── */}
+          <div className="card" style={{ marginTop: 16 }}>
+            <div
+              className="card-head"
+              style={{ cursor: 'pointer', userSelect: 'none' }}
+              onClick={() => setRitaCollapsed(v => !v)}
+            >
+              <h3 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Sparkles size={16} color="var(--teal-600)" /> Rita — Estados de cuenta
+              </h3>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {isAdmin && (
+                  <button
+                    className="btn btn-primary btn-sm"
+                    disabled={ritaSaving}
+                    onClick={e => { e.stopPropagation(); saveRitaSettings(); }}
+                  >
+                    {ritaSaving ? 'Guardando…' : 'Guardar'}
+                  </button>
+                )}
+                <ChevronRight size={16} color="var(--ink-400)"
+                  style={{ transform: ritaCollapsed ? 'rotate(0deg)' : 'rotate(90deg)', transition: 'transform 0.2s' }} />
+              </div>
+            </div>
+            {!ritaCollapsed && (
+              <div className="card-body">
+                <p style={{ fontSize: 13, color: 'var(--ink-500)', marginBottom: 14, lineHeight: 1.5 }}>
+                  Rita lee el PDF del estado de cuenta (se guarda una vez en Estado General), separa ingresos y egresos,
+                  y te lleva uno a uno a Cobranza o Gastos. Elige el banco del condominio para mejorar el parseo.
+                </p>
+                <div className="form-grid">
+                  <div className="field">
+                    <div className="field-label">Asistente activo</div>
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+                      <input
+                        type="checkbox"
+                        checked={!!ritaSettings.enabled}
+                        disabled={!isAdmin}
+                        onChange={e => setRitaSettings(s => ({ ...s, enabled: e.target.checked }))}
+                      />
+                      Habilitado en Cobranza
+                    </label>
+                  </div>
+                  <div className="field">
+                    <div className="field-label">Banco / plantilla</div>
+                    <select
+                      className="field-input"
+                      value={ritaSettings.bank_profile || 'generic'}
+                      disabled={!isAdmin}
+                      onChange={e => setRitaSettings(s => ({ ...s, bank_profile: e.target.value }))}
+                    >
+                      {(ritaProfiles.length
+                        ? ritaProfiles
+                        : [
+                            { id: 'santander', label: 'Santander México' },
+                            { id: 'bbva', label: 'BBVA México' },
+                            { id: 'banorte', label: 'Banorte' },
+                            { id: 'banamex', label: 'Citibanamex' },
+                            { id: 'hsbc', label: 'HSBC México' },
+                            { id: 'inbursa', label: 'Inbursa' },
+                            { id: 'scotiabank', label: 'Scotiabank' },
+                            { id: 'generic', label: 'Genérico (México)' },
+                          ]
+                      ).map(p => (
+                        <option key={p.id} value={p.id}>{p.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="field">
+                    <div className="field-label">Sugerir unidad</div>
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+                      <input
+                        type="checkbox"
+                        checked={!!ritaSettings.auto_suggest_unit}
+                        disabled={!isAdmin}
+                        onChange={e => setRitaSettings(s => ({ ...s, auto_suggest_unit: e.target.checked }))}
+                      />
+                      Detectar casa/unidad en el concepto
+                    </label>
+                  </div>
+                  <div className="field">
+                    <div className="field-label">Forma de pago por defecto</div>
+                    <select
+                      className="field-input"
+                      value={ritaSettings.default_payment_type || 'transferencia'}
+                      disabled={!isAdmin}
+                      onChange={e => setRitaSettings(s => ({ ...s, default_payment_type: e.target.value }))}
+                    >
+                      <option value="transferencia">Transferencia</option>
+                      <option value="deposito">Depósito</option>
+                      <option value="efectivo">Efectivo</option>
+                      <option value="cheque">Cheque</option>
+                    </select>
+                  </div>
                 </div>
               </div>
             )}
@@ -2384,7 +2527,26 @@ export default function Config() {
                 </tr>
               </thead>
               <tbody>
-                {MODULE_DEFINITIONS.map((mod, idx) => {
+                {MODULE_GROUPED.map(group => (
+                  <React.Fragment key={group.id}>
+                    <tr>
+                      <td
+                        colSpan={1 + TENANT_ROLES.length + customProfiles.length}
+                        style={{
+                          padding: '10px 16px 6px',
+                          fontSize: 11,
+                          fontWeight: 800,
+                          letterSpacing: '0.08em',
+                          textTransform: 'uppercase',
+                          color: 'var(--teal-700)',
+                          background: 'var(--sand-50)',
+                          borderBottom: '1px solid var(--sand-100)',
+                        }}
+                      >
+                        {group.label}
+                      </td>
+                    </tr>
+                    {group.items.map((mod, idx) => {
                   const Icon = mod.icon;
                   const inPlan = isModuleInPlan(mod.key);
                   // Fila bloqueada: visible pero opacada, sin interacción
@@ -2513,6 +2675,8 @@ export default function Config() {
                     </tr>
                   );
                 })}
+                  </React.Fragment>
+                ))}
               </tbody>
             </table>
           </div>
@@ -3723,7 +3887,15 @@ export default function Config() {
               </div>
 
               <div style={{ display:'grid', gap:6 }}>
-                {MODULE_DEFINITIONS.map(mod => {
+                {MODULE_GROUPED.map(group => (
+                  <React.Fragment key={group.id}>
+                    <div style={{
+                      fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase',
+                      color: 'var(--teal-700)', marginTop: 8, padding: '4px 2px',
+                    }}>
+                      {group.label}
+                    </div>
+                    {group.items.map(mod => {
                   const Icon   = mod.icon;
                   const access = getProfileAccess(mod.key);
                   const LEVELS = [
@@ -3773,6 +3945,8 @@ export default function Config() {
                     </div>
                   );
                 })}
+                  </React.Fragment>
+                ))}
               </div>
             </div>
           </Modal>

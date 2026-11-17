@@ -11,7 +11,7 @@ from .airbnb_sync import (
     parse_listing_id, sync_listing_ical,
 )
 from .models import AirbnbConnection, AirbnbListing, RentalProperty, Tenant
-from .permissions import IsAdminTesOrContador
+from .rental_access import RentalAccess
 from .rental_serializers import AirbnbConnectionSerializer, AirbnbListingSerializer
 from .rental_views import _RentalTenantMixin, _require_rentas
 from .rental_notifications import on_airbnb_imported, on_airbnb_sync_results
@@ -20,7 +20,7 @@ from .rental_notifications import on_airbnb_imported, on_airbnb_sync_results
 class AirbnbConnectionViewSet(_RentalTenantMixin, viewsets.ModelViewSet):
     queryset = AirbnbConnection.objects.all()
     serializer_class = AirbnbConnectionSerializer
-    permission_classes = [IsAdminTesOrContador]
+    permission_classes = [RentalAccess('rentas_propiedades')]
 
     def get_queryset(self):
         return super().get_queryset().annotate(
@@ -87,7 +87,7 @@ class AirbnbConnectionViewSet(_RentalTenantMixin, viewsets.ModelViewSet):
                     tenant=tenant,
                     code=next_code_for_listing(tenant, listing_id),
                     name=name,
-                    property_type=(raw.get('property_type') or 'departamento'),
+                    property_type=(raw.get('property_type') or 'airbnb'),
                     status='disponible',
                     city=(raw.get('city') or ''),
                     bedrooms=int(raw.get('bedrooms') or 0),
@@ -126,7 +126,7 @@ class AirbnbConnectionViewSet(_RentalTenantMixin, viewsets.ModelViewSet):
 class AirbnbListingViewSet(_RentalTenantMixin, viewsets.ModelViewSet):
     queryset = AirbnbListing.objects.select_related('connection', 'property')
     serializer_class = AirbnbListingSerializer
-    permission_classes = [IsAdminTesOrContador]
+    permission_classes = [RentalAccess('rentas_propiedades')]
     http_method_names = ['get', 'patch', 'delete', 'head', 'options']
 
     @action(detail=True, methods=['post'], url_path='sync')
