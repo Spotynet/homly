@@ -529,7 +529,13 @@ class TenantDetailSerializer(serializers.ModelSerializer):
         try:
             sub = obj.subscription
             if sub and sub.plan and sub.plan.allowed_modules:
-                return sub.plan.allowed_modules
+                mods = list(sub.plan.allowed_modules or [])
+                # Rita acompaña Cobranza/Gastos aunque el plan aún no lo liste explícitamente.
+                if mods and 'rita' not in mods and (
+                    'cobranza' in mods or 'gastos' in mods
+                ):
+                    mods = [*mods, 'rita']
+                return mods
         except Exception:
             pass
         return []  # empty = all modules allowed

@@ -4,6 +4,7 @@ const TenantAccessContext = createContext({
   canAccessModule: () => false,
   levelOf: () => 'none',
   can: () => false,
+  canRita: () => false,
   accessReady: false,
 });
 

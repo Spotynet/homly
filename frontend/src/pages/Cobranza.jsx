@@ -11,6 +11,7 @@ import PaymentReceiptModal from '../components/PaymentReceiptModal';
 import UnitStatementOverlay from '../components/UnitStatementOverlay';
 import EvidenceAttach from '../components/EvidenceAttach';
 import RitaAssistant from '../components/RitaAssistant';
+import { useTenantAccess } from '../context/TenantAccessContext';
 import { todayPeriod, periodLabel, prevPeriod, nextPeriod, tenantStartPeriod, fmtCurrency, statusClass, statusLabel, PAYMENT_TYPES, fmtDate, ROLES, CURRENCIES, APP_VERSION } from '../utils/helpers';
 import { ChevronLeft, ChevronRight, Search, Receipt, X, Users, CheckCircle, Clock, AlertCircle, DollarSign, Calendar, Building2, FileText, Check, Plus, Edit, Edit2, Trash2, Banknote, Mail, Lock, Send, XCircle, Eye, ChevronDown as ChevronDownIcon, Sparkles } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -126,7 +127,9 @@ function getUnitRecaudo(pay) {
 
 export default function Cobranza() {
   const { tenantId, isReadOnly, user, role } = useAuth();
+  const { canRita } = useTenantAccess();
   const queryClient = useQueryClient();
+  const canUseRitaIngresos = !isReadOnly && canRita('ingresos');
 
   // ── Estado de UI ────────────────────────────────────────────────────────────
   const [period, setPeriod]           = useState(todayPeriod());
@@ -612,7 +615,7 @@ export default function Cobranza() {
             onChange={e => { setFilter(e.target.value); setPage(1); }}
           />
         </div>
-        {!isReadOnly && (role === 'admin' || role === 'tesorero' || role === 'contador' || user?.is_superuser) && (
+        {canUseRitaIngresos && (
           <button
             type="button"
             className="btn btn-secondary btn-sm"

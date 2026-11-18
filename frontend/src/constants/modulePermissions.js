@@ -9,13 +9,84 @@
  */
 
 export const ROLE_BASE_MODULES = {
-  admin:     ['dashboard', 'reservas', 'cobranza', 'gastos', 'caja_chica', 'estado_cuenta', 'plan_pagos', 'cierre_periodo', 'planeacion', 'asambleas', 'mantenimientos', 'paqueteria', 'visitas', 'notificaciones', 'onboarding', 'mi_membresia', 'config', 'blog'],
-  tesorero:  ['dashboard', 'reservas', 'cobranza', 'gastos', 'caja_chica', 'estado_cuenta', 'plan_pagos', 'cierre_periodo', 'planeacion', 'asambleas', 'mantenimientos', 'notificaciones', 'onboarding', 'blog'],
-  contador:  ['dashboard', 'reservas', 'cobranza', 'gastos', 'caja_chica', 'estado_cuenta', 'plan_pagos', 'cierre_periodo', 'planeacion', 'asambleas', 'mantenimientos', 'notificaciones', 'onboarding', 'blog'],
+  admin:     ['dashboard', 'reservas', 'cobranza', 'gastos', 'caja_chica', 'estado_cuenta', 'plan_pagos', 'cierre_periodo', 'planeacion', 'asambleas', 'mantenimientos', 'paqueteria', 'visitas', 'notificaciones', 'onboarding', 'mi_membresia', 'config', 'blog', 'rita'],
+  tesorero:  ['dashboard', 'reservas', 'cobranza', 'gastos', 'caja_chica', 'estado_cuenta', 'plan_pagos', 'cierre_periodo', 'planeacion', 'asambleas', 'mantenimientos', 'notificaciones', 'onboarding', 'blog', 'rita'],
+  contador:  ['dashboard', 'reservas', 'cobranza', 'gastos', 'caja_chica', 'estado_cuenta', 'plan_pagos', 'cierre_periodo', 'planeacion', 'asambleas', 'mantenimientos', 'notificaciones', 'onboarding', 'blog', 'rita'],
   auditor:   ['dashboard', 'cobranza', 'reservas', 'gastos', 'caja_chica', 'estado_cuenta', 'plan_pagos', 'cierre_periodo', 'planeacion', 'asambleas', 'mantenimientos', 'notificaciones', 'onboarding', 'blog'],
   vigilante: ['dashboard', 'reservas', 'asambleas', 'mantenimientos', 'paqueteria', 'visitas', 'notificaciones', 'blog'],
   vecino:    ['my_unit', 'reservas', 'estado_cuenta', 'plan_pagos', 'notificaciones', 'onboarding', 'blog', 'enviar_pago', 'asambleas', 'mantenimientos', 'visitas'],
 };
+
+/**
+ * Capacidades de Rita (asistente). Se otorgan por rol/perfil bajo el módulo `rita`.
+ * Agregar aquí cada nueva función de Rita para exponerla en Config → Permisos.
+ *
+ * Niveles: hidden | write  (lectura no aplica a acciones de captura).
+ */
+export const RITA_CAPABILITIES = [
+  {
+    key: 'bank_upload',
+    label: 'Cargar estado de cuenta',
+    desc: 'Subir o reemplazar el PDF del período (también queda en Estado General)',
+  },
+  {
+    key: 'ingresos',
+    label: 'Asignar ingresos',
+    desc: 'Relacionar abonos del banco con el formulario de Cobranza',
+  },
+  {
+    key: 'egresos',
+    label: 'Asignar egresos',
+    desc: 'Relacionar cargos del banco con el formulario de Gastos',
+  },
+  {
+    key: 'settings',
+    label: 'Configurar Rita',
+    desc: 'Cambiar banco, sugerencias y forma de pago por defecto',
+  },
+];
+
+export const RITA_CAP_KEYS = RITA_CAPABILITIES.map(c => c.key);
+
+/** Capacidades Rita por defecto según rol predefinido. */
+export function defaultRitaCaps(roleKey) {
+  const allWrite = Object.fromEntries(RITA_CAP_KEYS.map(k => [k, 'write']));
+  const allHidden = Object.fromEntries(RITA_CAP_KEYS.map(k => [k, 'hidden']));
+  if (roleKey === 'admin' || roleKey === 'tesorero' || roleKey === 'contador' || roleKey === 'superadmin') {
+    return allWrite;
+  }
+  return allHidden;
+}
+
+/**
+ * Resuelve nivel de una capacidad Rita (hidden|write).
+ * Si el módulo `rita` está oculto, todas las capacidades quedan ocultas.
+ */
+export function resolveRitaCap(permsEntry, roleKey, capKey, { isProfile = false } = {}) {
+  if (!RITA_CAP_KEYS.includes(capKey)) return 'hidden';
+  if (roleKey === 'superadmin') return 'write';
+
+  const ritaLevel = isProfile
+    ? (permsEntry && !Array.isArray(permsEntry) ? (permsEntry.rita ?? 'hidden') : 'hidden')
+    : resolveModuleAccess(permsEntry, roleKey, 'rita');
+
+  if (ritaLevel === 'hidden' || ritaLevel === 'na') return 'hidden';
+
+  const caps = (permsEntry && !Array.isArray(permsEntry) && permsEntry.rita_caps
+    && typeof permsEntry.rita_caps === 'object')
+    ? permsEntry.rita_caps
+    : null;
+
+  if (caps && caps[capKey] !== undefined) {
+    return caps[capKey] === 'write' ? 'write' : 'hidden';
+  }
+  if (isProfile) return 'hidden';
+  return defaultRitaCaps(roleKey)[capKey] || 'hidden';
+}
+
+export function canRitaCapability(permsEntry, roleKey, capKey, opts) {
+  return resolveRitaCap(permsEntry, roleKey, capKey, opts) === 'write';
+}
 
 /**
  * Perfiles de usuario de Administrar Propiedades (rentas). Independientes del condominio.
@@ -148,6 +219,13 @@ export const CONDO_MODULE_CATALOG = [
   { key: 'cierre_periodo',  group: 'finanzas',  label: 'Periodos',               desc: 'Gestión y expediente de períodos financieros' },
   { key: 'planeacion',      group: 'finanzas',  label: 'Planeación',             desc: 'Presupuesto anual y proyectos del condominio' },
   { key: 'enviar_pago',     group: 'finanzas',  label: 'Enviar pago',            desc: 'Envío de comprobantes por el residente' },
+  {
+    key: 'rita',
+    group: 'finanzas',
+    label: 'Rita',
+    desc: 'Asistente de estados de cuenta → Cobranza y Gastos. Los permisos detallados se configuran por función debajo.',
+    hasCapabilities: true,
+  },
   { key: 'config',          group: 'ajustes',   label: 'Configuración',          desc: 'Ajustes generales del condominio' },
   { key: 'mi_membresia',    group: 'ajustes',   label: 'Mi Membresía',           desc: 'Plan, facturación y estado de la suscripción' },
 ];
@@ -283,7 +361,21 @@ export function isModuleVisible(permsEntry, moduleKey, roleKey, isProfilePerms =
 }
 
 export function emptyProfileModules() {
-  return Object.fromEntries(CONDO_MODULE_KEYS.map(k => [k, 'hidden']));
+  return {
+    ...Object.fromEntries(CONDO_MODULE_KEYS.map(k => [k, 'hidden'])),
+    rita_caps: Object.fromEntries(RITA_CAP_KEYS.map(k => [k, 'hidden'])),
+  };
+}
+
+/** Normaliza rita_caps al guardar / cargar perfiles y roles. */
+export function normalizeRitaCaps(caps, roleKey, { isProfile = false } = {}) {
+  const base = isProfile
+    ? Object.fromEntries(RITA_CAP_KEYS.map(k => [k, 'hidden']))
+    : defaultRitaCaps(roleKey);
+  const src = (caps && typeof caps === 'object' && !Array.isArray(caps)) ? caps : {};
+  return Object.fromEntries(
+    RITA_CAP_KEYS.map(k => [k, src[k] === 'write' ? 'write' : (src[k] === 'hidden' ? 'hidden' : base[k])]),
+  );
 }
 
 /** Maps app routes to module keys (nav, guides, route guards). */

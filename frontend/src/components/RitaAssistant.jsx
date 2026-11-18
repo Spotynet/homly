@@ -40,6 +40,7 @@ export default function RitaAssistant({
   const [profiles, setProfiles] = useState([]);
   const [bankProfile, setBankProfile] = useState('generic');
   const [defaultPaymentType, setDefaultPaymentType] = useState('transferencia');
+  const [caps, setCaps] = useState({ bank_upload: true, ingresos: true, egresos: true, settings: false });
   const [loading, setLoading] = useState(false);
   const [parsing, setParsing] = useState(false);
   const [session, setSession] = useState(null);
@@ -59,6 +60,13 @@ export default function RitaAssistant({
         setProfiles(data.profiles || []);
         setBankProfile(data.settings?.bank_profile || 'generic');
         setDefaultPaymentType(data.settings?.default_payment_type || 'transferencia');
+        const c = { ...(data.capabilities || {}), ...(stRes.data?.capabilities || {}) };
+        setCaps({
+          bank_upload: !!c.bank_upload,
+          ingresos: !!c.ingresos,
+          egresos: !!c.egresos,
+          settings: !!c.settings,
+        });
         setPeriodInfo(stRes.data || null);
         if (stRes.data?.open_session) {
           setSession(stRes.data.open_session);
@@ -285,16 +293,18 @@ export default function RitaAssistant({
               <option key={p.id} value={p.id}>{p.label}</option>
             ))}
           </select>
-          <button
-            type="button"
-            className="btn btn-primary btn-sm"
-            disabled={parsing || loading}
-            onClick={() => fileRef.current?.click()}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
-          >
-            {parsing ? <Loader size={14} className="spin" /> : <Upload size={14} />}
-            {parsing ? 'Leyendo…' : 'Subir PDF'}
-          </button>
+          {caps.bank_upload && (
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              disabled={parsing || loading}
+              onClick={() => fileRef.current?.click()}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+            >
+              {parsing ? <Loader size={14} className="spin" /> : <Upload size={14} />}
+              {parsing ? 'Leyendo…' : 'Subir PDF'}
+            </button>
+          )}
           <input ref={fileRef} type="file" accept=".pdf,application/pdf" hidden onChange={handleFile} />
         </div>
 
@@ -401,18 +411,21 @@ export default function RitaAssistant({
                 })()}
 
                 <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
-                  {focus === 'ingresos' ? (
+                  {focus === 'ingresos' && caps.ingresos && (
                     <button type="button" className="btn btn-primary btn-sm" onClick={assignCurrentIngreso} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                       <ChevronRight size={14} /> Capturar en cobranza
                     </button>
-                  ) : (
+                  )}
+                  {focus === 'egresos' && caps.egresos && (
                     <button type="button" className="btn btn-primary btn-sm" onClick={assignCurrentEgreso} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                       <ChevronRight size={14} /> Capturar en gastos
                     </button>
                   )}
-                  <button type="button" className="btn btn-secondary btn-sm" onClick={skipCurrent} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                    <SkipForward size={14} /> Omitir
-                  </button>
+                  {((focus === 'ingresos' && caps.ingresos) || (focus === 'egresos' && caps.egresos)) && (
+                    <button type="button" className="btn btn-secondary btn-sm" onClick={skipCurrent} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                      <SkipForward size={14} /> Omitir
+                    </button>
+                  )}
                 </div>
 
                 {focus === 'ingresos' && (

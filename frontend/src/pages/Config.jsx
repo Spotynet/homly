@@ -11,6 +11,9 @@ import {
   isCondoModuleAssignable,
   emptyProfileModules,
   normalizeProfileModules,
+  RITA_CAPABILITIES,
+  resolveRitaCap,
+  normalizeRitaCaps,
 } from '../constants/modulePermissions';
 import { CURRENCIES, getStatesForCountry, COUNTRIES, isPdfFile } from '../utils/helpers';
 import AdminConfigTour from '../components/onboarding/AdminConfigTour';
@@ -67,6 +70,7 @@ const MODULE_ICONS = {
   blog: Newspaper, asambleas: Users,
   cobranza: Receipt, gastos: ShoppingBag, caja_chica: DollarSign, estado_cuenta: FileText,
   plan_pagos: TrendingUp, cierre_periodo: Lock, planeacion: TrendingUp, enviar_pago: Send,
+  rita: Sparkles,
   config: Settings, mi_membresia: CreditCard,
 };
 
@@ -595,7 +599,39 @@ export default function Config() {
           .filter(k => isCondoModuleAssignable(roleKey, k))
           .map(k => [k, resolveModuleAccess(current, roleKey, k)])
       );
-      return { ...prev, [roleKey]: { ...defaults, [moduleKey]: level } };
+      const caps = normalizeRitaCaps(
+        (current && !Array.isArray(current)) ? current.rita_caps : null,
+        roleKey,
+      );
+      const next = { ...defaults, [moduleKey]: level, rita_caps: caps };
+      // Si se oculta Rita, las capacidades dejan de aplicar (se conservan para cuando se reactive).
+      return { ...prev, [roleKey]: next };
+    });
+  };
+
+  const getRitaCapAccess = (roleKey, capKey) =>
+    resolveRitaCap(modulePerms[roleKey], roleKey, capKey);
+
+  const setRitaCapAccess = (roleKey, capKey, level) => {
+    setModulePerms(prev => {
+      const current = prev[roleKey];
+      const defaults = Object.fromEntries(
+        CONDO_MODULE_KEYS
+          .filter(k => isCondoModuleAssignable(roleKey, k))
+          .map(k => [k, resolveModuleAccess(current, roleKey, k)])
+      );
+      const caps = normalizeRitaCaps(
+        (current && !Array.isArray(current)) ? current.rita_caps : null,
+        roleKey,
+      );
+      // Activar módulo Rita si se otorga alguna capacidad
+      if (level === 'write' && defaults.rita === 'hidden') {
+        defaults.rita = 'write';
+      }
+      return {
+        ...prev,
+        [roleKey]: { ...defaults, rita_caps: { ...caps, [capKey]: level === 'write' ? 'write' : 'hidden' } },
+      };
     });
   };
 
@@ -607,7 +643,32 @@ export default function Config() {
   const setProfileModuleAccess = (profileId, moduleKey, level) => {
     setCustomProfiles(prev => prev.map(p => {
       if (String(p.id) !== String(profileId)) return p;
-      return { ...p, modules: { ...normalizeProfileModules(p.modules), [moduleKey]: level } };
+      const mods = normalizeProfileModules(p.modules);
+      return {
+        ...p,
+        modules: {
+          ...mods,
+          [moduleKey]: level,
+          rita_caps: normalizeRitaCaps(mods.rita_caps, null, { isProfile: true }),
+        },
+      };
+    }));
+  };
+
+  const getProfileRitaCapAccess = (profile, capKey) =>
+    resolveRitaCap(normalizeProfileModules(profile?.modules), null, capKey, { isProfile: true });
+
+  const setProfileRitaCapAccess = (profileId, capKey, level) => {
+    setCustomProfiles(prev => prev.map(p => {
+      if (String(p.id) !== String(profileId)) return p;
+      const mods = normalizeProfileModules(p.modules);
+      const caps = normalizeRitaCaps(mods.rita_caps, null, { isProfile: true });
+      const nextMods = {
+        ...mods,
+        rita_caps: { ...caps, [capKey]: level === 'write' ? 'write' : 'hidden' },
+      };
+      if (level === 'write' && nextMods.rita === 'hidden') nextMods.rita = 'write';
+      return { ...p, modules: nextMods };
     }));
   };
 
@@ -916,6 +977,7 @@ export default function Config() {
                     className="btn btn-primary btn-sm"
                     disabled={ritaSaving}
                     onClick={e => { e.stopPropagation(); saveRitaSettings(); }}
+                    title="También controlable en Permisos → Rita · Configurar Rita"
                   >
                     {ritaSaving ? 'Guardando…' : 'Guardar'}
                   </button>
@@ -2026,7 +2088,9 @@ export default function Config() {
                                 const mods = p.modules || {};
                                 const active = Array.isArray(mods)
                                   ? mods.length
-                                  : Object.values(mods).filter(v => v !== 'hidden').length;
+                                  : Object.entries(mods)
+                                      .filter(([k, v]) => k !== 'rita_caps' && v !== 'hidden')
+                                      .length;
                                 return active === 0
                                   ? <span style={{ color:'var(--coral-400)' }}>Sin módulos activos</span>
                                   : `${active} módulo${active !== 1 ? 's' : ''}`;
@@ -2492,7 +2556,15 @@ export default function Config() {
               ? tenant.subscription_allowed_modules
               : [];
             const hasRestriction = planModules.length > 0;
-            const isModuleInPlan = (key) => !hasRestriction || planModules.includes(key);
+            // Rita es asistente de Cobranza/Gastos: si el plan trae alguno, Rita también aplica.
+            const isModuleInPlan = (key) => {
+              if (!hasRestriction) return true;
+              if (planModules.includes(key)) return true;
+              if (key === 'rita') {
+                return planModules.includes('cobranza') || planModules.includes('gastos');
+              }
+              return false;
+            };
 
             return (
           <div className="card" style={{ overflowX:'auto' }}>
@@ -2549,7 +2621,6 @@ export default function Config() {
                     {group.items.map((mod, idx) => {
                   const Icon = mod.icon;
                   const inPlan = isModuleInPlan(mod.key);
-                  // Fila bloqueada: visible pero opacada, sin interacción
                   const rowStyle = {
                     borderBottom: '1px solid var(--sand-100)',
                     background: idx % 2 === 0 ? 'var(--white)' : 'var(--sand-50)',
@@ -2557,9 +2628,59 @@ export default function Config() {
                     opacity: inPlan ? 1 : 0.55,
                     pointerEvents: inPlan ? 'auto' : 'none',
                   };
+                  const LEVELS3 = [
+                    { key:'hidden', Icon:EyeOff, label:'Oculto',   activeColor:'var(--coral-500)', activeBg:'var(--coral-50)'  },
+                    { key:'read',   Icon:Eye,    label:'Lectura',   activeColor:'var(--blue-600)',  activeBg:'var(--blue-50)'   },
+                    { key:'write',  Icon:Pencil, label:'Completo',  activeColor:'var(--teal-600)',  activeBg:'var(--teal-50)'   },
+                  ];
+                  const LEVELS_CAP = [
+                    { key:'hidden', Icon:EyeOff, label:'Oculto',   activeColor:'var(--coral-500)', activeBg:'var(--coral-50)'  },
+                    { key:'write',  Icon:Pencil, label:'Completo',  activeColor:'var(--teal-600)',  activeBg:'var(--teal-50)'   },
+                  ];
+                  const renderLevelCell = (access, onChange, levels = LEVELS3) => {
+                    if (access === 'na') {
+                      return (
+                        <div style={{ display:'inline-flex', flexDirection:'column', alignItems:'center', gap:3 }}>
+                          <span style={{ display:'inline-flex', alignItems:'center', justifyContent:'center', width:66, height:24, borderRadius:8, background:'var(--sand-100)', color:'var(--ink-300)' }}>
+                            <Lock size={10}/>
+                          </span>
+                          <span style={{ fontSize:9, color:'var(--ink-300)', fontWeight:600 }}>N/A</span>
+                        </div>
+                      );
+                    }
+                    const active = levels.find(l => l.key === access) || levels[0];
+                    return (
+                      <div style={{ display:'inline-flex', flexDirection:'column', alignItems:'center', gap:3 }}>
+                        <div style={{ display:'inline-flex', borderRadius:8, overflow:'hidden', border:'1px solid var(--sand-200)' }}>
+                          {levels.map(({ key, Icon: LvIcon, label, activeColor, activeBg }, i) => {
+                            const isActive = access === key;
+                            return (
+                              <button key={key} type="button"
+                                title={label}
+                                onClick={() => isAdmin && inPlan && onChange(key)}
+                                style={{
+                                  width:22, height:22, border:'none', padding:0,
+                                  display:'flex', alignItems:'center', justifyContent:'center',
+                                  background: isActive ? activeBg : 'var(--white)',
+                                  color: isActive ? activeColor : 'var(--ink-200)',
+                                  cursor: isAdmin && inPlan ? 'pointer' : 'default',
+                                  transition:'all 0.12s',
+                                  borderRight: i < levels.length - 1 ? '1px solid var(--sand-200)' : 'none',
+                                }}>
+                                <LvIcon size={10}/>
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <span style={{ fontSize:9, fontWeight:700, color: active?.activeColor || 'var(--ink-400)' }}>
+                          {active?.label}
+                        </span>
+                      </div>
+                    );
+                  };
                   return (
-                    <tr key={mod.key} style={rowStyle}>
-                      {/* Module name + description */}
+                    <React.Fragment key={mod.key}>
+                    <tr style={rowStyle}>
                       <td style={{ padding:'14px 16px' }}>
                         <div style={{ display:'flex', alignItems:'center', gap:8 }}>
                           <span style={{ display:'inline-flex', alignItems:'center', justifyContent:'center', width:30, height:30, borderRadius:'var(--radius-sm)', background: inPlan ? 'var(--teal-50)' : 'var(--sand-100)', flexShrink:0 }}>
@@ -2568,6 +2689,16 @@ export default function Config() {
                           <div>
                             <div style={{ display:'flex', alignItems:'center', gap:6 }}>
                               <span style={{ fontSize:13, fontWeight:600, color: inPlan ? 'var(--ink-800)' : 'var(--ink-400)' }}>{mod.label}</span>
+                              {mod.hasCapabilities && (
+                                <span style={{
+                                  fontSize:9, fontWeight:700, letterSpacing:'0.04em',
+                                  padding:'1px 6px', borderRadius:'var(--radius-full)',
+                                  background:'var(--teal-50)', color:'var(--teal-700)',
+                                  border:'1px solid var(--teal-100)', whiteSpace:'nowrap',
+                                }}>
+                                  por función
+                                </span>
+                              )}
                               {!inPlan && (
                                 <span style={{
                                   fontSize:9, fontWeight:700, letterSpacing:'0.04em',
@@ -2583,96 +2714,76 @@ export default function Config() {
                           </div>
                         </div>
                       </td>
-                      {/* Permission level per predefined role + custom profiles */}
-                      {TENANT_ROLES.map(roleKey => {
-                        const access = getModuleAccess(roleKey, mod.key);
-                        const LEVELS = [
-                          { key:'hidden', Icon:EyeOff, label:'Oculto',   activeColor:'var(--coral-500)', activeBg:'var(--coral-50)'  },
-                          { key:'read',   Icon:Eye,    label:'Lectura',   activeColor:'var(--blue-600)',  activeBg:'var(--blue-50)'   },
-                          { key:'write',  Icon:Pencil, label:'Completo',  activeColor:'var(--teal-600)',  activeBg:'var(--teal-50)'   },
-                        ];
-                        const active = LEVELS.find(l => l.key === access);
-                        return (
-                          <td key={roleKey} style={{ padding:'8px 6px', textAlign:'center' }}>
-                            {access === 'na' ? (
-                              <div style={{ display:'inline-flex', flexDirection:'column', alignItems:'center', gap:3 }}>
-                                <span style={{ display:'inline-flex', alignItems:'center', justifyContent:'center', width:66, height:24, borderRadius:8, background:'var(--sand-100)', color:'var(--ink-300)' }}>
-                                  <Lock size={10}/>
-                                </span>
-                                <span style={{ fontSize:9, color:'var(--ink-300)', fontWeight:600 }}>N/A</span>
-                              </div>
-                            ) : (
-                              <div style={{ display:'inline-flex', flexDirection:'column', alignItems:'center', gap:3 }}>
-                                {/* Pill with 3 buttons */}
-                                <div style={{ display:'inline-flex', borderRadius:8, overflow:'hidden', border:'1px solid var(--sand-200)' }}>
-                                  {LEVELS.map(({ key, Icon: LvIcon, label, activeColor, activeBg }) => {
-                                    const isActive = access === key;
-                                    return (
-                                      <button key={key} type="button"
-                                        title={label}
-                                        onClick={() => isAdmin && inPlan && setModuleAccess(roleKey, mod.key, key)}
-                                        style={{
-                                          width:22, height:22, border:'none', padding:0,
-                                          display:'flex', alignItems:'center', justifyContent:'center',
-                                          background: isActive ? activeBg : 'var(--white)',
-                                          color: isActive ? activeColor : 'var(--ink-200)',
-                                          cursor: isAdmin && inPlan ? 'pointer' : 'default',
-                                          transition:'all 0.12s',
-                                          borderRight: key !== 'write' ? '1px solid var(--sand-200)' : 'none',
-                                        }}>
-                                        <LvIcon size={10}/>
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                                <span style={{ fontSize:9, fontWeight:700, color: active?.activeColor || 'var(--ink-400)' }}>
-                                  {active?.label}
-                                </span>
-                              </div>
-                            )}
-                          </td>
-                        );
-                      })}
-                      {customProfiles.map(profile => {
-                        const access = getProfileModuleAccess(profile, mod.key);
-                        const LEVELS = [
-                          { key:'hidden', Icon:EyeOff, label:'Oculto',   activeColor:'var(--coral-500)', activeBg:'var(--coral-50)'  },
-                          { key:'read',   Icon:Eye,    label:'Lectura',   activeColor:'var(--blue-600)',  activeBg:'var(--blue-50)'   },
-                          { key:'write',  Icon:Pencil, label:'Completo',  activeColor:'var(--teal-600)',  activeBg:'var(--teal-50)'   },
-                        ];
-                        const active = LEVELS.find(l => l.key === access);
-                        return (
-                          <td key={profile.id} style={{ padding:'8px 6px', textAlign:'center' }}>
-                            <div style={{ display:'inline-flex', flexDirection:'column', alignItems:'center', gap:3 }}>
-                              <div style={{ display:'inline-flex', borderRadius:8, overflow:'hidden', border:'1px solid var(--sand-200)' }}>
-                                {LEVELS.map(({ key, Icon: LvIcon, label, activeColor, activeBg }) => {
-                                  const isActive = access === key;
-                                  return (
-                                    <button key={key} type="button"
-                                      title={label}
-                                      onClick={() => isAdmin && inPlan && setProfileModuleAccess(profile.id, mod.key, key)}
-                                      style={{
-                                        width:22, height:22, border:'none', padding:0,
-                                        display:'flex', alignItems:'center', justifyContent:'center',
-                                        background: isActive ? activeBg : 'var(--white)',
-                                        color: isActive ? activeColor : 'var(--ink-200)',
-                                        cursor: isAdmin && inPlan ? 'pointer' : 'default',
-                                        transition:'all 0.12s',
-                                        borderRight: key !== 'write' ? '1px solid var(--sand-200)' : 'none',
-                                      }}>
-                                      <LvIcon size={10}/>
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                              <span style={{ fontSize:9, fontWeight:700, color: active?.activeColor || 'var(--ink-400)' }}>
-                                {active?.label}
-                              </span>
-                            </div>
-                          </td>
-                        );
-                      })}
+                      {TENANT_ROLES.map(roleKey => (
+                        <td key={roleKey} style={{ padding:'8px 6px', textAlign:'center' }}>
+                          {renderLevelCell(
+                            getModuleAccess(roleKey, mod.key),
+                            (key) => setModuleAccess(roleKey, mod.key, key),
+                          )}
+                        </td>
+                      ))}
+                      {customProfiles.map(profile => (
+                        <td key={profile.id} style={{ padding:'8px 6px', textAlign:'center' }}>
+                          {renderLevelCell(
+                            getProfileModuleAccess(profile, mod.key),
+                            (key) => setProfileModuleAccess(profile.id, mod.key, key),
+                          )}
+                        </td>
+                      ))}
                     </tr>
+                    {mod.key === 'rita' && RITA_CAPABILITIES.map((cap) => (
+                      <tr
+                        key={`rita-cap-${cap.key}`}
+                        style={{
+                          borderBottom: '1px solid var(--sand-100)',
+                          background: 'linear-gradient(90deg, var(--teal-50), var(--white) 40%)',
+                          opacity: inPlan ? 1 : 0.55,
+                          pointerEvents: inPlan ? 'auto' : 'none',
+                        }}
+                      >
+                        <td style={{ padding:'10px 16px 10px 54px' }}>
+                          <div style={{ display:'flex', alignItems:'flex-start', gap:8 }}>
+                            <span style={{
+                              marginTop:2, width:6, height:6, borderRadius:99, background:'var(--teal-400)', flexShrink:0,
+                            }} />
+                            <div>
+                              <div style={{ fontSize:12, fontWeight:700, color:'var(--ink-700)' }}>
+                                Rita · {cap.label}
+                              </div>
+                              <div style={{ fontSize:10, color:'var(--ink-400)', marginTop:1 }}>{cap.desc}</div>
+                            </div>
+                          </div>
+                        </td>
+                        {TENANT_ROLES.map(roleKey => {
+                          const ritaOn = getModuleAccess(roleKey, 'rita') !== 'hidden'
+                            && getModuleAccess(roleKey, 'rita') !== 'na';
+                          const access = ritaOn ? getRitaCapAccess(roleKey, cap.key) : 'hidden';
+                          return (
+                            <td key={roleKey} style={{ padding:'6px', textAlign:'center', opacity: ritaOn ? 1 : 0.45 }}>
+                              {renderLevelCell(
+                                access,
+                                (key) => setRitaCapAccess(roleKey, cap.key, key),
+                                LEVELS_CAP,
+                              )}
+                            </td>
+                          );
+                        })}
+                        {customProfiles.map(profile => {
+                          const ritaOn = getProfileModuleAccess(profile, 'rita') !== 'hidden';
+                          const access = ritaOn ? getProfileRitaCapAccess(profile, cap.key) : 'hidden';
+                          return (
+                            <td key={profile.id} style={{ padding:'6px', textAlign:'center', opacity: ritaOn ? 1 : 0.45 }}>
+                              {renderLevelCell(
+                                access,
+                                (key) => setProfileRitaCapAccess(profile.id, cap.key, key),
+                                LEVELS_CAP,
+                              )}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                    </React.Fragment>
                   );
                 })}
                   </React.Fragment>
@@ -2706,6 +2817,10 @@ export default function Config() {
             <span style={{ display:'flex', alignItems:'center', gap:5 }}>
               <Lock size={12} color="var(--ink-300)"/>
               <span style={{ color:'var(--ink-400)' }}>N/A</span> — no aplica para este rol
+            </span>
+            <span style={{ display:'flex', alignItems:'center', gap:5 }}>
+              <Sparkles size={12} color="var(--teal-600)"/>
+              <span style={{ color:'var(--teal-700)', fontWeight:600 }}>Rita · función</span> — permiso por capacidad del asistente
             </span>
             <span style={{ display:'flex', alignItems:'center', gap:5 }}>
               <span style={{ fontSize:9, fontWeight:700, padding:'1px 6px', borderRadius:'var(--radius-full)', background:'var(--amber-100)', color:'var(--amber-700)', border:'1px solid var(--amber-200)' }}>✦ Solicitar upgrade</span>
@@ -3794,7 +3909,27 @@ export default function Config() {
         const setProfileAccess = (key, level) => {
           setProfileForm(f => {
             const current = normalizeMods(f.modules);
-            return { ...f, modules: { ...current, [key]: level } };
+            const next = { ...current, [key]: level };
+            if (key === 'rita' && level !== 'hidden') {
+              next.rita_caps = normalizeRitaCaps(current.rita_caps, null, { isProfile: true });
+            }
+            return { ...f, modules: next };
+          });
+        };
+
+        const getProfileCapAccess = (capKey) =>
+          resolveRitaCap(profileModules, null, capKey, { isProfile: true });
+
+        const setProfileCapAccess = (capKey, level) => {
+          setProfileForm(f => {
+            const current = normalizeMods(f.modules);
+            const caps = normalizeRitaCaps(current.rita_caps, null, { isProfile: true });
+            const next = {
+              ...current,
+              rita_caps: { ...caps, [capKey]: level === 'write' ? 'write' : 'hidden' },
+            };
+            if (level === 'write' && next.rita === 'hidden') next.rita = 'write';
+            return { ...f, modules: next };
           });
         };
 
@@ -3903,9 +4038,14 @@ export default function Config() {
                     { key:'read',   LvIcon:Eye,    label:'Lectura',    activeColor:'var(--blue-600)',  activeBg:'var(--blue-50)'   },
                     { key:'write',  LvIcon:Pencil, label:'Completo',   activeColor:'var(--teal-600)',  activeBg:'var(--teal-50)'   },
                   ];
+                  const CAP_LEVELS = [
+                    { key:'hidden', LvIcon:EyeOff, label:'Sin acceso', activeColor:'var(--coral-500)', activeBg:'var(--coral-50)'  },
+                    { key:'write',  LvIcon:Pencil, label:'Completo',   activeColor:'var(--teal-600)',  activeBg:'var(--teal-50)'   },
+                  ];
                   const active = LEVELS.find(l => l.key === access);
                   return (
-                    <div key={mod.key} style={{
+                    <React.Fragment key={mod.key}>
+                    <div style={{
                       display:'flex', alignItems:'center', gap:12, padding:'10px 14px',
                       borderRadius:'var(--radius-md)',
                       border:`1.5px solid ${access === 'hidden' ? 'var(--sand-200)' : access === 'read' ? 'var(--blue-100)' : 'var(--teal-100)'}`,
@@ -3913,15 +4053,18 @@ export default function Config() {
                       transition:'all 0.15s',
                       opacity: access === 'hidden' ? 0.7 : 1,
                     }}>
-                      {/* Module icon + label */}
                       <span style={{ display:'inline-flex', alignItems:'center', justifyContent:'center', width:28, height:28, borderRadius:7, background:'white', flexShrink:0 }}>
                         <Icon size={13} color={active?.activeColor || 'var(--ink-300)'} />
                       </span>
                       <div style={{ flex:1, minWidth:0 }}>
-                        <div style={{ fontSize:12, fontWeight:700, color: access === 'hidden' ? 'var(--ink-400)' : 'var(--ink-800)' }}>{mod.label}</div>
+                        <div style={{ fontSize:12, fontWeight:700, color: access === 'hidden' ? 'var(--ink-400)' : 'var(--ink-800)' }}>
+                          {mod.label}
+                          {mod.hasCapabilities && (
+                            <span style={{ marginLeft:6, fontSize:9, fontWeight:700, color:'var(--teal-700)' }}>por función</span>
+                          )}
+                        </div>
                         <div style={{ fontSize:11, color:'var(--ink-400)', marginTop:1 }}>{mod.desc}</div>
                       </div>
-                      {/* 3-level pill */}
                       <div style={{ display:'inline-flex', borderRadius:8, overflow:'hidden', border:'1px solid rgba(0,0,0,0.08)', flexShrink:0 }}>
                         {LEVELS.map(({ key, LvIcon, label, activeColor, activeBg }) => {
                           const isActive = access === key;
@@ -3943,6 +4086,42 @@ export default function Config() {
                         })}
                       </div>
                     </div>
+                    {mod.key === 'rita' && access !== 'hidden' && RITA_CAPABILITIES.map(cap => {
+                      const capAccess = getProfileCapAccess(cap.key);
+                      return (
+                        <div key={`rita-cap-${cap.key}`} style={{
+                          display:'flex', alignItems:'center', gap:12, padding:'8px 14px 8px 42px',
+                          borderRadius:'var(--radius-md)',
+                          border:'1px solid var(--teal-100)',
+                          background:'linear-gradient(90deg, var(--teal-50), white 50%)',
+                        }}>
+                          <div style={{ flex:1, minWidth:0 }}>
+                            <div style={{ fontSize:11, fontWeight:700, color:'var(--ink-700)' }}>Rita · {cap.label}</div>
+                            <div style={{ fontSize:10, color:'var(--ink-400)' }}>{cap.desc}</div>
+                          </div>
+                          <div style={{ display:'inline-flex', borderRadius:8, overflow:'hidden', border:'1px solid rgba(0,0,0,0.08)', flexShrink:0 }}>
+                            {CAP_LEVELS.map(({ key, LvIcon, label, activeColor, activeBg }, i) => {
+                              const isActive = capAccess === key;
+                              return (
+                                <button key={key} type="button" title={label}
+                                  onClick={() => setProfileCapAccess(cap.key, key)}
+                                  style={{
+                                    display:'flex', alignItems:'center', gap:4,
+                                    padding:'4px 8px', border:'none',
+                                    background: isActive ? activeBg : 'white',
+                                    color: isActive ? activeColor : 'var(--ink-300)',
+                                    cursor:'pointer', fontSize:10, fontWeight: isActive ? 700 : 500,
+                                    borderRight: i < CAP_LEVELS.length - 1 ? '1px solid rgba(0,0,0,0.08)' : 'none',
+                                  }}>
+                                  <LvIcon size={10}/> {label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                    </React.Fragment>
                   );
                 })}
                   </React.Fragment>

@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { gastosAPI, mantenimientosAPI } from '../api/client';
 import ProviderSelect from '../components/providers/ProviderSelect';
 import RitaAssistant from '../components/RitaAssistant';
+import { useTenantAccess } from '../context/TenantAccessContext';
 import { useGastosData } from '../hooks/useGastosData';
 import { queryKeys }     from '../hooks/queryKeys';
 import { todayPeriod, periodLabel, prevPeriod, nextPeriod, fmtDate, PAYMENT_TYPES, isPdfFile } from '../utils/helpers';
@@ -460,7 +461,8 @@ function GastosPrintLayout({ tenant, period, gastosConciliados, gastosNoConcilia
 }
 
 export default function Gastos() {
-  const { tenantId, isReadOnly, role, user } = useAuth();
+  const { tenantId, isReadOnly } = useAuth();
+  const { canRita } = useTenantAccess();
   const queryClient = useQueryClient();
 
   // ── Estado de UI ────────────────────────────────────────────────────────────
@@ -475,7 +477,7 @@ export default function Gastos() {
   const gastoFileInputRef                 = useRef(null);
   const [ritaOpen, setRitaOpen]           = useState(false);
   const [ritaAssignedMovementId, setRitaAssignedMovementId] = useState(null);
-  const canUseRita = !isReadOnly && (role === 'admin' || role === 'tesorero' || role === 'contador' || user?.is_superuser);
+  const canUseRita = !isReadOnly && canRita('egresos');
 
   // ── Datos del módulo vía React Query ────────────────────────────────────────
   const {

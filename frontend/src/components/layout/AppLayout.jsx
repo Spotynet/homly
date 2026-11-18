@@ -6,7 +6,7 @@ import { TenantAccessProvider } from '../../context/TenantAccessContext';
 import { useWorkspaceConfig } from '../../context/WorkspaceConfigContext';
 import { HomlyBrand, APP_VERSION, ROLES } from '../../utils/helpers';
 import { notificationsAPI, tenantsAPI, paymentPlansAPI } from '../../api/client';
-import { isModuleVisible, PATH_TO_MODULE, rentalAccessLevel, levelAtLeast, rentalOffModules, userCanAccessModule } from '../../constants/modulePermissions';
+import { isModuleVisible, PATH_TO_MODULE, rentalAccessLevel, levelAtLeast, rentalOffModules, userCanAccessModule, canRitaCapability } from '../../constants/modulePermissions';
 import GuideModal from '../onboarding/GuideModal';
 import HelpDrawer from './HelpDrawer';
 import {
@@ -865,12 +865,21 @@ export default function AppLayout() {
     return lvl === 'none' ? 'read' : lvl; // módulo visible por personalización antigua → consulta
   }, [role, isSuperAdmin, canAccessModule, activeProfile, tenantModulePerms]);
 
+  const canRita = useCallback((capKey) => {
+    if (isSuperAdmin || role === 'superadmin') return true;
+    if (activeProfile?.modules) {
+      return canRitaCapability(activeProfile.modules, role, capKey, { isProfile: true });
+    }
+    return canRitaCapability(tenantModulePerms[role], role, capKey);
+  }, [isSuperAdmin, role, activeProfile, tenantModulePerms]);
+
   const tenantAccess = useMemo(() => ({
     canAccessModule,
     levelOf,
     can: (moduleKey, need = 'write') => levelAtLeast(levelOf(moduleKey), need),
+    canRita,
     accessReady: permsReady,
-  }), [canAccessModule, levelOf, permsReady]);
+  }), [canAccessModule, levelOf, canRita, permsReady]);
 
   // Determine effective role for nav selection:
   // Custom profile users use the 'admin' nav set (all modules), and the

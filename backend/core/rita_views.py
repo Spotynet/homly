@@ -10,7 +10,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 
 from .models import Tenant, Unit, BankStatement, RitaBankSession
-from .permissions import IsAdminTesOrContador
+from .permissions import HasRitaCapability, user_has_rita_capability, RITA_CAP_KEYS
 from .rita_bank import BANK_PROFILES, parse_bank_statement_pdf
 from .views import BankStatementViewSet
 
@@ -107,9 +107,14 @@ def _read_statement_bytes(stmt: BankStatement):
     return BankStatementViewSet._pdf_bytes(stmt)
 
 
+def _rita_caps_payload(tenant, user):
+    return {k: user_has_rita_capability(tenant, user, k) for k in RITA_CAP_KEYS}
+
+
 class RitaBankProfilesView(APIView):
-    """GET perfiles de banco disponibles."""
-    permission_classes = [IsAuthenticated, IsAdminTesOrContador]
+    """GET perfiles de banco disponibles + capacidades del usuario."""
+    permission_classes = [IsAuthenticated, HasRitaCapability]
+    rita_capabilities = RITA_CAP_KEYS  # cualquiera basta para listar
 
     def get(self, request, tenant_id):
         tenant = _get_tenant(tenant_id)
@@ -128,12 +133,14 @@ class RitaBankProfilesView(APIView):
                 'auto_suggest_unit': settings.get('auto_suggest_unit', True),
                 'default_payment_type': settings.get('default_payment_type', 'transferencia'),
             },
+            'capabilities': _rita_caps_payload(tenant, request.user),
         })
 
 
 class RitaSettingsView(APIView):
     """GET/PATCH configuración Rita del tenant."""
-    permission_classes = [IsAuthenticated, IsAdminTesOrContador]
+    permission_classes = [IsAuthenticated, HasRitaCapability]
+    rita_capabilities = RITA_CAP_KEYS  # GET: cualquiera; PATCH valida 'settings'
 
     def get(self, request, tenant_id):
         tenant = _get_tenant(tenant_id)
@@ -145,12 +152,15 @@ class RitaSettingsView(APIView):
             'bank_profile': s.get('bank_profile', 'generic'),
             'auto_suggest_unit': s.get('auto_suggest_unit', True),
             'default_payment_type': s.get('default_payment_type', 'transferencia'),
+            'capabilities': _rita_caps_payload(tenant, request.user),
         })
 
     def patch(self, request, tenant_id):
         tenant = _get_tenant(tenant_id)
         if not tenant:
             return Response({'detail': 'Tenant no encontrado.'}, status=404)
+        if not user_has_rita_capability(tenant, request.user, 'settings'):
+            return Response({'detail': 'Sin permiso para configurar Rita.'}, status=403)
         s = dict(tenant.rita_settings or {})
         for key in ('enabled', 'bank_profile', 'auto_suggest_unit', 'default_payment_type'):
             if key in request.data:
@@ -163,11 +173,9 @@ class RitaSettingsView(APIView):
 
 
 class RitaPeriodStatusView(APIView):
-    """
-    GET ?period=YYYY-MM
-    Indica si hay estado bancario guardado y sesión Rita abierta para el período.
-    """
-    permission_classes = [IsAuthenticated, IsAdminTesOrContador]
+    """GET ?period=YYYY-MM — estado bancario + sesión abierta del período."""
+    permission_classes = [IsAuthenticated, HasRitaCapability]
+    rita_capabilities = ('ingresos', 'egresos', 'bank_upload')
 
     def get(self, request, tenant_id):
         tenant = _get_tenant(tenant_id)
@@ -191,15 +199,17 @@ class RitaPeriodStatusView(APIView):
             'bank_statement_id': str(stmt.id) if stmt and has_file else None,
             'bank_uploaded_at': stmt.uploaded_at.isoformat() if stmt and has_file else None,
             'open_session': _session_payload(session, focus=focus) if session else None,
+            'capabilities': _rita_caps_payload(tenant, request.user),
         })
 
 
 class RitaParseView(APIView):
     """
-    POST multipart: file (PDF), period (YYYY-MM), bank_profile?, focus?
-    Guarda el PDF en BankStatement (Estado General) y crea sesión Rita.
+    POST multipart: file (PDF), period, bank_profile?, focus?
+    Guarda PDF en BankStatement y crea sesión Rita.
     """
-    permission_classes = [IsAuthenticated, IsAdminTesOrContador]
+    permission_classes = [IsAuthenticated, HasRitaCapability]
+    rita_capability = 'bank_upload'
 
     def post(self, request, tenant_id):
         tenant = _get_tenant(tenant_id)
@@ -242,15 +252,15 @@ class RitaParseView(APIView):
             tenant, period, profile, result, filename,
             request.user, bank_statement=stmt,
         )
-        return Response(_session_payload(session, focus=focus), status=201)
+        payload = _session_payload(session, focus=focus)
+        payload['capabilities'] = _rita_caps_payload(tenant, request.user)
+        return Response(payload, status=201)
 
 
 class RitaParseFromStatementView(APIView):
-    """
-    POST JSON: { period, bank_profile?, focus?, force? }
-    Usa el BankStatement ya guardado en Estado General para crear/reusar sesión Rita.
-    """
-    permission_classes = [IsAuthenticated, IsAdminTesOrContador]
+    """POST: usa BankStatement guardado del período."""
+    permission_classes = [IsAuthenticated, HasRitaCapability]
+    rita_capabilities = ('ingresos', 'egresos', 'bank_upload')
 
     def post(self, request, tenant_id):
         tenant = _get_tenant(tenant_id)
@@ -284,7 +294,9 @@ class RitaParseFromStatementView(APIView):
             ).order_by('-created_at').first()
         )
         if existing and not force:
-            return Response(_session_payload(existing, focus=focus))
+            payload = _session_payload(existing, focus=focus)
+            payload['capabilities'] = _rita_caps_payload(tenant, request.user)
+            return Response(payload)
 
         profile = (
             request.data.get('bank_profile')
@@ -311,11 +323,14 @@ class RitaParseFromStatementView(APIView):
             tenant, period, profile, result, filename,
             request.user, bank_statement=stmt,
         )
-        return Response(_session_payload(session, focus=focus), status=201)
+        payload = _session_payload(session, focus=focus)
+        payload['capabilities'] = _rita_caps_payload(tenant, request.user)
+        return Response(payload, status=201)
 
 
 class RitaSessionDetailView(APIView):
-    permission_classes = [IsAuthenticated, IsAdminTesOrContador]
+    permission_classes = [IsAuthenticated, HasRitaCapability]
+    rita_capabilities = ('ingresos', 'egresos', 'bank_upload')
 
     def get(self, request, tenant_id, session_id):
         tenant = _get_tenant(tenant_id)
@@ -326,15 +341,18 @@ class RitaSessionDetailView(APIView):
         except RitaBankSession.DoesNotExist:
             return Response({'detail': 'Sesión no encontrada.'}, status=404)
         focus = (request.query_params.get('focus') or 'ingresos').strip()
-        return Response(_session_payload(session, focus=focus))
+        payload = _session_payload(session, focus=focus)
+        payload['capabilities'] = _rita_caps_payload(tenant, request.user)
+        return Response(payload)
 
 
 class RitaMovementActionView(APIView):
     """
-    POST actions on a movement:
-      { action: 'skip' | 'assign' | 'reset', movement_id, payment_id?, gasto_id?, unit_id?, focus? }
+    POST: skip | assign | reset
+    Assign de ingreso requiere cap ingresos; egreso requiere egresos.
     """
-    permission_classes = [IsAuthenticated, IsAdminTesOrContador]
+    permission_classes = [IsAuthenticated, HasRitaCapability]
+    rita_capabilities = ('ingresos', 'egresos')
 
     def post(self, request, tenant_id, session_id):
         tenant = _get_tenant(tenant_id)
@@ -359,6 +377,14 @@ class RitaMovementActionView(APIView):
                 break
         if not found:
             return Response({'detail': 'Movimiento no encontrado.'}, status=404)
+
+        kind = found.get('kind')
+        if action in ('assign', 'skip', 'reset'):
+            need = 'egresos' if kind == 'egreso' else 'ingresos'
+            if not user_has_rita_capability(tenant, request.user, need):
+                return Response({
+                    'detail': f'Sin permiso Rita para {need}.',
+                }, status=403)
 
         if action == 'skip':
             found['status'] = 'skipped'
@@ -387,4 +413,6 @@ class RitaMovementActionView(APIView):
         if not pending_ing and not pending_egr and session.status == 'open':
             session.status = 'completed'
         session.save(update_fields=['movements', 'status', 'updated_at'])
-        return Response(_session_payload(session, focus=focus))
+        payload = _session_payload(session, focus=focus)
+        payload['capabilities'] = _rita_caps_payload(tenant, request.user)
+        return Response(payload)

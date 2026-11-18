@@ -3,7 +3,108 @@ Homly — Custom Permissions
 Role-based access control matching the original app's role system.
 """
 from rest_framework.permissions import BasePermission
-from .models import TenantUser
+from .models import Tenant, TenantUser
+
+
+# Capacidades de Rita (deben coincidir con frontend RITA_CAPABILITIES).
+RITA_CAP_KEYS = ('bank_upload', 'ingresos', 'egresos', 'settings')
+
+_RITA_DEFAULT_CAPS = {
+    'admin':    {k: 'write' for k in RITA_CAP_KEYS},
+    'tesorero': {k: 'write' for k in RITA_CAP_KEYS},
+    'contador': {k: 'write' for k in RITA_CAP_KEYS},
+}
+_RITA_BASE_ROLES = frozenset(('admin', 'tesorero', 'contador'))
+
+
+def _perms_entry_for_user(tenant, user):
+    """Entrada de module_permissions del rol o perfil personalizado del usuario."""
+    if not tenant or not user:
+        return None, None
+    tu = TenantUser.objects.filter(user=user, tenant=tenant).select_related('tenant').first()
+    if not tu:
+        return None, None
+    role = tu.role
+    perms = tenant.module_permissions or {}
+    if tu.profile_id:
+        for p in (tenant.custom_profiles or []):
+            if str(p.get('id', '')) == str(tu.profile_id):
+                return p.get('modules') or {}, role
+    entry = perms.get(role)
+    return entry, role
+
+
+def _rita_module_level(entry, role, is_profile=False):
+    if role == 'superadmin':
+        return 'write'
+    if entry is None:
+        if is_profile:
+            return 'hidden'
+        return 'write' if role in _RITA_BASE_ROLES else 'hidden'
+    if isinstance(entry, list):
+        if 'rita' in entry:
+            return 'write'
+        return 'write' if (not is_profile and role in _RITA_BASE_ROLES) else 'hidden'
+    if isinstance(entry, dict):
+        if 'rita' in entry:
+            return entry['rita'] if entry['rita'] in ('hidden', 'read', 'write') else 'hidden'
+        return 'write' if (not is_profile and role in _RITA_BASE_ROLES) else 'hidden'
+    return 'hidden'
+
+
+def user_has_rita_capability(tenant, user, capability):
+    """True si el usuario puede ejecutar la capacidad Rita indicada."""
+    if not user or not user.is_authenticated:
+        return False
+    if getattr(user, 'is_super_admin', False):
+        return True
+    if capability not in RITA_CAP_KEYS:
+        return False
+    entry, role = _perms_entry_for_user(tenant, user)
+    if role is None:
+        return False
+    tu = TenantUser.objects.filter(user=user, tenant=tenant).first()
+    is_profile = bool(tu and tu.profile_id)
+    level = _rita_module_level(entry, role, is_profile=is_profile)
+    if level == 'hidden':
+        return False
+    caps = {}
+    if isinstance(entry, dict) and isinstance(entry.get('rita_caps'), dict):
+        caps = entry['rita_caps']
+    if capability in caps:
+        return caps[capability] == 'write'
+    defaults = _RITA_DEFAULT_CAPS.get(role, {k: 'hidden' for k in RITA_CAP_KEYS})
+    if is_profile:
+        return False
+    return defaults.get(capability) == 'write'
+
+
+class HasRitaCapability(BasePermission):
+    """
+    Requiere capacidad Rita en el view:
+      rita_capability = 'ingresos' | 'egresos' | 'bank_upload' | 'settings'
+    o rita_capabilities = ('ingresos', 'egresos')  → basta con una.
+    """
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        if request.user.is_super_admin:
+            return True
+        tenant_id = view.kwargs.get('tenant_id')
+        if not tenant_id:
+            return False
+        try:
+            tenant = Tenant.objects.get(pk=tenant_id)
+        except Tenant.DoesNotExist:
+            return False
+        caps = getattr(view, 'rita_capabilities', None)
+        if caps:
+            return any(user_has_rita_capability(tenant, request.user, c) for c in caps)
+        cap = getattr(view, 'rita_capability', None)
+        if not cap:
+            # Sin capacidad explícita: cualquier acceso Rita (módulo no oculto)
+            return any(user_has_rita_capability(tenant, request.user, c) for c in RITA_CAP_KEYS)
+        return user_has_rita_capability(tenant, request.user, cap)
 
 
 class IsSuperAdmin(BasePermission):
