@@ -3206,20 +3206,58 @@ tr:hover td { background: rgba(59,185,144,0.02); }
   .site-account-user { margin-bottom: 14px; }
 }
 
-/* ─── Auth pages (Login / Registro) responsive ─── */
-/* The right decorative panel hides on mobile */
+/* ─── Auth pages (Login) — layout propio (no depende de utilidades Tailwind) ─── */
+.login-page {
+  min-height: 100vh;
+  display: flex;
+  background: var(--cream, #FDFBF7);
+}
+.login-page-form {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 28px;
+}
+.login-page-form-inner {
+  width: 100%;
+  max-width: 28rem;
+}
+.login-page-panel {
+  flex: 1;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 48px;
+  background: linear-gradient(180deg, var(--teal-800, #124A36), var(--teal-600, #1F7D5B));
+  color: #fff;
+}
+.login-page-panel-inner {
+  max-width: 28rem;
+}
+.login-page-features {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.login-page-feature {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.login-page-feature-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--coral-400, #F2725A);
+  flex-shrink: 0;
+}
+@media (min-width: 1024px) {
+  .login-page-panel { display: flex; }
+}
 @media (max-width: 900px) {
-  /* Login split layout */
-  .min-h-screen.flex > div:last-child {
-    display: none !important;
-  }
-  .min-h-screen.flex > div:first-child {
-    padding: 32px 20px;
-  }
-  /* Content max-width for auth forms */
-  .w-full.max-w-md {
-    max-width: 100%;
-  }
+  .login-page-form { padding: 32px 20px; }
+  .login-page-form-inner { max-width: 100%; }
 }
 
 /* Registro page: header padding */

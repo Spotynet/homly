@@ -5,6 +5,13 @@ import { authAPI } from '../api/client';
 import { HomlyBrand } from '../utils/helpers';
 import { ArrowLeft } from 'lucide-react';
 
+const FEATURES = [
+  'Multi-tenant para múltiples condominios',
+  'Gestión de unidades y propietarios',
+  'Captura de pagos mensuales por unidad',
+  'Roles y permisos por usuario',
+];
+
 // ── Main Login page ─────────────────────────────────────────────────────────
 export default function Login() {
   // Step 1: email lookup
@@ -141,31 +148,37 @@ export default function Login() {
     : 'Ingresa el código que te enviamos a tu correo.';
 
   return (
-    <div className="min-h-screen flex">
+    <div className="login-page">
       {/* ── Left: Form ───────────────────────────────────────────────────── */}
-      <div className="flex-1 flex items-center justify-center p-8">
-        <div className="w-full max-w-md">
+      <div className="login-page-form">
+        <div className="login-page-form-inner">
 
           {/* Brand */}
-          <div className="mb-8">
+          <div style={{ marginBottom: 32 }}>
             <HomlyBrand iconSize={52} nameHeight={34} />
             <p style={{ marginTop: 6, fontSize: 11, color: 'var(--ink-400)', fontWeight: 500, letterSpacing: '0.04em' }}>
               Property Management
             </p>
           </div>
 
-          <h2 className="text-xl font-bold text-ink-800 mb-1">Bienvenido</h2>
-          <p className="text-sm text-ink-400 mb-6">{subtitle}</p>
+          <h2 style={{ fontSize: 22, fontWeight: 800, color: 'var(--ink-800)', margin: '0 0 4px' }}>Bienvenido</h2>
+          <p style={{ fontSize: 14, color: 'var(--ink-400)', margin: '0 0 24px' }}>{subtitle}</p>
 
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 text-sm font-semibold px-4 py-3 rounded-xl mb-4">
+            <div style={{
+              background: 'var(--coral-50, #FFF5F2)',
+              border: '1px solid var(--coral-100, #FFE4DC)',
+              color: 'var(--coral-500, #E85D43)',
+              fontSize: 13, fontWeight: 600,
+              padding: '12px 16px', borderRadius: 12, marginBottom: 16,
+            }}>
               {error}
             </div>
           )}
 
           {/* ── Step 1: email ──────────────────────────────────────────── */}
           {!step2 && (
-            <form onSubmit={handleEmailContinue} className="space-y-4">
+            <form onSubmit={handleEmailContinue} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               <div>
                 <label className="field-label">Correo Electrónico</label>
                 <input
@@ -177,7 +190,8 @@ export default function Login() {
                 />
               </div>
               <button type="submit" disabled={lookingUp || sendingCode || !email.trim()}
-                className="w-full btn btn-coral justify-center py-3 text-base">
+                className="btn btn-coral"
+                style={{ width: '100%', justifyContent: 'center', padding: '12px 16px', fontSize: 16 }}>
                 {lookingUp ? 'Verificando…' : sendingCode ? 'Enviando código…' : 'Continuar'}
               </button>
             </form>
@@ -185,7 +199,7 @@ export default function Login() {
 
           {/* ── Step 2: enter code (already sent on Continuar) ───────────── */}
           {step2 && (
-            <form onSubmit={handleLogin} className="space-y-4">
+            <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               {/* Email (read-only) */}
               <div>
                 <label className="field-label">Correo Electrónico</label>
@@ -233,7 +247,8 @@ export default function Login() {
               <button
                 type="submit"
                 disabled={loading || sendingCode || !code.trim()}
-                className="w-full btn btn-coral justify-center py-3 text-base"
+                className="btn btn-coral"
+                style={{ width: '100%', justifyContent: 'center', padding: '12px 16px', fontSize: 16 }}
               >
                 {loading ? 'Ingresando...' : 'Iniciar Sesión'}
               </button>
@@ -241,14 +256,14 @@ export default function Login() {
                 type="button"
                 onClick={handleRequestCode}
                 disabled={sendingCode || loading}
-                className="w-full justify-center py-3 text-base"
                 style={{
+                  width: '100%',
                   background: 'linear-gradient(135deg, #0d9488, #059669)',
                   color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700,
                   fontSize: 15, cursor: sendingCode ? 'default' : 'pointer',
                   opacity: sendingCode ? 0.7 : 1, display: 'flex',
                   alignItems: 'center', justifyContent: 'center', gap: 8,
-                  transition: 'all 0.15s',
+                  transition: 'all 0.15s', padding: '12px 16px',
                   boxShadow: sendingCode ? 'none' : '0 2px 8px rgba(13,148,136,0.3)',
                 }}
                 onMouseEnter={e => { if (!sendingCode) e.currentTarget.style.background = 'linear-gradient(135deg, #0f766e, #047857)'; }}
@@ -259,8 +274,8 @@ export default function Login() {
             </form>
           )}
 
-          <div className="mt-4 text-center">
-            <Link to="/" className="text-sm text-coral-500 font-semibold hover:underline">
+          <div style={{ marginTop: 16, textAlign: 'center' }}>
+            <Link to="/" style={{ fontSize: 14, color: 'var(--coral-500)', fontWeight: 600, textDecoration: 'none' }}>
               ← Volver a Homly
             </Link>
           </div>
@@ -268,8 +283,8 @@ export default function Login() {
       </div>
 
       {/* ── Right: Feature panel ─────────────────────────────────────────── */}
-      <div className="hidden lg:flex flex-1 bg-gradient-to-b from-teal-800 to-teal-600 items-center justify-center p-12">
-        <div className="max-w-md text-white">
+      <div className="login-page-panel">
+        <div className="login-page-panel-inner">
           <div style={{ marginBottom: 32, display: 'flex', alignItems: 'center', gap: 12 }}>
             <img
               src="/img/homly-house.png"
@@ -281,22 +296,17 @@ export default function Login() {
               <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: '#F76F57', flexShrink: 0, marginLeft: 3, verticalAlign: 'middle', position: 'relative', top: 2 }} aria-hidden />
             </span>
           </div>
-          <h2 className="text-3xl font-extrabold mb-4">
+          <h2 style={{ fontSize: 30, fontWeight: 800, margin: '0 0 16px', lineHeight: 1.2 }}>
             La administración que tu hogar se merece
           </h2>
-          <p className="text-teal-100 mb-8">
+          <p style={{ color: 'var(--teal-100, #D0F0E4)', margin: '0 0 32px', fontSize: 15, lineHeight: 1.5 }}>
             Cuentas claras, pagos simples y una convivencia más feliz.
           </p>
-          <div className="space-y-4">
-            {[
-              'Multi-tenant para múltiples condominios',
-              'Gestión de unidades y propietarios',
-              'Captura de pagos mensuales por unidad',
-              'Roles y permisos por usuario',
-            ].map((f, i) => (
-              <div key={i} className="flex items-center gap-3">
-                <div className="w-2 h-2 rounded-full bg-coral-400" />
-                <span className="text-sm font-medium text-teal-50">{f}</span>
+          <div className="login-page-features">
+            {FEATURES.map((f) => (
+              <div key={f} className="login-page-feature">
+                <div className="login-page-feature-dot" />
+                <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--teal-50, #EFFAF6)' }}>{f}</span>
               </div>
             ))}
           </div>
