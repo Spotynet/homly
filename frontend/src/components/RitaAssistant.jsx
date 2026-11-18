@@ -34,6 +34,7 @@ export default function RitaAssistant({
   onAssignIngreso,
   onAssignEgreso,
   lastAssignedMovementId,
+  embedded = false,
 }) {
   const fileRef = useRef(null);
   const focus = mode === 'egresos' ? 'egresos' : 'ingresos';
@@ -249,38 +250,13 @@ export default function RitaAssistant({
   const panelBg = focus === 'egresos' ? 'var(--coral-50, #fff5f5)' : 'var(--teal-50)';
   const panelBorder = focus === 'egresos' ? '1.5px solid var(--coral-200, #fecaca)' : '1.5px solid var(--teal-200)';
 
-  return (
-    <div
-      style={{
-        position: 'fixed', right: 16, bottom: 16, zIndex: 2600,
-        width: 400, maxWidth: 'calc(100vw - 24px)', maxHeight: 'min(720px, calc(100vh - 32px))',
-        background: 'white', borderRadius: 16,
-        boxShadow: '0 18px 50px rgba(15, 92, 82, 0.22)',
-        border: '1px solid var(--teal-100)',
-        display: 'flex', flexDirection: 'column', overflow: 'hidden',
-      }}
-    >
+  const body = (
       <div style={{
-        padding: '12px 14px', background: 'linear-gradient(135deg, var(--teal-50), #ccfbf1)',
-        borderBottom: '1px solid var(--teal-100)', display: 'flex', alignItems: 'center', gap: 10,
+        padding: embedded ? 0 : 12,
+        display: 'flex', flexDirection: 'column', gap: 10,
+        overflow: embedded ? 'visible' : 'auto',
+        flex: 1,
       }}>
-        <div style={{
-          width: 36, height: 36, borderRadius: 10, background: 'white',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          boxShadow: '0 2px 8px rgba(13,124,110,0.15)',
-        }}>
-          <Sparkles size={18} color="var(--teal-600)" />
-        </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontWeight: 800, fontSize: 14, color: 'var(--ink-800)' }}>Rita</div>
-          <div style={{ fontSize: 11, color: 'var(--ink-400)' }}>{subtitle}</div>
-        </div>
-        <button type="button" onClick={onClose} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--ink-400)' }}>
-          <X size={18} />
-        </button>
-      </div>
-
-      <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 10, overflow: 'auto', flex: 1 }}>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <select
             className="field-input"
@@ -528,6 +504,41 @@ export default function RitaAssistant({
           </div>
         )}
       </div>
+  );
+
+  if (embedded) return body;
+
+  return (
+    <div
+      style={{
+        position: 'fixed', right: 16, bottom: 16, zIndex: 2600,
+        width: 400, maxWidth: 'calc(100vw - 24px)', maxHeight: 'min(720px, calc(100vh - 32px))',
+        background: 'white', borderRadius: 16,
+        boxShadow: '0 18px 50px rgba(15, 92, 82, 0.22)',
+        border: '1px solid var(--teal-100)',
+        display: 'flex', flexDirection: 'column', overflow: 'hidden',
+      }}
+    >
+      <div style={{
+        padding: '12px 14px', background: 'linear-gradient(135deg, var(--teal-50), #ccfbf1)',
+        borderBottom: '1px solid var(--teal-100)', display: 'flex', alignItems: 'center', gap: 10,
+      }}>
+        <div style={{
+          width: 36, height: 36, borderRadius: 10, background: 'white',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          boxShadow: '0 2px 8px rgba(13,124,110,0.15)',
+        }}>
+          <Sparkles size={18} color="var(--teal-600)" />
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontWeight: 800, fontSize: 14, color: 'var(--ink-800)' }}>Rita</div>
+          <div style={{ fontSize: 11, color: 'var(--ink-400)' }}>{subtitle}</div>
+        </div>
+        <button type="button" onClick={onClose} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--ink-400)' }}>
+          <X size={18} />
+        </button>
+      </div>
+      {body}
     </div>
   );
 }

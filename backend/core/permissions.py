@@ -7,7 +7,7 @@ from .models import Tenant, TenantUser
 
 
 # Capacidades de Rita (deben coincidir con frontend RITA_CAPABILITIES).
-RITA_CAP_KEYS = ('bank_upload', 'ingresos', 'egresos', 'settings')
+RITA_CAP_KEYS = ('guides', 'bank_upload', 'ingresos', 'egresos', 'settings')
 
 _RITA_DEFAULT_CAPS = {
     'admin':    {k: 'write' for k in RITA_CAP_KEYS},

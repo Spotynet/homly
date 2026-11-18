@@ -25,6 +25,11 @@ export const ROLE_BASE_MODULES = {
  */
 export const RITA_CAPABILITIES = [
   {
+    key: 'guides',
+    label: 'Guías de uso',
+    desc: 'Abrir tutoriales interactivos desde el asistente Rita',
+  },
+  {
     key: 'bank_upload',
     label: 'Cargar estado de cuenta',
     desc: 'Subir o reemplazar el PDF del período (también queda en Estado General)',

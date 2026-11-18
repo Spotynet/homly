@@ -3,12 +3,11 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
 import { gastosAPI, mantenimientosAPI } from '../api/client';
 import ProviderSelect from '../components/providers/ProviderSelect';
-import RitaAssistant from '../components/RitaAssistant';
-import { useTenantAccess } from '../context/TenantAccessContext';
+import { useRita } from '../context/RitaContext';
 import { useGastosData } from '../hooks/useGastosData';
 import { queryKeys }     from '../hooks/queryKeys';
 import { todayPeriod, periodLabel, prevPeriod, nextPeriod, fmtDate, PAYMENT_TYPES, isPdfFile } from '../utils/helpers';
-import { ChevronLeft, ChevronRight, Plus, Edit, Trash2, X, ShoppingBag, Printer, Check, AlertCircle, Lock, Paperclip, Eye, FileText, Image, Sparkles } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Edit, Trash2, X, ShoppingBag, Printer, Check, AlertCircle, Lock, Paperclip, Eye, FileText, Image } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 // ── Evidence helpers ───────────────────────────────────────────────────────────
@@ -462,8 +461,8 @@ function GastosPrintLayout({ tenant, period, gastosConciliados, gastosNoConcilia
 
 export default function Gastos() {
   const { tenantId, isReadOnly } = useAuth();
-  const { canRita } = useTenantAccess();
   const queryClient = useQueryClient();
+  const { registerBankHost, unregisterBankHost, notifyAssigned, openBank } = useRita();
 
   // ── Estado de UI ────────────────────────────────────────────────────────────
   const [period, setPeriod]               = useState(todayPeriod());
@@ -475,9 +474,6 @@ export default function Gastos() {
   const [viewerFiles, setViewerFiles]     = useState(null);
   const [workOptions, setWorkOptions]     = useState([]);
   const gastoFileInputRef                 = useRef(null);
-  const [ritaOpen, setRitaOpen]           = useState(false);
-  const [ritaAssignedMovementId, setRitaAssignedMovementId] = useState(null);
-  const canUseRita = !isReadOnly && canRita('egresos');
 
   // ── Datos del módulo vía React Query ────────────────────────────────────────
   const {
@@ -537,6 +533,15 @@ export default function Gastos() {
     setModal('gasto');
   };
 
+  useEffect(() => {
+    registerBankHost('egresos', {
+      period,
+      gastoFields: fields,
+      onAssignEgreso: (prefill) => openGastoFromRita(prefill),
+    });
+    return () => unregisterBankHost('egresos');
+  }, [period, fields, registerBankHost, unregisterBankHost]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const saveGasto = async () => {
     const amount = parseFloat(form.amount);
     if (isNaN(amount) || amount < 0) {
@@ -572,8 +577,8 @@ export default function Gastos() {
       setGastoEvidence([]);
       setModal(null);
       if (ritaMovementId) {
-        setRitaAssignedMovementId(ritaMovementId);
-        setRitaOpen(true);
+        notifyAssigned(ritaMovementId);
+        openBank('egresos');
       }
       queryClient.invalidateQueries({ queryKey: queryKeys.gastos(tenantId, period) });
     } catch (e) {
@@ -661,17 +666,6 @@ export default function Gastos() {
                 setModal('gasto');
               }}>
                 <Plus size={14} /> Nuevo Gasto
-              </button>
-            )}
-            {canUseRita && !isPeriodClosed && (
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                onClick={() => setRitaOpen(true)}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
-                title="Rita — relacionar egresos del estado de cuenta"
-              >
-                <Sparkles size={14} color="var(--teal-600)" /> Rita
               </button>
             )}
             <button className="btn btn-outline btn-sm" onClick={handlePrint}>
@@ -1024,17 +1018,6 @@ export default function Gastos() {
       {viewerFiles && (
         <EvidenceViewer files={viewerFiles} onClose={() => setViewerFiles(null)} />
       )}
-
-      <RitaAssistant
-        tenantId={tenantId}
-        period={period}
-        mode="egresos"
-        gastoFields={fields}
-        open={ritaOpen}
-        onClose={() => setRitaOpen(false)}
-        lastAssignedMovementId={ritaAssignedMovementId}
-        onAssignEgreso={(prefill) => openGastoFromRita(prefill)}
-      />
 
     </div>
   );

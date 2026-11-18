@@ -9,11 +9,13 @@ import { notificationsAPI, tenantsAPI, paymentPlansAPI } from '../../api/client'
 import { isModuleVisible, PATH_TO_MODULE, rentalAccessLevel, levelAtLeast, rentalOffModules, userCanAccessModule, canRitaCapability } from '../../constants/modulePermissions';
 import GuideModal from '../onboarding/GuideModal';
 import HelpDrawer from './HelpDrawer';
+import { RitaProvider } from '../../context/RitaContext';
+import RitaShell from '../rita/RitaShell';
 import {
   Home, Globe, FileText, ShoppingBag, Receipt, Settings,
   Users, Building, Shield, LogOut, Menu, X, Calendar,
   ChevronDown, Check, Building2, Bell, CheckCheck, Activity, Lock, TrendingDown,
-  Sparkles, CreditCard, DollarSign, Target, Newspaper, Send, HelpCircle, ClipboardList, ClipboardCheck, Vote, Wrench, Package, UserCheck,
+  CreditCard, DollarSign, Target, Newspaper, Send, HelpCircle, ClipboardList, ClipboardCheck, Vote, Wrench, Package, UserCheck,
   LifeBuoy, Cpu, CalendarClock, ScanSearch, Gauge, GraduationCap, LayoutGrid, PiggyBank,
   PanelLeftClose, PanelLeftOpen, FileBarChart,
 } from 'lucide-react';
@@ -30,7 +32,6 @@ const NAV_SISTEMA = [
 const NAV_CONDO_GENERAL = [
   { path: '/app/dashboard',      icon: Home,     label: 'Dashboard' },
   { path: '/app/notificaciones', icon: Bell,     label: 'Notificaciones' },
-  { path: '/app/onboarding',     icon: Sparkles, label: 'Guías de uso' },
 ];
 
 const NAV_CONDO_OPERACION = [
@@ -60,10 +61,10 @@ const NAV_CONDO_AJUSTES = [
   { path: '/app/config',       icon: Settings,   label: 'Configuración' },
 ];
 
-function condoNav({ system = false, guides = true, finanzas = NAV_CONDO_FINANZAS, ajustes = false, home = null } = {}) {
+function condoNav({ system = false, finanzas = NAV_CONDO_FINANZAS, ajustes = false, home = null } = {}) {
   const general = home
-    ? [home, ...NAV_CONDO_GENERAL.filter(i => i.path !== '/app/dashboard' && (guides || i.path !== '/app/onboarding'))]
-    : NAV_CONDO_GENERAL.filter(i => guides || i.path !== '/app/onboarding');
+    ? [home, ...NAV_CONDO_GENERAL.filter(i => i.path !== '/app/dashboard')]
+    : NAV_CONDO_GENERAL;
   return [
     ...(system ? [{ section: 'sistema', label: 'Sistema', items: NAV_SISTEMA }] : []),
     { section: 'general', label: 'General', items: general },
@@ -81,7 +82,7 @@ const NAV_ITEMS = {
   tesorero:   condoNav(),
   contador:   condoNav(),
   auditor:    condoNav(),
-  vigilante:  condoNav({ guides: true, finanzas: [] }),
+  vigilante:  condoNav({ finanzas: [] }),
   vecino: condoNav({
     home: { path: '/app/my-unit', icon: Home, label: 'Mi Unidad' },
     finanzas: [
@@ -386,31 +387,6 @@ function TenantSwitcher({ tenantId, tenantName, userTenants, onSwitch, isSuperAd
         </div>
       )}
     </div>
-  );
-}
-
-// ── Guide Tour Button ─────────────────────────────────────────────────────────
-function GuideTourButton() {
-  const navigate = useNavigate();
-  const location = useLocation();
-  const isActive = location.pathname === '/app/onboarding';
-  return (
-    <button
-      onClick={() => navigate('/app/onboarding')}
-      title="Guía de Uso"
-      aria-label="Guía de Uso"
-      style={{
-        position: 'relative', background: isActive ? 'var(--teal-50)' : 'none',
-        border: 'none', cursor: 'pointer', padding: '6px', borderRadius: 8,
-        color: isActive ? 'var(--teal-600)' : 'var(--ink-500)',
-        display: 'flex', alignItems: 'center',
-        transition: 'background 0.15s, color 0.15s',
-      }}
-      onMouseEnter={e => { e.currentTarget.style.background = 'var(--teal-50)'; e.currentTarget.style.color = 'var(--teal-600)'; }}
-      onMouseLeave={e => { e.currentTarget.style.background = isActive ? 'var(--teal-50)' : 'none'; e.currentTarget.style.color = isActive ? 'var(--teal-600)' : 'var(--ink-500)'; }}
-    >
-      <Sparkles size={20} />
-    </button>
   );
 }
 
@@ -973,6 +949,7 @@ export default function AppLayout() {
 
   return (
     <TenantAccessProvider value={tenantAccess}>
+    <RitaProvider>
     <div className={`app${sidebarHidden ? ' sidebar-hidden' : ''}`}>
       {/* Sidebar overlay (mobile) */}
       <div
@@ -1121,16 +1098,6 @@ export default function AppLayout() {
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {/* Guide Tour Button — visible to all roles with onboarding module access */}
-            {tenantId && (
-              role === 'superadmin' ||
-              (
-                (subscriptionAllowedModules.length === 0 || subscriptionAllowedModules.includes('onboarding')) &&
-                (activeProfile
-                  ? isModuleVisible(activeProfile.modules, 'onboarding', null, true)
-                  : isModuleVisible(tenantModulePerms[role], 'onboarding', role))
-              )
-            ) && <GuideTourButton />}
             {/* Notification Bell */}
             {tenantId && (
               role === 'superadmin' ||
@@ -1241,8 +1208,10 @@ export default function AppLayout() {
         chapter={activeChapter}
         onClose={closeGuide}
       />
+      <RitaShell />
       <HelpDrawer open={helpOpen} onClose={() => setHelpOpen(false)} />
     </div>
+    </RitaProvider>
     </TenantAccessProvider>
   );
 }

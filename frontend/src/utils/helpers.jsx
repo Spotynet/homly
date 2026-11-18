@@ -287,7 +287,7 @@ export const HOMLY_LOGO_FULL = (
   />
 );
 
-export const APP_VERSION = '10.23.6';
+export const APP_VERSION = '10.23.7';
 
 export function unitCodeOf(u = {}) {
   return String(u.unit_id_code || u.unit_code || u.unitIdCode || '').trim();

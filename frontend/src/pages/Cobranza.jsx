@@ -10,10 +10,9 @@ import PaginationBar from '../components/PaginationBar';
 import PaymentReceiptModal from '../components/PaymentReceiptModal';
 import UnitStatementOverlay from '../components/UnitStatementOverlay';
 import EvidenceAttach from '../components/EvidenceAttach';
-import RitaAssistant from '../components/RitaAssistant';
-import { useTenantAccess } from '../context/TenantAccessContext';
+import { useRita } from '../context/RitaContext';
 import { todayPeriod, periodLabel, prevPeriod, nextPeriod, tenantStartPeriod, fmtCurrency, statusClass, statusLabel, PAYMENT_TYPES, fmtDate, ROLES, CURRENCIES, APP_VERSION } from '../utils/helpers';
-import { ChevronLeft, ChevronRight, Search, Receipt, X, Users, CheckCircle, Clock, AlertCircle, DollarSign, Calendar, Building2, FileText, Check, Plus, Edit, Edit2, Trash2, Banknote, Mail, Lock, Send, XCircle, Eye, ChevronDown as ChevronDownIcon, Sparkles } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Search, Receipt, X, Users, CheckCircle, Clock, AlertCircle, DollarSign, Calendar, Building2, FileText, Check, Plus, Edit, Edit2, Trash2, Banknote, Mail, Lock, Send, XCircle, Eye, ChevronDown as ChevronDownIcon } from 'lucide-react';
 import toast from 'react-hot-toast';
 import ServicesSuspensionBadge from '../components/ServicesSuspensionBadge';
 
@@ -127,9 +126,8 @@ function getUnitRecaudo(pay) {
 
 export default function Cobranza() {
   const { tenantId, isReadOnly, user, role } = useAuth();
-  const { canRita } = useTenantAccess();
   const queryClient = useQueryClient();
-  const canUseRitaIngresos = !isReadOnly && canRita('ingresos');
+  const { registerBankHost, unregisterBankHost, notifyAssigned, openBank } = useRita();
 
   // ── Estado de UI ────────────────────────────────────────────────────────────
   const [period, setPeriod]           = useState(todayPeriod());
@@ -156,8 +154,6 @@ export default function Cobranza() {
   // Voucher ID que originó la captura actual; si existe, se marca como "received" al guardar
   const [pendingVoucherId, setPendingVoucherId]       = useState(null);
   const [statementOverlayUnit, setStatementOverlayUnit] = useState(null);
-  const [ritaOpen, setRitaOpen] = useState(false);
-  const [ritaAssignedMovementId, setRitaAssignedMovementId] = useState(null);
 
   // ── Datos del módulo vía React Query ────────────────────────────────────────
   const {
@@ -379,6 +375,15 @@ export default function Cobranza() {
     }
   };
 
+  useEffect(() => {
+    registerBankHost('ingresos', {
+      period,
+      units,
+      onAssignIngreso: (unit, prefill) => openCapture(unit, period, [], prefill),
+    });
+    return () => unregisterBankHost('ingresos');
+  }, [period, units, registerBankHost, unregisterBankHost]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Abre el form de captura de pago pre-cargado con la evidencia del comprobante
   // enviado por el residente. Después del guardado exitoso, el voucher se marca
   // como "received" automáticamente.
@@ -542,8 +547,8 @@ export default function Cobranza() {
       setShowCapture(null);
       setPendingVoucherId(null);
       if (ritaMovementId) {
-        setRitaAssignedMovementId(ritaMovementId);
-        setRitaOpen(true);
+        notifyAssigned(ritaMovementId);
+        openBank('ingresos');
       }
       queryClient.invalidateQueries({ queryKey: queryKeys.payments(tenantId, period) });
 
@@ -615,17 +620,6 @@ export default function Cobranza() {
             onChange={e => { setFilter(e.target.value); setPage(1); }}
           />
         </div>
-        {canUseRitaIngresos && (
-          <button
-            type="button"
-            className="btn btn-secondary btn-sm"
-            onClick={() => setRitaOpen(true)}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}
-            title="Rita — leer estado de cuenta y capturar ingresos"
-          >
-            <Sparkles size={14} color="var(--teal-600)" /> Rita
-          </button>
-        )}
       </div>
 
       {/* ── Stat cards ── */}
@@ -2175,18 +2169,6 @@ export default function Cobranza() {
         <VoucherReviewPanel tenantId={tenantId} period={period} onAccept={handleAcceptVoucher} />
       )}
 
-      <RitaAssistant
-        tenantId={tenantId}
-        period={period}
-        units={units}
-        mode="ingresos"
-        open={ritaOpen}
-        onClose={() => setRitaOpen(false)}
-        lastAssignedMovementId={ritaAssignedMovementId}
-        onAssignIngreso={(unit, prefill) => {
-          openCapture(unit, period, [], prefill);
-        }}
-      />
     </div>
   );
 }
